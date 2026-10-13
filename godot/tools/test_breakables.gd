@@ -3,7 +3,8 @@ extends SceneTree
 ## the tree tilted away) and keeps going, and the tree springs back up (collider on, upright again); a car rolling into
 ## a sign pole knocks it over (debris flying off, the pole and its faces hidden, collider off) and keeps going, and the
 ## pole comes back when restored; a car creeping into another sign pole stops against it; a car at speed knocks over
-## a street lamp (its debris colliding along the whole pole) and a lift gate.
+## a street lamp (its debris colliding along the whole pole), a lift gate, a fire hydrant, a bench and a bike rack; a
+## broken hydrant gushes water until it is repaired a minute later, even in view.
 ## godot --headless --fixed-fps 60 --path godot --script res://tools/test_breakables.gd
 
 const Layers = preload("res://scripts/physics_layers.gd")
@@ -51,6 +52,10 @@ func _run() -> void:
 	await _sign_check(car, props)
 	await _knock_check(car, props, "lamp_street", 0.11)
 	await _knock_check(car, props, "lift_gate", 0.05)
+	await _knock_check(car, props, "fire_hydrant", 0.15)
+	await _knock_check(car, props, "bench_back", 0.25)
+	await _knock_check(car, props, "bike_rack", 0.05)
+	await _geyser_check(props)
 	_finish()
 
 
@@ -260,10 +265,42 @@ func _knock_check(car: Car, props: StaticBody3D, model: String, r: float) -> voi
 		await physics_frame
 		if car.to_local(spot).z < -car.half_extents.z - 1.0:
 			break
+	car.linear_velocity = Vector3.ZERO          # not on into the next of a row (bike racks)
+	car.angular_velocity = Vector3.ZERO
+	await _frames(2)
 	for e: Dictionary in _breakables.debris.duplicate():
 		_breakables.restore(e)
 	await _frames(2)
 	_check(_breakables.debris.is_empty(), "restored")
+
+
+## A broken fire hydrant has a geyser over its foot, which eases off and goes with the repair after REPAIR_AFTER s.
+func _geyser_check(props: StaticBody3D) -> void:
+	var data: Resource = props.data
+	var k := Array(data.ids).find(_first_id(data, "fire_hydrant"))
+	_check(k >= 0 and _breakables.break_prop(k, Vector3.FORWARD * 5.0), "a fire hydrant breaks")
+	if k < 0 or _breakables.debris.is_empty():
+		return
+	var d: Dictionary = _breakables.debris[-1]
+	var g: Node3D = d["geyser"]
+	_check(is_instance_valid(g) and g.is_inside_tree() and g.global_position.distance_to(d["spot"]) < 0.01
+			and g.get_child_count() >= 4, "it gushes water from its foot")
+	await _frames(30)
+	_check(_breakables.debris.has(d), "still broken after half a second")
+	d["time"] -= Breakables.REPAIR_AFTER - 2.0      # a minute later, give or take a second
+	await _frames(30)
+	var jet: GPUParticles3D = g.get_node("jet")
+	_check(_breakables.debris.has(d) and jet.amount_ratio < 0.5 and jet.amount_ratio > 0.0,
+			"the water eases off before the repair (%.2f)" % jet.amount_ratio)
+	await _frames(120)
+	_check(not _breakables.debris.has(d) and not is_instance_valid(g), "repaired after a minute, the water off")
+
+
+func _first_id(data: Resource, model: String) -> String:
+	for i in data.size():
+		if data.describe(i).get("model") == model:
+			return data.ids[i]
+	return ""
 
 
 # ---------------------------------------------------------------- run-up

@@ -195,7 +195,7 @@ func _build_join_page(cfg: ConfigFile) -> VBoxContainer:
 	box.add_child(UiStyle.label("Or enter the host's address", 17, UiStyle.TEXT_DIM, HORIZONTAL_ALIGNMENT_LEFT))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
-	_address = UiStyle.line_edit(cfg.get_value("join", "address", ""), "IP address, e.g. 192.168.1.42", 300.0)
+	_address = UiStyle.line_edit(cfg.get_value("join", "address", ""), "IP address or domain, e.g. 192.168.1.42", 300.0)
 	_address.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_address.text_submitted.connect(func(_t: String) -> void: _join_typed())
 	row.add_child(_address)
@@ -320,7 +320,7 @@ func _join_typed() -> void:
 		_address.text = address
 		_port.text = port_text
 	if address == "":
-		set_status("Enter the host's IP address (shown at the top right of their screen).", true)
+		set_status("Enter the host's IP address (shown at the top right of their screen) or the server's domain.", true)
 		return
 	if not port_text.is_valid_int() or int(port_text) < 1 or int(port_text) > 65535:
 		set_status("The port is a number between 1 and 65535 (%d unless the host changed it)." % default_port, true)

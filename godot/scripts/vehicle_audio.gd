@@ -1,7 +1,7 @@
 extends Node3D
 ## Vehicle sounds synthesized at runtime (no audio files): an engine loop pitched by a toy automatic
-## gearbox, indicator relay ticks, bus door chime with air hiss, and the air-brake sigh when a bus stops; also the
-## knocks of scripts/breakables.gd (a sign pole's clang, a sapling's swish).
+## gearbox, a two-tone horn held as long as `horn` is on, indicator relay ticks, bus door chime with air hiss, and the air-brake sigh when a bus stops; also the
+## knocks of scripts/breakables.gd (a sign pole's clang, a sapling's swish, a broken hydrant's gush).
 ## Each sound is generated once per kind and cached. scripts/car.gd adds one as a child and calls
 ## update() every physics frame and play() for one-shots.
 
@@ -10,9 +10,11 @@ const RATE := 22050
 ## combustion noise, pitch at the top of each gear, and each gear's top speed as a share of max_speed.
 const KINDS := {
 	"bus": {"f0": 32, "amps": [1.0, 0.8, 0.9, 0.5, 0.45, 0.35, 0.22, 0.2, 0.12, 0.1], "sub": 0.5, "noise": 0.8,
-			"pitch_top": 2.6, "gears": [0.1, 0.2, 0.33, 0.5, 0.72, 1.0], "unit_size": 11.0, "idle_db": -6.0},
+			"pitch_top": 2.6, "gears": [0.1, 0.2, 0.33, 0.5, 0.72, 1.0], "unit_size": 11.0, "idle_db": -6.0,
+			"horn": [277, 349], "horn_harmonics": 14},
 	"car": {"f0": 48, "amps": [1.0, 0.6, 0.55, 0.35, 0.3, 0.18, 0.12, 0.08], "sub": 0.15, "noise": 0.45,
-			"pitch_top": 3.6, "gears": [0.16, 0.3, 0.46, 0.64, 0.82, 1.0], "unit_size": 7.0, "idle_db": -9.0},
+			"pitch_top": 3.6, "gears": [0.16, 0.3, 0.46, 0.64, 0.82, 1.0], "unit_size": 7.0, "idle_db": -9.0,
+			"horn": [415, 523], "horn_harmonics": 9},
 }
 
 static var _cache := {}
@@ -21,7 +23,10 @@ static var _users := 0                      # nodes in the tree; the cache is dr
 var kind := "car"
 var engine_on := false
 var gear := 0                               # 0-based, shown on the HUD
+var horn := false                           # sounds while on (fades in and out in update())
 var _engine: AudioStreamPlayer3D
+var _horn: AudioStreamPlayer3D
+var _horn_gain := 0.0
 var _fx: AudioStreamPlayer3D                # doors, air brake
 var _cabin: AudioStreamPlayer               # indicator relay, heard only by the driver
 var _rpm := 0.0                             # 0 idle .. 1 top of the gear
@@ -39,6 +44,12 @@ func setup(vehicle_kind: String) -> void:
 	_engine.max_distance = 150.0
 	_engine.volume_db = -80.0
 	add_child(_engine)
+	_horn = AudioStreamPlayer3D.new()
+	_horn.stream = _horn_loop(kind)
+	_horn.unit_size = k["unit_size"] * 2.0
+	_horn.max_distance = 250.0
+	_horn.volume_db = -80.0
+	add_child(_horn)
 	_fx = AudioStreamPlayer3D.new()
 	_fx.unit_size = 9.0
 	_fx.max_distance = 80.0
@@ -79,6 +90,12 @@ func update(speed: float, throttle: float, max_speed: float, delta: float) -> vo
 		_engine.stop()
 	_engine.pitch_scale = 1.0 + _rpm * (k["pitch_top"] - 1.0)
 	_engine.volume_db = k["idle_db"] + 7.0 * _load + 3.0 * _rpm + linear_to_db(maxf(_gain, 0.0001))
+	_horn_gain = move_toward(_horn_gain, 1.0 if horn else 0.0, delta / (0.02 if horn else 0.06))
+	if _horn_gain > 0.0 and not _horn.playing:
+		_horn.play()
+	elif _horn_gain == 0.0 and _horn.playing:
+		_horn.stop()
+	_horn.volume_db = linear_to_db(maxf(_horn_gain, 0.0001))
 	# buses sigh when they come to a stop
 	if kind == "bus":
 		if _was_moving and v < 0.3:
@@ -127,6 +144,27 @@ static func _engine_loop(vehicle_kind: String) -> AudioStreamWAV:
 	return s
 
 
+## Two horns a third apart, buzzy (bright harmonics, soft-clipped), with a little flutter. Whole-number frequencies:
+## the 1 s loop is seamless.
+static func _horn_loop(vehicle_kind: String) -> AudioStreamWAV:
+	var key := "horn_" + vehicle_kind
+	if _cache.has(key):
+		return _cache[key]
+	var k: Dictionary = KINDS[vehicle_kind]
+	var buf := _silence(1.0)
+	for i in buf.size():
+		var t := float(i) / RATE
+		var x := 0.0
+		for f: int in k["horn"]:
+			for h in range(1, int(k["horn_harmonics"]) + 1):
+				x += sin(TAU * f * h * t + h) / pow(h, 0.8)
+		x *= 1.0 + 0.04 * sin(TAU * 9.0 * t)
+		buf[i] = tanh(x * 0.6)
+	var s := _to_wav(buf, true)
+	_cache[key] = s
+	return s
+
+
 static func one_shot(sound: String) -> AudioStreamWAV:
 	if _cache.has(sound):
 		return _cache[sound]
@@ -167,7 +205,26 @@ static func one_shot(sound: String) -> AudioStreamWAV:
 				var i0 := int(rng.randf_range(0.0, 0.3) * RATE)
 				for j in int(0.004 * RATE):
 					buf[i0 + j] += rng.randf_range(-1.0, 1.0) * exp(-float(j) / RATE * 900.0) * 0.8
-	var s := _to_wav(buf, false)
+		"gush":                                             # broken hydrant: steady roar of water (loops)
+			buf = _silence(2.0)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 5
+			var lp1 := 0.0
+			var lp2 := 0.0
+			var rumble := 0.0
+			for i in buf.size():
+				var noise := rng.randf_range(-1.0, 1.0)
+				lp1 += (noise - lp1) * 0.35
+				lp2 += (noise - lp2) * 0.04
+				rumble += (noise - rumble) * 0.01
+				var t := float(i) / RATE
+				buf[i] = (lp1 - lp2) * (0.8 + 0.2 * sin(TAU * 3.0 * t)) + rumble * 3.0
+			var fade := int(0.05 * RATE)            # seamless loop: cross-fade the end into the start
+			for j in fade:
+				var a := float(j) / fade
+				buf[j] = buf[j] * a + buf[buf.size() - fade + j] * (1.0 - a)
+			buf.resize(buf.size() - fade)
+	var s := _to_wav(buf, sound == "gush")
 	_cache[sound] = s
 	return s
 

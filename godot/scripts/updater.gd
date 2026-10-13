@@ -69,6 +69,27 @@ func check() -> void:
 		_set_state(State.OFF)
 
 
+## Dedicated server (game.gd --dedicated, headless: no download here): only fetches the latest release's tag and
+## commit, for outdated(). The server's container (server/ at the repository root) fetches the new build when it quits.
+func check_tag() -> void:
+	if version == "":
+		return
+	_new_request(15.0).request_completed.connect(
+			func(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+				var rel: Variant = JSON.parse_string(body.get_string_from_utf8()) \
+						if result == HTTPRequest.RESULT_SUCCESS and code == 200 else null
+				if rel is Dictionary:
+					latest = str(rel.get("tag_name", ""))
+					_latest_commit = str(rel.get("target_commitish", "")),
+			CONNECT_ONE_SHOT)
+	_http.request(API, [USER_AGENT, "Accept: application/vnd.github+json"])
+
+
+## A published build whose newest release (check_tag) is another build.
+func outdated() -> bool:
+	return version != "" and latest != "" and latest != version and _latest_commit != _commit
+
+
 ## Downloaded fraction (State.DOWNLOADING).
 func progress() -> float:
 	return clampf(_http.get_downloaded_bytes() / float(maxi(_size, 1)), 0.0, 1.0) if _http else 0.0

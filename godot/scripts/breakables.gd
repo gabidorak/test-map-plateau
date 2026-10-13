@@ -3,10 +3,13 @@ extends Node
 ## - Thin trees (trunk up to BEND_TRUNK, BEND_HEIGHT tall at most; TreeCollision's "Bendable" body) bend away from
 ##   a vehicle that drives into them, stay flattened while it is over their foot, then spring back up with a wobble.
 ## - Sign poles, bus stop poles, route markers, guideposts, bollards, bin poles, street and path lamps, traffic
-##   lights and the light barriers across ways (lift and swing gates, cycle barriers, chain posts) (BREAKABLE_PROPS;
+##   lights, the light barriers across ways (lift and swing gates, cycle barriers, chain posts), bike racks, benches,
+##   picnic tables, wheelie bins, fire hydrants and other light street furniture (BREAKABLE_PROPS;
 ##   PropCollision's "Breakable" body) snap off their foot and fly off as rigid debris on the DEBRIS layer. The
 ##   original comes back RESTORE_AFTER seconds later once the camera is RESTORE_DISTANCE from both it and the debris
-##   (at once for the oldest when there are more than MAX_DEBRIS).
+##   (at once for the oldest when there are more than MAX_DEBRIS). A broken fire hydrant or tap leaves a geyser of
+##   water (scripts/geyser.gd, GEYSERS) that lifts what is parked over it, until the pipe is repaired REPAIR_AFTER
+##   seconds later, prop back in place, whether anyone is looking or not.
 ## Every physics frame each moving vehicle body (group "vehicles": scripts/car.gd and its rear section) sweeps its
 ## collision boxes LOOKAHEAD frames ahead along its velocity and looks for those objects on the BREAKABLE layer, so
 ## they give way before the solver stops the vehicle against them; the vehicle loses the momentum it gives them.
@@ -21,14 +24,26 @@ extends Node
 
 const Layers = preload("res://scripts/physics_layers.gd")
 const VehicleAudio = preload("res://scripts/vehicle_audio.gd")
+const Geyser = preload("res://scripts/geyser.gd")
 const CHUNK := 96.0                         # m, MultiMesh chunks of the trees and props (the builders' CHUNK)
 
 ## model -> debris mass (kg)
-## (concrete blocks and jersey barriers hold, like the buildings)
+## (concrete blocks, jersey barriers, kiosks, shelters, recycling columns, underground bins and masts hold, like the
+## buildings)
 const BREAKABLE_PROPS := {"sign_pole": 15.0, "bus_pole": 25.0, "route_marker": 5.0, "guidepost": 20.0,
 		"assembly_sign": 10.0, "bollard": 20.0, "bin_vigipirate": 12.0,
 		"lamp_street": 60.0, "lamp_path": 30.0, "traffic_light_car": 50.0, "traffic_light_ped": 35.0,
-		"lift_gate": 40.0, "swing_gate": 40.0, "cycle_barrier": 20.0, "chain_posts": 15.0}
+		"lift_gate": 40.0, "swing_gate": 40.0, "cycle_barrier": 20.0, "chain_posts": 15.0,
+		"fire_hydrant": 80.0, "water_tap": 15.0, "drinking_fountain": 60.0,
+		"bike_rack": 25.0, "bike_loops": 15.0, "bike_repair": 40.0,
+		"bench_back": 60.0, "bench_flat": 45.0, "picnic_table": 80.0, "waste_container": 60.0, "grit_bin": 30.0,
+		"parking_meter": 40.0, "post_box": 40.0, "info_board": 50.0, "defibrillator": 30.0, "cctv_pole": 60.0,
+		"flagpole": 60.0, "flagpole_fr": 60.0}
+## model -> height (m) of the water column out of its broken pipe (fire hydrants, taps)
+const GEYSERS := {"fire_hydrant": 10.0, "water_tap": 3.0, "drinking_fountain": 3.0}
+const REPAIR_AFTER := 60.0                  # s, a broken water pipe is repaired (the prop back, the water off)...
+const REPAIR_FADE := 3.0                    # s, ...easing the water off over the last seconds
+const GEYSER_LIFT := 800.0                  # N per m of column, upward on a vehicle parked over a geyser
 const BEND_TRUNK := 0.1                     # m, trunk radius up to which a tree bends (~1,700 of the 15,600)
 const BEND_HEIGHT := 8.0                    # m
 const BEND_SPEED := 0.5                     # m/s, slowest push that bends a tree
@@ -50,7 +65,8 @@ signal broke(kind: String, k: int, push: Vector3)
 
 var world_root: Node3D
 var bent := {}                              # tree index -> {mmis (3 LODs), index, rest, axis, angle, rate}
-var debris: Array[Dictionary] = []          # {record, body, instances [[MultiMesh, index, transform]], spot, labels, time}
+var debris: Array[Dictionary] = []          # {record, body, instances [[MultiMesh, index, transform]], spot, labels, time,
+											#  geyser (fire hydrants, taps)}
 
 var _trees: StaticBody3D                    # TreeCollision/Bendable
 var _props: StaticBody3D                    # PropCollision/Breakable
@@ -92,6 +108,7 @@ func _physics_process(delta: float) -> void:
 		if not (b[0] as RigidBody3D).freeze:   # remote vehicles (net.gd): their own peer sweeps them
 			_sweep(b[0], b[1], b[2], delta)
 	_update_trees(delta)
+	_update_geysers()
 	_restore_debris()
 	_flush()
 
@@ -300,8 +317,15 @@ func break_prop(k: int, push: Vector3, sound := true) -> bool:
 		labels.reparent(rb, true)
 	_props.set_solid(k, false)
 	_broken[k] = true
+	var geyser: Geyser = null
+	if GEYSERS.has(meta["model"]):
+		geyser = Geyser.new()
+		geyser.name = "Geyser_" + String(meta["id"]).replace(":", "_")
+		geyser.height = GEYSERS[meta["model"]]
+		add_child(geyser)
+		geyser.global_position = foot.origin
 	debris.append({"record": k, "body": rb, "instances": hidden, "spot": foot.origin, "labels": labels,
-			"labels_rest": labels_rest, "time": _clock})
+			"labels_rest": labels_rest, "time": _clock, "geyser": geyser})
 	if sound:
 		_play("clang", hit, linear_to_db(clampf(push.length() / 10.0 * sqrt(mass / 15.0), 0.3, 1.0)))
 	return true
@@ -363,12 +387,33 @@ func _find_props(model: String, around: Vector3, test: Callable, first_only: boo
 	return out
 
 
-## Brings back old debris's props once nobody is looking (or the oldest at once past MAX_DEBRIS).
+## Eases off the water of pipes about to be repaired and lifts the vehicles parked over the others.
+func _update_geysers() -> void:
+	for d: Dictionary in debris:
+		var g: Geyser = d["geyser"]
+		if g == null:
+			continue
+		g.set_strength(clampf((REPAIR_AFTER - (_clock - d["time"])) / REPAIR_FADE, 0.0, 1.0))
+		var spot: Vector3 = d["spot"]
+		for b: Array in _boxes:
+			var body: RigidBody3D = b[0]
+			var local: Vector3 = (b[1] as Transform3D).affine_inverse() * spot
+			var half: Vector3 = b[2] / 2.0
+			if not body.freeze and absf(local.x) < half.x and absf(local.z) < half.z and local.y < half.y \
+					and local.y > -half.y - g.height:
+				body.apply_force(Vector3.UP * GEYSER_LIFT * g.height, spot - body.global_position)
+
+
+## Brings back old debris's props once nobody is looking (or the oldest at once past MAX_DEBRIS); broken water pipes
+## are repaired REPAIR_AFTER seconds after the knock, looking or not.
 func _restore_debris() -> void:
 	var cam := get_viewport().get_camera_3d()
 	for d: Dictionary in debris.duplicate():
 		var over := debris.size() > MAX_DEBRIS and d == debris[0]
-		if not over:
+		if d["geyser"] != null:
+			if not over and _clock - d["time"] < REPAIR_AFTER:
+				continue
+		elif not over:
 			if _clock - d["time"] < RESTORE_AFTER:
 				continue
 			if cam and (cam.global_position.distance_to(d["spot"]) < RESTORE_DISTANCE
@@ -388,6 +433,8 @@ func restore(d: Dictionary) -> void:
 		labels.reparent(world_root.get_node("Props/BusStops"), false)
 		labels.transform = d["labels_rest"]
 	(d["body"] as Node).queue_free()
+	if d["geyser"] != null:
+		(d["geyser"] as Node).queue_free()
 	_props.set_solid(d["record"], true)
 	_broken.erase(d["record"])
 	debris.erase(d)
