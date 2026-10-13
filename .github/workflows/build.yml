@@ -60,6 +60,16 @@ jobs:
         working-directory: godot
         run: godot --headless --path . --import
 
+      # The release tag and commit, read by scripts/updater.gd (builds without them never look for updates). After the
+      # import, so that the import cache key (it hashes project.godot) stays the same.
+      - name: Stamp version
+        if: github.event_name == 'push'
+        working-directory: godot
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then tag="$GITHUB_REF_NAME"; else tag="build-${GITHUB_RUN_NUMBER}"; fi
+          sed -i "/^config\/name=/a config/version=\"$tag\"\nconfig/commit=\"$GITHUB_SHA\"" project.godot
+          grep -A2 "^config/name=" project.godot
+
       - name: Export
         working-directory: godot
         run: |
