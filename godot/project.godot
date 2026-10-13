@@ -33,6 +33,8 @@ enabled=PackedStringArray("res://addons/plateau_builder/plugin.cfg")
 3d_physics/layer_6="props"
 3d_physics/layer_7="vehicles"
 3d_physics/layer_8="vehicle_inside"
+3d_physics/layer_9="breakable"
+3d_physics/layer_10="debris"
 
 [physics]
 

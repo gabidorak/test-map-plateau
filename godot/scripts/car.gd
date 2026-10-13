@@ -233,7 +233,8 @@ func _configure_body(b: VehicleBody3D) -> void:
 	b.collision_layer = Layers.VEHICLES
 	# not PLAYER: the player never pushes or stops a car (its own move_and_slide keeps it out), so walking
 	# inside a moving bus does not disturb it
-	b.collision_mask = Layers.SOLID | Layers.BOUNDARY | Layers.VEGETATION | Layers.PROPS | Layers.VEHICLES
+	b.collision_mask = Layers.SOLID | Layers.BOUNDARY | Layers.VEGETATION | Layers.PROPS | Layers.VEHICLES | Layers.DEBRIS
+	b.add_to_group("vehicles")              # thin trees bend and light props break in front of it (breakables.gd)
 
 
 ## Mean z of the wheel centres, car frame.
