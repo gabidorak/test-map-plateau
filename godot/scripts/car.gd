@@ -2,7 +2,8 @@ extends VehicleBody3D
 ## Drivable toy car built at runtime from a downloaded model (assets/cars, see CREDITS.md): the
 ## model's four wheel nodes become VehicleWheel3D, the body gets a box collider. Call setup() before
 ## adding it to the tree. While `driving`: W/S throttle and brake/reverse, A/D steer (physical keys),
-## Q/E turn signals (A/E on AZERTY), R puts the car back on its wheels, the mouse orbits the chase camera.
+## Q/E turn signals (A/E on AZERTY), R puts the car back on its wheels, the mouse orbits the chase camera
+## (it eases back behind the car while moving, in front of it while reversing; hold the right button to keep it).
 ## game.gd handles getting in (E) and out (Space). The models face +Z, which is also VehicleBody3D's
 ## forward; their left side is +X.
 ## Models with a layout file (the bus: assets/cars/bus_idfm.json, written by blender/vehicles/build_bus.py)
@@ -111,6 +112,8 @@ var _zoom_range := Vector2(3.0, 20.0)       # closest (zooming in past it: cab v
 var _follow_yaw := 0.0
 var _look_yaw := 0.0                        # mouse offset around the car, eases back while moving
 var _look_pitch := -0.22
+var _reverse_view := false                  # chase camera in front of the car, looking back while reversing
+var _reverse_t := 0.0                       # time the speed has been past the flip threshold
 var _force_scale := 1.0                     # engine and brakes, from the mass and the model's power
 var _cam_height := 2.2                      # camera pivot above the car origin
 var _blink_t := 0.0
@@ -700,6 +703,8 @@ func set_driving(on: bool) -> void:
 		audio.engine_on = true
 		_follow_yaw = _heading()
 		_look_yaw = 0.0
+		_reverse_view = false
+		_reverse_t = 0.0
 		_update_camera(1.0)
 		set_cab_view(cab_view)
 		_update_steering()
@@ -1027,9 +1032,24 @@ func _process(delta: float) -> void:
 		_update_camera(delta)
 
 
+## Chase camera behind the car, or in front of it looking back while reversing: the flip waits for the speed to stay
+## past REVERSE_VIEW_SPEED for REVERSE_VIEW_DELAY, so it does not flicker around 0 km/h. Holding the right mouse
+## button keeps the view where the mouse puts it (no easing back, no flip).
+const REVERSE_VIEW_SPEED := 1.0             # m/s
+const REVERSE_VIEW_DELAY := 0.6             # s
+
 func _update_camera(delta: float) -> void:
-	_follow_yaw = lerp_angle(_follow_yaw, _heading(), 1.0 - exp(-4.0 * delta))
-	if absf(speed()) > 2.0:
+	var v := speed()
+	var user_look := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	if not user_look and (v < -REVERSE_VIEW_SPEED if not _reverse_view else v > REVERSE_VIEW_SPEED):
+		_reverse_t += delta
+		if _reverse_t >= REVERSE_VIEW_DELAY:
+			_reverse_view = not _reverse_view
+			_reverse_t = 0.0
+	else:
+		_reverse_t = 0.0
+	_follow_yaw = lerp_angle(_follow_yaw, _heading() + (PI if _reverse_view else 0.0), 1.0 - exp(-4.0 * delta))
+	if absf(v) > 2.0 and not user_look:
 		_look_yaw = lerp_angle(_look_yaw, 0.0, 1.0 - exp(-1.5 * delta))
 	_arm.spring_length = lerpf(_arm.spring_length, _cam_zoom, 1.0 - exp(-10.0 * delta))
 	_cam_pivot.global_position = to_global(Vector3(0.0, 0.0, extents_center.z)) + Vector3.UP * _cam_height
