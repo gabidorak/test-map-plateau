@@ -2,7 +2,8 @@ extends Node
 ## Light street objects that vehicles bend or knock over, like in Euro Truck Simulator 2. game.gd adds it to Main.
 ## - Thin trees (trunk up to BEND_TRUNK, BEND_HEIGHT tall at most; TreeCollision's "Bendable" body) bend away from
 ##   a vehicle that drives into them, stay flattened while it is over their foot, then spring back up with a wobble.
-## - Sign poles, bus stop poles, route markers, guideposts, bollards and bin poles (BREAKABLE_PROPS;
+## - Sign poles, bus stop poles, route markers, guideposts, bollards, bin poles, street and path lamps, traffic
+##   lights and the light barriers across ways (lift and swing gates, cycle barriers, chain posts) (BREAKABLE_PROPS;
 ##   PropCollision's "Breakable" body) snap off their foot and fly off as rigid debris on the DEBRIS layer. The
 ##   original comes back RESTORE_AFTER seconds later once the camera is RESTORE_DISTANCE from both it and the debris
 ##   (at once for the oldest when there are more than MAX_DEBRIS).
@@ -23,8 +24,11 @@ const VehicleAudio = preload("res://scripts/vehicle_audio.gd")
 const CHUNK := 96.0                         # m, MultiMesh chunks of the trees and props (the builders' CHUNK)
 
 ## model -> debris mass (kg)
+## (concrete blocks and jersey barriers hold, like the buildings)
 const BREAKABLE_PROPS := {"sign_pole": 15.0, "bus_pole": 25.0, "route_marker": 5.0, "guidepost": 20.0,
-		"assembly_sign": 10.0, "bollard": 20.0, "bin_vigipirate": 12.0}
+		"assembly_sign": 10.0, "bollard": 20.0, "bin_vigipirate": 12.0,
+		"lamp_street": 60.0, "lamp_path": 30.0, "traffic_light_car": 50.0, "traffic_light_ped": 35.0,
+		"lift_gate": 40.0, "swing_gate": 40.0, "cycle_barrier": 20.0, "chain_posts": 15.0}
 const BEND_TRUNK := 0.1                     # m, trunk radius up to which a tree bends (~1,700 of the 15,600)
 const BEND_HEIGHT := 8.0                    # m
 const BEND_SPEED := 0.5                     # m/s, slowest push that bends a tree
@@ -246,10 +250,22 @@ func break_prop(k: int, push: Vector3, sound := true) -> bool:
 	mat.friction = 0.7
 	mat.bounce = 0.2
 	rb.physics_material_override = mat
+	var top := 0.0                              # m above the foot, of the colliders
 	for s: Array in shapes:
 		var cs := CollisionShape3D.new()
 		cs.shape = s[0]
 		cs.transform = foot.affine_inverse() * (s[1] as Transform3D)
+		rb.add_child(cs)
+		top = maxf(top, cs.position.y + _half_height(s[0]))
+	# lamps and traffic lights only collide up to a few metres: lying down, the rest of the pole needs one too
+	var height := _model_height(instances[0])
+	if height > top + 0.3 and shapes[0][0] is CylinderShape3D:
+		var pole := CylinderShape3D.new()
+		pole.radius = (shapes[0][0] as CylinderShape3D).radius
+		pole.height = height
+		var cs := CollisionShape3D.new()
+		cs.shape = pole
+		cs.position = Vector3.UP * height / 2.0
 		rb.add_child(cs)
 	var hidden := []
 	for inst: Array in instances:
@@ -275,7 +291,7 @@ func break_prop(k: int, push: Vector3, sound := true) -> bool:
 	# snapped off its foot: flies on a little faster than the bumper, tipping over away from it
 	var dir := push.normalized()
 	rb.linear_velocity = push * 1.15 + Vector3.UP * (1.0 + 0.08 * push.length())
-	rb.angular_velocity = Vector3.UP.cross(dir) * clampf(push.length() / 1.5, 1.0, 12.0)
+	rb.angular_velocity = Vector3.UP.cross(dir) * clampf(push.length() / maxf(height / 2.0, 0.75), 1.0, 12.0)
 	# the bus stop name and line badges go with the pole
 	var labels := world_root.get_node_or_null("Props/BusStops/" + String(meta["id"]).replace(":", "_")) as Node3D
 	var labels_rest := Transform3D()
@@ -289,6 +305,20 @@ func break_prop(k: int, push: Vector3, sound := true) -> bool:
 	if sound:
 		_play("clang", hit, linear_to_db(clampf(push.length() / 10.0 * sqrt(mass / 15.0), 0.3, 1.0)))
 	return true
+
+
+## Height (m) of the prop drawn by `inst` (from _prop_instances), foot to top.
+static func _model_height(inst: Array) -> float:
+	var mesh: Mesh = (inst[0] as MultiMesh).mesh
+	return mesh.get_aabb().end.y * (inst[2] as Transform3D).basis.y.length() if mesh else 0.0
+
+
+static func _half_height(shape: Shape3D) -> float:
+	if shape is BoxShape3D:
+		return (shape as BoxShape3D).size.y / 2.0
+	if shape is CylinderShape3D:
+		return (shape as CylinderShape3D).height / 2.0
+	return 0.0
 
 
 ## The prop's instances in the chunk MultiMeshes around it: [[MultiMesh, index, global transform, MultiMeshInstance3D]],
