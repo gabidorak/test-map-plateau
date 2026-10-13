@@ -927,7 +927,7 @@ func _update_help() -> void:
 		_help.text = "FLY CAMERA · hold right mouse to look · WASD/ZQSD move · Q/E (A/E on AZERTY) down/up\n" + \
 				"Shift faster · wheel speed · F1 land the player here · F inspect · X close · Esc menu · H hide help"
 	elif driving:
-		_help.text = "DRIVE · WASD/ZQSD: W throttle, S brake then reverse, A/D steer · Q/E (A/E on AZERTY) turn signals · G horn\n" + \
+		_help.text = "DRIVE · WASD/ZQSD: W throttle, S brake then reverse, A/D steer · Q/E (A/E on AZERTY) turn signals · G horn · X (held) drift\n" + \
 				"mouse look · wheel zoom%s · R back on wheels · %sSpace %s\nF inspect · X close · F1 fly camera · Esc menu · H hide help" % [
 				" (all the way in: cab view)" if driving.has_cab() else "", "O doors · B bell · V cab view · " if driving.has_doors else "",
 				"leave the seat" if driving.has_doors else "get out"]

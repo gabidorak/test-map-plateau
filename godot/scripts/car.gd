@@ -2,7 +2,7 @@ extends VehicleBody3D
 ## Drivable toy car built at runtime from a downloaded model (assets/cars, see CREDITS.md): the
 ## model's four wheel nodes become VehicleWheel3D, the body gets a box collider. Call setup() before
 ## adding it to the tree. While `driving`: W/S throttle and brake/reverse, A/D steer (physical keys),
-## Q/E turn signals (A/E on AZERTY), G (held) sounds the horn, B rings a bus's bell, R puts the car back on its wheels, the mouse orbits the chase camera
+## Q/E turn signals (A/E on AZERTY), G (held) sounds the horn, X (held) drifts, B rings a bus's bell, R puts the car back on its wheels, the mouse orbits the chase camera
 ## (it eases back behind the car while moving, in front of it while reversing; hold the right button to keep it).
 ## game.gd handles getting in (E) and out (Space). The models face +Z, which is also VehicleBody3D's
 ## forward; their left side is +X.
@@ -13,7 +13,9 @@ extends VehicleBody3D
 ## opens and closes with O, an interior that carries the player (carries()), a driver seat and a cab view (V, or
 ## the mouse wheel zoomed all the way in, like Roblox). The driver's arms reach to hands on the steering wheel, which
 ## turns with the steering (STEERING_RATIO); the hands follow it up to HAND_TURN, then let it slide.
-## Steering lock is large at low speed and fades with the speed. Engine, indicator and door sounds come
+## Steering lock is large at low speed and fades with the speed. Drifting (X held) is a handbrake: the rear wheels (the
+## non-steering ones, the rear section's too) lose most of their grip and drag a little, so the tail swings out under
+## power; the steering keeps more lock for countersteering, and the grip comes back gradually on release. Engine, indicator and door sounds come
 ## from scripts/vehicle_audio.gd.
 ## Articulated vehicles (the 18 m bus: its layout has a "trailer") are two VehicleBody3D: this one, the front section
 ## that steers, and the rear section (`trailer`, scripts/car_trailer.gd) hinged to it by a joint at the hitch (yaw
@@ -69,6 +71,10 @@ const JOINT_YAW := 0.9                      # rad, articulation limit either way
 const JOINT_PITCH := 0.12                   # rad, the sections fold this much over crests and dips
 const JOINT_DAMP := 3.0                     # torque per rad/s of relative yaw, per kg of rear section (calms the joint)
 const JOINT_REVERSE_SPRING := 100.0         # rolling backwards the joint stiffens: torque per rad, per kg of rear section
+const DRIFT_GRIP := 0.35                    # rear wheel grip while drifting, fraction of `grip`
+const DRIFT_BRAKE := 0.12                   # rear handbrake while drifting, fraction of max_brake
+const DRIFT_STEER := 0.45                   # steering lock kept while drifting, fraction of max_steer
+const DRIFT_RECOVER := 2.0                  # /s, the rear grip coming back once X is released
 const BELLOWS_SEGMENTS := 4                 # wall boxes along the bellows (walkable articulation)
 
 @export var engine_per_wheel := 2800.0      # N on each of the four driven wheels, more when starting
@@ -138,6 +144,8 @@ var _wheel_right := Vector3.LEFT
 var _wheel_up := Vector3.BACK
 var _grip_radius := 0.2
 var _throttle := 0.0
+var _rear_wheels: Array[VehicleWheel3D] = []    # non-steering wheels, the rear section's included (drift)
+var _drift := 0.0                           # 0 full grip .. 1 drifting
 var _net_bell := -1                         # LAN, remote vehicle: bell parity last received (-1: none yet)
 var _total_mass := 1200.0                   # both sections
 var _wheel_count := 4
@@ -307,6 +315,8 @@ func _add_wheels(body: VehicleBody3D, wheels: Array[MeshInstance3D], steer: int,
 		vw.wheel_roll_influence = 0.1
 		vw.use_as_steering = k < steer
 		vw.use_as_traction = k >= traction_from
+		if not vw.use_as_steering:
+			_rear_wheels.append(vw)
 		body.add_child(vw)
 		w.owner = null
 		w.reparent(vw, false)
@@ -913,6 +923,7 @@ func _physics_process(delta: float) -> void:
 		if Input.is_physical_key_pressed(KEY_S): throttle -= 1.0
 		if Input.is_physical_key_pressed(KEY_A): steer_in += 1.0
 		if Input.is_physical_key_pressed(KEY_D): steer_in -= 1.0
+	var drifting := driving and controls and Input.is_physical_key_pressed(KEY_X)
 	audio.horn = driving and controls and Input.is_physical_key_pressed(KEY_G)
 	var v := speed()
 	engine_force = 0.0
@@ -938,6 +949,8 @@ func _physics_process(delta: float) -> void:
 	brake *= _total_mass / 300.0 / _wheel_count     # per wheel: a 4-wheel car's share of its mass / 1200
 	# full lock at walking pace, fading with the speed
 	var steer_max := maxf(max_steer / (1.0 + pow(absf(v) / steer_fade_speed, 1.5)), 0.08)
+	if _drift > 0.0:
+		steer_max = lerpf(steer_max, maxf(steer_max, max_steer * DRIFT_STEER), _drift)
 	var back := steer_in == 0.0 or steer_in * steering < 0.0
 	var rate := steer_speed * (1.5 if absf(v) < 5.0 else 1.0) * (2.0 if back else 1.0)
 	steering = move_toward(steering, steer_in * steer_max, rate * delta)
@@ -951,6 +964,7 @@ func _physics_process(delta: float) -> void:
 		trailer.brake = brake
 		_damp_joint()
 		_update_bellows()
+	_update_drift(drifting, v, delta)
 
 	_update_indicator(delta)
 	var braking := driving and throttle < 0.0
@@ -959,6 +973,18 @@ func _physics_process(delta: float) -> void:
 	_update_steering()
 	_update_doors(delta)
 	audio.update(v, throttle, max_speed, delta)
+
+
+## Handbrake drift: eases the rear wheels' grip down while `drifting` (quickly) and back up after (DRIFT_RECOVER), and
+## drags them a little while moving so the tail breaks loose. Runs after the body brakes are set (they set every wheel's).
+func _update_drift(drifting: bool, v: float, delta: float) -> void:
+	_drift = move_toward(_drift, 1.0 if drifting else 0.0, (8.0 if drifting else DRIFT_RECOVER) * delta)
+	if _rear_wheels.is_empty() or _drift == 0.0 and _rear_wheels[0].wheel_friction_slip == grip:
+		return
+	for w in _rear_wheels:
+		w.wheel_friction_slip = grip * lerpf(1.0, DRIFT_GRIP, _drift)
+		if drifting and absf(v) > 2.0:
+			w.brake = maxf(w.brake, max_brake * DRIFT_BRAKE * _total_mass / 300.0 / _wheel_count)
 
 
 ## Remote vehicle (net.gd poses it, bellows included): lamps, steering wheel, doors and engine sound from its states.

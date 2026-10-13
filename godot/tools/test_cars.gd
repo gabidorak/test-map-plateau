@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless checks for the debug cars (scripts/car.gd): four cars are parked next to the player at
-## start and settle on their wheels; E gets into the nearest one; W drives it forward, A turns it;
+## start and settle on their wheels; E gets into the nearest one; W drives it forward, A turns it, X (with A) drifts;
 ## S stops it; Space gets out next to it, standing on the ground, without jumping. C parks another car; Tab opens
 ## the vehicle menu, whose buttons park the chosen model.
 ## Mouse wheel: zoomed all the way in the player goes first person and back out of it.
@@ -144,6 +144,19 @@ func _run() -> void:
 	_key(KEY_A, false)
 	var turned := absf(angle_difference(yaw0, car.global_rotation.y))
 	_check(turned > 0.3, "A turns the car (%.0f° in 1 s)" % rad_to_deg(turned))
+	_key(KEY_A, true)
+	_key(KEY_X, true)
+	var slide := 0.0
+	for i in 50:
+		await physics_frame
+		slide = maxf(slide, absf(car.linear_velocity.dot(car.global_basis.x)))
+	var drift_grip: float = car._rear_wheels[0].wheel_friction_slip
+	_key(KEY_X, false)
+	_key(KEY_A, false)
+	await _frames(60)
+	_check(drift_grip < car.grip * 0.5 and slide > 1.5 and car._rear_wheels[0].wheel_friction_slip == car.grip,
+			"X drifts: the rear wheels lose grip (%.2f of %.2f), the car slides sideways (%.1f m/s), grip back after" % [
+			drift_grip, car.grip, slide])
 	_key(KEY_W, false)
 	_key(KEY_S, true)
 	await _frames(150)
