@@ -40,4 +40,5 @@ enabled=PackedStringArray("res://addons/plateau_builder/plugin.cfg")
 
 [rendering]
 
+textures/vram_compression/import_etc2_astc=true
 anti_aliasing/quality/msaa_3d=2

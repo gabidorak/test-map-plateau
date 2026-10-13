@@ -1,0 +1,82 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  GODOT_VERSION: 4.7.2
+  GODOT_RELEASE: stable
+
+jobs:
+  export:
+    name: Export (${{ matrix.preset }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - preset: Windows Desktop
+            artifact: plateau-map-windows
+            output: output/windows
+            file: Plateau Map.exe
+          - preset: Linux
+            artifact: plateau-map-linux
+            output: output/linux
+            file: Plateau Map.x86_64
+          - preset: macOS
+            artifact: plateau-map-macos
+            output: output/macos
+            file: Plateau Map.zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot and export templates
+        run: |
+          base="https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}"
+          name="Godot_v${GODOT_VERSION}-${GODOT_RELEASE}"
+          curl -fsSL -o godot.zip "$base/${name}_linux.x86_64.zip"
+          curl -fsSL -o templates.tpz "$base/${name}_export_templates.tpz"
+          unzip -q godot.zip
+          sudo install -m 755 "${name}_linux.x86_64" /usr/local/bin/godot
+          dir="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}"
+          mkdir -p "$dir"
+          unzip -q templates.tpz -d templates
+          mv templates/templates/* "$dir/"
+          rm -rf godot.zip templates.tpz templates
+
+      - name: Cache import data
+        uses: actions/cache@v4
+        with:
+          path: godot/.godot
+          key: godot-import-${{ env.GODOT_VERSION }}-${{ hashFiles('godot/assets/**', 'godot/project.godot') }}
+          restore-keys: godot-import-${{ env.GODOT_VERSION }}-
+
+      # The import cache is not in the repository, models and textures must be imported first.
+      - name: Import project
+        working-directory: godot
+        run: godot --headless --path . --import
+
+      - name: Export
+        working-directory: godot
+        run: |
+          mkdir -p "${{ matrix.output }}"
+          godot --headless --path . --export-release "${{ matrix.preset }}" "${{ matrix.output }}/${{ matrix.file }}"
+
+      # upload-artifact drops the executable bit, so the Linux build is tarred.
+      - name: Package Linux build
+        if: matrix.preset == 'Linux'
+        working-directory: godot/output/linux
+        run: |
+          tar czf ../plateau-map-linux.tar.gz "${{ matrix.file }}"
+          rm "${{ matrix.file }}"
+          mv ../plateau-map-linux.tar.gz .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: godot/${{ matrix.output }}
+          if-no-files-found: error
