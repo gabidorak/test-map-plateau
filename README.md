@@ -14,6 +14,19 @@ godot --path .                       # play
 
 Opening `godot/project.godot` in the editor and pressing F5 works too.
 
+The game opens on a welcome menu over a flight around the campus: pick a nickname and a colour, then
+- **Explore solo**: the map on your own, as before.
+- **Host a game on LAN**: starts a server on this computer (UDP port 7777, or the next free one) and joins it; its address
+  (`IP:port`) shows at the top right of the host's screen. The game is announced on the local network.
+- **Join a game**: lists the games announced on the network (click one), or type the host's address and port.
+
+In a LAN game everyone sees the other players (with their nickname and colour) and the vehicles they park and drive,
+and can walk in a bus someone else drives; vehicles stop against the other players. Trees bent and poles knocked down
+by one player bend and fall for all, also for those joining later. Esc
+opens the in-game menu (resume, back to the main menu, quit; it lists the players). The host's firewall must let UDP
+7777 in (Windows asks the first time); LAN discovery uses UDP broadcasts on port 7775. Command line options skip the
+menu: `godot --path . -- --host` / `-- --join=192.168.1.42[:7777]` / `-- --solo`, plus `--name=NICK --color=0..7`.
+
 ## What is in this repository
 
 The game (`godot/`), the generated map it loads (`godot/world/` and `godot/scenes/generated/`) and the Blender
@@ -39,6 +52,7 @@ godot --headless --path . --script res://tools/check_world.gd   # no satellite i
 godot --headless --fixed-fps 60 --path . --script res://tools/test_play.gd  # picker, walking, walls, boundary, kerbs
 godot --headless --fixed-fps 60 --path . --script res://tools/test_cars.gd  # debug cars: park, get in, drive, get out; bus doors, signals, walking inside while it moves; articulated bus turning, reversing, walking through the joint
 godot --headless --fixed-fps 60 --path . --script res://tools/test_breakables.gd  # a car bends a thin tree and knocks over a sign pole, both come back
+tools/test_lan.sh   # LAN game: a host and a client on this machine; riding in the host's bus, taking over a car, breakables, leaving
 godot --path . --script res://tools/screenshots_all.gd -- --milestone=M2  # viewpoints -> data/review/shots/M2/
 godot --path . --script res://tools/screenshot.gd -- --pos=-90,-130,70 --look=0,0,0 --out=/tmp/shot.png
 godot --path . --script res://tools/ground_swatches.gd            # every ground material -> data/review/<area>/ground_swatches.png
@@ -49,8 +63,8 @@ VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/intel_icd.json godot --path . --display
 ## Controls
 
 Keys are physical positions, so ZQSD on AZERTY:
-- Walk: click to capture the mouse, Esc to free it. WASD to move, Shift to run, Space to jump. The mouse wheel zooms the camera; zooming all the way in goes first person and zooming out comes back (like Roblox), V also switches first/third person. The body fades out when the camera comes close to it.
-- Debug cars: 4 cars are parked next to the spawn point (on road or asphalt when there is some within ~20 m). C parks another one next to the player. E gets into the nearest car (within 3 m). Drive with W (throttle), S (brake, then reverse), A/D (steer; full lock at walking pace, fading with speed), Q/E turn signals (A/E on AZERTY; they cancel themselves after the turn), and the mouse to look around; the mouse wheel zooms the chase camera. R puts the car back on its wheels, Space gets out. Engine (toy automatic gearbox), indicator, door and air-brake sounds are synthesized at runtime by `scripts/vehicle_audio.gd` (no audio files).
+- Walk: click to capture the mouse, Esc opens the menu (and frees it). WASD to move, Shift to run, Space to jump. The mouse wheel zooms the camera; zooming all the way in goes first person and zooming out comes back (like Roblox), V also switches first/third person. The body fades out when the camera comes close to it.
+- Debug cars: 4 cars are parked next to the spawn point (on road or asphalt when there is some within ~20 m). C parks another one next to the player; Tab opens the vehicle menu, which parks any model you pick (click, or arrows + Enter; Tab or Esc closes it). E gets into the nearest car (within 3 m). Drive with W (throttle), S (brake, then reverse), A/D (steer; full lock at walking pace, fading with speed), Q/E turn signals (A/E on AZERTY; they cancel themselves after the turn), and the mouse to look around; the mouse wheel zooms the chase camera. R puts the car back on its wheels, Space gets out. Engine (toy automatic gearbox), indicator, door and air-brake sounds are synthesized at runtime by `scripts/vehicle_audio.gd` (no audio files).
 - The bus is walkable: O (driver) opens and closes its three sliding doors, V (or the mouse wheel zoomed all the way in) switches to the cab view, where the driver's arms hold the steering wheel and it turns with the steering. First person and the cab view carry over when taking and leaving the driver seat. Space leaves the driver seat into the aisle (the bus rolls on and sets its handbrake once slow). The player standing in it is carried along, also while it moves, and steps up onto its 36 cm floor through an open door; E near the driver seat takes the wheel again. Interior, doors, lamps and steering wheel come from `build_bus.py`, which also writes `godot/assets/cars/bus_idfm.json` (collision boxes, doors, interior, driver seat) for `scripts/car.gd`. Models: an Île-de-France Mobilités bus (Iveco Urbanway, built by `blender/vehicles/build_bus.py`, livery after `ref/`), KayKit hatchback by Kay Lousberg + Kenney Car Kit (both CC0, see `godot/assets/cars/CREDITS.md`), built into a `VehicleBody3D` by `scripts/car.gd` (per-model specs and handling exports at the top). Set `debug_cars` on Main to false to start without cars.
 - The articulated bus (18 m Iveco Urbanway, same livery, parked at start next to the 12 m one) drives the same way and is walkable from end to end: two `VehicleBody3D` sections (`scripts/car.gd` + `scripts/car_trailer.gd`) hinged under a turntable by a joint (±52°, damped; it stiffens in reverse so backing up straight does not fold it), with a bellows rebuilt as the joint bends. O opens its four doors. Walking through the bellows hands the player over from one section to the other. `build_bus.py --model=artic` describes it as two sections and writes the rear section's objects, colliders and doors, the hitch and the bellows profile into `bus_idfm_artic.json`.
 - Like in Euro Truck Simulator 2, vehicles bend thin trees (trunk up to 10 cm, up to 8 m tall: ~1,500 of them) and knock over sign poles, bus stop poles, route markers, guideposts, bollards and bin poles (`scripts/breakables.gd`). A tree bends away from the bumper, stays flat while the vehicle is over it and springs back up behind it; a pole snaps off and flies on as debris, and comes back 20 s later once the camera is 60 m away. Faster than 7 km/h for props (0.5 m/s for trees); slower they hold like any other obstacle. The vehicle loses the momentum it gives them, and they make a sound (a metal clang, a swish of leaves).

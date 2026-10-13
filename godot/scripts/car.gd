@@ -22,6 +22,8 @@ extends VehicleBody3D
 ## bellows mesh is rebuilt from the layout's profile whenever the joint bends, and boxes along it keep the player
 ## walking through it inside (over the turntable floor disc); each section carries the player standing in it
 ## (carrier_at). Move the vehicle with place(), which puts the rear section straight behind.
+## LAN games (scripts/net.gd): a vehicle another peer simulates is `remote`, its bodies frozen kinematic and posed from
+## that peer's states (apply_net_state); the wheels still turn and steer, and lamps, doors and sound follow the states.
 
 const Layers = preload("res://scripts/physics_layers.gd")
 const VehicleAudio = preload("res://scripts/vehicle_audio.gd")
@@ -31,23 +33,25 @@ const KENNEY_WHEELS := ["wheel-front-left", "wheel-front-right", "wheel-back-lef
 ## left, back right), credit, mass (kg; engine, brakes and suspension scale with it), power (engine
 ## factor), max_speed (m/s), max_steer (rad at walking pace), layout (json next to the model), sound
 ## (vehicle_audio kind), traction_from (index of the first driven wheel; all drive by default), trailer_mass (kg,
-## rear section of an articulated vehicle). Missing keys take the Kenney Car Kit values (scale 1.5: ~2.8 m -> ~4.2 m).
+## rear section of an articulated vehicle), label (name in the vehicle menu, see display_name). Missing keys take the
+## Kenney Car Kit values (scale 1.5: ~2.8 m -> ~4.2 m).
 const SPECS := {
-	"bus-idfm": {"file": "bus_idfm.glb", "scale": 1.0,
+	"bus-idfm": {"label": "IDFM bus (12 m)", "file": "bus_idfm.glb", "scale": 1.0,
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
 			"mass": 12000.0, "power": 0.6, "max_speed": 38.0, "max_steer": 0.8, "layout": "bus_idfm.json",
 			"sound": "bus", "credit": "Iveco Urbanway, IDFM livery, built by blender/vehicles/build_bus.py"},
-	"bus-idfm-artic": {"file": "bus_idfm_artic.glb", "scale": 1.0,
+	"bus-idfm-artic": {"label": "Articulated bus (18 m)", "file": "bus_idfm_artic.glb", "scale": 1.0,
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_middle_left", "wheel_middle_right"],
 			"traction_from": 2, "mass": 10000.0, "trailer_mass": 7000.0, "power": 0.6, "max_speed": 36.0,
 			"max_steer": 0.8, "layout": "bus_idfm_artic.json", "sound": "bus",
 			"credit": "Iveco Urbanway 18 m articulated, IDFM livery, built by blender/vehicles/build_bus.py"},
-	"kaykit-hatchback": {"file": "kaykit_hatchback.glb", "scale": 5.0, "body": "car_hatchback",
+	"kaykit-hatchback": {"label": "Hatchback", "file": "kaykit_hatchback.glb", "scale": 5.0, "body": "car_hatchback",
 			"wheels": ["car_hatchback_wheel_front_left", "car_hatchback_wheel_front_right",
 				"car_hatchback_wheel_rear_left", "car_hatchback_wheel_rear_right"],
 			"credit": "Kay Lousberg (KayKit), CC0"},
-	"sedan": {}, "taxi": {}, "suv": {}, "police": {}, "hatchback-sports": {}, "van": {}, "sedan-sports": {},
-	"suv-luxury": {}, "delivery": {}, "ambulance": {},
+	"sedan": {}, "taxi": {}, "suv": {"label": "SUV"}, "police": {}, "hatchback-sports": {"label": "Sports hatchback"},
+	"van": {}, "sedan-sports": {"label": "Sports sedan"}, "suv-luxury": {"label": "Luxury SUV"}, "delivery": {"label": "Delivery van"},
+	"ambulance": {},
 }
 const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "taxi", "suv", "police", "hatchback-sports", "van",
 		"sedan-sports", "suv-luxury", "delivery", "ambulance"]
@@ -95,6 +99,9 @@ var cab_view := false                       # driver's eye view instead of the c
 var trailer: Trailer                        # rear section of an articulated vehicle, or null
 var rear_offset := Vector3.ZERO             # the rear section's origin in the car frame while straight
 var extents_center := Vector3.ZERO          # centre of the half_extents box in the car frame (x, z)
+var net_id := ""                            # LAN games: the vehicle's id on every peer
+var remote := false                         # LAN games: simulated by another peer (set_remote)
+var controls := true                        # false while a menu is open: the driver's keys do nothing
 
 var _cam_pivot: Node3D
 var _arm: SpringArm3D
@@ -137,6 +144,13 @@ var _bellows_mesh: ArrayMesh
 var _bellows_arrays := []                   # mesh arrays; vertices and normals rewritten when the joint bends
 var _bellows_rel := Transform3D()           # rear section in the car frame when the bellows was last built
 var _joint_walls: Array[CollisionShape3D] = []    # per segment: left wall, right wall, roof
+var _skin: StandardMaterial3D               # the driver look-alike's colour
+var _remote_braking := false
+
+
+## Name of `model` for menus: its spec's label, else the model name capitalized ("sedan" -> "Sedan").
+static func display_name(model: String) -> String:
+	return SPECS[model].get("label", model.replace("-", " ").capitalize())
 
 
 func setup(model: String) -> void:
@@ -232,8 +246,10 @@ func _configure_body(b: VehicleBody3D) -> void:
 	b.physics_material_override = mat
 	b.collision_layer = Layers.VEHICLES
 	# not PLAYER: the player never pushes or stops a car (its own move_and_slide keeps it out), so walking
-	# inside a moving bus does not disturb it
-	b.collision_mask = Layers.SOLID | Layers.BOUNDARY | Layers.VEGETATION | Layers.PROPS | Layers.VEHICLES | Layers.DEBRIS
+	# inside a moving bus does not disturb it. The other players of a LAN game stop it (remote_player.gd: their
+	# own move_and_slide is on another computer), except in or at the open doors of a bus.
+	b.collision_mask = Layers.SOLID | Layers.BOUNDARY | Layers.VEGETATION | Layers.PROPS | Layers.VEHICLES | Layers.DEBRIS \
+			| Layers.REMOTE_PLAYER
 	b.add_to_group("vehicles")              # thin trees bend and light props break in front of it (breakables.gd)
 
 
@@ -535,6 +551,7 @@ func _build_driver() -> void:
 	var skin := StandardMaterial3D.new()
 	skin.albedo_color = Color(1, 0.55, 0.2)
 	skin.roughness = 0.6
+	_skin = skin
 	var capsule := CapsuleMesh.new()
 	capsule.radius = 0.3
 	capsule.height = 1.25
@@ -689,6 +706,57 @@ func set_driving(on: bool) -> void:
 		set_indicator(0)
 
 
+## LAN games: someone on another peer drives (on) or nobody does: shows the driver look-alike in `color`.
+func show_driver(on: bool, color := Color(1, 0.55, 0.2)) -> void:
+	set_driver_color(color)
+	if _driver_dummy:
+		_driver_dummy.visible = on or driving
+
+
+func set_driver_color(color: Color) -> void:
+	if _skin:
+		_skin.albedo_color = color
+
+
+## LAN games: simulated by another peer (true: the bodies turn kinematic and follow apply_net_state) or here (false:
+## dynamic again, keeping the speed they were last moved at).
+func set_remote(on: bool) -> void:
+	if on == remote:
+		return
+	remote = on
+	for b in bodies():
+		var lv := b.linear_velocity
+		var av := b.angular_velocity
+		b.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		b.freeze = on
+		b.sleeping = false
+		if not on:
+			b.linear_velocity = lv
+			b.angular_velocity = av
+
+
+## LAN games: this vehicle's state for the other peers: [pose, rear section pose, steering, pedal, flags (1 doors
+## open, 2 someone drives, 4 braking), indicator].
+func net_state() -> Array:
+	var flags := (1 if doors_open else 0) | (2 if driving else 0) | (4 if driving and _throttle < 0.0 else 0)
+	return [global_transform, trailer.global_transform if trailer else Transform3D(), steering, _throttle, flags, indicator]
+
+
+## LAN games, remote vehicle: the pose between states `a` and `b` (net_state()) at weight `w`, the switches of `b`.
+func apply_net_state(a: Array, b: Array, w: float) -> void:
+	global_transform = (a[0] as Transform3D).interpolate_with(b[0], w)
+	if trailer:
+		trailer.global_transform = (a[1] as Transform3D).interpolate_with(b[1], w)
+	steering = lerpf(a[2], b[2], w)
+	_throttle = b[3]
+	var flags: int = b[4]
+	_remote_braking = flags & 4 != 0
+	set_doors(flags & 1 != 0)
+	if b[5] != indicator:
+		set_indicator(b[5])
+	audio.engine_on = flags & 2 != 0 or has_doors
+
+
 ## Driver's eye view (true) or chase camera; only vehicles with a layout have a cab.
 func set_cab_view(on: bool) -> void:
 	cab_view = on and _cab_camera != null
@@ -762,7 +830,7 @@ func _heading() -> float:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not driving:
+	if not driving or not controls:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_look_yaw -= event.relative.x * sensitivity
@@ -794,9 +862,12 @@ func _put_back_on_wheels() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if remote:
+		_remote_process(delta)
+		return
 	var throttle := 0.0
 	var steer_in := 0.0
-	if driving:
+	if driving and controls:
 		if Input.is_physical_key_pressed(KEY_W): throttle += 1.0
 		if Input.is_physical_key_pressed(KEY_S): throttle -= 1.0
 		if Input.is_physical_key_pressed(KEY_A): steer_in += 1.0
@@ -848,6 +919,18 @@ func _physics_process(delta: float) -> void:
 	audio.update(v, throttle, max_speed, delta)
 
 
+## Remote vehicle (net.gd poses it): bellows, lamps, steering wheel, doors and engine sound from its states.
+func _remote_process(delta: float) -> void:
+	if trailer:
+		_update_bellows()
+	_update_indicator(delta)
+	for lamp in _brake_lamps:
+		lamp.material_override = _lamp_mats["brake"][1 if _remote_braking else 0]
+	_update_steering()
+	_update_doors(delta)
+	audio.update(speed(), _throttle, max_speed, delta)
+
+
 ## Damps the articulation (relative yaw rate) lightly, as the hydraulic joint dampers of real articulated buses do;
 ## more would fight every turn-in. Rolling backwards it also pulls the joint straight (real joints stiffen in
 ## reverse): the front section's axles fix the hitch's path, so the rear section ahead of it would fold like a
@@ -868,7 +951,7 @@ func _update_steering() -> void:
 		return
 	var turn := steering * STEERING_RATIO
 	_steering_wheel.transform = _steering_rest * Transform3D(Basis(Vector3.UP, turn), Vector3.ZERO)
-	if not driving or _hands.is_empty():
+	if not _driver_dummy.visible or _hands.is_empty():
 		return
 	var grip := Basis(_wheel_axis, clampf(turn, -HAND_TURN, HAND_TURN))
 	for k in 2:
@@ -885,8 +968,10 @@ func _update_steering() -> void:
 func _update_indicator(delta: float) -> void:
 	if indicator == 0:
 		return
-	# self-cancel once the wheel has turned the signalled way and come back
-	if steering * indicator > 0.25:
+	# self-cancel once the wheel has turned the signalled way and come back (the driver's peer does it for remote ones)
+	if remote:
+		pass
+	elif steering * indicator > 0.25:
 		_signal_armed = true
 	elif _signal_armed and steering * indicator < 0.04:
 		set_indicator(0)
