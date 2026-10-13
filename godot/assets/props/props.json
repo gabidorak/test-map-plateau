@@ -1,0 +1,3811 @@
+{
+ "about": "Street furniture models built by blender/props/build_props.py. Blender model space: metres, z up, origin on the ground, front -Y (Godot +Z after import). Colliders: box = centre + size, cyl = base centre + radius + height. Faces: road sign faces, origin at the shape centre, back at y = +0.012.",
+ "models": {
+  "bench_back": {
+   "size": [
+    1.8,
+    0.655,
+    0.871
+   ],
+   "min": [
+    -0.9,
+    -0.28,
+    -0.022
+   ],
+   "max": [
+    0.9,
+    0.375,
+    0.849
+   ],
+   "triangles": 1404,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.24,
+      1.8,
+      0.5,
+      0.48
+     ]
+    },
+    {
+     "box": [
+      0,
+      0.22,
+      0.705,
+      1.8,
+      0.12,
+      0.45
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "furniture.glb"
+  },
+  "bench_flat": {
+   "size": [
+    1.8,
+    0.435,
+    0.453
+   ],
+   "min": [
+    -0.9,
+    -0.218,
+    0.0
+   ],
+   "max": [
+    0.9,
+    0.218,
+    0.453
+   ],
+   "triangles": 916,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.23,
+      1.8,
+      0.45,
+      0.46
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "furniture.glb"
+  },
+  "picnic_table": {
+   "size": [
+    1.8,
+    1.75,
+    0.792
+   ],
+   "min": [
+    -0.9,
+    -0.875,
+    -0.029
+   ],
+   "max": [
+    0.9,
+    0.875,
+    0.762
+   ],
+   "triangles": 1512,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.39,
+      1.8,
+      1.8,
+      0.78
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "furniture.glb"
+  },
+  "lamp_street": {
+   "size": [
+    0.32,
+    1.52,
+    6.824
+   ],
+   "min": [
+    -0.16,
+    -1.39,
+    0.0
+   ],
+   "max": [
+    0.16,
+    0.13,
+    6.824
+   ],
+   "triangles": 596,
+   "materials": [
+    "glow",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.11,
+      3.0
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 400.0,
+   "glb": "furniture.glb"
+  },
+  "lamp_path": {
+   "size": [
+    0.42,
+    0.42,
+    3.86
+   ],
+   "min": [
+    -0.21,
+    -0.21,
+    0.0
+   ],
+   "max": [
+    0.21,
+    0.21,
+    3.86
+   ],
+   "triangles": 892,
+   "materials": [
+    "glow",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.08,
+      3.0
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 300.0,
+   "glb": "furniture.glb"
+  },
+  "bus_shelter": {
+   "size": [
+    4.3,
+    1.725,
+    2.56
+   ],
+   "min": [
+    -2.15,
+    -0.825,
+    0.0
+   ],
+   "max": [
+    2.15,
+    0.9,
+    2.56
+   ],
+   "triangles": 1636,
+   "materials": [
+    "glass",
+    "glow",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0.65,
+      1.2,
+      4.0,
+      0.12,
+      2.4
+     ]
+    },
+    {
+     "box": [
+      1.95,
+      0.1,
+      1.2,
+      0.12,
+      1.2,
+      2.4
+     ]
+    },
+    {
+     "box": [
+      -1.95,
+      0.05,
+      1.05,
+      0.2,
+      1.2,
+      2.1
+     ]
+    },
+    {
+     "box": [
+      0.15,
+      0.4,
+      0.24,
+      1.7,
+      0.4,
+      0.48
+     ]
+    }
+   ],
+   "anchors": {
+    "fascia": {
+     "x": 0.0,
+     "y": -0.83,
+     "z": 2.44,
+     "w": 4.0,
+     "h": 0.2
+    },
+    "timetable": {
+     "x": 1.0,
+     "y": 0.59,
+     "z": 1.55,
+     "w": 0.6,
+     "h": 0.5
+    }
+   },
+   "wall": false,
+   "range": 400.0,
+   "shelter_size": [
+    4.0,
+    1.5
+   ],
+   "glb": "furniture.glb"
+  },
+  "bus_pole": {
+   "size": [
+    0.625,
+    0.16,
+    3.08
+   ],
+   "min": [
+    -0.08,
+    -0.08,
+    0.0
+   ],
+   "max": [
+    0.545,
+    0.08,
+    3.08
+   ],
+   "triangles": 852,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.06,
+      3.0
+     ]
+    }
+   ],
+   "anchors": {
+    "flag": {
+     "x": 0.29,
+     "z0": 2.05,
+     "w": 0.5,
+     "h": 0.82,
+     "band": 0.17,
+     "t": 0.022
+    }
+   },
+   "wall": false,
+   "range": 250.0,
+   "glb": "furniture.glb"
+  },
+  "bike_rack": {
+   "size": [
+    0.06,
+    0.819,
+    0.879
+   ],
+   "min": [
+    -0.03,
+    -0.41,
+    -0.05
+   ],
+   "max": [
+    0.03,
+    0.409,
+    0.829
+   ],
+   "triangles": 316,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.4,
+      0.08,
+      0.8,
+      0.8
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "furniture.glb"
+  },
+  "bike_loops": {
+   "size": [
+    0.08,
+    0.338,
+    0.48
+   ],
+   "min": [
+    -0.04,
+    -0.338,
+    0.31
+   ],
+   "max": [
+    0.04,
+    0.0,
+    0.79
+   ],
+   "triangles": 404,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      -0.17,
+      0.555,
+      0.06,
+      0.35,
+      0.45
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": true,
+   "range": 150.0,
+   "glb": "furniture.glb"
+  },
+  "bike_shelter": {
+   "size": [
+    4.2,
+    2.121,
+    2.599
+   ],
+   "min": [
+    -2.1,
+    -1.26,
+    -0.05
+   ],
+   "max": [
+    2.1,
+    0.86,
+    2.549
+   ],
+   "triangles": 1604,
+   "materials": [
+    "glass",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      -1.9,
+      0.8,
+      1.1,
+      0.12,
+      0.12,
+      2.2
+     ]
+    },
+    {
+     "box": [
+      1.9,
+      0.8,
+      1.1,
+      0.12,
+      0.12,
+      2.2
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 250.0,
+   "glb": "furniture.glb"
+  },
+  "bollard": {
+   "size": [
+    0.172,
+    0.176,
+    0.784
+   ],
+   "min": [
+    -0.086,
+    -0.088,
+    -0.02
+   ],
+   "max": [
+    0.086,
+    0.088,
+    0.764
+   ],
+   "triangles": 384,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.1,
+      0.8
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 120.0,
+   "glb": "furniture.glb"
+  },
+  "concrete_block": {
+   "size": [
+    1.0,
+    0.6,
+    0.6
+   ],
+   "min": [
+    -0.5,
+    -0.3,
+    0.0
+   ],
+   "max": [
+    0.5,
+    0.3,
+    0.6
+   ],
+   "triangles": 188,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.3,
+      1.0,
+      0.6,
+      0.6
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "furniture.glb"
+  },
+  "jersey_barrier": {
+   "size": [
+    2.0,
+    0.6,
+    0.8
+   ],
+   "min": [
+    -1.0,
+    -0.3,
+    0.0
+   ],
+   "max": [
+    1.0,
+    0.3,
+    0.8
+   ],
+   "triangles": 308,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.4,
+      2.0,
+      0.6,
+      0.8
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "furniture.glb"
+  },
+  "shelter_canopy": {
+   "size": [
+    4.3,
+    3.3,
+    2.64
+   ],
+   "min": [
+    -2.15,
+    -1.65,
+    0.0
+   ],
+   "max": [
+    2.15,
+    1.65,
+    2.64
+   ],
+   "triangles": 836,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      -1.85,
+      -1.35,
+      1.25,
+      0.16,
+      0.16,
+      2.5
+     ]
+    },
+    {
+     "box": [
+      -1.85,
+      1.35,
+      1.25,
+      0.16,
+      0.16,
+      2.5
+     ]
+    },
+    {
+     "box": [
+      1.85,
+      -1.35,
+      1.25,
+      0.16,
+      0.16,
+      2.5
+     ]
+    },
+    {
+     "box": [
+      1.85,
+      1.35,
+      1.25,
+      0.16,
+      0.16,
+      2.5
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 300.0,
+   "glb": "furniture.glb"
+  },
+  "fitness_bars": {
+   "size": [
+    3.497,
+    0.097,
+    2.3
+   ],
+   "min": [
+    -1.748,
+    -0.048,
+    0.0
+   ],
+   "max": [
+    1.748,
+    0.048,
+    2.3
+   ],
+   "triangles": 1564,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      -1.7,
+      0,
+      0,
+      0.07,
+      1.2
+     ]
+    },
+    {
+     "cyl": [
+      -0.7,
+      0,
+      0,
+      0.07,
+      1.2
+     ]
+    },
+    {
+     "cyl": [
+      -0.5,
+      0,
+      0,
+      0.07,
+      1.8
+     ]
+    },
+    {
+     "cyl": [
+      0.5,
+      0,
+      0,
+      0.07,
+      1.8
+     ]
+    },
+    {
+     "cyl": [
+      0.7,
+      0,
+      0,
+      0.07,
+      2.3
+     ]
+    },
+    {
+     "cyl": [
+      1.7,
+      0,
+      0,
+      0.07,
+      2.3
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "furniture.glb"
+  },
+  "artwork": {
+   "size": [
+    1.257,
+    1.2,
+    2.57
+   ],
+   "min": [
+    -0.628,
+    -0.6,
+    0.0
+   ],
+   "max": [
+    0.629,
+    0.6,
+    2.57
+   ],
+   "triangles": 1148,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.75,
+      1.2,
+      1.2,
+      1.5
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 300.0,
+   "glb": "furniture.glb"
+  },
+  "fountain": {
+   "size": [
+    2.5,
+    2.5,
+    1.47
+   ],
+   "min": [
+    -1.25,
+    -1.25,
+    0.0
+   ],
+   "max": [
+    1.25,
+    1.25,
+    1.47
+   ],
+   "triangles": 1384,
+   "materials": [
+    "glass",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      1.25,
+      0.5
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 300.0,
+   "glb": "furniture.glb"
+  },
+  "drinking_fountain": {
+   "size": [
+    0.4,
+    0.4,
+    1.132
+   ],
+   "min": [
+    -0.2,
+    -0.25,
+    0.0
+   ],
+   "max": [
+    0.2,
+    0.15,
+    1.132
+   ],
+   "triangles": 468,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.5,
+      0.32,
+      0.32,
+      1.0
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "furniture.glb"
+  },
+  "water_tap": {
+   "size": [
+    0.14,
+    0.238,
+    0.94
+   ],
+   "min": [
+    -0.07,
+    -0.168,
+    0.0
+   ],
+   "max": [
+    0.07,
+    0.07,
+    0.94
+   ],
+   "triangles": 340,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.1,
+      0.9
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 100.0,
+   "glb": "furniture.glb"
+  },
+  "bin_vigipirate": {
+   "size": [
+    0.435,
+    0.504,
+    1.05
+   ],
+   "min": [
+    -0.217,
+    -0.234,
+    0.0
+   ],
+   "max": [
+    0.218,
+    0.27,
+    1.05
+   ],
+   "triangles": 1160,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.22,
+      1.0
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 120.0,
+   "glb": "bins.glb"
+  },
+  "waste_container": {
+   "size": [
+    1.36,
+    1.098,
+    1.254
+   ],
+   "min": [
+    -0.68,
+    -0.55,
+    0.0
+   ],
+   "max": [
+    0.68,
+    0.548,
+    1.254
+   ],
+   "triangles": 1476,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.6,
+      1.35,
+      1.0,
+      1.2
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "bins.glb"
+  },
+  "bin_underground": {
+   "size": [
+    1.5,
+    1.5,
+    1.27
+   ],
+   "min": [
+    -0.75,
+    -0.75,
+    -0.01
+   ],
+   "max": [
+    0.75,
+    0.75,
+    1.26
+   ],
+   "triangles": 640,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.625,
+      0.65,
+      0.65,
+      1.25
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "bins.glb"
+  },
+  "recycling_column": {
+   "size": [
+    1.3,
+    1.27,
+    1.905
+   ],
+   "min": [
+    -0.65,
+    -0.65,
+    0.0
+   ],
+   "max": [
+    0.65,
+    0.62,
+    1.905
+   ],
+   "triangles": 2492,
+   "materials": [
+    "tint",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.65,
+      1.7
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 200.0,
+   "glb": "bins.glb"
+  },
+  "recycling_underground": {
+   "size": [
+    1.5,
+    1.5,
+    1.258
+   ],
+   "min": [
+    -0.75,
+    -0.75,
+    -0.01
+   ],
+   "max": [
+    0.75,
+    0.75,
+    1.248
+   ],
+   "triangles": 972,
+   "materials": [
+    "tint",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.34,
+      1.25
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "bins.glb"
+  },
+  "parcel_locker": {
+   "size": [
+    2.0,
+    0.585,
+    1.95
+   ],
+   "min": [
+    -1.0,
+    -0.59,
+    0.0
+   ],
+   "max": [
+    1.0,
+    -0.005,
+    1.95
+   ],
+   "triangles": 2172,
+   "materials": [
+    "glow",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      -0.28,
+      0.975,
+      2.0,
+      0.56,
+      1.95
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": true,
+   "range": 150.0,
+   "glb": "bins.glb"
+  },
+  "vending_machine": {
+   "size": [
+    0.95,
+    0.83,
+    1.85
+   ],
+   "min": [
+    -0.475,
+    -0.83,
+    0.0
+   ],
+   "max": [
+    0.475,
+    0.0,
+    1.85
+   ],
+   "triangles": 348,
+   "materials": [
+    "glass",
+    "glow",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      -0.4,
+      0.925,
+      0.95,
+      0.8,
+      1.85
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": true,
+   "range": 150.0,
+   "glb": "bins.glb"
+  },
+  "parking_meter": {
+   "size": [
+    0.48,
+    0.36,
+    1.59
+   ],
+   "min": [
+    -0.24,
+    -0.33,
+    0.0
+   ],
+   "max": [
+    0.24,
+    0.03,
+    1.59
+   ],
+   "triangles": 524,
+   "materials": [
+    "glow",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      -0.15,
+      0.8,
+      0.42,
+      0.3,
+      1.6
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": true,
+   "range": 150.0,
+   "glb": "bins.glb"
+  },
+  "post_box": {
+   "size": [
+    0.42,
+    0.335,
+    1.383
+   ],
+   "min": [
+    -0.21,
+    -0.175,
+    0.0
+   ],
+   "max": [
+    0.21,
+    0.16,
+    1.383
+   ],
+   "triangles": 568,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.7,
+      0.42,
+      0.32,
+      1.4
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "bins.glb"
+  },
+  "grit_bin": {
+   "size": [
+    0.9,
+    0.656,
+    0.741
+   ],
+   "min": [
+    -0.45,
+    -0.323,
+    0.0
+   ],
+   "max": [
+    0.45,
+    0.334,
+    0.741
+   ],
+   "triangles": 308,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.36,
+      0.9,
+      0.65,
+      0.72
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "bins.glb"
+  },
+  "traffic_light_car": {
+   "size": [
+    0.46,
+    0.49,
+    3.22
+   ],
+   "min": [
+    -0.23,
+    -0.39,
+    0.0
+   ],
+   "max": [
+    0.23,
+    0.1,
+    3.22
+   ],
+   "triangles": 1320,
+   "materials": [
+    "signal_car",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.08,
+      3.1
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 300.0,
+   "glb": "equipment.glb"
+  },
+  "traffic_light_ped": {
+   "size": [
+    0.28,
+    0.39,
+    2.85
+   ],
+   "min": [
+    -0.14,
+    -0.3,
+    0.0
+   ],
+   "max": [
+    0.14,
+    0.09,
+    2.85
+   ],
+   "triangles": 1092,
+   "materials": [
+    "signal_ped",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.07,
+      2.8
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 250.0,
+   "glb": "equipment.glb"
+  },
+  "fire_hydrant": {
+   "size": [
+    0.36,
+    0.36,
+    0.92
+   ],
+   "min": [
+    -0.18,
+    -0.2,
+    -0.02
+   ],
+   "max": [
+    0.18,
+    0.16,
+    0.9
+   ],
+   "triangles": 2080,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.15,
+      0.9
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "equipment.glb"
+  },
+  "cctv_pole": {
+   "size": [
+    0.18,
+    0.702,
+    4.1
+   ],
+   "min": [
+    -0.09,
+    -0.612,
+    0.0
+   ],
+   "max": [
+    0.09,
+    0.09,
+    4.1
+   ],
+   "triangles": 536,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.08,
+      4.0
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 250.0,
+   "glb": "equipment.glb"
+  },
+  "cctv_wall": {
+   "size": [
+    0.18,
+    0.34,
+    0.166
+   ],
+   "min": [
+    -0.09,
+    -0.34,
+    2.914
+   ],
+   "max": [
+    0.09,
+    0.0,
+    3.08
+   ],
+   "triangles": 444,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": true,
+   "range": 150.0,
+   "glb": "equipment.glb"
+  },
+  "info_board": {
+   "size": [
+    1.6,
+    0.399,
+    2.175
+   ],
+   "min": [
+    -0.8,
+    -0.203,
+    0.0
+   ],
+   "max": [
+    0.8,
+    0.196,
+    2.175
+   ],
+   "triangles": 492,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      1.1,
+      1.5,
+      0.15,
+      2.2
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 200.0,
+   "glb": "equipment.glb"
+  },
+  "guidepost": {
+   "size": [
+    0.959,
+    1.031,
+    2.36
+   ],
+   "min": [
+    -0.393,
+    -0.566,
+    0.0
+   ],
+   "max": [
+    0.566,
+    0.465,
+    2.36
+   ],
+   "triangles": 960,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.08,
+      2.3
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "equipment.glb"
+  },
+  "route_marker": {
+   "size": [
+    0.104,
+    0.104,
+    1.2
+   ],
+   "min": [
+    -0.052,
+    -0.052,
+    0.0
+   ],
+   "max": [
+    0.052,
+    0.052,
+    1.2
+   ],
+   "triangles": 324,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.07,
+      1.2
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 100.0,
+   "glb": "equipment.glb"
+  },
+  "charging_station": {
+   "size": [
+    0.62,
+    0.435,
+    1.45
+   ],
+   "min": [
+    -0.28,
+    -0.27,
+    0.0
+   ],
+   "max": [
+    0.34,
+    0.165,
+    1.45
+   ],
+   "triangles": 380,
+   "materials": [
+    "glow",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.725,
+      0.56,
+      0.34,
+      1.45
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 200.0,
+   "glb": "equipment.glb"
+  },
+  "bike_repair": {
+   "size": [
+    0.39,
+    0.67,
+    1.402
+   ],
+   "min": [
+    -0.11,
+    -0.56,
+    0.0
+   ],
+   "max": [
+    0.28,
+    0.11,
+    1.402
+   ],
+   "triangles": 464,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.7,
+      0.25,
+      0.25,
+      1.4
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "glb": "equipment.glb"
+  },
+  "flagpole": {
+   "size": [
+    1.36,
+    0.22,
+    8.2
+   ],
+   "min": [
+    -0.11,
+    -0.11,
+    0.0
+   ],
+   "max": [
+    1.25,
+    0.11,
+    8.2
+   ],
+   "triangles": 420,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.1,
+      3.0
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 400.0,
+   "glb": "equipment.glb"
+  },
+  "flagpole_fr": {
+   "size": [
+    1.36,
+    0.22,
+    8.2
+   ],
+   "min": [
+    -0.11,
+    -0.11,
+    0.0
+   ],
+   "max": [
+    1.25,
+    0.11,
+    8.2
+   ],
+   "triangles": 636,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.1,
+      3.0
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 400.0,
+   "glb": "equipment.glb"
+  },
+  "substation_kiosk": {
+   "size": [
+    2.7,
+    1.9,
+    2.27
+   ],
+   "min": [
+    -1.35,
+    -0.95,
+    0.0
+   ],
+   "max": [
+    1.35,
+    0.95,
+    2.27
+   ],
+   "triangles": 676,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      1.135,
+      2.5,
+      1.7,
+      2.27
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 400.0,
+   "glb": "equipment.glb"
+  },
+  "power_pole": {
+   "size": [
+    1.6,
+    0.26,
+    9.0
+   ],
+   "min": [
+    -0.8,
+    -0.13,
+    0.0
+   ],
+   "max": [
+    0.8,
+    0.13,
+    9.0
+   ],
+   "triangles": 1076,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.14,
+      3.0
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 500.0,
+   "glb": "equipment.glb"
+  },
+  "mast": {
+   "size": [
+    1.8,
+    1.8,
+    24.3
+   ],
+   "min": [
+    -0.9,
+    -0.9,
+    -0.1
+   ],
+   "max": [
+    0.9,
+    0.9,
+    24.2
+   ],
+   "triangles": 760,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.4,
+      4.0
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 800.0,
+   "glb": "equipment.glb"
+  },
+  "defibrillator": {
+   "size": [
+    0.42,
+    0.27,
+    1.45
+   ],
+   "min": [
+    -0.21,
+    -0.17,
+    0.0
+   ],
+   "max": [
+    0.21,
+    0.1,
+    1.45
+   ],
+   "triangles": 320,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      0.725,
+      0.42,
+      0.3,
+      1.45
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 100.0,
+   "glb": "equipment.glb"
+  },
+  "billboard": {
+   "size": [
+    3.3,
+    0.314,
+    3.5
+   ],
+   "min": [
+    -1.65,
+    -0.157,
+    0.0
+   ],
+   "max": [
+    1.65,
+    0.157,
+    3.5
+   ],
+   "triangles": 428,
+   "materials": [
+    "glow",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      0,
+      0,
+      1.75,
+      3.3,
+      0.3,
+      3.5
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 400.0,
+   "glb": "equipment.glb"
+  },
+  "advert_column": {
+   "size": [
+    1.28,
+    1.28,
+    3.1
+   ],
+   "min": [
+    -0.64,
+    -0.64,
+    0.0
+   ],
+   "max": [
+    0.64,
+    0.64,
+    3.1
+   ],
+   "triangles": 1420,
+   "materials": [
+    "glow",
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.64,
+      3.0
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 400.0,
+   "glb": "equipment.glb"
+  },
+  "assembly_sign": {
+   "size": [
+    0.5,
+    0.107,
+    2.3
+   ],
+   "min": [
+    -0.25,
+    -0.072,
+    0.0
+   ],
+   "max": [
+    0.25,
+    0.035,
+    2.3
+   ],
+   "triangles": 228,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.05,
+      2.3
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 120.0,
+   "glb": "equipment.glb"
+  },
+  "sign_pole": {
+   "size": [
+    0.12,
+    0.12,
+    2.9
+   ],
+   "min": [
+    -0.06,
+    -0.06,
+    -0.02
+   ],
+   "max": [
+    0.06,
+    0.06,
+    2.88
+   ],
+   "triangles": 412,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.05,
+      2.85
+     ]
+    }
+   ],
+   "anchors": {
+    "faces": {
+     "top": 2.85,
+     "gap": 0.06,
+     "front": 0.04
+    }
+   },
+   "wall": false,
+   "range": 250.0,
+   "glb": "equipment.glb"
+  },
+  "gate": {
+   "size": [
+    4.285,
+    1.998,
+    1.86
+   ],
+   "min": [
+    -2.142,
+    -0.076,
+    0.0
+   ],
+   "max": [
+    2.142,
+    1.922,
+    1.86
+   ],
+   "triangles": 1024,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      -2.07,
+      0,
+      0.9,
+      0.16,
+      0.16,
+      1.8
+     ]
+    },
+    {
+     "box": [
+      -1.595,
+      1.907,
+      0.75,
+      0.08,
+      0.08,
+      1.5
+     ]
+    },
+    {
+     "box": [
+      2.07,
+      0,
+      0.9,
+      0.16,
+      0.16,
+      1.8
+     ]
+    },
+    {
+     "box": [
+      1.595,
+      1.907,
+      0.75,
+      0.08,
+      0.08,
+      1.5
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 250.0,
+   "span": 4.0,
+   "glb": "barriers.glb"
+  },
+  "gate_small": {
+   "size": [
+    1.34,
+    1.161,
+    1.3
+   ],
+   "min": [
+    -0.67,
+    -0.05,
+    0.0
+   ],
+   "max": [
+    0.67,
+    1.111,
+    1.3
+   ],
+   "triangles": 516,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      -0.62,
+      0,
+      0.65,
+      0.12,
+      0.12,
+      1.3
+     ]
+    },
+    {
+     "box": [
+      0.62,
+      0,
+      0.65,
+      0.12,
+      0.12,
+      1.3
+     ]
+    },
+    {
+     "box": [
+      -0.474,
+      1.096,
+      0.55,
+      0.08,
+      0.08,
+      1.1
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 200.0,
+   "span": 1.2,
+   "glb": "barriers.glb"
+  },
+  "swing_gate": {
+   "size": [
+    3.73,
+    3.57,
+    1.1
+   ],
+   "min": [
+    -1.87,
+    -0.07,
+    0.0
+   ],
+   "max": [
+    1.86,
+    3.5,
+    1.1
+   ],
+   "triangles": 972,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      -1.8,
+      0,
+      0.55,
+      0.16,
+      0.16,
+      1.1
+     ]
+    },
+    {
+     "box": [
+      1.8,
+      0,
+      0.45,
+      0.14,
+      0.14,
+      0.9
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 250.0,
+   "span": 3.5,
+   "glb": "barriers.glb"
+  },
+  "lift_gate": {
+   "size": [
+    4.46,
+    0.34,
+    1.1
+   ],
+   "min": [
+    -2.32,
+    -0.17,
+    0.0
+   ],
+   "max": [
+    2.14,
+    0.17,
+    1.1
+   ],
+   "triangles": 1268,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      -2.15,
+      0,
+      0.55,
+      0.34,
+      0.34,
+      1.1
+     ]
+    },
+    {
+     "box": [
+      0.0,
+      0,
+      0.92,
+      4.0,
+      0.1,
+      0.12
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 300.0,
+   "span": 4.0,
+   "glb": "barriers.glb"
+  },
+  "cycle_barrier": {
+   "size": [
+    2.06,
+    1.16,
+    1.079
+   ],
+   "min": [
+    -1.03,
+    -0.58,
+    -0.05
+   ],
+   "max": [
+    1.03,
+    0.58,
+    1.029
+   ],
+   "triangles": 240,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      -0.4,
+      -0.55,
+      0.5,
+      1.25,
+      0.08,
+      1.0
+     ]
+    },
+    {
+     "box": [
+      0.4,
+      0.55,
+      0.5,
+      1.25,
+      0.08,
+      1.0
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 150.0,
+   "span": 2.0,
+   "glb": "barriers.glb"
+  },
+  "chain_posts": {
+   "size": [
+    3.115,
+    0.115,
+    0.8
+   ],
+   "min": [
+    -1.558,
+    -0.058,
+    0.0
+   ],
+   "max": [
+    1.558,
+    0.058,
+    0.8
+   ],
+   "triangles": 816,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      -1.5,
+      0,
+      0,
+      0.08,
+      0.8
+     ]
+    },
+    {
+     "cyl": [
+      1.5,
+      0,
+      0,
+      0.08,
+      0.8
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 120.0,
+   "span": 3.0,
+   "glb": "barriers.glb"
+  },
+  "turnstile": {
+   "size": [
+    1.027,
+    0.753,
+    1.0
+   ],
+   "min": [
+    -0.6,
+    -0.376,
+    0.0
+   ],
+   "max": [
+    0.427,
+    0.376,
+    1.0
+   ],
+   "triangles": 396,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "cyl": [
+      0,
+      0,
+      0,
+      0.07,
+      1.0
+     ]
+    },
+    {
+     "box": [
+      -0.45,
+      0,
+      0.5,
+      0.3,
+      0.3,
+      1.0
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 120.0,
+   "span": 1.0,
+   "glb": "barriers.glb"
+  },
+  "height_bar": {
+   "size": [
+    4.36,
+    0.16,
+    2.55
+   ],
+   "min": [
+    -2.18,
+    -0.08,
+    0.0
+   ],
+   "max": [
+    2.18,
+    0.08,
+    2.55
+   ],
+   "triangles": 1188,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [
+    {
+     "box": [
+      -2.1,
+      0,
+      1.275,
+      0.18,
+      0.18,
+      2.55
+     ]
+    },
+    {
+     "box": [
+      2.1,
+      0,
+      1.275,
+      0.18,
+      0.18,
+      2.55
+     ]
+    }
+   ],
+   "anchors": {},
+   "wall": false,
+   "range": 300.0,
+   "span": 4.0,
+   "glb": "barriers.glb"
+  },
+  "fence_post_bars": {
+   "size": [
+    0.07,
+    0.07,
+    1.03
+   ],
+   "min": [
+    -0.035,
+    -0.035,
+    -0.03
+   ],
+   "max": [
+    0.035,
+    0.035,
+    1.0
+   ],
+   "triangles": 108,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 200.0,
+   "glb": "barriers.glb"
+  },
+  "fence_panel_bars": {
+   "size": [
+    2.5,
+    0.04,
+    0.92
+   ],
+   "min": [
+    -1.25,
+    -0.02,
+    0.05
+   ],
+   "max": [
+    1.25,
+    0.02,
+    0.97
+   ],
+   "triangles": 456,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 200.0,
+   "glb": "barriers.glb"
+  },
+  "fence_post_mesh": {
+   "size": [
+    0.06,
+    0.06,
+    1.03
+   ],
+   "min": [
+    -0.03,
+    -0.03,
+    -0.03
+   ],
+   "max": [
+    0.03,
+    0.03,
+    1.0
+   ],
+   "triangles": 28,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 200.0,
+   "glb": "barriers.glb"
+  },
+  "fence_panel_mesh": {
+   "size": [
+    2.5,
+    0.025,
+    0.975
+   ],
+   "min": [
+    -1.25,
+    -0.013,
+    0.017
+   ],
+   "max": [
+    1.25,
+    0.013,
+    0.993
+   ],
+   "triangles": 276,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 200.0,
+   "glb": "barriers.glb"
+  },
+  "fence_post_wood": {
+   "size": [
+    0.1,
+    0.1,
+    1.06
+   ],
+   "min": [
+    -0.05,
+    -0.05,
+    -0.03
+   ],
+   "max": [
+    0.05,
+    0.05,
+    1.03
+   ],
+   "triangles": 108,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 200.0,
+   "glb": "barriers.glb"
+  },
+  "fence_panel_wood": {
+   "size": [
+    2.5,
+    0.065,
+    0.95
+   ],
+   "min": [
+    -1.25,
+    -0.01,
+    0.03
+   ],
+   "max": [
+    1.25,
+    0.055,
+    0.98
+   ],
+   "triangles": 1836,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 200.0,
+   "glb": "barriers.glb"
+  },
+  "wall_block": {
+   "size": [
+    1.0,
+    0.36,
+    1.02
+   ],
+   "min": [
+    -0.5,
+    -0.18,
+    -0.02
+   ],
+   "max": [
+    0.5,
+    0.18,
+    1.0
+   ],
+   "triangles": 24,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 300.0,
+   "glb": "barriers.glb"
+  },
+  "guard_rail_post": {
+   "size": [
+    0.1,
+    0.12,
+    0.75
+   ],
+   "min": [
+    -0.05,
+    -0.01,
+    -0.05
+   ],
+   "max": [
+    0.05,
+    0.11,
+    0.7
+   ],
+   "triangles": 12,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 200.0,
+   "glb": "barriers.glb"
+  },
+  "guard_rail_panel": {
+   "size": [
+    2.5,
+    0.06,
+    0.2
+   ],
+   "min": [
+    -1.25,
+    -0.07,
+    0.48
+   ],
+   "max": [
+    1.25,
+    -0.01,
+    0.68
+   ],
+   "triangles": 216,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 200.0,
+   "glb": "barriers.glb"
+  }
+ },
+ "faces": {
+  "sign_AB4": {
+   "size": [
+    0.8,
+    0.02,
+    0.8
+   ],
+   "min": [
+    -0.4,
+    -0.008,
+    -0.4
+   ],
+   "max": [
+    0.4,
+    0.012,
+    0.4
+   ],
+   "triangles": 732,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:AB4",
+   "priority": 0,
+   "glb": "signs.glb"
+  },
+  "sign_AB3a": {
+   "size": [
+    0.805,
+    0.016,
+    0.716
+   ],
+   "min": [
+    -0.403,
+    -0.004,
+    -0.457
+   ],
+   "max": [
+    0.403,
+    0.012,
+    0.26
+   ],
+   "triangles": 168,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:AB3a",
+   "priority": 0,
+   "glb": "signs.glb"
+  },
+  "sign_AB1": {
+   "size": [
+    0.805,
+    0.02,
+    0.716
+   ],
+   "min": [
+    -0.403,
+    -0.008,
+    -0.26
+   ],
+   "max": [
+    0.403,
+    0.012,
+    0.457
+   ],
+   "triangles": 192,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:AB1",
+   "priority": 1,
+   "glb": "signs.glb"
+  },
+  "sign_AB2": {
+   "size": [
+    0.805,
+    0.02,
+    0.716
+   ],
+   "min": [
+    -0.403,
+    -0.008,
+    -0.26
+   ],
+   "max": [
+    0.403,
+    0.012,
+    0.457
+   ],
+   "triangles": 192,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:AB2",
+   "priority": 1,
+   "glb": "signs.glb"
+  },
+  "sign_AB6": {
+   "size": [
+    0.661,
+    0.016,
+    0.661
+   ],
+   "min": [
+    -0.33,
+    -0.004,
+    -0.33
+   ],
+   "max": [
+    0.33,
+    0.012,
+    0.33
+   ],
+   "triangles": 180,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:AB6",
+   "priority": 1,
+   "glb": "signs.glb"
+  },
+  "sign_A2b": {
+   "size": [
+    0.805,
+    0.02,
+    0.716
+   ],
+   "min": [
+    -0.403,
+    -0.008,
+    -0.26
+   ],
+   "max": [
+    0.403,
+    0.012,
+    0.457
+   ],
+   "triangles": 228,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:A2b",
+   "priority": 2,
+   "glb": "signs.glb"
+  },
+  "sign_A3b": {
+   "size": [
+    0.805,
+    0.024,
+    0.716
+   ],
+   "min": [
+    -0.403,
+    -0.012,
+    -0.26
+   ],
+   "max": [
+    0.403,
+    0.012,
+    0.457
+   ],
+   "triangles": 216,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:A3b",
+   "priority": 2,
+   "glb": "signs.glb"
+  },
+  "sign_A13b": {
+   "size": [
+    0.805,
+    0.028,
+    0.716
+   ],
+   "min": [
+    -0.403,
+    -0.016,
+    -0.26
+   ],
+   "max": [
+    0.403,
+    0.012,
+    0.457
+   ],
+   "triangles": 288,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:A13b",
+   "priority": 2,
+   "glb": "signs.glb"
+  },
+  "sign_A14": {
+   "size": [
+    0.805,
+    0.02,
+    0.716
+   ],
+   "min": [
+    -0.403,
+    -0.008,
+    -0.26
+   ],
+   "max": [
+    0.403,
+    0.012,
+    0.457
+   ],
+   "triangles": 200,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:A14",
+   "priority": 2,
+   "glb": "signs.glb"
+  },
+  "sign_B0": {
+   "size": [
+    0.65,
+    0.016,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.004,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 468,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B0",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B1": {
+   "size": [
+    0.65,
+    0.016,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.004,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 356,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B1",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B2a": {
+   "size": [
+    0.65,
+    0.024,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.012,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 512,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B2a",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B3": {
+   "size": [
+    0.65,
+    0.036,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.024,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 972,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B3",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B6a1": {
+   "size": [
+    0.65,
+    0.018,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.006,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 480,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B6a1",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B6d": {
+   "size": [
+    0.65,
+    0.02,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.008,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 492,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B6d",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B9b": {
+   "size": [
+    0.65,
+    0.038,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.026,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 1176,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B9b",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B12": {
+   "size": [
+    0.65,
+    0.02,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.008,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 1260,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B12",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B13": {
+   "size": [
+    0.65,
+    0.02,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.008,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 1104,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B13",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B14_20": {
+   "size": [
+    0.65,
+    0.02,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.008,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 828,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B14[20]",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B14_30": {
+   "size": [
+    0.65,
+    0.02,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.008,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 964,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B14[30]",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B14_50": {
+   "size": [
+    0.65,
+    0.02,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.008,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 872,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B14[50]",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B14": {
+   "size": [
+    0.65,
+    0.02,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.008,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 964,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B14",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B22a": {
+   "size": [
+    0.65,
+    0.038,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.026,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 1176,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B22a",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B27a": {
+   "size": [
+    0.65,
+    0.034,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.022,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 944,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B27a",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B30": {
+   "size": [
+    0.75,
+    0.026,
+    0.938
+   ],
+   "min": [
+    -0.375,
+    -0.014,
+    -0.469
+   ],
+   "max": [
+    0.375,
+    0.012,
+    0.469
+   ],
+   "triangles": 1344,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B30",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B51": {
+   "size": [
+    0.75,
+    0.03,
+    0.938
+   ],
+   "min": [
+    -0.375,
+    -0.018,
+    -0.469
+   ],
+   "max": [
+    0.375,
+    0.012,
+    0.469
+   ],
+   "triangles": 1380,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B51",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B52": {
+   "size": [
+    0.75,
+    0.032,
+    0.938
+   ],
+   "min": [
+    -0.375,
+    -0.02,
+    -0.469
+   ],
+   "max": [
+    0.375,
+    0.012,
+    0.469
+   ],
+   "triangles": 716,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B52",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_B53": {
+   "size": [
+    0.75,
+    0.038,
+    0.938
+   ],
+   "min": [
+    -0.375,
+    -0.026,
+    -0.469
+   ],
+   "max": [
+    0.375,
+    0.012,
+    0.469
+   ],
+   "triangles": 752,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:B53",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_C1a": {
+   "size": [
+    0.6,
+    0.02,
+    0.6
+   ],
+   "min": [
+    -0.3,
+    -0.008,
+    -0.3
+   ],
+   "max": [
+    0.3,
+    0.012,
+    0.3
+   ],
+   "triangles": 356,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:C1a",
+   "priority": 4,
+   "glb": "signs.glb"
+  },
+  "sign_C12": {
+   "size": [
+    0.6,
+    0.018,
+    0.6
+   ],
+   "min": [
+    -0.3,
+    -0.006,
+    -0.3
+   ],
+   "max": [
+    0.3,
+    0.012,
+    0.3
+   ],
+   "triangles": 252,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:C12",
+   "priority": 4,
+   "glb": "signs.glb"
+  },
+  "sign_C13a": {
+   "size": [
+    0.6,
+    0.02,
+    0.6
+   ],
+   "min": [
+    -0.3,
+    -0.008,
+    -0.3
+   ],
+   "max": [
+    0.3,
+    0.012,
+    0.3
+   ],
+   "triangles": 252,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:C13a",
+   "priority": 4,
+   "glb": "signs.glb"
+  },
+  "sign_C20a": {
+   "size": [
+    0.6,
+    0.038,
+    0.6
+   ],
+   "min": [
+    -0.3,
+    -0.026,
+    -0.3
+   ],
+   "max": [
+    0.3,
+    0.012,
+    0.3
+   ],
+   "triangles": 452,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:C20a",
+   "priority": 4,
+   "glb": "signs.glb"
+  },
+  "sign_C27": {
+   "size": [
+    0.6,
+    0.022,
+    0.6
+   ],
+   "min": [
+    -0.3,
+    -0.01,
+    -0.3
+   ],
+   "max": [
+    0.3,
+    0.012,
+    0.3
+   ],
+   "triangles": 344,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:C27",
+   "priority": 4,
+   "glb": "signs.glb"
+  },
+  "sign_C113": {
+   "size": [
+    0.6,
+    0.038,
+    0.6
+   ],
+   "min": [
+    -0.3,
+    -0.026,
+    -0.3
+   ],
+   "max": [
+    0.3,
+    0.012,
+    0.3
+   ],
+   "triangles": 936,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:C113",
+   "priority": 4,
+   "glb": "signs.glb"
+  },
+  "sign_C114": {
+   "size": [
+    0.6,
+    0.04,
+    0.6
+   ],
+   "min": [
+    -0.3,
+    -0.028,
+    -0.3
+   ],
+   "max": [
+    0.3,
+    0.012,
+    0.3
+   ],
+   "triangles": 948,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:C114",
+   "priority": 4,
+   "glb": "signs.glb"
+  },
+  "sign_EB10": {
+   "size": [
+    1.0,
+    0.02,
+    0.45
+   ],
+   "min": [
+    -0.5,
+    -0.008,
+    -0.225
+   ],
+   "max": [
+    0.5,
+    0.012,
+    0.225
+   ],
+   "triangles": 932,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:EB10",
+   "priority": 5,
+   "glb": "signs.glb"
+  },
+  "sign_M6h": {
+   "size": [
+    0.5,
+    0.02,
+    0.225
+   ],
+   "min": [
+    -0.25,
+    -0.008,
+    -0.112
+   ],
+   "max": [
+    0.25,
+    0.012,
+    0.112
+   ],
+   "triangles": 676,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "FR:M6h",
+   "priority": 9,
+   "glb": "signs.glb"
+  },
+  "sign_A": {
+   "size": [
+    0.805,
+    0.02,
+    0.716
+   ],
+   "min": [
+    -0.403,
+    -0.008,
+    -0.26
+   ],
+   "max": [
+    0.403,
+    0.012,
+    0.457
+   ],
+   "triangles": 200,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "A",
+   "priority": 2,
+   "glb": "signs.glb"
+  },
+  "sign_B": {
+   "size": [
+    0.65,
+    0.016,
+    0.65
+   ],
+   "min": [
+    -0.325,
+    -0.004,
+    -0.325
+   ],
+   "max": [
+    0.325,
+    0.012,
+    0.325
+   ],
+   "triangles": 468,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "B",
+   "priority": 3,
+   "glb": "signs.glb"
+  },
+  "sign_C": {
+   "size": [
+    0.6,
+    0.016,
+    0.6
+   ],
+   "min": [
+    -0.3,
+    -0.004,
+    -0.3
+   ],
+   "max": [
+    0.3,
+    0.012,
+    0.3
+   ],
+   "triangles": 228,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "C",
+   "priority": 4,
+   "glb": "signs.glb"
+  },
+  "sign_M": {
+   "size": [
+    0.5,
+    0.016,
+    0.225
+   ],
+   "min": [
+    -0.25,
+    -0.004,
+    -0.112
+   ],
+   "max": [
+    0.25,
+    0.012,
+    0.112
+   ],
+   "triangles": 180,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "M",
+   "priority": 9,
+   "glb": "signs.glb"
+  },
+  "sign_EB": {
+   "size": [
+    1.0,
+    0.02,
+    0.45
+   ],
+   "min": [
+    -0.5,
+    -0.008,
+    -0.225
+   ],
+   "max": [
+    0.5,
+    0.012,
+    0.225
+   ],
+   "triangles": 932,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "EB",
+   "priority": 5,
+   "glb": "signs.glb"
+  },
+  "sign_generic": {
+   "size": [
+    0.6,
+    0.016,
+    0.6
+   ],
+   "min": [
+    -0.3,
+    -0.004,
+    -0.3
+   ],
+   "max": [
+    0.3,
+    0.012,
+    0.3
+   ],
+   "triangles": 228,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 220.0,
+   "code": "generic",
+   "priority": 6,
+   "glb": "signs.glb"
+  }
+ }
+}

@@ -1,0 +1,18 @@
+# Map generation pipeline and its data (not published)
+/pipeline/
+/overrides/
+/data/
+/references/
+/ref/
+/.venv/
+.mapillary_token
+
+# Godot
+/godot/.godot/
+/godot/output/
+/godot/tools/_tmp_*
+
+# Python / OS
+__pycache__/
+*.pyc
+.DS_Store
