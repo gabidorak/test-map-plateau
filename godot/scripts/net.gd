@@ -23,6 +23,7 @@ extends Node
 const LanDiscovery = preload("res://scripts/lan_discovery.gd")
 const RemotePlayer = preload("res://scripts/remote_player.gd")
 const Car = preload("res://scripts/car.gd")
+const Updater = preload("res://scripts/updater.gd")
 
 signal joined                               # client: the host welcomed us (the players, vehicles... are here)
 signal failed(reason: String)               # client: could not join
@@ -32,7 +33,7 @@ signal message(text: String)                # someone joined or left, a vehicle 
 const PORT := 7777                          # the host tries the next ones when it is taken
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
-const PROTOCOL := 2                         # bump when the messages change: other versions are refused
+const PROTOCOL := 2                         # bump when the messages change (build_id: other builds are refused anyway)
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const IDLE_SEND_EVERY := 0.5                # s, states of vehicles at rest
@@ -141,6 +142,13 @@ func _ready() -> void:
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
 
 
+## The protocol and this build's commit (stamped by CI, "" for editor runs and local exports) in one number, sent when
+## joining and in the LAN beacon: the host refuses players running another build. Older builds sent PROTOCOL alone, so
+## they get refused too.
+static func build_id() -> int:
+	return hash([PROTOCOL, str(ProjectSettings.get_setting("application/config/commit", ""))])
+
+
 func me() -> int:
 	return multiplayer.get_unique_id()
 
@@ -163,7 +171,7 @@ func host(nickname: String, color: Color, first_port := PORT, server_only := fal
 	active = true
 	discovery.start_beacon(func() -> Dictionary:
 		return {"port": port, "name": nickname, "players": players.size(), "max": MAX_PLAYERS,
-				"version": PROTOCOL})
+				"version": build_id()})
 	return ""
 
 
@@ -213,7 +221,7 @@ func _fail(reason: String) -> void:
 
 
 func _on_connected() -> void:
-	_register.rpc_id(1, PROTOCOL, _profile["name"], _profile["color"])
+	_register.rpc_id(1, build_id(), _profile["name"], _profile["color"])
 
 
 func _on_connection_failed() -> void:
@@ -249,8 +257,10 @@ func _register(protocol: int, nickname: String, color: Color) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := multiplayer.get_remote_sender_id()
-	if protocol != PROTOCOL:
-		_refused.rpc_id(id, "The host runs another version of the game.")
+	if protocol != build_id():
+		var tag := str(ProjectSettings.get_setting("application/config/version", ""))
+		_refused.rpc_id(id, "The host runs another build of the game (%s)." % [
+				Updater.pretty(tag) if tag != "" else "unversioned"])
 		get_tree().create_timer(1.0).timeout.connect(func() -> void:
 			if multiplayer.multiplayer_peer is ENetMultiplayerPeer:
 				(multiplayer.multiplayer_peer as ENetMultiplayerPeer).disconnect_peer(id))
@@ -268,7 +278,9 @@ func _register(protocol: int, nickname: String, color: Color) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _refused(reason: String) -> void:
-	_fail(reason)
+	var tag := str(ProjectSettings.get_setting("application/config/version", ""))
+	_fail("%s You have %s: restart the game to update, or ask the host to." % [reason,
+			Updater.pretty(tag) if tag != "" else "an unversioned build"])
 
 
 ## Client: the host's players, vehicles, and what is bent or knocked over there.
