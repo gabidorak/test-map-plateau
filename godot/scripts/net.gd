@@ -17,6 +17,8 @@ extends Node
 ## - Trees bent and props broken by a vehicle simulated here (breakables.gd `broke`) bend and break everywhere.
 ## - A dedicated server (game.gd --dedicated) hosts without playing: it is not in `players` and sends no player state,
 ##   but it still simulates the vehicles nobody else does.
+## - Chat: a message goes to the host, which sends it to everyone with who said it. The host also sends everyone each
+##   player's ping to it every PING_EVERY s (the player list, game.gd Tab).
 ## - The host announces the game on the LAN (lan_discovery.gd) and sends newcomers the players, the vehicles, and the
 ##   trees bent and props knocked down at that moment (breakables.gd net_snapshot).
 
@@ -29,11 +31,12 @@ signal joined                               # client: the host welcomed us (the 
 signal failed(reason: String)               # client: could not join
 signal ended(reason: String)                # client: the host closed the game
 signal message(text: String)                # someone joined or left, a vehicle is taken...
+signal chat(id: int, text: String)          # player `id` said `text`
 
 const PORT := 7777                          # the host tries the next ones when it is taken
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
-const PROTOCOL := 2                         # bump when the messages change (build_id: other builds are refused anyway)
+const PROTOCOL := 3                         # bump when the messages change (build_id: other builds are refused anyway)
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const IDLE_SEND_EVERY := 0.5                # s, states of vehicles at rest
@@ -47,6 +50,8 @@ const HITCH := 0.05                         # s between ticks: we stalled, state
 const CLOCK_CREEP := 0.005                  # s per s the clock offset estimate creeps up (_stamp)
 const MAX_EXTRAPOLATION := 0.05             # s past the newest state the motion carries on (Track.at)
 const CONNECT_TIMEOUT := 6.0                # s
+const PING_EVERY := 1.0                     # s between the host's ping lists
+const CHAT_LENGTH := 200                    # characters per chat message
 const DEFAULT_COLOR := Color(1, 0.55, 0.2)
 
 var game: Node3D                            # game.gd
@@ -76,6 +81,8 @@ var _car_send_t := 0.0                      # s since the last vehicle states
 var _idle_t := 0.0
 var _pending_drive := ""                    # net id of the vehicle we asked to drive
 var _connect_t := -1.0                      # s since connecting, -1 when not waiting
+var _pings := {}                            # client: peer id -> its round trip to the host (ms), from the host
+var _ping_t := 0.0
 
 
 ## Recent states of one remote player or vehicle, stamped with the sender's clock.
@@ -205,9 +212,18 @@ func leave() -> void:
 	owner_of.clear()
 	driver_of.clear()
 	_car_tracks.clear()
+	_pings.clear()
 
 
 func _process(delta: float) -> void:
+	if active and multiplayer.is_server():
+		_ping_t += delta
+		if _ping_t >= PING_EVERY:
+			_ping_t = 0.0
+			var pings := {}
+			for id: int in players:
+				pings[id] = ping(id)
+			_ping_list.rpc(pings)
 	if _connect_t >= 0.0:
 		_connect_t += delta
 		if _connect_t > CONNECT_TIMEOUT:
@@ -376,6 +392,52 @@ func _pose_remote(id: int, a: Array, b: Array, w: float) -> void:
 	else:
 		r.show_at(Transform3D(Basis.IDENTITY, pos), yaw)
 	r.update_collision(shown, car, game.cars)
+
+
+## Round trip from player `id` to the host in ms (0 for the host itself), -1 when not known yet.
+func ping(id: int) -> int:
+	var peer := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if id == 1 and multiplayer.is_server():
+		return 0
+	if id == me() or (id == 1 and not multiplayer.is_server()):
+		var link: ENetPacketPeer = peer.get_peer(1) if peer else null
+		return roundi(link.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME)) if link else -1
+	if multiplayer.is_server():
+		var link: ENetPacketPeer = peer.get_peer(id) if peer else null
+		return roundi(link.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME)) if link else -1
+	return _pings.get(id, -1)
+
+
+@rpc("authority", "call_remote", "unreliable")
+func _ping_list(pings: Dictionary) -> void:
+	_pings = pings
+
+
+# ---------------------------------------------------------------- chat
+
+## Says `text` to everyone (game.gd's chat box), through the host.
+func say(text: String) -> void:
+	if not active:
+		return
+	if multiplayer.is_server():
+		_say(text)
+	else:
+		_say.rpc_id(1, text)
+
+
+## Host: a player said something; everyone gets it with who said it.
+@rpc("any_peer", "call_remote", "reliable")
+func _say(text: String) -> void:
+	var id := _sender()
+	text = text.strip_edges().left(CHAT_LENGTH)
+	if not multiplayer.is_server() or not players.has(id) or text == "":
+		return
+	_chat.rpc(id, text)
+
+
+@rpc("authority", "call_local", "reliable")
+func _chat(id: int, text: String) -> void:
+	chat.emit(id, text)
 
 
 # ---------------------------------------------------------------- vehicles

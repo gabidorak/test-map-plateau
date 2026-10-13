@@ -166,11 +166,11 @@ func _run() -> void:
 	_key(KEY_C, false)
 	await _frames(2)
 	_check(cars.size() == 5, "C parks one more car")
-	_press(KEY_TAB)
+	_press(KEY_U)
 	await _frames(2)
 	var menu: Control = _main.hud.get_node("VehicleMenu")
 	_check(menu.visible and not player.active and _main._menu_buttons.get_child_count() == _main.Car.MODELS.size(),
-			"Tab opens the vehicle menu, a button per model, the player stands still")
+			"U opens the vehicle menu, a button per model, the player stands still")
 	_main._menu_buttons.get_node("police").pressed.emit()
 	await _frames(2)
 	_check(cars.size() == 6 and cars[-1].model_name == "police" and not menu.visible and player.active,
