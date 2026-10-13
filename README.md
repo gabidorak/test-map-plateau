@@ -27,6 +27,13 @@ opens the in-game menu (resume, back to the main menu, quit; it lists the player
 7777 in (Windows asks the first time); LAN discovery uses UDP broadcasts on port 7775. Command line options skip the
 menu: `godot --path . -- --host` / `-- --join=192.168.1.42[:7777]` / `-- --solo`, plus `--name=NICK --color=0..7`.
 
+The builds on the [releases page](https://github.com/gabidorak/test-map-plateau/releases) update themselves: at start
+they ask GitHub for the latest release and, when it is another build, download it next to the game in the background
+(the bottom of the welcome menu shows the progress). **Restart now** installs it, otherwise it is installed at the
+next start. When the game's folder is not writable (or on a macOS app still in Downloads), the menu links to the
+releases page instead. Runs from the editor and local exports never update (the release workflow stamps the build
+tag into `application/config/version`).
+
 ## What is in this repository
 
 The game (`godot/`), the generated map it loads (`godot/world/` and `godot/scenes/generated/`) and the Blender

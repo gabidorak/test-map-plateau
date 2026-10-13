@@ -2,10 +2,12 @@ extends CanvasLayer
 ## Welcome menu, over the campus flyover (game.gd shows it when the game starts). The player picks a nickname and a
 ## colour (kept in user://settings.cfg), then: Explore solo, Host a game on LAN, Join a game (a page with the games
 ## found on the LAN by scripts/lan_discovery.gd and an address + port field), or Quit. game.gd does the rest and
-## reports back with set_status.
+## reports back with set_status. The bottom row shows the build and what the updater (scripts/updater.gd) is doing:
+## downloading the latest release, then "Restart now".
 
 const UiStyle = preload("res://scripts/ui_style.gd")
 const LanDiscovery = preload("res://scripts/lan_discovery.gd")
+const Updater = preload("res://scripts/updater.gd")
 const SETTINGS := "user://settings.cfg"
 const COLORS: Array[Color] = [Color(1, 0.55, 0.2), Color(0.25, 0.55, 1.0), Color(0.3, 0.8, 0.35), Color(0.95, 0.3, 0.35),
 		Color(0.7, 0.4, 0.95), Color(1.0, 0.85, 0.2), Color(0.2, 0.8, 0.8), Color(1.0, 0.5, 0.75)]
@@ -37,6 +39,9 @@ var _port: LineEdit
 var _join_button: Button
 var _solo_button: Button
 var _busy := false
+var _updater: Updater
+var _update_label: Label
+var _update_button: Button
 
 
 func _ready() -> void:
@@ -114,7 +119,67 @@ func _build_main_page(cfg: ConfigFile) -> VBoxContainer:
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.custom_minimum_size.x = 520
 	box.add_child(_status)
+	box.add_child(_build_update_row())
 	return box
+
+
+## Build name, update progress and the button the update state asks for (hidden in editor runs).
+func _build_update_row() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_update_label = UiStyle.label("", 15, UiStyle.TEXT_DIM)
+	row.add_child(_update_label)
+	_update_button = UiStyle.button("", _looks, Vector2(0, 32), 15)
+	_update_button.focus_mode = Control.FOCUS_NONE
+	_update_button.pressed.connect(_on_update_pressed)
+	row.add_child(_update_button)
+	_updater = get_node_or_null("/root/AutoUpdater") as Updater
+	row.visible = _updater != null and _updater.version != ""
+	if row.visible:
+		_updater.changed.connect(_show_update)
+		_show_update()
+	return row
+
+
+func _show_update() -> void:
+	var u := _updater
+	var mine := Updater.pretty(u.version)
+	var theirs := Updater.pretty(u.latest)
+	_update_button.visible = u.state in [Updater.State.READY, Updater.State.MANUAL, Updater.State.FAILED]
+	_update_label.add_theme_color_override("font_color",
+			UiStyle.TEXT_WARN if u.state == Updater.State.FAILED else UiStyle.TEXT_DIM)
+	match u.state:
+		Updater.State.CHECKING:
+			_update_label.text = mine + "  ·  looking for updates…"
+		Updater.State.UP_TO_DATE:
+			_update_label.text = mine + "  ·  up to date"
+		Updater.State.DOWNLOADING:
+			_update_label.text = "%s  ·  downloading %s… %d %%" % [mine, theirs, roundi(100.0 * u.progress())]
+		Updater.State.READY:
+			_update_label.text = "%s  ·  %s is downloaded (installed at the next start)" % [mine, theirs]
+			_update_button.text = "Restart now"
+		Updater.State.MANUAL:
+			_update_label.text = "%s  ·  %s is out" % [mine, theirs]
+			_update_button.text = "Download page"
+		Updater.State.FAILED:
+			_update_label.text = "%s  ·  update failed: %s" % [mine, u.error]
+			_update_button.text = "Download page"
+		_:
+			_update_label.text = mine
+
+
+func _on_update_pressed() -> void:
+	if _updater.state == Updater.State.READY:
+		_updater.restart_now()
+	else:
+		OS.shell_open(_updater.release_page if _updater.release_page != "" \
+				else "https://github.com/%s/releases/latest" % Updater.REPO)
+
+
+func _process(_delta: float) -> void:
+	if _updater and _updater.state == Updater.State.DOWNLOADING:
+		_show_update()
 
 
 func _build_join_page(cfg: ConfigFile) -> VBoxContainer:
