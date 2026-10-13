@@ -8,6 +8,7 @@ extends Node3D
 ## The mouse wheel zooms the camera, all the way in is first person (walking) or the cab view (driving the bus);
 ## first person and the cab view carry over when taking and leaving the driver seat. The articulated bus carries the
 ## player in whichever of its two sections they stand (Car.carrier_at).
+## Vehicles bend thin trees and knock over sign poles, bollards and the like (scripts/breakables.gd).
 ## Graphics: "low" (no SSIL/SSAO/glow, FXAA instead of MSAA) keeps 60 fps on an integrated GPU; it is
 ## the default there, "high" elsewhere. PLATEAU_QUALITY=low|high overrides, F2 switches.
 
@@ -17,6 +18,7 @@ const WorldQuery = preload("res://scripts/world_query.gd")
 const Picker = preload("res://scripts/picker.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const Car = preload("res://scripts/car.gd")
+const Breakables = preload("res://scripts/breakables.gd")
 const ENTER_RANGE := 3.0                    # metres from the car body
 const SEAT_RANGE := 1.6                     # metres from the driver seat, from inside a walkable vehicle
 
@@ -31,6 +33,7 @@ var driving: Car                            # the car the player is in, or null
 var cars: Array[Car] = []
 var _next_model := 0
 var picker: Picker
+var breakables: Breakables
 var hud: CanvasLayer
 var _help: Label
 var _dash: Label                            # speed, gear, indicators, doors while driving
@@ -46,6 +49,10 @@ func _ready() -> void:
 	picker = Picker.new()
 	picker.world_root = world_root
 	add_child(picker)
+	breakables = Breakables.new()
+	breakables.name = "Breakables"
+	breakables.world_root = world_root
+	add_child(breakables)
 	_build_hud()
 	var env: Environment = $WorldEnvironment.environment
 	_high = {"ssil": env.ssil_enabled, "ssao": env.ssao_enabled, "glow": env.glow_enabled,

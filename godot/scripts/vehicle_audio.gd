@@ -1,6 +1,7 @@
 extends Node3D
 ## Vehicle sounds synthesized at runtime (no audio files): an engine loop pitched by a toy automatic
-## gearbox, indicator relay ticks, bus door chime with air hiss, and the air-brake sigh when a bus stops.
+## gearbox, indicator relay ticks, bus door chime with air hiss, and the air-brake sigh when a bus stops; also the
+## knocks of scripts/breakables.gd (a sign pole's clang, a sapling's swish).
 ## Each sound is generated once per kind and cached. scripts/car.gd adds one as a child and calls
 ## update() every physics frame and play() for one-shots.
 
@@ -87,7 +88,7 @@ func update(speed: float, throttle: float, max_speed: float, delta: float) -> vo
 
 func play(sound: String) -> void:
 	var p: Node = _cabin if sound in ["tick", "tock"] else _fx
-	p.stream = _one_shot(sound)
+	p.stream = one_shot(sound)
 	p.play()
 
 
@@ -126,7 +127,7 @@ static func _engine_loop(vehicle_kind: String) -> AudioStreamWAV:
 	return s
 
 
-static func _one_shot(sound: String) -> AudioStreamWAV:
+static func one_shot(sound: String) -> AudioStreamWAV:
 	if _cache.has(sound):
 		return _cache[sound]
 	var buf := PackedFloat32Array()
@@ -151,6 +152,21 @@ static func _one_shot(sound: String) -> AudioStreamWAV:
 		"air_brake":
 			buf = _silence(0.9)
 			_add_hiss(buf, 0.0, 0.85, 0.005, 1.0)
+		"clang":                                            # metal pole knocked over: thump, crack, ringing
+			buf = _silence(1.0)
+			_add_thump(buf, 0.0, 1.0)
+			_add_hiss(buf, 0.0, 0.08, 0.001, 0.9)
+			for p: Vector2 in [Vector2(430.0, 0.5), Vector2(1170.0, 0.35), Vector2(2050.0, 0.25), Vector2(3130.0, 0.15)]:
+				_add_ring(buf, 0.005, 0.95, p.x, p.y, 6.0 + p.x / 400.0)
+		"swish":                                            # sapling pushed over: leaves and twigs
+			buf = _silence(0.7)
+			_add_hiss(buf, 0.0, 0.65, 0.04, 0.8)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 3
+			for c in 14:                                    # twig snaps
+				var i0 := int(rng.randf_range(0.0, 0.3) * RATE)
+				for j in int(0.004 * RATE):
+					buf[i0 + j] += rng.randf_range(-1.0, 1.0) * exp(-float(j) / RATE * 900.0) * 0.8
 	var s := _to_wav(buf, false)
 	_cache[sound] = s
 	return s
@@ -196,6 +212,16 @@ static func _add_tone(buf: PackedFloat32Array, start: float, length: float, f: f
 		var t := float(j) / RATE
 		var env := minf(t / 0.005, 1.0) * minf((length - t) / 0.01, 1.0)
 		buf[i0 + j] += (sin(TAU * f * t) + 0.3 * sin(TAU * 2.0 * f * t)) * env * gain
+
+
+## Decaying sine from `start` s: one partial of a struck metal part.
+static func _add_ring(buf: PackedFloat32Array, start: float, length: float, f: float, gain: float, decay: float) -> void:
+	var i0 := int(start * RATE)
+	for j in int(length * RATE):
+		if i0 + j >= buf.size():
+			break
+		var t := float(j) / RATE
+		buf[i0 + j] += sin(TAU * f * t) * exp(-t * decay) * gain
 
 
 ## 16-bit mono WAV, normalized to 0.8 of full scale.
