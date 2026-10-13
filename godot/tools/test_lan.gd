@@ -11,6 +11,7 @@ extends SceneTree
 ## tree the host bends bends on the client. The client then takes over one of the host's cars (it simulates it, the
 ## host shows a frozen copy with a driver), drives it a little and leaves; the host gets its car back. Last, on the
 ## host, a car rolled at a remote player's look-alike stops against it (and passes through with its collision off).
+## Chat: the client opens it with Enter and says hello, the host answers; holding Tab shows both players and pings.
 ## Exit code 1 on failure. No --fixed-fps: the states are stamped with the real clock.
 
 const Layers = preload("res://scripts/physics_layers.gd")
@@ -69,6 +70,16 @@ func _until(cond: Callable, timeout: float) -> bool:
 			return false
 		await physics_frame
 	return true
+
+
+func _press(code: Key) -> void:
+	_key(code, true)
+	_key(code, false)
+
+
+## True when `chat` (chat.gd) shows `text` from `who`.
+func _said(chat: Node, who: String, text: String) -> bool:
+	return chat._lines.any(func(l: Array) -> bool: return l[0] == who and l[2] == text)
 
 
 func _key(code: Key, pressed: bool) -> void:
@@ -147,6 +158,10 @@ func _run_host() -> void:
 	_check(await _until(func() -> bool: return net.players.size() == 2, 90.0), "the client joined")
 	await _jump_for_client()
 	var guest: int = net.players.keys().filter(func(id: int) -> bool: return id != 1)[0]
+	_check(await _until(func() -> bool: return _said(_main.chat, "Guest", "hello from the guest"), 30.0),
+			"the client's chat message is here")
+	net.say("hi guest")
+	_check(net.ping(guest) >= 0 and net.ping(1) == 0, "pings known here (guest %d ms)" % net.ping(guest))
 	_check(await _until(func() -> bool: return net.cars.size() == 7, 30.0), "the client's taxi is here (%d vehicles)" % net.cars.size())
 	for id: String in net.cars:
 		if net.cars[id].model_name == "taxi":
@@ -323,6 +338,27 @@ func _run_client() -> void:
 	if d:
 		var up: Vector3 = (d["body"] as Node3D).global_basis.y
 		_check(up.dot(Vector3.UP) < 0.7, "lying where it fell there (tilted %.0f°)" % rad_to_deg(up.angle_to(Vector3.UP)))
+	var chat: Node = _main.chat
+	_press(KEY_ENTER)
+	await _frames(2)
+	_check(chat.is_open() and not _main.player.active, "Enter opens the chat, the player stands still")
+	chat._line.text = "hello from the guest"
+	chat._line.text_submitted.emit(chat._line.text)
+	await _frames(2)
+	_check(not chat.is_open() and _main.player.active, "Enter sends and closes it")
+	_check(await _until(func() -> bool: return _said(chat, "Guest", "hello from the guest"), 10.0),
+			"our message comes back through the host")
+	_check(await _until(func() -> bool: return net.ping(1) >= 0 and net.ping(net.me()) >= 0, 10.0),
+			"pings known here (host %d ms, us %d ms)" % [net.ping(1), net.ping(net.me())])
+	_key(KEY_TAB, true)
+	await process_frame                     # the list follows Tab in game.gd _process: physics frames may come first
+	await process_frame
+	var list: Control = _main._player_list
+	_check(list.visible and list._grid.get_child_count() == 6, "Tab held shows the 2 players and their ping")
+	_key(KEY_TAB, false)
+	await process_frame
+	await process_frame
+	_check(not list.visible, "and hides them once released")
 	_check(await _until(func() -> bool: return _main.cars.size() == 6 and _off_road(_bus()) < 3.0, 30.0),
 			"the host's 6 vehicles are here (%d), its bus on Nouvelle Voie" % _main.cars.size())
 	for c: Node in _main.cars:
@@ -332,6 +368,7 @@ func _run_client() -> void:
 	_check(_main.spawn_car_near_player("taxi") != null and _main.cars[-1].net_id.begins_with("%d:" % net.me()),
 			"parked a taxi of ours")
 	await _watch_host_jumps()
+	_check(await _until(func() -> bool: return _said(chat, "Host", "hi guest"), 30.0), "the host's answer is here")
 	var bus: Node = _bus()
 	_check(bus.remote and bus.freeze, "the bus is a frozen copy")
 	await _frames(30)

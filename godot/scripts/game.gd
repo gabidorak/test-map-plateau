@@ -5,11 +5,12 @@ extends Node3D
 ## Launched as the main scene it first shows the welcome menu (scripts/main_menu.gd) over a slow flight around the
 ## campus: Explore solo, Host a game on LAN (the host's address shows at the top right), Join a game. LAN games are
 ## scripts/net.gd's: the other players show as scripts/remote_player.gd, vehicles are simulated by whoever drives
-## them, and a player can walk in a bus another one drives. Command line (after `--`): --solo, --host, --join=IP[:PORT],
+## them, and a player can walk in a bus another one drives; holding Tab lists the players and their ping, Enter opens the
+## chat (scripts/chat.gd, scripts/player_list.gd). Command line (after `--`): --solo, --host, --join=IP[:PORT],
 ## --name=NICK, --color=N skip the menu. --dedicated [--port=N] [--name=GAME] runs a server without a player (headless,
 ## server/ at the repository root): it quits once a newer release is out and nobody plays (or UPDATE_WAIT s on). Instanced by the tools, it starts solo at once as before.
 ## Debug cars (scripts/car.gd) are parked next to the spawn point; C parks another one next to the
-## player, E gets into the nearest car and Space gets out. Tab opens the vehicle menu, which parks any model (Car.MODELS)
+## player, E gets into the nearest car and Space gets out. U opens the vehicle menu, which parks any model (Car.MODELS)
 ## next to the player. The bus is walkable: the player standing in it
 ## is carried along (also while it moves), E near its driver seat takes the wheel, and Space leaves the
 ## seat into the aisle (the bus rolls on, handbrake once slow); O (driver) opens and closes its doors.
@@ -32,6 +33,8 @@ const MainMenu = preload("res://scripts/main_menu.gd")
 const PauseMenu = preload("res://scripts/pause_menu.gd")
 const RemotePlayer = preload("res://scripts/remote_player.gd")
 const UiStyle = preload("res://scripts/ui_style.gd")
+const Chat = preload("res://scripts/chat.gd")
+const PlayerList = preload("res://scripts/player_list.gd")
 const ENTER_RANGE := 3.0                    # metres from the car body
 const SEAT_RANGE := 1.6                     # metres from the driver seat, from inside a walkable vehicle
 const UPDATE_POLL := 300.0                  # s between release checks (dedicated server)
@@ -56,7 +59,7 @@ var breakables: Breakables
 var hud: CanvasLayer
 var _help: Label
 var _dash: Label                            # speed, gear, indicators, doors while driving
-var _menu: PanelContainer                   # vehicle menu (Tab)
+var _menu: PanelContainer                   # vehicle menu (U)
 var _menu_buttons: GridContainer            # one per model, named after it
 var _menu_status: Label
 var _menu_mouse := Input.MOUSE_MODE_VISIBLE # mouse mode to restore when the menu closes
@@ -76,6 +79,9 @@ var _toast: Label                           # "X joined the game"...
 var _toast_t := 0.0
 var _stats: Label                           # F3: frame rate and network timings (net.gd debug_text)
 var _stats_t := 0.0
+var chat: Chat                              # LAN games: Enter
+var _player_list: PlayerList                # LAN games: while Tab is held
+var _player_list_t := 1.0
 var _orbit_angle := 0.0
 var _orbit_ground := NAN                    # ground height under MENU_ORBIT_CENTRE
 var _update_poll_t := 0.0                   # dedicated server: s since the last release check
@@ -99,6 +105,8 @@ func _ready() -> void:
 	net.game = self
 	add_child(net)
 	net.message.connect(_show_toast)
+	net.message.connect(func(text: String) -> void: chat.add("", Color.WHITE, text))
+	net.chat.connect(_on_chat)
 	net.joined.connect(_on_joined)
 	net.failed.connect(_on_join_failed)
 	net.ended.connect(back_to_menu)
@@ -193,6 +201,7 @@ func start_host() -> void:
 func start_dedicated() -> void:
 	Engine.max_fps = 60                     # nothing to draw: do not spin between physics ticks
 	net.message.connect(func(text: String) -> void: print(text))
+	net.chat.connect(func(id: int, text: String) -> void: print("%s: %s" % [net.player_name(id), text]))
 	var err := net.host(_args.get("name", "Plateau server"), color, int(_args.get("port", Net.PORT)), true)
 	if err != "":
 		printerr(err)
@@ -315,6 +324,14 @@ func _process(delta: float) -> void:
 		if _stats_t >= 0.25:
 			_stats_t = 0.0
 			_stats.text = net.debug_text()
+	_player_list.visible = net.active and Input.is_physical_key_pressed(KEY_TAB) and not pause.visible
+	if _player_list.visible:
+		_player_list_t += delta
+		if _player_list_t >= 0.5:
+			_player_list_t = 0.0
+			_update_player_list()
+	else:
+		_player_list_t = 1.0                # up to date as soon as Tab goes down
 	if _toast_t > 0.0:
 		_toast_t -= delta
 		_toast.modulate.a = clampf(_toast_t, 0.0, 1.0)
@@ -561,7 +578,7 @@ func drive_granted(car: Car) -> void:
 func enter_car(car: Car) -> void:
 	driving = car
 	car.set_driver_color(color)
-	car.controls = not pause.visible
+	car.controls = not (pause.visible or chat.is_open())
 	player.set_carrier(null)
 	player.active = false
 	player.visible = false
@@ -627,11 +644,11 @@ func _leave_seat(car: Car) -> void:
 
 ## Opens (walking only) or closes the vehicle menu; the player stands still while it is open.
 func set_menu_open(on: bool) -> void:
-	if on == _menu.visible or (on and (flying or driving or pause.visible)):
+	if on == _menu.visible or (on and (flying or driving or pause.visible or chat.is_open())):
 		return
 	_menu.visible = on
 	_menu_status.text = ""
-	player.active = not on and not flying and not driving
+	_update_controls()
 	if on:
 		_menu_mouse = Input.mouse_mode
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -649,6 +666,7 @@ func set_pause_open(on: bool) -> void:
 		return
 	if on:
 		set_menu_open(false)
+		chat.close()
 		_pause_mouse = Input.mouse_mode
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		var info := "Exploring solo."
@@ -666,10 +684,44 @@ func set_pause_open(on: bool) -> void:
 	else:
 		pause.close()
 		Input.mouse_mode = _pause_mouse
-	player.active = not on and not flying and not driving
-	fly_camera.active = flying and not on
+	_update_controls()
+
+
+## The player, the fly camera or the vehicle driven take the keys and mouse unless a menu or the chat is open.
+func _update_controls() -> void:
+	var ui := _menu.visible or pause.visible or chat.is_open()
+	player.active = not ui and not flying and not driving
+	fly_camera.active = flying and not ui
 	if driving:
-		driving.controls = not on
+		driving.controls = not ui
+
+
+## Opens the chat line (LAN games, Enter); chat.gd closes it on Enter or Esc.
+func set_chat_open(on: bool) -> void:
+	if on == chat.is_open() or (on and (not net.active or _menu.visible or pause.visible)):
+		return
+	if on:
+		chat.open()
+	else:
+		chat.close()
+	_update_controls()
+
+
+func _on_chat(id: int, text: String) -> void:
+	chat.add(net.player_name(id), net.player_color(id), text)
+
+
+## The players (Tab): us first, then the host, then the others as they joined.
+func _update_player_list() -> void:
+	var ids: Array = net.players.keys()
+	ids.sort_custom(func(a: int, b: int) -> bool:
+		return [a != net.me(), a != 1, a] < [b != net.me(), b != 1, b])
+	var rows := []
+	for id: int in ids:
+		rows.append([net.player_name(id), net.player_color(id), net.ping(id), id == net.me()])
+	var title := "%s · %d/%d players" % ["Your game" if mode == "host" else ("%s's game" % net.player_name(1) \
+			if net.players.has(1) else "Server %s" % net.host_address), ids.size(), Net.MAX_PLAYERS]
+	_player_list.show_players(title, rows)
 
 
 func _show_toast(text: String) -> void:
@@ -685,11 +737,22 @@ func _spawn_from_menu(model: String) -> void:
 		_menu_status.text = "No free spot for the %s here: try somewhere more open." % Car.display_name(model).to_lower()
 
 
-## Tab and Esc are caught before the GUI: with a menu button focused, Tab would only move the focus.
+## U, Tab and Esc are caught before the GUI: with a menu button focused, Tab would only move the focus. Tab (held) shows
+## the player list (_process). While typing in the chat, only Esc (close it) is caught.
 func _input(event: InputEvent) -> void:
-	if not (event is InputEventKey and event.pressed and not event.echo) or mode == "":
+	if not event is InputEventKey or mode == "":
 		return
-	if event.physical_keycode == KEY_TAB and not pause.visible \
+	if event.physical_keycode == KEY_TAB:
+		get_viewport().set_input_as_handled()
+		return
+	if not event.pressed or event.echo:
+		return
+	if chat.is_open():
+		if event.physical_keycode == KEY_ESCAPE:
+			set_chat_open(false)
+			get_viewport().set_input_as_handled()
+		return
+	if event.physical_keycode == KEY_U and not pause.visible \
 			or (event.physical_keycode == KEY_ESCAPE and _menu.visible):
 		set_menu_open(not _menu.visible)
 		get_viewport().set_input_as_handled()
@@ -699,12 +762,15 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _menu.visible or pause.visible or mode == "":
+	if _menu.visible or pause.visible or chat.is_open() or mode == "":
 		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not flying:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
+			KEY_ENTER, KEY_KP_ENTER:
+				set_chat_open(true)
+				get_viewport().set_input_as_handled()
 			KEY_F1:
 				set_flying(not flying)
 			KEY_E:
@@ -812,6 +878,14 @@ func _build_hud() -> void:
 	_stats.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_stats.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_build_menu()
+	chat = Chat.new()
+	chat.closed.connect(_update_controls)
+	chat.sent.connect(net.say)
+	hud.add_child(chat)
+	_player_list = PlayerList.new()
+	hud.add_child(_player_list)
+	_player_list.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE, 60)
+	_player_list.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_update_help()
 	_help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT, Control.PRESET_MODE_MINSIZE, 12)
 
@@ -843,7 +917,7 @@ func _build_menu() -> void:
 		_menu_buttons.add_child(b)
 	_menu_status = UiStyle.label("", 16, UiStyle.TEXT_WARN)
 	box.add_child(_menu_status)
-	box.add_child(UiStyle.label("click or arrows + Enter: park it next to you · Tab / Esc close", 16, UiStyle.TEXT_DIM))
+	box.add_child(UiStyle.label("click or arrows + Enter: park it next to you · U / Esc close", 16, UiStyle.TEXT_DIM))
 	hud.add_child(_menu)
 	UiStyle.centre(_menu)
 
@@ -860,5 +934,16 @@ func _update_help() -> void:
 	else:
 		_help.text = "WALK · click to capture the mouse · Esc menu · WASD/ZQSD move · Shift run · Space jump\n" + \
 				"wheel zoom (all the way in: first person) · V first/third person · E get in the nearest car (in the bus: near the driver seat)\n" + \
-				"C park a car here · Tab vehicle menu · F inspect · X close · F1 fly camera · H hide help"
+				"C park a car here · U vehicle menu · F inspect · X close · F1 fly camera · H hide help"
 	_help.text += "\nF2 graphics: %s · F3 frame rate%s" % ["low" if low_quality else "high", " and network" if net.active else ""]
+	if net.active:
+		_help.text += " · Enter chat · Tab players"
+	if chat:
+		_place_chat()
+
+
+## The chat sits bottom left, just above the help.
+func _place_chat() -> void:
+	chat.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT, Control.PRESET_MODE_MINSIZE, 12)
+	chat.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	chat.offset_bottom = -12.0 - _help.get_combined_minimum_size().y - 8.0
