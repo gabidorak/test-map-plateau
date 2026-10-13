@@ -163,7 +163,7 @@ def tube_into(bm: bmesh.types.BMesh, tube: Tube, sides: int) -> list:
     for i, p in enumerate(pts):
         d = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
         side = d.cross(Vector((0, 0, 1)) if abs(d.z) < 0.95 else Vector((1, 0, 0))).normalized()
-        up = side.cross(d).normalized()
+        up = d.cross(side).normalized()     # (side, up, d) right-handed: rings run CCW, faces point outward
         r = tube.points[i][3]
         rings.append([bm.verts.new(p + (side * math.cos(a) + up * math.sin(a)) * r)
                       for a in (2 * math.pi * k / sides for k in range(sides))])
