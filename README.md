@@ -1,6 +1,6 @@
 # Plateau map
 
-Real map of the Saclay plateau (2.1 × 1.35 km: Télécom Paris → École Polytechnique and its lake → ENSTA Paris and its Centre de l'Yvette) turned into a cartoon 3D scene for Godot 4.7.
+Real map of the Saclay plateau (2.1 × 1.74 km: Télécom Paris → École Polytechnique and its lake → ENSTA Paris and its Centre de l'Yvette, and south down the Lozère hillside to the Yvette valley) turned into a cartoon 3D scene for Godot 4.7.
 
 ## Play
 

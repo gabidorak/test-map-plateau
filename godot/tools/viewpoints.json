@@ -27,6 +27,9 @@
     {"name": "x_lake_west_path", "label": "Lac de l'X, west woodchip path looking east along the lake", "eye": [334, 365, 1.7], "target": [520, 320, 0]},
     {"name": "yvette_centre", "label": "ENSTA Centre de l'Yvette, the lab compound from above Chemin de la Hunière", "eye": [1560, -430, 30], "target": [1625, -545, 0]},
     {"name": "overview_campus", "label": "Whole campus area from above the south-west (lake and Centre de l'Yvette)", "eye": [-190, -660, 330], "target": [800, 0, 0]},
+    {"name": "poincare_park", "label": "Parc Henri Poincaré by Rue du Moulin, the south edge at the foot of the Lozère hillside", "eye": [840, -1010, 1.7], "target": [900, -1060, 2]},
+    {"name": "lozere_hillside", "label": "Lozère hillside from above the valley, looking up north to the plateau", "eye": [700, -1080, 60], "target": [700, -700, 40]},
+    {"name": "overview_lozere", "label": "Whole map from above the south-west, with the Lozère hillside strip", "eye": [-200, -1080, 380], "target": [800, -200, 0]},
     {"name": "overview", "label": "Whole strip from above Télécom Paris", "eye": [-120, -260, 160], "target": [700, -80, 0]}
   ]
 }
