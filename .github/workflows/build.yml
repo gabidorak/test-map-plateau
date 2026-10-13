@@ -97,7 +97,8 @@ jobs:
         run: |
           mkdir release
           mv "artifacts/plateau-map-windows/Plateau Map.exe" release/plateau-map-windows.exe
-          mv artifacts/plateau-map-linux/plateau-map-linux.tar.gz release/
+          tar xzf artifacts/plateau-map-linux/plateau-map-linux.tar.gz -C artifacts/plateau-map-linux
+          mv "artifacts/plateau-map-linux/Plateau Map.x86_64" release/plateau-map-linux.x86_64
           mv "artifacts/plateau-map-macos/Plateau Map.zip" release/plateau-map-macos.zip
 
       # Pushed v* tags are released as-is; every push to main gets its own build-N tag.
