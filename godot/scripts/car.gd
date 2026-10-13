@@ -37,8 +37,9 @@ const KENNEY_WHEELS := ["wheel-front-left", "wheel-front-right", "wheel-back-lef
 ## left, back right), credit, mass (kg; engine, brakes and suspension scale with it), power (engine
 ## factor), max_speed (m/s), max_steer (rad at walking pace), layout (json next to the model), sound
 ## (vehicle_audio kind), traction_from (index of the first driven wheel; all drive by default), trailer_mass (kg,
-## rear section of an articulated vehicle), label (name in the vehicle menu, see display_name). Missing keys take the
-## Kenney Car Kit values (scale 1.5: ~2.8 m -> ~4.2 m).
+## rear section of an articulated vehicle), label (name in the vehicle menu, see display_name), plane (built and flown
+## by scripts/plane.gd, which extends this script, instead). Missing keys take the Kenney Car Kit values (scale 1.5:
+## ~2.8 m -> ~4.2 m).
 const SPECS := {
 	"bus-idfm": {"label": "IDFM bus (12 m)", "file": "bus_idfm.glb", "scale": 1.0,
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
@@ -56,9 +57,10 @@ const SPECS := {
 	"sedan": {}, "taxi": {}, "suv": {"label": "SUV"}, "police": {}, "hatchback-sports": {"label": "Sports hatchback"},
 	"van": {}, "sedan-sports": {"label": "Sports sedan"}, "suv-luxury": {"label": "Luxury SUV"}, "delivery": {"label": "Delivery van"},
 	"ambulance": {},
+	"biplane": {"label": "Biplane", "plane": true, "credit": "toy biplane built by scripts/plane.gd"},
 }
 const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "taxi", "suv", "police", "hatchback-sports", "van",
-		"sedan-sports", "suv-luxury", "delivery", "ambulance"]
+		"sedan-sports", "suv-luxury", "delivery", "ambulance", "biplane"]
 const REST_LENGTH := 0.2
 const BLINK := 0.75                         # s, indicator period
 const DOOR_TIME := 1.6                      # s to open or close

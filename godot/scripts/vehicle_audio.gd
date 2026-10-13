@@ -16,6 +16,10 @@ const KINDS := {
 	"car": {"f0": 48, "amps": [1.0, 0.6, 0.55, 0.35, 0.3, 0.18, 0.12, 0.08], "sub": 0.15, "noise": 0.45,
 			"pitch_top": 3.6, "gears": [0.16, 0.3, 0.46, 0.64, 0.82, 1.0], "unit_size": 7.0, "idle_db": -9.0,
 			"horn": [415, 523], "horn_harmonics": 9},
+	# biplane (scripts/plane.gd): one "gear", the engine speed follows the throttle lever; buzzy radial and prop
+	"plane": {"f0": 36, "amps": [1.0, 0.9, 0.75, 0.6, 0.55, 0.45, 0.35, 0.3, 0.22, 0.18, 0.12, 0.1], "sub": 0.3,
+			"noise": 0.55, "pitch_top": 2.3, "gears": [1.0], "unit_size": 16.0, "idle_db": -8.0,
+			"horn": [523, 659], "horn_harmonics": 6},
 }
 
 static var _cache := {}

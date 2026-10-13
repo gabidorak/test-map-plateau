@@ -17,6 +17,7 @@ extends Node3D
 ## The mouse wheel zooms the camera, all the way in is first person (walking) or the cab view (driving the bus);
 ## first person and the cab view carry over when taking and leaving the driver seat. The articulated bus carries the
 ## player in whichever of its two sections they stand (Car.carrier_at).
+## The biplane (scripts/plane.gd, in the vehicle menu) is got in and out of like a car, and flies.
 ## Vehicles bend thin trees and knock over sign poles, bollards and the like (scripts/breakables.gd).
 ## Graphics: "low" (no SSIL/SSAO/glow, FXAA instead of MSAA) keeps 60 fps on an integrated GPU; it is
 ## the default there, "high" elsewhere. PLATEAU_QUALITY=low|high overrides, F2 switches.
@@ -27,6 +28,7 @@ const WorldQuery = preload("res://scripts/world_query.gd")
 const Picker = preload("res://scripts/picker.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const Car = preload("res://scripts/car.gd")
+const Biplane = preload("res://scripts/plane.gd")
 const Breakables = preload("res://scripts/breakables.gd")
 const Net = preload("res://scripts/net.gd")
 const MainMenu = preload("res://scripts/main_menu.gd")
@@ -336,7 +338,9 @@ func _process(delta: float) -> void:
 		_toast_t -= delta
 		_toast.modulate.a = clampf(_toast_t, 0.0, 1.0)
 	_dash.visible = driving != null
-	if driving:
+	if driving is Biplane:
+		_dash.text = (driving as Biplane).dash_text()
+	elif driving:
 		var arrows := ["  ", "  "]
 		if driving.indicator != 0 and fmod(Time.get_ticks_msec() / 1000.0, Car.BLINK) < Car.BLINK * 0.5:
 			arrows[0 if driving.indicator == 1 else 1] = "◀" if driving.indicator == 1 else "▶"
@@ -436,8 +440,7 @@ func spawn_car_near_player(model := "") -> Car:
 	if model == "":
 		model = Car.MODELS[_next_model % Car.MODELS.size()]
 		_next_model += 1
-	var car := Car.new()
-	car.setup(model)
+	var car := new_vehicle(model)
 	var yaw: float = player.camera.global_rotation.y
 	var spot: Variant = _find_car_spot(yaw, car.half_extents, true)
 	if spot == null:
@@ -457,11 +460,17 @@ func spawn_car_near_player(model := "") -> Car:
 
 ## LAN games: a vehicle another peer parked, at `xf` (net.gd).
 func add_net_car(model: String, xf: Transform3D) -> Car:
-	var car := Car.new()
-	car.setup(model)
+	var car := new_vehicle(model)
 	add_child(car)
 	car.place(xf)
 	_add_car(car)
+	return car
+
+
+## A vehicle of `model`, set up but not in the tree yet: a Biplane for the aircraft (Car.SPECS "plane"), else a Car.
+static func new_vehicle(model: String) -> Car:
+	var car: Car = Biplane.new() if Car.SPECS[model].get("plane", false) else Car.new()
+	car.setup(model)
 	return car
 
 
@@ -926,6 +935,10 @@ func _update_help() -> void:
 	if flying:
 		_help.text = "FLY CAMERA · hold right mouse to look · WASD/ZQSD move · Q/E (A/E on AZERTY) down/up\n" + \
 				"Shift faster · wheel speed · F1 land the player here · F inspect · X close · Esc menu · H hide help"
+	elif driving is Biplane:
+		_help.text = "FLY · Shift/Ctrl throttle · W/S nose down/up · A/D roll (on the ground: steer) · Q/E (A/E on AZERTY) rudder\n" + \
+				"Ctrl at idle brakes · R level the wings (on the ground: back on the wheels) · mouse look · wheel zoom (all the way in: cockpit) · V cockpit\n" + \
+				"Space get out · F inspect · X close · F1 fly camera · Esc menu · H hide help"
 	elif driving:
 		_help.text = "DRIVE · WASD/ZQSD: W throttle, S brake then reverse, A/D steer · Q/E (A/E on AZERTY) turn signals · G horn · X (held) drift\n" + \
 				"mouse look · wheel zoom%s · R back on wheels · %sSpace %s\nF inspect · X close · F1 fly camera · Esc menu · H hide help" % [
