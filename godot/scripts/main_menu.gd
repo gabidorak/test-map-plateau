@@ -23,7 +23,7 @@ static var notice := ""
 var nickname := ""
 var color_index := 0
 var default_port := 7777
-var protocol := 0                           # games of another version are listed but cannot be joined
+var protocol := 0                           # Net.build_id(): games of another build are listed but cannot be joined
 var discovery: LanDiscovery                 # set by game.gd before adding the menu
 
 var _looks := UiStyle.button_looks()
@@ -293,7 +293,7 @@ func _list_hosts() -> void:
 		var b := UiStyle.button(text, _looks, Vector2(0, 40), 16)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		if h["version"] != protocol:
-			b.text += "   (another version of the game)"
+			b.text += "   (another build of the game)"
 			b.disabled = true
 		b.pressed.connect(_join_found.bind(h["ip"], h["port"]))
 		_found.add_child(b)

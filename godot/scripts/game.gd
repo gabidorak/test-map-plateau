@@ -153,7 +153,7 @@ func _open_main_menu() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	menu = MainMenu.new()
 	menu.discovery = net.discovery
-	menu.protocol = Net.PROTOCOL
+	menu.protocol = Net.build_id()
 	menu.default_port = Net.PORT
 	add_child(menu)
 	menu.solo.connect(func() -> void: _take_profile(); start_solo())
