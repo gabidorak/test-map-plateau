@@ -14,6 +14,9 @@ extends Node
 ## tree's instance is turned about its foot in its three LODs, a broken prop's instances are scaled to nothing while
 ## its debris draws one-instance copies of them. Those MultiMeshes are edited through a CPU copy of their buffer
 ## (reading one back from the GPU stalls; the headless renderer only keeps whole buffers), uploaded once per frame.
+## LAN games: only vehicles simulated on this peer sweep (remote ones are frozen); what they bend or break is sent to
+## the other peers (`broke`, scripts/net.gd), which do the same with bend_tree / break_prop. A peer joining gets what
+## is bent and broken at that moment from the host (net_snapshot / apply_net_snapshot).
 
 const Layers = preload("res://scripts/physics_layers.gd")
 const VehicleAudio = preload("res://scripts/vehicle_audio.gd")
@@ -37,6 +40,9 @@ const SWEEP_MARGIN := 0.05                  # m added around the swept boxes
 const RESTORE_AFTER := 20.0                 # s
 const RESTORE_DISTANCE := 60.0              # m
 const MAX_DEBRIS := 40
+
+## A vehicle simulated here bent tree k ("bend") or broke prop k ("break"), pushing it at `push` (m/s, horizontal).
+signal broke(kind: String, k: int, push: Vector3)
 
 var world_root: Node3D
 var bent := {}                              # tree index -> {mmis (3 LODs), index, rest, axis, angle, rate}
@@ -79,7 +85,8 @@ func _physics_process(delta: float) -> void:
 			if cs and not cs.disabled and cs.shape is BoxShape3D:
 				_boxes.append([body, body.global_transform * cs.transform, (cs.shape as BoxShape3D).size])
 	for b: Array in _boxes:
-		_sweep(b[0], b[1], b[2], delta)
+		if not (b[0] as RigidBody3D).freeze:   # remote vehicles (net.gd): their own peer sweeps them
+			_sweep(b[0], b[1], b[2], delta)
 	_update_trees(delta)
 	_restore_debris()
 	_flush()
@@ -109,17 +116,28 @@ func _bend(body: RigidBody3D, k: int) -> void:
 	var push := Vector3(v.x, 0.0, v.z)
 	if push.length() < BEND_SPEED:
 		return
+	if bend_tree(k, push):
+		body.apply_impulse(-push * TREE_MASS, base - body.global_position)
+		broke.emit("bend", k, push)
+
+
+## Bends tree k away along `push` (m/s, horizontal), with a swish when `sound`; false when it cannot (already bent,
+## its chunk not found).
+func bend_tree(k: int, push: Vector3, sound := true) -> bool:
+	if k < 0 or bent.has(k) or _trees == null:
+		return false
 	var b := _tree_instance(k)
 	if b.is_empty():
-		return
+		return false
 	_trees.set_solid(k, false)
 	var dir := push.normalized()
 	b["axis"] = Vector3.UP.cross(dir)
 	b["angle"] = 0.0
 	b["rate"] = minf(push.length(), 10.0)          # rad/s: the bumper pushes the trunk about 1 m up
 	bent[k] = b
-	body.apply_impulse(-push * TREE_MASS, base - body.global_position)
-	_play("swish", base, linear_to_db(clampf(push.length() / 8.0, 0.3, 1.0)))
+	if sound:
+		_play("swish", _trees.data.base[k], linear_to_db(clampf(push.length() / 8.0, 0.3, 1.0)))
+	return true
 
 
 ## The tree's instance in its chunk's three LOD MultiMeshes: {mmis, index, rest (chunk-local transform)}, or {}.
@@ -195,13 +213,26 @@ func _break(body: RigidBody3D, k: int) -> void:
 	var push := Vector3(v.x, 0.0, v.z)
 	if push.length() < BREAK_SPEED:             # cheap test first: a vehicle may lean on it every frame
 		return
+	var mass: float = BREAKABLE_PROPS.get(_props.data.describe(k).get("model", ""), 0.0)
+	if mass > 0.0 and break_prop(k, push):
+		body.apply_impulse(-push * mass, hit - body.global_position)
+		broke.emit("break", k, push)
+
+
+## Snaps prop k off its foot, flying off along `push` (m/s, horizontal), with a clang when `sound`; false when it
+## cannot (already broken, not a breakable model, its instances not found).
+func break_prop(k: int, push: Vector3, sound := true) -> bool:
+	if k < 0 or _broken.has(k) or _props == null:
+		return false
+	var shapes: Array = _props.record_shapes(k)
+	var hit: Vector3 = (shapes[0][1] as Transform3D).origin
 	var meta: Dictionary = _props.data.describe(k)
 	var mass: float = BREAKABLE_PROPS.get(meta.get("model", ""), 0.0)
 	if mass <= 0.0:
-		return
+		return false
 	var instances := _prop_instances(meta, _props.record_aabb(k))
 	if instances.is_empty():
-		return
+		return false
 	# the debris body sits on the prop's foot, upright
 	var foot: Transform3D = instances[0][2]
 	foot.basis = foot.basis.orthonormalized()
@@ -255,8 +286,9 @@ func _break(body: RigidBody3D, k: int) -> void:
 	_broken[k] = true
 	debris.append({"record": k, "body": rb, "instances": hidden, "spot": foot.origin, "labels": labels,
 			"labels_rest": labels_rest, "time": _clock})
-	body.apply_impulse(-push * mass, hit - body.global_position)
-	_play("clang", hit, linear_to_db(clampf(push.length() / 10.0 * sqrt(mass / 15.0), 0.3, 1.0)))
+	if sound:
+		_play("clang", hit, linear_to_db(clampf(push.length() / 10.0 * sqrt(mass / 15.0), 0.3, 1.0)))
+	return true
 
 
 ## The prop's instances in the chunk MultiMeshes around it: [[MultiMesh, index, global transform, MultiMeshInstance3D]],
@@ -330,6 +362,39 @@ func restore(d: Dictionary) -> void:
 	_broken.erase(d["record"])
 	debris.erase(d)
 	_flush()
+
+
+# ---------------------------------------------------------------- LAN games
+
+## What is bent and broken here, for a peer joining (scripts/net.gd): [[tree, axis, angle, rate] per bent tree,
+## [prop, debris transform, linear velocity, angular velocity, age (s)] per broken prop].
+func net_snapshot() -> Array:
+	var trees := []
+	for k: int in bent:
+		var b: Dictionary = bent[k]
+		trees.append([k, b["axis"], b["angle"], b["rate"]])
+	var props := []
+	for d: Dictionary in debris:
+		var rb: RigidBody3D = d["body"]
+		props.append([d["record"], rb.global_transform, rb.linear_velocity, rb.angular_velocity, _clock - d["time"]])
+	return [trees, props]
+
+
+## Bends and breaks, silently, what another peer's net_snapshot() lists, as it is there: the trees as far bent,
+## the debris where it lies (it comes back as many seconds after the knock as there).
+func apply_net_snapshot(s: Array) -> void:
+	for t: Array in s[0]:
+		if bend_tree(t[0], (t[1] as Vector3).cross(Vector3.UP), false):
+			bent[t[0]]["angle"] = t[2]
+			bent[t[0]]["rate"] = t[3]
+	for p: Array in s[1]:
+		if break_prop(p[0], Vector3.FORWARD, false):
+			var d: Dictionary = debris[-1]
+			var rb: RigidBody3D = d["body"]
+			rb.global_transform = p[1]       # the bus stop labels it carries follow
+			rb.linear_velocity = p[2]
+			rb.angular_velocity = p[3]
+			d["time"] = _clock - p[4]
 
 
 # ---------------------------------------------------------------- shared

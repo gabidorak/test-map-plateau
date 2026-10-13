@@ -1,8 +1,15 @@
 extends Node3D
 ## Game controller on scenes/main.tscn: spawns the player, switches between the player and the
-## fly camera (F1), owns the HUD and the debug picker (F). Click captures the mouse, Esc frees it.
+## fly camera (F1), owns the HUD and the debug picker (F). Click captures the mouse; Esc opens the in-game menu
+## (scripts/pause_menu.gd: resume, back to the main menu, quit), which frees it.
+## Launched as the main scene it first shows the welcome menu (scripts/main_menu.gd) over a slow flight around the
+## campus: Explore solo, Host a game on LAN (the host's address shows at the top right), Join a game. LAN games are
+## scripts/net.gd's: the other players show as scripts/remote_player.gd, vehicles are simulated by whoever drives
+## them, and a player can walk in a bus another one drives. Command line (after `--`): --solo, --host, --join=IP[:PORT],
+## --name=NICK, --color=N skip the menu. Instanced by the tools, it starts solo at once as before.
 ## Debug cars (scripts/car.gd) are parked next to the spawn point; C parks another one next to the
-## player, E gets into the nearest car and Space gets out. The bus is walkable: the player standing in it
+## player, E gets into the nearest car and Space gets out. Tab opens the vehicle menu, which parks any model (Car.MODELS)
+## next to the player. The bus is walkable: the player standing in it
 ## is carried along (also while it moves), E near its driver seat takes the wheel, and Space leaves the
 ## seat into the aisle (the bus rolls on, handbrake once slow); O (driver) opens and closes its doors.
 ## The mouse wheel zooms the camera, all the way in is first person (walking) or the cab view (driving the bus);
@@ -19,6 +26,11 @@ const Picker = preload("res://scripts/picker.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const Car = preload("res://scripts/car.gd")
 const Breakables = preload("res://scripts/breakables.gd")
+const Net = preload("res://scripts/net.gd")
+const MainMenu = preload("res://scripts/main_menu.gd")
+const PauseMenu = preload("res://scripts/pause_menu.gd")
+const RemotePlayer = preload("res://scripts/remote_player.gd")
+const UiStyle = preload("res://scripts/ui_style.gd")
 const ENTER_RANGE := 3.0                    # metres from the car body
 const SEAT_RANGE := 1.6                     # metres from the driver seat, from inside a walkable vehicle
 
@@ -26,7 +38,11 @@ const SEAT_RANGE := 1.6                     # metres from the driver seat, from 
 ## Télécom Paris main entrance, facing it (south).
 @export var spawn_xy := Vector2(-34, 55.0)
 @export var spawn_yaw_deg := 180.0
-@export var debug_cars := true              # park a few cars next to the player at start
+@export var debug_cars := true              # park a few cars next to the player at start (solo and hosting)
+## Welcome menu flight: circles this point (pipeline x, y) at MENU_ORBIT radius and height above it.
+const MENU_ORBIT_CENTRE := Vector2(260.0, -120.0)
+const MENU_ORBIT := Vector2(330.0, 140.0)
+const MENU_ORBIT_SPEED := 0.02              # rad/s
 
 var flying := false
 var driving: Car                            # the car the player is in, or null
@@ -37,8 +53,26 @@ var breakables: Breakables
 var hud: CanvasLayer
 var _help: Label
 var _dash: Label                            # speed, gear, indicators, doors while driving
+var _menu: PanelContainer                   # vehicle menu (Tab)
+var _menu_buttons: GridContainer            # one per model, named after it
+var _menu_status: Label
+var _menu_mouse := Input.MOUSE_MODE_VISIBLE # mouse mode to restore when the menu closes
 var low_quality := false
 var _high := {}                             # the scene's own settings, restored by "high"
+var mode := ""                              # "solo", "host", "client"; "" in the welcome menu
+var net: Net
+var nickname := "Player"
+var color := MainMenu.COLORS[0]
+var menu: MainMenu                          # welcome menu, while it is up
+var pause: PauseMenu
+var _pause_mouse := Input.MOUSE_MODE_VISIBLE
+var _args := {}                             # command line options after "--"
+var _host_label: Label                      # top right while hosting: the address to join
+var _host_label_t := 0.0
+var _toast: Label                           # "X joined the game"...
+var _toast_t := 0.0
+var _orbit_angle := 0.0
+var _orbit_ground := NAN                    # ground height under MENU_ORBIT_CENTRE
 
 @onready var player: CharacterBody3D = $Player
 @onready var fly_camera: Camera3D = $Camera
@@ -53,20 +87,150 @@ func _ready() -> void:
 	breakables.name = "Breakables"
 	breakables.world_root = world_root
 	add_child(breakables)
+	net = Net.new()
+	net.name = "Net"
+	net.game = self
+	add_child(net)
+	net.message.connect(_show_toast)
+	net.joined.connect(_on_joined)
+	net.failed.connect(_on_join_failed)
+	net.ended.connect(back_to_menu)
+	breakables.broke.connect(net.broke)
 	_build_hud()
+	pause = PauseMenu.new()
+	add_child(pause)
+	pause.resume.connect(set_pause_open.bind(false))
+	pause.leave.connect(back_to_menu.bind(""))
+	pause.quit.connect(get_tree().quit)
 	var env: Environment = $WorldEnvironment.environment
 	_high = {"ssil": env.ssil_enabled, "ssao": env.ssao_enabled, "glow": env.glow_enabled,
 			"msaa": get_viewport().msaa_3d, "aa": get_viewport().screen_space_aa}
 	var q := OS.get_environment("PLATEAU_QUALITY")
 	set_low_quality(q == "low" if q in ["low", "high"] \
 			else RenderingServer.get_video_adapter_type() == RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU)
+	for a in OS.get_cmdline_user_args():
+		var kv := a.trim_prefix("--").split("=", true, 1)
+		_args[kv[0]] = kv[1] if kv.size() > 1 else ""
+	var profile := MainMenu.saved_profile()
+	nickname = _args.get("name", profile[0])
+	color = MainMenu.COLORS[clampi(int(_args.get("color", profile[1])), 0, MainMenu.COLORS.size() - 1)]
+	# the tools instance the scene themselves: no menu for them
+	var welcome := get_tree().current_scene == self and not (_args.has("solo") or _args.has("host") or _args.has("join"))
 	fly_camera.active = false
-	player.camera.current = true
+	if welcome:
+		_open_main_menu()
+	else:
+		player.camera.current = true
 	await get_tree().physics_frame
 	spawn_at(spawn_xy, deg_to_rad(spawn_yaw_deg))
+	if welcome:
+		return
+	if _args.has("host"):
+		start_host()
+	elif _args.has("join"):
+		var where: String = _args["join"]
+		start_join(where.get_slice(":", 0), int(where.get_slice(":", 1)) if where.contains(":") else Net.PORT)
+	else:
+		start_solo()
+
+
+## The welcome menu over the campus flight; the player waits, hidden, at the spawn point.
+func _open_main_menu() -> void:
+	mode = ""
+	hud.visible = false
+	_set_player_enabled(false)
+	fly_camera.make_current()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	menu = MainMenu.new()
+	menu.discovery = net.discovery
+	menu.protocol = Net.PROTOCOL
+	menu.default_port = Net.PORT
+	add_child(menu)
+	menu.solo.connect(func() -> void: _take_profile(); start_solo())
+	menu.host.connect(func() -> void: _take_profile(); start_host())
+	menu.join.connect(func(address: String, port: int) -> void: _take_profile(); start_join(address, port))
+	menu.quit.connect(get_tree().quit)
+
+
+func _take_profile() -> void:
+	nickname = menu.player_name()
+	color = menu.color()
+
+
+func start_solo() -> void:
+	mode = "solo"
+	_begin()
 	if debug_cars:
 		for i in 4:
 			spawn_car_near_player()
+
+
+## Starts a LAN game hosted here: the server first, so the cars parked at start get their network ids.
+func start_host() -> void:
+	var err := net.host(nickname, color)
+	if err != "":
+		_on_join_failed(err)
+		return
+	mode = "host"
+	_begin()
+	if debug_cars:
+		for i in 4:
+			spawn_car_near_player()
+
+
+## Connects to a LAN game; _on_joined starts playing once the host has sent its players and vehicles.
+func start_join(address: String, port: int) -> void:
+	var err := net.join(address, port, nickname, color)
+	if err != "":
+		_on_join_failed(err)
+	elif menu:
+		menu.set_status("Connecting to %s:%d…" % [address, port], false, true)
+
+
+func _on_joined() -> void:
+	net.discovery.stop()
+	mode = "client"
+	_begin()
+	# a step aside per player, so newcomers do not all land in the same spot
+	spawn_at(spawn_xy + Vector2(1.2 * (net.me() % 5 - 2), 0.0), deg_to_rad(spawn_yaw_deg))
+	_show_toast("Joined %s's game" % net.player_name(1))
+
+
+func _on_join_failed(reason: String) -> void:
+	if menu:
+		menu.set_status(reason, true)
+	else:
+		back_to_menu(reason)
+
+
+## Leaves the game (closing it for everyone when hosting) and restarts the scene on the welcome menu, showing
+## `reason` there.
+func back_to_menu(reason := "") -> void:
+	MainMenu.notice = reason
+	net.leave()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	get_tree().reload_current_scene()
+
+
+## From the welcome menu into the game.
+func _begin() -> void:
+	if menu:
+		menu.queue_free()
+		menu = null
+	hud.visible = true
+	RemotePlayer.set_color(player.get_node("Body"), color)
+	_set_player_enabled(true)
+	player.camera.make_current()
+	_host_label.visible = mode == "host"
+	_host_label_t = 1.0
+	_update_help()
+
+
+func _set_player_enabled(on: bool) -> void:
+	player.visible = on
+	player.active = on
+	player.process_mode = Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_DISABLED
+	player.get_node("CollisionShape3D").set_deferred("disabled", not on)
 
 
 func _physics_process(_delta: float) -> void:
@@ -85,7 +249,17 @@ func _physics_process(_delta: float) -> void:
 	player.set_carrier(c)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if mode == "":
+		_fly_around(delta)
+	if mode == "host":
+		_host_label_t += delta
+		if _host_label_t >= 1.0:              # players come and go, the network may change
+			_host_label_t = 0.0
+			_host_label.text = net.lan_label()
+	if _toast_t > 0.0:
+		_toast_t -= delta
+		_toast.modulate.a = clampf(_toast_t, 0.0, 1.0)
 	_dash.visible = driving != null
 	if driving:
 		var arrows := ["  ", "  "]
@@ -96,6 +270,31 @@ func _process(_delta: float) -> void:
 		if driving.has_doors:
 			line += "\ndoors " + ("OPEN" if driving.doors_open else "closed")
 		_dash.text = line
+
+
+## Welcome menu: the fly camera circles the campus, looking at its middle.
+func _fly_around(delta: float) -> void:
+	if is_nan(_orbit_ground):
+		_orbit_ground = WorldQuery.ground_y(get_world_3d(), MENU_ORBIT_CENTRE.x, -MENU_ORBIT_CENTRE.y, Layers.SOLID)
+		if is_nan(_orbit_ground):
+			_orbit_ground = 0.0 if Engine.get_physics_frames() > 2 else NAN
+			return
+	_orbit_angle += MENU_ORBIT_SPEED * delta
+	var centre := MeshUtils.to_godot(MENU_ORBIT_CENTRE.x, MENU_ORBIT_CENTRE.y, _orbit_ground)
+	var eye := centre + Vector3(cos(_orbit_angle) * MENU_ORBIT.x, MENU_ORBIT.y, sin(_orbit_angle) * MENU_ORBIT.x)
+	fly_camera.look_at_from_position(eye, centre + Vector3.UP * 20.0)
+
+
+## LAN games: our player's state for the other peers (net.gd _pose_remote): standing in a vehicle, the position and
+## facing are in its frame.
+func net_player_state() -> Array:
+	var flags := 1 if driving or not player.visible else 0
+	var c: Node3D = player.carrier if is_instance_valid(player.carrier) else null
+	if c and not driving:
+		var car: Car = c as Car if c is Car else c.head as Car
+		return [car.net_id, 0 if c == car else 1, c.to_local(player.global_position),
+				player.body_yaw() - c.global_rotation.y, flags]
+	return ["", 0, player.global_position, player.body_yaw(), flags]
 
 
 ## Puts the player on the ground at pipeline (x, y).
@@ -152,12 +351,13 @@ func set_screenshot_mode() -> void:
 	cars.clear()
 
 
-## Parks the next car model near the player on the first free spot: on a road or asphalt within
-## ~20 m, lined up with it, when there is one; else anywhere beside the player, parallel to where the
-## player looks. Returns the car, or null when no spot is free.
-func spawn_car_near_player() -> Car:
-	var model: String = Car.MODELS[_next_model % Car.MODELS.size()]
-	_next_model += 1
+## Parks `model` (the next one in Car.MODELS by default) near the player on the first free spot: on a road
+## or asphalt within ~20 m, lined up with it, when there is one; else anywhere beside the player, parallel to
+## where the player looks. Returns the car, or null when no spot is free.
+func spawn_car_near_player(model := "") -> Car:
+	if model == "":
+		model = Car.MODELS[_next_model % Car.MODELS.size()]
+		_next_model += 1
 	var car := Car.new()
 	car.setup(model)
 	var yaw: float = player.camera.global_rotation.y
@@ -172,11 +372,26 @@ func spawn_car_near_player() -> Car:
 		return null
 	add_child(car)
 	car.place(spot)
+	_add_car(car)
+	net.car_parked(car)
+	return car
+
+
+## LAN games: a vehicle another peer parked, at `xf` (net.gd).
+func add_net_car(model: String, xf: Transform3D) -> Car:
+	var car := Car.new()
+	car.setup(model)
+	add_child(car)
+	car.place(xf)
+	_add_car(car)
+	return car
+
+
+func _add_car(car: Car) -> void:
 	if car.inside:
 		for body in car.bodies():
 			player.add_collision_exception_with(body)   # the player collides with its walkable hull instead
 	cars.append(car)
-	return car
 
 
 ## Car transform (+Z forward, origin on the ground) for a free spot around the player for a vehicle of
@@ -274,8 +489,18 @@ func car_to_enter() -> Car:
 	return nearest_car()
 
 
+## LAN games: the host lets us drive `car` (net.gd), which we asked for with E.
+func drive_granted(car: Car) -> void:
+	if driving or flying or mode == "":
+		net.release_drive(car)
+	else:
+		enter_car(car)
+
+
 func enter_car(car: Car) -> void:
 	driving = car
+	car.set_driver_color(color)
+	car.controls = not pause.visible
 	player.set_carrier(null)
 	player.active = false
 	player.visible = false
@@ -293,6 +518,8 @@ func exit_car() -> void:
 	var car := driving
 	driving = null
 	car.set_driving(false)
+	if net.active:
+		net.release_drive(car)
 	if car.interior.size != Vector3.ZERO:
 		_leave_seat(car)
 		return
@@ -337,19 +564,93 @@ func _leave_seat(car: Car) -> void:
 	_update_help()
 
 
+## Opens (walking only) or closes the vehicle menu; the player stands still while it is open.
+func set_menu_open(on: bool) -> void:
+	if on == _menu.visible or (on and (flying or driving or pause.visible)):
+		return
+	_menu.visible = on
+	_menu_status.text = ""
+	player.active = not on and not flying and not driving
+	if on:
+		_menu_mouse = Input.mouse_mode
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		_menu_buttons.get_child(0).grab_focus()
+	else:
+		var focus := get_viewport().gui_get_focus_owner()
+		if focus:
+			focus.release_focus()
+		Input.mouse_mode = _menu_mouse
+
+
+## Opens or closes the in-game menu (Esc); the player and the vehicle driven stand still while it is open.
+func set_pause_open(on: bool) -> void:
+	if on == pause.visible or (on and mode == ""):
+		return
+	if on:
+		set_menu_open(false)
+		_pause_mouse = Input.mouse_mode
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		var info := "Exploring solo."
+		var players := []
+		if mode == "host":
+			info = "Hosting a LAN game: others join with %s.\nGoing back to the main menu ends it for everyone." % \
+					net.lan_label().get_slice("  ·  ", 1)
+		elif mode == "client":
+			info = "Playing in %s's game (%s:%d)." % [net.player_name(1), net.host_address, net.port]
+		if net.active:
+			for id: int in net.players:
+				players.append([net.player_name(id) + (" (you)" if id == net.me() else ""), net.player_color(id)])
+		pause.open(info, players, "Back to main menu")
+	else:
+		pause.close()
+		Input.mouse_mode = _pause_mouse
+	player.active = not on and not flying and not driving
+	fly_camera.active = flying and not on
+	if driving:
+		driving.controls = not on
+
+
+func _show_toast(text: String) -> void:
+	_toast.text = text
+	_toast_t = 4.0
+	_toast.modulate.a = 1.0
+
+
+func _spawn_from_menu(model: String) -> void:
+	if spawn_car_near_player(model):
+		set_menu_open(false)
+	else:
+		_menu_status.text = "No free spot for the %s here: try somewhere more open." % Car.display_name(model).to_lower()
+
+
+## Tab and Esc are caught before the GUI: with a menu button focused, Tab would only move the focus.
+func _input(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and not event.echo) or mode == "":
+		return
+	if event.physical_keycode == KEY_TAB and not pause.visible \
+			or (event.physical_keycode == KEY_ESCAPE and _menu.visible):
+		set_menu_open(not _menu.visible)
+		get_viewport().set_input_as_handled()
+	elif event.physical_keycode == KEY_ESCAPE:
+		set_pause_open(not pause.visible)
+		get_viewport().set_input_as_handled()
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if _menu.visible or pause.visible or mode == "":
+		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not flying:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
-			KEY_ESCAPE:
-				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			KEY_F1:
 				set_flying(not flying)
 			KEY_E:
 				if not flying and not driving:
 					var car := car_to_enter()
-					if car:
+					if car and net.active:
+						net.request_drive(car)
+					elif car:
 						enter_car(car)
 			KEY_SPACE:
 				if driving:
@@ -415,21 +716,73 @@ func _build_hud() -> void:
 	hud.add_child(_dash)
 	_dash.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE, 16)
 	_dash.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_toast = Label.new()
+	_toast.add_theme_font_size_override("font_size", 19)
+	_toast.add_theme_color_override("font_outline_color", Color.BLACK)
+	_toast.add_theme_constant_override("outline_size", 5)
+	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(_toast)
+	_toast.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE, 90)
+	_toast.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_host_label = Label.new()
+	_host_label.add_theme_font_size_override("font_size", 17)
+	_host_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_host_label.add_theme_constant_override("outline_size", 5)
+	_host_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_host_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_host_label.visible = false
+	hud.add_child(_host_label)
+	_host_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 12)
+	_host_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_build_menu()
 	_update_help()
 	_help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT, Control.PRESET_MODE_MINSIZE, 12)
+
+
+## Centred panel with a button per vehicle model (set_menu_open).
+func _build_menu() -> void:
+	_menu = PanelContainer.new()
+	_menu.name = "VehicleMenu"
+	_menu.visible = false
+	_menu.add_theme_stylebox_override("panel", UiStyle.panel())
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	_menu.add_child(box)
+	var title := Label.new()
+	title.text = "Spawn a vehicle"
+	title.add_theme_font_size_override("font_size", 24)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(title)
+	_menu_buttons = GridContainer.new()
+	_menu_buttons.columns = 3
+	_menu_buttons.add_theme_constant_override("h_separation", 8)
+	_menu_buttons.add_theme_constant_override("v_separation", 8)
+	box.add_child(_menu_buttons)
+	var looks := UiStyle.button_looks()
+	for model: String in Car.MODELS:
+		var b := UiStyle.button(Car.display_name(model), looks)
+		b.name = model
+		b.pressed.connect(_spawn_from_menu.bind(model))
+		_menu_buttons.add_child(b)
+	_menu_status = UiStyle.label("", 16, UiStyle.TEXT_WARN)
+	box.add_child(_menu_status)
+	box.add_child(UiStyle.label("click or arrows + Enter: park it next to you · Tab / Esc close", 16, UiStyle.TEXT_DIM))
+	hud.add_child(_menu)
+	UiStyle.centre(_menu)
 
 
 func _update_help() -> void:
 	if flying:
 		_help.text = "FLY CAMERA · hold right mouse to look · WASD/ZQSD move · Q/E (A/E on AZERTY) down/up\n" + \
-				"Shift faster · wheel speed · F1 land the player here · F inspect · X close · H hide help"
+				"Shift faster · wheel speed · F1 land the player here · F inspect · X close · Esc menu · H hide help"
 	elif driving:
 		_help.text = "DRIVE · WASD/ZQSD: W throttle, S brake then reverse, A/D steer · Q/E (A/E on AZERTY) turn signals\n" + \
-				"mouse look · wheel zoom%s · R back on wheels · %sSpace %s\nF inspect · X close · F1 fly camera · H hide help" % [
+				"mouse look · wheel zoom%s · R back on wheels · %sSpace %s\nF inspect · X close · F1 fly camera · Esc menu · H hide help" % [
 				" (all the way in: cab view)" if driving.has_cab() else "", "O doors · V cab view · " if driving.has_doors else "",
 				"leave the seat" if driving.has_doors else "get out"]
 	else:
-		_help.text = "WALK · click to capture the mouse, Esc to free it · WASD/ZQSD move · Shift run · Space jump\n" + \
+		_help.text = "WALK · click to capture the mouse · Esc menu · WASD/ZQSD move · Shift run · Space jump\n" + \
 				"wheel zoom (all the way in: first person) · V first/third person · E get in the nearest car (in the bus: near the driver seat)\n" + \
-				"C park a car here · F inspect · X close · F1 fly camera · H hide help"
+				"C park a car here · Tab vehicle menu · F inspect · X close · F1 fly camera · H hide help"
 	_help.text += "\nF2 graphics: %s" % ("low" if low_quality else "high")

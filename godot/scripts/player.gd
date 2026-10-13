@@ -97,6 +97,11 @@ func teleport(pos: Vector3, yaw := _yaw) -> void:
 	_pivot.rotation = Vector3(_pitch, _yaw, 0.0)
 
 
+## Facing of the body (radians about Y, world frame): where it walks, or looks in first person.
+func body_yaw() -> float:
+	return _body.rotation.y
+
+
 func toggle_view() -> void:
 	set_first_person(not first_person)
 

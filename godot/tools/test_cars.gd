@@ -1,7 +1,8 @@
 extends SceneTree
 ## Headless checks for the debug cars (scripts/car.gd): four cars are parked next to the player at
 ## start and settle on their wheels; E gets into the nearest one; W drives it forward, A turns it;
-## S stops it; Space gets out next to it, standing on the ground, without jumping.
+## S stops it; Space gets out next to it, standing on the ground, without jumping. C parks another car; Tab opens
+## the vehicle menu, whose buttons park the chosen model.
 ## Mouse wheel: zoomed all the way in the player goes first person and back out of it.
 ## Bus: E near the driver seat from inside takes the wheel, in the cab view when the player was in first person;
 ## the steering wheel turns with the steering, the driver's hands on its rim; the wheel zooms out of the cab view
@@ -164,6 +165,15 @@ func _run() -> void:
 	_key(KEY_C, false)
 	await _frames(2)
 	_check(cars.size() == 5, "C parks one more car")
+	_press(KEY_TAB)
+	await _frames(2)
+	var menu: Control = _main.hud.get_node("VehicleMenu")
+	_check(menu.visible and not player.active and _main._menu_buttons.get_child_count() == _main.Car.MODELS.size(),
+			"Tab opens the vehicle menu, a button per model, the player stands still")
+	_main._menu_buttons.get_node("police").pressed.emit()
+	await _frames(2)
+	_check(cars.size() == 6 and cars[-1].model_name == "police" and not menu.visible and player.active,
+			"the menu parks the chosen vehicle (police) and closes")
 	await _bus_checks()
 	await _artic_checks()
 	_finish()
