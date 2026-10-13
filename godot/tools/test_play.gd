@@ -106,6 +106,12 @@ func _reachable(b: Dictionary) -> bool:
 	return area.intersects(rect)
 
 
+## Top of the mass's ground tier, whose walls follow the outline (higher tiers may be set back from it).
+func _wall_top(b: Dictionary) -> float:
+	var tiers: Array = b["toy"]["tiers"]
+	return tiers[0]["top"] if tiers else b["base_z"] + b["height"]
+
+
 # --- 1. picker ---------------------------------------------------------------------------------
 
 func _test_picker() -> void:
@@ -163,7 +169,7 @@ func _test_picker() -> void:
 		var start := mid + out * 3.0
 		var g := WorldQuery.ground_y(_main.get_world_3d(), start.x, -start.y)
 		var z := maxf(g, b["base_z"] + b["min_height"]) + 1.2
-		if z > top - 0.2:
+		if z > minf(top, _wall_top(b)) - 0.2:
 			stats["wall slope"] += 1
 			continue
 		var end := mid - out * 1.0
@@ -173,8 +179,8 @@ func _test_picker() -> void:
 			stats["wall ok"] += 1
 		elif info.get("type") == "building":
 			stats["wall occluded"] += 1     # an adjacent mass in front of this wall
-		elif info.get("type") == "terrain":
-			stats["wall slope"] += 1
+		elif info.get("type") in ["terrain", "ground"]:
+			stats["wall slope"] += 1         # the ground (or a raised sidewalk) rises to the wall
 		else:
 			_fail("wall of #%d %s: ray hit nothing" % [b["num"], b["id"]])
 	print("picker: ", stats)
@@ -280,6 +286,8 @@ func _test_walk() -> void:
 
 func _test_walls() -> void:
 	var tested := 0
+	var pl: Array = _world["meta"]["playable"]
+	var area := Rect2(pl[0], pl[1], pl[2] - pl[0], pl[3] - pl[1])
 	for b: Dictionary in _world["buildings"]:
 		if not b["walls"] or b["min_height"] > 0.0 or b["height"] < 2.5 or not _reachable(b):
 			continue
@@ -297,10 +305,14 @@ func _test_walls() -> void:
 		if _in_passage(mid - out * 0.5):
 			continue
 		var start := mid + out * 2.5
+		if not area.has_point(start):
+			continue                          # the wall faces the boundary
 		var g := WorldQuery.ground_y(_main.get_world_3d(), start.x, -start.y)
 		var pos := MeshUtils.to_godot(start.x, start.y, g + 0.05)
 		if is_nan(g) or _inside_building(start) or _blocked_by_geometry(pos + Vector3.UP * 0.1):
 			continue
+		if _wall_top(b) - g < 0.5:
+			continue                          # a shed dug into the slope: from uphill the player steps onto it
 		tested += 1
 		_player.teleport(pos, 0.0)
 		_player.scripted_input = -out

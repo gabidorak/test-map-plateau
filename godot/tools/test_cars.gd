@@ -108,8 +108,9 @@ func _run() -> void:
 	await _shot("parked.png")
 
 	var nearest = _main.nearest_car()
-	if nearest == null:
-		# none parked within reach: step up to the closest ordinary car (turning a bus could put the player inside)
+	if nearest == null or nearest.has_doors:
+		# none parked within reach, or a bus: step up to the closest ordinary car (turning a bus could put the
+		# player inside)
 		var closest: VehicleBody3D = null
 		for car: VehicleBody3D in cars:
 			if car.has_doors:
