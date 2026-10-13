@@ -1,0 +1,14 @@
+services:
+  plateau:
+    build: .
+    container_name: plateau-server
+    restart: unless-stopped
+    ports:
+      - "7777:7777/udp"
+    environment:
+      SERVER_NAME: "Plateau server"
+    volumes:
+      - plateau-data:/data
+
+volumes:
+  plateau-data:
