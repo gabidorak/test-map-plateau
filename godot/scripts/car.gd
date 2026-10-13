@@ -2,7 +2,7 @@ extends VehicleBody3D
 ## Drivable toy car built at runtime from a downloaded model (assets/cars, see CREDITS.md): the
 ## model's four wheel nodes become VehicleWheel3D, the body gets a box collider. Call setup() before
 ## adding it to the tree. While `driving`: W/S throttle and brake/reverse, A/D steer (physical keys),
-## Q/E turn signals (A/E on AZERTY), G (held) sounds the horn, R puts the car back on its wheels, the mouse orbits the chase camera
+## Q/E turn signals (A/E on AZERTY), G (held) sounds the horn, B rings a bus's bell, R puts the car back on its wheels, the mouse orbits the chase camera
 ## (it eases back behind the car while moving, in front of it while reversing; hold the right button to keep it).
 ## game.gd handles getting in (E) and out (Space). The models face +Z, which is also VehicleBody3D's
 ## forward; their left side is +X.
@@ -103,6 +103,7 @@ var rear_offset := Vector3.ZERO             # the rear section's origin in the c
 var extents_center := Vector3.ZERO          # centre of the half_extents box in the car frame (x, z)
 var net_id := ""                            # LAN games: the vehicle's id on every peer
 var remote := false                         # LAN games: simulated by another peer (set_remote)
+var bells := 0                              # bell strikes so far (LAN: its parity tells the peers to ring)
 var controls := true                        # false while a menu is open: the driver's keys do nothing
 
 var _cam_pivot: Node3D
@@ -137,6 +138,7 @@ var _wheel_right := Vector3.LEFT
 var _wheel_up := Vector3.BACK
 var _grip_radius := 0.2
 var _throttle := 0.0
+var _net_bell := -1                         # LAN, remote vehicle: bell parity last received (-1: none yet)
 var _total_mass := 1200.0                   # both sections
 var _wheel_count := 4
 var _rear_model: Node3D                     # the rear section's part of the model (under the trailer)
@@ -733,6 +735,7 @@ func set_remote(on: bool) -> void:
 	if on == remote:
 		return
 	remote = on
+	_net_bell = bells & 1 if on else -1
 	for b in bodies():
 		var lv := b.linear_velocity
 		var av := b.angular_velocity
@@ -745,10 +748,10 @@ func set_remote(on: bool) -> void:
 
 
 ## LAN games: this vehicle's state for the other peers: [pose, rear section pose, steering, pedal, flags (1 doors
-## open, 2 someone drives, 4 braking, 8 horn), indicator].
+## open, 2 someone drives, 4 braking, 8 horn, 16 bell strikes are odd), indicator].
 func net_state() -> Array:
 	var flags := (1 if doors_open else 0) | (2 if driving else 0) | (4 if driving and _throttle < 0.0 else 0) \
-			| (8 if audio.horn else 0)
+			| (8 if audio.horn else 0) | (16 if bells & 1 else 0)
 	return [global_transform, trailer.global_transform if trailer else Transform3D(), steering, _throttle, flags, indicator]
 
 
@@ -773,6 +776,10 @@ func apply_net_state(a: Array, b: Array, w: float) -> void:
 		set_indicator(b[5])
 	audio.engine_on = flags & 2 != 0 or has_doors
 	audio.horn = flags & 8 != 0
+	var bell := 1 if flags & 16 else 0
+	if _net_bell >= 0 and bell != _net_bell:
+		ring_bell()
+	_net_bell = bell
 
 
 static func _net_pose(a: Transform3D, b: Transform3D, w: float) -> Transform3D:
@@ -875,9 +882,19 @@ func _unhandled_input(event: InputEvent) -> void:
 				set_doors(not doors_open)
 			KEY_V:
 				set_cab_view(not cab_view)
+			KEY_B:
+				if audio.kind != "bus":
+					return
+				ring_bell()
 			_:
 				return
 		get_viewport().set_input_as_handled()
+
+
+## One strike of the bus bell (counted in `bells` for the other peers).
+func ring_bell() -> void:
+	bells += 1
+	audio.ring()
 
 
 func _put_back_on_wheels() -> void:

@@ -1,6 +1,7 @@
 extends Node3D
 ## Vehicle sounds synthesized at runtime (no audio files): an engine loop pitched by a toy automatic
-## gearbox, a two-tone horn held as long as `horn` is on, indicator relay ticks, bus door chime with air hiss, and the air-brake sigh when a bus stops; also the
+## gearbox, a two-tone horn held as long as `horn` is on, indicator relay ticks, bus door chime with air hiss, the bus's city
+## bell (ring()), and the air-brake sigh when a bus stops; also the
 ## knocks of scripts/breakables.gd (a sign pole's clang, a sapling's swish, a broken hydrant's gush).
 ## Each sound is generated once per kind and cached. scripts/car.gd adds one as a child and calls
 ## update() every physics frame and play() for one-shots.
@@ -28,6 +29,7 @@ var _engine: AudioStreamPlayer3D
 var _horn: AudioStreamPlayer3D
 var _horn_gain := 0.0
 var _fx: AudioStreamPlayer3D                # doors, air brake
+var _bell: AudioStreamPlayer3D              # own player: a ding neither cuts nor is cut by the doors
 var _cabin: AudioStreamPlayer               # indicator relay, heard only by the driver
 var _rpm := 0.0                             # 0 idle .. 1 top of the gear
 var _load := 0.0                            # smoothed throttle
@@ -54,6 +56,11 @@ func setup(vehicle_kind: String) -> void:
 	_fx.unit_size = 9.0
 	_fx.max_distance = 80.0
 	add_child(_fx)
+	_bell = AudioStreamPlayer3D.new()
+	_bell.unit_size = 10.0
+	_bell.max_distance = 120.0
+	_bell.max_polyphony = 4                 # quick taps ring over each other
+	add_child(_bell)
 	_cabin = AudioStreamPlayer.new()
 	_cabin.volume_db = -8.0
 	add_child(_cabin)
@@ -107,6 +114,12 @@ func play(sound: String) -> void:
 	var p: Node = _cabin if sound in ["tick", "tock"] else _fx
 	p.stream = one_shot(sound)
 	p.play()
+
+
+## One strike of the city bell (tap again for ding-ding).
+func ring() -> void:
+	_bell.stream = one_shot("bell")         # made on first use: most vehicles never ring
+	_bell.play()
 
 
 static func _engine_loop(vehicle_kind: String) -> AudioStreamWAV:
@@ -187,6 +200,14 @@ static func one_shot(sound: String) -> AudioStreamWAV:
 				_add_tone(buf, 0.22 * b, 0.13, 1150.0, 0.45)
 			_add_hiss(buf, 0.7, 0.6, 0.02, 0.7)
 			_add_thump(buf, 1.3, 1.0)
+		"bell":                                             # struck brass bell: inharmonic partials, a clink
+			buf = _silence(1.4)
+			_add_hiss(buf, 0.0, 0.012, 0.0005, 0.25)
+			for p: Vector3 in [Vector3(1320.0, 1.0, 3.2), Vector3(2650.0, 0.45, 4.5), Vector3(3640.0, 0.5, 6.0),
+					Vector3(5180.0, 0.22, 9.0), Vector3(7020.0, 0.12, 13.0)]:
+				_add_ring(buf, 0.0, 1.4, p.x, p.y, p.z)
+			for i in buf.size():                            # slight beating between the bell's two sides
+				buf[i] *= 1.0 + 0.12 * sin(TAU * 4.0 * float(i) / RATE)
 		"air_brake":
 			buf = _silence(0.9)
 			_add_hiss(buf, 0.0, 0.85, 0.005, 1.0)

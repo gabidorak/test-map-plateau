@@ -929,7 +929,7 @@ func _update_help() -> void:
 	elif driving:
 		_help.text = "DRIVE · WASD/ZQSD: W throttle, S brake then reverse, A/D steer · Q/E (A/E on AZERTY) turn signals · G horn\n" + \
 				"mouse look · wheel zoom%s · R back on wheels · %sSpace %s\nF inspect · X close · F1 fly camera · Esc menu · H hide help" % [
-				" (all the way in: cab view)" if driving.has_cab() else "", "O doors · V cab view · " if driving.has_doors else "",
+				" (all the way in: cab view)" if driving.has_cab() else "", "O doors · B bell · V cab view · " if driving.has_doors else "",
 				"leave the seat" if driving.has_doors else "get out"]
 	else:
 		_help.text = "WALK · click to capture the mouse · Esc menu · WASD/ZQSD move · Shift run · Space jump\n" + \
