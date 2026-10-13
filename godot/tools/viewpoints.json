@@ -1,0 +1,32 @@
+{
+  "about": "Fixed camera poses for review shots. Pipeline coordinates (x east, y north, metres from Télécom Paris); the third value is the height above the ground under that point. Rendered by tools/screenshots_all.gd.",
+  "viewpoints": [
+    {"name": "telecom_entrance", "label": "Télécom Paris, main entrance (north forecourt)", "eye": [36, 58, 1.7], "target": [41, -15, 5]},
+    {"name": "telecom_courtyard", "label": "Télécom Paris, round courtyard", "eye": [70, -15, 1.7], "target": [102, -48, 4]},
+    {"name": "telecom_crossing", "label": "Crossings and kerbs east of Télécom Paris (street level, M4)", "eye": [121, -93, 1.7], "target": [131, -108, 0]},
+    {"name": "telecom_bus_ferme_vauve", "label": "Ferme de la Vauve bus stop", "eye": [130, -128, 2.0], "target": [130, -165, 1]},
+    {"name": "x_lake", "label": "École Polytechnique, lake (from the Cour des cérémonies)", "eye": [790, 185, 3], "target": [790, 250, 0]},
+    {"name": "x_main_building", "label": "École Polytechnique, main building (from the Cour des cérémonies)", "eye": [780, 120, 1.7], "target": [770, 40, 12]},
+    {"name": "x_rings", "label": "École Polytechnique, the two ring buildings", "eye": [808, -170, 28], "target": [808, -252, 0]},
+    {"name": "x_sports", "label": "École Polytechnique, sports grounds", "eye": [1320, -45, 8], "target": [1470, -30, 0]},
+    {"name": "x_bus_lozere", "label": "Polytechnique Lozère bus stop", "eye": [770, -358, 1.7], "target": [800, -378, 1]},
+    {"name": "ensta_main", "label": "ENSTA Paris, main building (east entrance)", "eye": [1472, -312, 1.7], "target": [1405, -282, 6]},
+    {"name": "ensta_residences", "label": "ENSTA Paris, residences", "eye": [1372, -150, 1.7], "target": [1415, -192, 6]},
+    {"name": "ensta_gym", "label": "ENSTA Paris, gymnasium", "eye": [1055, -112, 1.7], "target": [1098, -142, 5]},
+    {"name": "telecom_tree_row", "label": "Tree row along the street south of Télécom Paris (M5)", "eye": [34, -94, 1.7], "target": [-60, -74, 4]},
+    {"name": "telecom_hedge", "label": "Hedge south of Télécom Paris (M5)", "eye": [22, -189, 1.7], "target": [78, -197, 1.8]},
+    {"name": "x_avenue_rows", "label": "École Polytechnique, tree row along the north-south avenue (M5)", "eye": [1187, -92, 1.7], "target": [1182, -210, 4]},
+    {"name": "telecom_bus_shelter", "label": "Ferme de la Vauve bus stop, shelter and pole at street level (M6)", "eye": [135, -150, 1.7], "target": [142, -157.5, 1.5]},
+    {"name": "campus_bus_stops", "label": "Palaiseau - Campus bus stops and the signalled junction (M6)", "eye": [-150, 195, 1.7], "target": [-128, 212, 1.8]},
+    {"name": "campus_bus_lane_signs", "label": "No-entry and bus-lane signs at the Palaiseau - Campus bus lane (M6)", "eye": [-100, 185, 1.7], "target": [-125, 205, 1.8]},
+    {"name": "telecom_canopy", "label": "Télécom Paris, under the forecourt canopy (wall=no slab on pilotis, M7)", "eye": [32, 30, 1.7], "target": [48, 18, 9]},
+    {"name": "x_rings_street", "label": "École Polytechnique, ring buildings with balconies at street level (M7)", "eye": [760, -195, 1.7], "target": [805, -235, 9]},
+    {"name": "telecom_se_corner", "label": "Télécom Paris, south-east corner box on columns, fins and ledges (landmark, M9)", "eye": [131, -104, 1.7], "target": [118, -80, 14]},
+    {"name": "vauve_residences", "label": "Hacker House (#88) and Alice Milliat (#90) at the Vauve crossing (landmarks, M9)", "eye": [134, -106, 1.7], "target": [168, -106, 10]},
+    {"name": "x_lake_north_path", "label": "Lac de l'X, north shore path looking south across the lake", "eye": [560, 398, 1.7], "target": [610, 300, 0]},
+    {"name": "x_lake_west_path", "label": "Lac de l'X, west woodchip path looking east along the lake", "eye": [334, 365, 1.7], "target": [520, 320, 0]},
+    {"name": "yvette_centre", "label": "ENSTA Centre de l'Yvette, the lab compound from above Chemin de la Hunière", "eye": [1560, -430, 30], "target": [1625, -545, 0]},
+    {"name": "overview_campus", "label": "Whole campus area from above the south-west (lake and Centre de l'Yvette)", "eye": [-190, -660, 330], "target": [800, 0, 0]},
+    {"name": "overview", "label": "Whole strip from above Télécom Paris", "eye": [-120, -260, 160], "target": [700, -80, 0]}
+  ]
+}

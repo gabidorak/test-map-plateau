@@ -1,0 +1,50 @@
+[gd_scene format=3 uid="uid://c2cx21pq5ovcg"]
+
+[ext_resource type="PackedScene" path="res://scenes/generated/neighborhood.tscn" id="1_world"]
+[ext_resource type="Script" uid="uid://dsoxjug7t4dwd" path="res://scripts/fly_camera.gd" id="2_cam"]
+[ext_resource type="Script" uid="uid://cnr8yxkuuiqip" path="res://scripts/game.gd" id="3_game"]
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="4_player"]
+
+[sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
+sky_top_color = Color(0.32, 0.55, 0.9, 1)
+sky_horizon_color = Color(0.72, 0.83, 0.95, 1)
+ground_bottom_color = Color(0.55, 0.62, 0.5, 1)
+ground_horizon_color = Color(0.72, 0.83, 0.95, 1)
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_mat")
+
+[sub_resource type="Environment" id="env"]
+background_mode = 2
+sky = SubResource("sky")
+ambient_light_source = 3
+ambient_light_color = Color(0.78, 0.78, 0.8, 1)
+ambient_light_sky_contribution = 0.55
+tonemap_mode = 4
+ssao_enabled = true
+ssil_enabled = true
+glow_enabled = true
+adjustment_enabled = true
+adjustment_saturation = 1.15
+
+[node name="Main" type="Node3D" unique_id=1728303711]
+script = ExtResource("3_game")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=196027063]
+environment = SubResource("env")
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=63604392]
+transform = Transform3D(0.81915206, 0.4262504, -0.38379753, 0, 0.66913056, 0.74314487, 0.57357645, -0.6087487, 0.54811966, 0, 0, 0)
+light_energy = 1.4
+shadow_enabled = true
+directional_shadow_max_distance = 250.0
+
+[node name="Neighborhood" parent="." unique_id=1144507217 instance=ExtResource("1_world")]
+
+[node name="Camera" type="Camera3D" parent="." unique_id=355524600]
+transform = Transform3D(0.8660254, 0.21130913, -0.45315388, 0, 0.90630776, 0.42261827, 0.5, -0.36599815, 0.7848855, -60, 45, 90)
+fov = 65.0
+far = 1500.0
+script = ExtResource("2_cam")
+
+[node name="Player" parent="." unique_id=1023551625 instance=ExtResource("4_player")]

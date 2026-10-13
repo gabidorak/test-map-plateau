@@ -1,0 +1,276 @@
+# Milestones
+
+Say **"implement MX"** to run one. Each milestone is self-contained: goal, steps, files, and a "done when" checklist I verify before calling it finished (tests + screenshots from fixed viewpoints).
+
+Landmark buildings are done one by one: say **"landmark &lt;folder&gt;"**. The workflow is described in M9.
+
+## Ground rules (apply to every milestone)
+
+1. **No satellite image in the game.** The orthophoto (and its infrared version) is *data only*. Python reads it to classify ground, sample roof and tree colours, and detect features. It is never textured onto anything in the final scene. In M1 it is a temporary placeholder; M4 removes it, and from then on a check enforces it.
+2. **Everything is regenerable.** `python -m plateau all` then `build_world.gd` rebuilds the whole map from cached data. There are no hand edits in `scenes/generated/`. Human input only lives in:
+   - `overrides/overrides.toml`: corrections and landmark specs;
+   - `references/`: your photos;
+   - `blender/landmarks/`: unique models.
+3. **Automate first, override second.** Every feature gets an automatic result from data. Overrides fix or enrich it and never replace the pipeline.
+4. **Coordinates:** metres, x east, y north, z up, origin at Télécom Paris. Godot = (x, z, −y).
+5. **Area:** `campus` in `pipeline/config.toml`:
+   - data: x −250…1810, y −720…630 (2.1 × 1.35 km: Télécom Paris → École Polytechnique with the whole Lac de l'X loop → ENSTA Paris and its Centre de l'Yvette);
+   - walkable: 50 m inside that.
+   - The previous strip `telecom_ensta` (x −250…1650, y −450…250) is kept in the config; its data and review files stay under `data/*/telecom_ensta/`.
+   - The small square `telecom` stays available for quick tests (`PLATEAU_AREA=telecom`).
+6. **Each milestone ends with:**
+   - `pytest` green;
+   - review images in `data/review/`;
+   - screenshots from the fixed viewpoints (`godot/tools/viewpoints.json`, created in M2) saved to `data/review/shots/<milestone>/`;
+   - a short note in the [Status](#status) table.
+
+---
+
+## M0 — Setup ✅
+- venv, `pipeline/config.toml`, fetch stage for OSM, BD TOPO, LiDAR grids, orthophotos, IDFM, Panoramax (and Mapillary if `MAPILLARY_TOKEN` is set).
+- Godot project skeleton.
+
+## M1 — Grey box ✅
+- Terrain from the LiDAR ground grid, buildings extruded at their real heights (priority: OSM > LiDAR > BD TOPO > levels).
+- `wall=no` canopies, free-flying camera, screenshot tool, editor menu "Rebuild Plateau world".
+
+---
+
+## M2 — Walkable + debug tools ✅
+**Goal:** walk the map at street level and be able to identify any object.
+- **Player:** `CharacterBody3D` with a third-person camera (`SpringArm3D`) and a first-person toggle (V). Run with Shift, jump.
+  - The fly camera stays available (F1).
+- **Collision:**
+  - Terrain: `HeightMapShape3D` resampled at 1 m.
+  - Buildings: one `StaticBody3D` with merged concave shapes; canopies collide only with their slab and pillars.
+  - Invisible walls at the `playable` boundary from `world.json`.
+- **Debug picker:** aim at something and press F to show an overlay with id, name, kind, height and height source. Every generated object carries its metadata.
+- **Building index:** `data/review/buildings_index.md`, a table of every building (id, name, height, source) plus `buildings_map.png`, a map with numbered labels. You use it to tell me which building your photos show.
+- **Viewpoints:** `godot/tools/viewpoints.json` with about 12 named viewpoints:
+  - Télécom Paris: main entrance, round courtyard, Ferme de la Vauve bus stop;
+  - École Polytechnique: lake, main building, the two ring buildings, sports grounds;
+  - ENSTA Paris: main building, residences, gymnasium;
+  - Polytechnique bus stop. `tools/screenshots_all.gd` renders all of them in one run.
+
+**Done when:**
+- I can walk around Télécom Paris without falling through or getting stuck.
+- F identifies buildings correctly.
+- The viewpoint shots are saved.
+
+---
+
+## M3 — Ground data (Python only) ✅
+**Goal:** every square metre of ground gets a game material, automatically.
+- **OSM surfaces become crisp vector polygons**, built in priority layers:
+  - Roads: carriageway width from OSM `width`, else BD TOPO, else a default per road class. Surface comes from `surface`.
+  - Sidewalks and footways (including `footway=sidewalk`), cycleways, pedestrian areas, parking lots, pitches, playgrounds, water.
+  - Landuse areas: grass, construction, meadow, forest floor.
+  - Layering: shapely difference by priority, so nothing overlaps.
+- **Unmapped areas: a land-cover class map** at 0.25 m, computed from the orthophoto + infrared (vegetation index) + LiDAR height above ground:
+  - Classes: `grass`, `tall_grass`, `dirt`, `gravel`, `sand`, `concrete`, `asphalt`, `construction`.
+  - Rules first, tunable in `pipeline/landcover.toml`.
+  - Mode filter and small-blob removal so it looks designed, not noisy.
+  - Pixels under tree canopies (high vegetation index and tall) take the class of their surroundings.
+  - The class map is then **vectorized into smooth polygons**, with simplified and rounded edges, and merged with the OSM layers. Result: one clean ground partition.
+- **Kerbs:** lines where a raised surface (sidewalk) meets a road, with heights from `kerb=*`, lowered at crossings and `kerb=lowered`.
+- **Road markings:** centre lines and lane edges from `lanes`/`lane_markings`, zebra crossings at `crossing=zebra`/`uncontrolled`/`traffic_signals` nodes, stop lines, bike symbols on cycleways, parking bays when `parking:*` is tagged.
+- **Output:** `ground[]`, `kerbs[]` and `markings[]` in `world.json` (triangulated in Python).
+- **Review image:** `data/review/ground.png`, the ground partition in flat toy colours next to the orthophoto.
+
+**Done when:**
+- `ground.png` reads like a clean cartoon map of the orthophoto.
+- No gaps or overlaps (a test checks that the union equals the box area, with a pairwise overlap check).
+- Roads, sidewalks and grass align with the orthophoto within about 1 m.
+
+## M4 — Ground in Godot (orthophoto removed) ✅
+**Goal:** the ground is made of toy assets only.
+- **`ground_builder.gd`:** drapes the ground polygons on the terrain (edges subdivided every 2 m). Sidewalks are raised 0.12 m, with rounded kerb strips. Markings are slightly raised decals.
+- **`toy_ground.gdshader`:** one shader driven by per-vertex material id + world-space UVs. Procedural, tileable toy patterns:
+  - asphalt: soft speckle;
+  - sett and paving stones: rounded tile grid;
+  - concrete slabs;
+  - grass: two-tone noise + clover dots;
+  - tall grass, dirt with pebbles, gravel, sand;
+  - construction: dirt + tyre tracks.
+  - Colours come from `pipeline/palette.toml`.
+- **Grass tufts:** MultiMesh grass clumps scattered on grass and tall-grass areas, density by class, with LOD fade.
+- **Remove the orthophoto:** delete `godot/world/ortho.jpg` from the Godot project.
+- **Check script:** `tools/check_world.gd` fails if any generated resource references a satellite image. It also checks there are no holes in the ground mesh.
+
+**Done when:**
+- The viewpoint shots show no satellite pixels.
+- The ground reads correctly at street level (road vs sidewalk vs grass vs dirt).
+- `check_world` passes.
+
+---
+
+## M5 — Trees and hedges ✅
+**Goal:** every tree is at its real position, with its real height, crown size and a recognizable shape.
+- **Python `trees.py`:**
+  - **Canopy:** height above ground minus building footprints, filtered with the infrared vegetation index (removes lamps and poles).
+  - **Tree tops:** local maxima (window grows with height); crown radius measured along 8 directions.
+  - **Match to OSM:** OSM trees and points sampled along tree rows are matched to a detected top within 3 m.
+    - Unmatched OSM trees become saplings.
+    - Unmatched tall tops inside woods or parks are added as new trees.
+  - **Crowns** scaled ×1.2 because the LiDAR was flown without leaves.
+  - **Archetype by rule:** conifer / round / oval / columnar (tree rows along streets) / weeping (near water) / sapling with stake.
+  - **Tint:** median colour of the crown in the orthophoto, snapped to the palette.
+  - **Hedges:** from BD TOPO `haie` + OSM `barrier=hedge`, with real height and width.
+- **Blender `blender/trees/*.py`:** soft blobby crowns (metaballs → remesh → smooth), stylized trunks, 2–3 variants per archetype, LOD meshes.
+  - Exported as `.glb` with the trunk/leaf material slots the toy shaders expect.
+- **Godot `vegetation_builder.gd`:** one MultiMesh per archetype and variant, per-instance scale, rotation and tint. `toy_foliage.gdshader` adds wind sway.
+- **Review image:** `trees.png`, detected tops vs OSM trees over the orthophoto.
+
+**Done when:**
+- The tree rows along the avenues and the round courtyard grove look right from the viewpoints.
+- The counts are plausible (≈100+ trees).
+
+## M6 — Street furniture ✅
+**Goal:** bus stops, benches, lamps, etc. are recognizable and correctly placed.
+- **Blender prop kit** (`blender/toylib.py` + `blender/props/*.py`), soft-toy style (bevels, weighted normals, baked vertex AO):
+  - Furniture: bench (with or without backrest), campus LED street lamp, bus shelter, bus-stop pole with line flag, bike rack (Sheffield type), bollard.
+  - Bins and boxes: Vigipirate bag bin, recycling column, parcel locker, vending machine.
+  - Street equipment: CCTV camera, traffic light (car and pedestrian), fire hydrant, picnic table, fountain, charging station, lift gate, gate, fences.
+  - Signs: French road signs built from code (B1, AB4, B6d, stop, B14…).
+- **`props_catalog.toml`:** OSM tags → prop + variant + placement rule:
+  - snap to the nearest kerb or footway;
+  - benches face the path;
+  - shelters run parallel to the kerb, open toward the road;
+  - lamps are offset from the kerb.
+- **Bus stops:**
+  - Placement: IDFM stops matched to OSM platforms.
+  - Pole flag: stop name plus line badges in real line colours (4606 #3bb2ff, 4614 #54aee3, 5154 #fece26, N63 #CEC92A…).
+  - Shelter: only where OSM says `shelter=yes`.
+- **Traffic signs:** OSM `traffic_sign` nodes + Panoramax sign detections, which confirm the types; Mapillary positions when a token is available.
+- **Godot `prop_placer.gd`:** MultiMesh for repeated simple props, scene instances for complex ones (shelter with text, traffic lights).
+- **Review image:** `props.png`, all props as icons on the map.
+
+**Done when:**
+- Every OSM street-furniture node in the playable area has a prop.
+- The Ferme de la Vauve bus stop reads correctly at street level (shelter, pole, line colours).
+
+---
+
+## M7 — Procedural toy buildings ✅
+**Goal:** every building looks like a cartoon building, not a box, with zero manual work.
+- **Toy massing (Python):**
+  - rounded corners: small fillet, true bevel on the top edge;
+  - parapets on flat roofs; set-back top floors when the LiDAR shows them;
+  - rooftop boxes (plant rooms) detected as LiDAR blobs above the roof;
+  - solar panels where the orthophoto shows dark blue grids on the roof.
+- **Facade grammar.** Each facade edge gets three bands:
+  - ground floor: shopfront glazing, entrance, open pilotis (from `wall=no` or detected), or plain;
+  - typical floors: punched windows, ribbon windows, curtain wall, vertical slats (brise-soleil, common on the Saclay campus), balconies, loggias;
+  - top: parapet, attic.
+  
+  Defaults are chosen from the building kind, levels and size.
+- **Building kit:**
+  - Flat details come from `toy_building.gdshader`: windows with fake recesses, frames, sky-gradient glass, panel joints, materials (render, brick, wood cladding, metal panels, concrete).
+  - Details that matter in silhouette are instanced 3D modules (Blender `blender/building_kit/*.py`): balcony slabs and railings, slats and fins, entrance canopies, pilotis, rooftop railings, signage.
+- **Entrances:** from OSM `entrance=*` nodes, which put doors at their real positions.
+- **Colours** (until M8): roof colour from the orthophoto; wall colour from a palette by usage.
+- **Godot `building_builder.gd`:** writes the facade parameters as per-vertex custom data; one shared material.
+
+**Done when:**
+- Viewpoint shots look like a coherent cartoon campus.
+- Window floors match `building:levels`.
+- The `wall=no` areas of Télécom Paris read as open, covered passages.
+
+## M8 — Facade colours from street photos ✅
+**Goal:** automatic real wall colours.
+- **Candidate photos:** project facade sample points into Panoramax (and Mapillary) photos.
+  - Mapillary is preferred when present: positions corrected by its photo reconstruction, plus building masks.
+  - Headings are corrected (map vs true north, magnetic north).
+- **Hidden points:** skipped using an occlusion check against the LiDAR surface grid.
+- **Pixel filtering and colour:**
+  - colour gates remove sky, vegetation, glass and blown-out pixels;
+  - each photo's white balance is corrected from the road;
+  - a weighted median gives the wall colour, and a 2-cluster split gives an accent colour plus a glazing-ratio hint.
+- **Confidence and fallback:** each result has a confidence score; below threshold, the palette colour stays.
+- **Stylize:** OKLab saturation boost, then snap to the `palette.toml` toy colours.
+- **Review:** `data/review/facades/<id>.jpg` contact sheets showing the photo crops next to the chosen swatch.
+
+**Done when:**
+- Most street-facing facades have a confident colour.
+- The contact sheets look right to you.
+
+---
+
+## M9 — Landmark workflow (repeatable, driven by your photos) ✅
+**Goal:** make the important buildings truly recognizable, one at a time.
+
+**What you do:**
+1. Create `references/<short-name>/`, e.g. `references/telecom-entrance/`.
+2. Put photos in it, from several sides if possible.
+3. Add a `notes.md` saying which building it is (name, or the number from `buildings_map.png`) and which side each photo shows.
+4. Say **"landmark telecom-entrance"**.
+
+**What I do:**
+1. Identify the OSM id or ids and the facade edges each photo shows. Edges are numbered on the `buildings_map.png` close-up for that building.
+2. Write a spec in `overrides/overrides.toml` using the M7 building-kit vocabulary:
+   - per-edge facade modules, materials and colours picked from your photos;
+   - window rhythm, slats, canopies;
+   - rooftop details, signage text, height corrections.
+3. If the shape can't be expressed with the kit (curved roof, sculpture, the octagonal coffee pavilion…), write a dedicated Blender script `blender/landmarks/<short-name>.py` that generates the cartoon model. Its `.glb` replaces the procedural mass.
+4. Rebuild, then render screenshots from the viewpoint matching each photo. Write `data/review/landmarks/<short-name>.jpg`, a side-by-side of your photo and the game render, for you to approve or comment on.
+- The first time M9 runs, it sets up the tooling: override schema validation, edge-number maps, the photo/render side-by-side tool, and a template `references/_template/notes.md`.
+
+**Done when:** the M9 tooling exists and one first landmark (Télécom Paris) is done end to end.
+
+---
+
+## M10 — Map edges and horizon
+**Goal:** the world doesn't end abruptly.
+- **Outer band (the 50 m between `playable` and `bounds`):** fully modelled but not walkable.
+- **Beyond 200 m:** a stylized backdrop generated from OSM data on a larger, lower-detail fetch (about 1 km):
+  - simplified building silhouettes;
+  - tree-line rings;
+  - fields as flat coloured patches;
+  - the N118 road / the elevated structure to the north as simple shapes.
+- **Atmosphere:** soft height fog to blend the distance.
+- **Boundary:** a natural boundary at the playable edge (invisible wall + optional low fences or hedges where plausible).
+
+**Done when:** looking outward from any edge of the playable area shows a believable cartoon horizon.
+
+## M11 — Polish, performance, credits
+- **Look:**
+  - lighting pass: sun angle, sky colours, SSAO/SSIL tuning, AgX + colour-lookup grading;
+  - optional outlines and tilt-shift depth of field in third person.
+- **Performance:**
+  - LOD for buildings and trees (Godot's automatic mesh LOD + visibility ranges);
+  - occlusion culling bake;
+  - optional `LightmapGI` bake.
+  - Target: 60 fps at 1080p on the RTX 4050.
+- **Credits screen:** © OpenStreetMap contributors (ODbL), IGN, Île-de-France Mobilités (Licence Ouverte 2.0), Panoramax/Mapillary contributors (CC-BY-SA).
+- **One command:** `./build_world.sh` runs fetch (cached), build, Godot import, scene build, checks and viewpoint shots.
+- **LiDAR point cloud (optional):** the 2 classified tiles refine building-part heights and tree crowns.
+
+**Done when:**
+- A clean rebuild from scratch works with one command.
+- 60 fps in the busiest viewpoint.
+- The credits are visible in-game.
+
+---
+
+## Open inputs from you
+- **Photos for landmarks:** any time, following the M9 workflow. Pending: the photo of #80 Résidence étudiante KLEY did not arrive with the others.
+
+## Status
+| Milestone | State | Notes |
+|---|---|---|
+| M0 Setup | ✅ done | |
+| M1 Grey box | ✅ done | Area extended to `telecom_ensta`: 273 building masses (234 with LiDAR heights). 18 buildings use a default height (built after the 2023 LiDAR, no levels in OSM), including 6 new residences near ENSTA; candidates for overrides. Fetch now tiles large requests: WMS rasters, OSM, Panoramax (3,337 photos). |
+| M2 Walkable + debug | ✅ done | Player (3rd/1st person, V), fly camera on F1, picker on F (also copies the text to the clipboard). Collision: 90 Jolt height-field tiles (1 m), one `StaticBody3D` with one concave shape per mass (so F can map the hit shape to its building), box walls at `playable`. Canopies collide with their slab and 151 auto-placed pillars (also drawn). Walls now reach the lowest ground along their outline: a ramp next to Télécom Paris let the player walk under a wall. `buildings_index.md` and `buildings_map.png` are in `data/review/<area>/`. `tools/test_play.gd` checks the picker on all 273 roofs and 223 walls, 560 walk segments around Télécom Paris, 190 walk-into-wall runs and the boundary. All pass. Shots in `data/review/shots/M2/`. |
+| M3 Ground data | ✅ done | 6,122 polygons cover the whole box with no gap or overlap (tests check area, pairwise overlaps, a noded coverage and triangle areas). Layers: buildings > water > roads > islands > sidewalks > paths > parking/pitches > OSM landuse > land cover. Car road widths: BD TOPO 156, class default 74, OSM `width` 3, `lanes` 2; junctions get rounded corners. Untagged path surfaces (125 ways) are read from the land-cover map. Land cover: rules in `pipeline/landcover.toml`; crowns, cars and shadows take the class of their surroundings, and large closed canopies become forest floor. 139 kerb runs (3.4 km; 49 lowered at crossings or `kerb=*`). Markings: 67 zebras, 30 stop lines and 1 give-way line, 27 dashed centre lines, 2 cycle lanes, 11 bike symbols on cycleways, and parking bays on 1 tagged street and 26 lot aisles. Alignment with the photo: roads best fit at a 0.25 m shift, sidewalks 0.35 m, lawns 0 m (`ground_stats.md`). Known limits: shadowed courtyards often come out as asphalt; light beige paving can read as sand or dirt; the ground follows OSM where it is incomplete (the Télécom entrance street is a 15 m sett `path`, so it gets no zebra); bridges and tunnels are left out of the ground. `world.json` is now 9.1 MB, schema 3. Shots in `data/review/shots/M3/` (the game scene does not change until M4). |
+| M4 Ground in Godot | ✅ done | Draping is done in Python (`plateau/ground_mesh.py`, also `python -m plateau mesh`), since Godot has no constrained triangulation: the partition is cut on a 2 m grid aligned with the heightmap, planar per grid triangle. The M3 partition still had ~730 sub-2 mm T-junctions; the stage re-nodes them and computes grid crossings identically on both sides, so the mesh is watertight (0 open edges, area = box; checked by pytest and `tools/check_world.gd`). 1.41 M triangles, 330 chunks of 64 m, `ground.bin` 21 MB. Sidewalks, islands and platforms are lifted 0.12 m with skirts, rounded kerb stones, and ramps down to lowered kerbs; markings are draped decals. One procedural shader (`toy_ground.gdshader`) for the 18 materials + kerb + paint (`ground_swatches.png`). Grass tufts are scattered at runtime around the camera (16 m chunks, shrink-fade at 36–58 m) from `ground_ids.bin`, so nothing is baked into the scene. Terrain collision now follows the drawn ground (a 50 cm LiDAR step next to a kerb at (337, 126) made the visible ground float 20 cm above the old collision); raised surfaces collide, with a 0.35 m ramp so kerbs are walkable (`test_play.gd` walks 54 kerbs up and down). F also identifies ground pieces. Orthophoto deleted from `godot/world/`, schema 4. Lighting: ambient sky contribution lowered to 0.55 so shade is no longer deep blue; asphalt palette made more neutral (#63666b). 180–260 fps at 1080p (`tools/perf.gd`). New viewpoint `telecom_crossing`. Known limits: land-cover edges are staircase-like at street level (M3 vectorization); some zebras overlap at junctions (M3 data). Shots in `data/review/shots/M4/`. |
+| M5 Trees and hedges | ✅ done | 5,471 trees and 12 hedges (572 m), `python -m plateau trees` redoes them in ~40 s. Tops: 5,788 found in the LiDAR canopy (variable window, green in the infrared, no building footprints), crowns measured along 8 directions ×1.2, at least 0.25 × height (young street trees are thin leaf-off). OSM: 76 of 127 tree nodes matched within 3 m (trunk at the OSM position), 448 tops on the 95 tree rows (3.5 km); 308 staked saplings for unmatched OSM trees and row gaps. 2,896 more trees in woods/parks; 1,751 elsewhere pass a stricter filter (≥ 4 m, green crown colour, which rejects glass roofs). 52 trunks moved off carriageways, 7 dropped. Archetypes: round 3,231, oval 1,697, columnar 221 (slender, never inside woods), weeping 16 (near water ≥ 1,000 m², not fountains), sapling 306. **Conifers: none.** No tag in OSM says needleleaved, and crown pointedness, near-infrared, leaf-off density and colour were all tried on contact sheets: none separates them from shaded broadleaved crowns. Add them with `[[tree]]` overrides (README); the conifer models exist. Tints: each crown's photo colour relative to the median crown, snapped to the new `palette.toml [foliage]` (mostly leaf/deep/spring, some lime/sage/olive). Hedges: BD TOPO + OSM, LiDAR height/width; BD TOPO hedges the LiDAR no longer sees are dropped, several are tall screens clamped at 4 m. Models: `blender/trees/` (6 archetypes, 14 variants, metaballs → remesh → smooth, 3 LODs ~1.9k/0.5k/0.17k triangles, baked vertex AO, soft radial normals) → `godot/assets/trees/*.glb`. Godot: one MultiMesh per model × LOD × 96 m chunk (LOD switch at 70/220 m), wind sway in `toy_foliage.gdshader`; trunk cylinders created at runtime and hedges collide (new `vegetation` layer, the camera arm ignores it); F identifies trees by trunk or crown. `check_world` and `test_play` cover trees (299 trunks picked, 20 trunk walk-ins blocked). 170–275 fps. World schema 5. New viewpoints `telecom_tree_row`, `telecom_hedge`, `x_avenue_rows`. Review: `trees.png`, `trees_closeups/`, `trees_stats.md`. Shots in `data/review/shots/M5/`. |
+| M6 Street furniture | ✅ done | 1,046 props and 22 fence/wall lines (2.5 km), `python -m plateau props` redoes them in ~30 s. **Catalog** `pipeline/props_catalog.toml` (OSM tags → model + placement): every OSM street-furniture node in the playable area has a prop (pytest checks it); 54 indoor nodes are skipped (inside walled footprints, `indoor=yes`, upper `level`). Placement rules: kerb (lamps 0.6 m back, hydrants), path edge (benches, bins, racks face the path), across the way (gates, lift gates, cycle barriers span its width; leaves drawn open so ways stay walkable), against walls (cameras, lockers); a final step pushes standing props off carriageways and out of buildings. Bike racks follow `capacity`, bollard lines every 1.8 m, recycling columns tinted by waste type. **Bus stops**: 10 stops, 12 IDFM stops matched to OSM platforms (`ref:FR:STIF`, past-dated duplicates merged), lines from IDFM, colours from OSM route relations (4606 #3bb2ff, 4614 #54aee3, 5154 #fece26, N63 #cec92a…); shelters only where `shelter=yes`, on the kerb of the road the buses use (route relations, so corner stops are not put on the cross street), parallel to it and open towards it; pole downstream with the stop name and line badges on both faces of its flag, name and badges on the shelter fascia (Label3D). Fresnel has no IDFM record and no route membership, so its flag shows the name only. **Traffic lights**: 14 car heads at each approach of the 19 signal nodes, 42 pedestrian lights at signalled crossings, a 30 s toy cycle in the shader (phase per junction and axis). **Signs**: 20 from OSM (stop/give-way at the right of each approach); 397 classified Panoramax detections placed from photo position, heading and box size → 174 clusters, 68 kept as new signs (≥ 2 photos, near a road), 2 OSM stops confirmed (Panoramax mostly covers other streets); 88 poles, 94 faces. **Mapillary (rerun 2026-10-10 with a token):** 1,409 map features fetched (token in `.mapillary_token` at the project root, or `MAPILLARY_TOKEN`); 102 dropped as stale (≥ 3 photos taken ≥ 6 months after the object was last seen passed within 15 m without seeing it). Point detections become props through the catalog entry of their OSM tags (catalog `[mapillary]`), unless OSM already has one of that kind there or (benches, bins) it belongs to a bus stop: +75 street lamps, +63 bins, +23 benches, +22 hydrants, +7 bike racks, +6 cameras, +1 parking meter. Mapillary signs (189 of a modelled type, 42 skipped: direction panels, lone sub-plates) join the photo clusters: 9 OSM signs confirmed (was 2), 207 sign poles (was 88), 229 faces; photo signs with no room at the kerb (narrow island, wall) are dropped (4). 1,361 props in all. Mapillary covers mostly the western streets; OSM lamps are on the paths, so the two barely overlap. Not used: traffic lights (OSM signals), utility poles (fire on every pole). Shots in `data/review/shots/M6_mapillary/`. M8 could also use the 1,841 Mapillary images (not refitted yet). **Lamps**: only the 34 OSM ones; poles are invisible in the 0.5 m LiDAR, so unmapped lamps cannot be detected. **Fences**: OSM barrier lines cut where highways cross them, styles from `fence_type` (construction sites as mesh panels), wall heights from the LiDAR. **Models**: `blender/toylib.py` + `blender/props/` (66 models, 43 French sign faces built from code with family fallbacks A/B/C/M/EB), bevels, weighted normals, baked vertex AO, ~3 s → `godot/assets/props/` + `props.json` (sizes, colliders, anchors); contact sheet `prop_models.png`. **Godot** `prop_placer.gd`: MultiMesh per model × 96 m chunk with tint/phase per instance, sign faces stacked on poles, fences from stretched panels and posts; 2,400 collision shapes created at runtime (new `props` layer), F identifies props and fences. `check_world` and `test_play` cover props (1,027 picked from above, 25 walk-ins blocked). 277–551 fps at 1080p. World schema 6. New viewpoints `telecom_bus_shelter`, `campus_bus_stops`, `campus_bus_lane_signs`. Review: `props.png`, `props_closeups/`, `props_stats.md`. Shots in `data/review/shots/M6/`. |
+| M7 Procedural buildings | ✅ done | `python -m plateau buildings` redoes them in ~45 s (rules in `pipeline/buildings.toml`). **Massing** (`plateau/massing.py`): each of the 273 masses is a stack of tiers: rounded free corners (0.45 m fillet, sharp where another mass or tier leans on it), a quarter-round top bevel, and from 5 m a 0.75 m parapet around a lowered deck, both only along exposed edges (no double parapets between equal parts). Tiers: 238 body, 65 set-back (LiDAR roof levels ≥ 2.6 m apart, regularized; Télécom Paris splits into its 6 m north strip and its 21 m wings), 245 plant-room boxes (LiDAR blobs ≥ 1.2 m above the deck; the smallest become 105 AC units), 44 slabs (`wall=no`) and 13 bridges over building passages (`tunnel=building_passage`: the ground stays open, collision too). Solar panels: textured dark grey-blue areas of the orthophoto → 590 tilted panel rows (some false positives on dark roof equipment). **Facades** (`plateau/facades.py`): a facade is a run of edges without a sharp turn, so the round courtyard and the X rings are one facade each; per building, by usage group, a floor style (punched 35, ribbon 39, curtain 18, slats 38, balconies 24, loggias 6, high band 13, grid 38, blind 18), ground style (plain, shopfront, lobby, plinth), material (render, brick, wood, metal, concrete), top (plain, band, railing), wall and accent colours from `palette.toml [building]`; window floors follow `building:levels` (pytest checks all 72 tagged walled masses). Doors: 41 of 49 OSM entrances on walls, 159 buildings without one get a door on the facade nearest a path. **Kit** (`blender/building_kit/`, 8 modules): 2,010 balconies, 223 loggia railings, 10,480 slats, 179 entrance canopies, 151 round pilotis, 3,130 rooftop railing pieces, AC units, solar rows; 84 name signs over main entrances. **Godot**: `building_builder.gd` extrudes the tiers with per-vertex facade data (UV, UV2, 4 custom channels) and one shared material, `toy_building.gdshader` (recessed windows with parallax reveals, frames, sky-reflecting glass with a few blinds, doors, brick/wood/metal/concrete patterns, roof membranes, lit soffits, louvres; distant windows fade to their average); kit as MultiMesh per module × 96 m chunk; collision from the plain tier prisms. The `wall=no` areas of Télécom read as covered passages (slab, lit soffit, round pilotis; `test_play` checks open space under 37 slabs and through 11 passages). World schema 7 (13 MB). 220–550 fps at 1080p. New viewpoints `telecom_canopy`, `x_rings_street`. Review: `buildings_toy.png`, `buildings_closeups/`, `buildings_stats.md`. Known limits: styles are picked per usage, not from the real facades (M8 colours, M9 landmarks); the 18 default-height buildings have no LiDAR roof; some tier edges follow LiDAR noise. Shots in `data/review/shots/M7/`. |
+| M8 Facade colours | ✅ done | `python -m plateau buildings` (~2 min) includes them, `facades` also refits the photo poses (~6 min). **Photos**: 2,136 of the 3,324 Panoramax photos have a building in view; `fetch` caches them 1024 px wide in `data/raw/<area>/photos/` (413 MB). **Mapillary (rerun 2026-10-10 with a token):** +1,577 Mapillary photos with a building in view (3,713 in all); their reconstructed headings agree with the direction of travel (median 1–8° per sequence, where the raw compass of four sequences is 160–170° off), so they stay the prior, sequences are ordered by capture time, and the track is the fit's alternative where they disagree by ≥ 25°. 36 % of them fit the skyline (Panoramax 31 %), median correction 5.8°, 2 m. A failed skyline fit on a Mapillary frame means its reconstruction is off (dots on grass and fences on the contact sheets), so the sequence check no longer raises those to weight 0.3. Result: **68 confident + 13 from their building** (was 45 + 4), 140 masses seen (121), 62 % of the street-facing wall length gets a photo colour (46 %), 75 % where photos are within 70 m (60 %); 32 masses newly coloured, none lost, 15 changed (KLEY dark grey → light grey, Jean d'Ormesson rose → light grey: its fitted Mapillary photos see a grey panelled side, the old rose came from low-weight Panoramax close-ups of a pink side; Grand Gymnase off-white → taupe; landmarks keep their spec colours). Building masks still not used. Shots `data/review/shots/M8_mapillary/` (`_before_after.jpg`). **Headings**: magnetic declination + Lambert convergence; the compass is noise in the car sequences (±130° from the direction of travel, solugeo 2025 and tykayn 2024), which then use the track as prior. **Pose fit** (`plateau/poses.py`): the photo's skyline (sky scanned column by column from the top, stopping at sharp colour jumps: a flood fill leaked into white walls) against the LiDAR surface model's, over heading ±30°, pitch, roll, focal length when unknown, then position ±4 m. 571 photos fit (median correction 1.5°, 5–95 % −12…+18°); about 130 fits far from their sequence's median are dropped; the others keep the compass or track (and the sequence's median correction when its fits agree) at a lower weight. Fits agree with the direction of travel within 3.8° (median) on car sequences. **Sampling** (`plateau/facade_colours.py`): 255k points on exposed walls; occlusion by a ray march through the LiDAR, ignoring hits inside the target's own footprint + 2 m (eaves) and within 6 m of the camera (GPS error, ramp walls); trees (LiDAR crowns and OSM trees/rows as 2.2 m discs, as the leaf-off LiDAR misses young street trees) hide the wall from April to November and are see-through in winter. Each photo's exposure is normalized to the median brightness of its scene; 981 photos get a white balance from the asphalt ahead. Gates: sky, blown, dark, textured, vegetation, autumn leaves (warm + textured), glass (glazing ratio). A photo counts less for a building when many of its points land on sky or vegetation (pose off for that building). **Result**: 121 of 229 walled masses seen, 73 measured, **45 confident + 4 from another part of their building**; 46 % of the street-facing wall length (17.6 km) and 60 % of the length with a photo within 70 m get a photo colour. Colours: mostly greys and light greys (concrete campus), Télécom Paris ivory (measured #afa298, light beige concrete), a few taupes, one rose (Jean d'Ormesson residence); 7 brick/wood facades turned to render, 3 to curtain walls from the glazing ratio, 48 accents. **Stylize**: L = 0.35 + 0.75 L, 80 % of the median wall's hue removed, chroma ×2.2 (max +0.04) with a grey dead zone larger for bluish hues (shade); snapped to the new `palette.toml [facade]` (38 toy colours). `[[facade]]` overrides (README). Picker (F) shows the colour source, confidence and glazing. `check_world` now skips the debug cars' CC0 colour atlases (they predate M8 and made it fail). World schema 8. 212–290 fps. Review: `facades/<num>_<id>.jpg` (121 contact sheets; under `data/review/<area>/` like the other review files), `facades.png`, `facades_stats.md`; M7 vs M8 shots in `data/review/shots/M8/_m7_vs_m8.jpg`. **To check on the sheets**: #73 IPVF (taupe, but the photos show light slats behind autumn trees: unstable between runs), #226 Grand Gymnase (off-white from the light roof; the wall is dark with murals), #148–154 Aile 0–5 keep their palette colour (most photos stand on a ramp the bare-ground model puts 4 m too high, so the grass bank hides the wall). Known limits: walls seen only through trees or from far rarely get a confident colour; light walls vs overcast sky are hard to separate; pose positions stay at the GPS when the skyline is flat. Shots in `data/review/shots/M8/`. |
+| M9 Landmark workflow | ✅ done | **Tooling**: `plateau/overrides.py` validates the whole `overrides/overrides.toml` (every section: unknown keys and sections, types, styles, palette colours, kit models, facade numbers against the building; all problems listed at once; `python -m plateau check`). Facades are numbered per footprint (`plateau/landmarks.py`: runs of edges without a sharp turn, outside clockwise from the westmost north-facing wall, then courtyards; `along` from the left end seen from outside); `python -m plateau edges <num>` draws them, the build writes `landmarks/<name>_edges.png` with what the spec adds. `python -m plateau landmark <name>` writes `<name>_photos.jpg` (M8 street photos with a fitted pose, numbered facades projected in, solid where visible) and `<name>.jpg` (reference photo next to the game rendered from its pose by `tools/landmark_shots.gd`, photo aspect and horizontal FOV). Template `references/_template/notes.md`. **Spec vocabulary** (README): height/levels, LiDAR tiers, roof boxes, solar, auto door and pilotis switches; styles (M7 + new `podium` ground floor, `panels` and `shingles` materials, window variants `framed`, `pairs`, `framed_staggered`, a ground floor colour), fins with floor ledges (new `fin` kit module, ledges in ≤ 3 m pieces), per-facade styles (`toy.styles`, `runs[k][3]`), arcades (ground floor set back, reusing the passage cut: the ground opens, `test_play` walks them) with columns that collide, volumes (cantilevered boxes, own style, columns), doors, kit modules, signs, display name; picker shows the landmark. **Landmarks** (photos: Street View screenshots from the user, reference only): `telecom-paris` (#67 + canopies #82, #83): sand-beige egg-crate of fins and ledges, glazed base, south-east corner box cantilevered above a column arcade, blind block at the notch, no 23 m pilotis under #82; both photos turned out to show the south-east corner. `hacker-house` (#88): shingles, staggered navy-framed windows, glazed ground floor under a cream band, ground + 6. `alice-milliat` (#90, built after the LiDAR): 22.5 m instead of the 12 m default, grey podium, beige panels with window pairs. The Kley photo (#80) did not arrive. **Fix**: a canopy floating above a wall no longer counts as leaning on it (Télécom's east facade lost its parapet and modules to #82). World schema 9. 207–290 fps. New viewpoints `telecom_se_corner`, `vauve_residences`. Review: `data/review/<area>/landmarks/`, `edges/`; shots in `data/review/shots/M9/` (`_m8_vs_m9.jpg`). Known limits: camera poses of the reference photos are estimated by hand; per-facade styles apply to whole facades (use volumes for parts); no Blender landmark yet (`blender/landmarks/`, glb replacing the mass: build it with the first landmark that needs it). |
+| M10 Edges and horizon | ⏳ | |
+| M11 Polish | ⏳ | |
+
+**Area extended to `campus` (2026-10-10, outside the milestones, user request):** x −250…1810, y −720…630 (walkable 50 m inside), so the whole Lac de l'X loop (the "Boucle Lac" paths reach y 541) and ENSTA's Centre de l'Yvette (lab compound on Chemin de la Hunière, x 1537…1710, y −627…−447, OSM "Ensta ParisTech Laboratoires") are walkable. `telecom_ensta` stays in the config with its data. Fetch ~10 min (street photos hard-linked from `telecom_ensta`, 1,571 new), `build` 17 min (all photo poses refitted). 885 masses (was 273; the southern strip adds the Lozère hillside houses), 82 confident + 13 facade colours (295 of 759 walled masses seen in 4,251 photos), 8,314 ground polygons, 315 kerb runs, 15,633 trees (the Palaiseau woods), 1,607 props, ground mesh 2.58 M triangles in 726 chunks (38.5 MB), `world.json` 20.7 MB. **Building numbers changed** (e.g. Télécom #67 → #221, Hacker House #88 → #287, Alice Milliat #90 → #297, KLEY #80 → #264, IPVF #73 → #249, Jean d'Ormesson #105 → #348, Grand Gymnase #226 → #594, Aile 0 #148 → #452): landmark specs now use OSM ids. `test_play` only checks masses that reach into `playable` (the margin has masses clipped by the box edge and hillside houses whose collision tier is lower than their LiDAR height) and skips kerb points at the boundary. 141–289 fps. New viewpoints `x_lake_north_path`, `x_lake_west_path`, `yvette_centre`, `overview_campus`; shots in `data/review/shots/area_campus/`. **Known issue**: on the Lozère hillside streets the LiDAR smears the bank behind the sidewalk onto it, so the kerb ramp on ~35° terrain reaches ~47°, above the player's 45.8° floor limit (`test_play` fails at (644, −623)); ~195 m of the 6.2 km of raised kerbs sit on terrain steeper than 27°. Fix options: flatten raised pieces across their width in the ground mesh, or raise `floor_max_angle`. The Jolt job system warns once ("exceeded the maximum number of jobs") during `test_play`; results are unaffected.
+
+**Performance on the integrated GPU (2026-10-10, outside the milestones, user request):** on the Intel Iris Xe (1600×900) the game ran at 22–48 fps. Causes measured: ~16 ms of screen effects even with an empty world (SSIL ~4, MSAA ~6, SSAO/glow/shadows ~2 each), and far content drawn at full detail (no distance limit for ground and buildings, tree LOD2 to infinity; far cost is triangles, not shaders). Fixes: **chunk streaming** (`far_builder.gd` + `world_streamer.gd`: 96 cells of 192 m; full detail within 180 m of a cell, else a far version: ground on an 8 m grid, buildings merged and vertex-clustered at 1.5 m, trees as 20-triangle crowns; draw calls −50…−90 %, −3…−10 ms at street level, −22 ms on the overview) and an automatic **low graphics preset** on integrated GPUs (F2, `PLATEAU_QUALITY`). Result on the iGPU: **61–129 fps at every viewpoint** (7.7–16.5 ms, laptop at 87 °C); RTX 4050 (high): 209–289 fps. Also fixed a **~50 s startup**: `tree_collision.gd`/`prop_collision.gd` added 15,633 + 2,400 shapes to a body already in the Jolt space, which rebuilds its compound shape on every add (quadratic); they now add them out of the space (48.8 s → 20 ms, 3.3 s → 7 ms). Gotchas: under Wayland a covered Godot window stops drawing, so benchmark with `--display-driver x11`; `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/intel_icd.json` forces the iGPU. On the overview (flying high) the 8 m far ground is visibly blocky. Shots `data/review/shots/streaming_off/` vs `streaming_on/`.

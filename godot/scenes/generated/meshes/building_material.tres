@@ -1,0 +1,16 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://shaders/toy_building.gdshader" id="1_0j8tm"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_0j8tm")
+shader_parameter/coping_color = Color(0.83137256, 0.8392157, 0.84705883, 1)
+shader_parameter/soffit_color = Color(0.9372549, 0.91764706, 0.8784314, 1)
+shader_parameter/glass_sky_color = Color(0.5529412, 0.7411765, 0.89411765, 1)
+shader_parameter/glass_deep_color = Color(0.15686275, 0.24705882, 0.34117648, 1)
+shader_parameter/door_color = Color(0.23137255, 0.27450982, 0.32156864, 1)
+shader_parameter/plant_color = Color(0.7254902, 0.74509805, 0.76862746, 1)
+shader_parameter/min_run = null
+shader_parameter/frame = null
+shader_parameter/recess = null

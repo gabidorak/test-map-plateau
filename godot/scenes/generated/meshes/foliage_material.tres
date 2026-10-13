@@ -1,0 +1,15 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://shaders/toy_foliage.gdshader" id="1_br80h"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_br80h")
+shader_parameter/use_instance_tint = null
+shader_parameter/tint = null
+shader_parameter/bark_color = Color(0.6039216, 0.4627451, 0.3372549, 1)
+shader_parameter/wood_color = Color(0.7882353, 0.63529414, 0.44705883, 1)
+shader_parameter/tie_color = Color(0.29411766, 0.47843137, 0.22745098, 1)
+shader_parameter/sway = null
+shader_parameter/flutter = null
+shader_parameter/ao_strength = null

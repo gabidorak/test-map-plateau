@@ -1,0 +1,244 @@
+{
+ "about": "Building kit modules built by blender/building_kit/build_kit.py. Blender model space: metres, z up, front -Y (Godot +Z after import); wall modules have their back on y = 0. Stretched per instance.",
+ "models": {
+  "balcony": {
+   "size": [
+    1.03,
+    1.0,
+    1.165
+   ],
+   "min": [
+    -0.515,
+    -1.0,
+    -0.16
+   ],
+   "max": [
+    0.515,
+    0.0,
+    1.005
+   ],
+   "triangles": 764,
+   "materials": [
+    "glass",
+    "tint",
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": true,
+   "range": 260.0,
+   "glb": "kit.glb"
+  },
+  "loggia_railing": {
+   "size": [
+    1.0,
+    0.1,
+    1.005
+   ],
+   "min": [
+    -0.5,
+    -0.1,
+    0.0
+   ],
+   "max": [
+    0.5,
+    0.0,
+    1.005
+   ],
+   "triangles": 228,
+   "materials": [
+    "glass",
+    "tint"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": true,
+   "range": 220.0,
+   "glb": "kit.glb"
+  },
+  "slat": {
+   "size": [
+    0.07,
+    0.42,
+    1.0
+   ],
+   "min": [
+    -0.035,
+    -0.48,
+    0.0
+   ],
+   "max": [
+    0.035,
+    -0.06,
+    1.0
+   ],
+   "triangles": 108,
+   "materials": [
+    "tint"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": true,
+   "range": 320.0,
+   "glb": "kit.glb"
+  },
+  "fin": {
+   "size": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "min": [
+    -0.5,
+    -1.0,
+    0.0
+   ],
+   "max": [
+    0.5,
+    0.0,
+    1.0
+   ],
+   "triangles": 108,
+   "materials": [
+    "tint"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": true,
+   "range": 420.0,
+   "glb": "kit.glb"
+  },
+  "entrance_canopy": {
+   "size": [
+    3.278,
+    1.86,
+    1.537
+   ],
+   "min": [
+    -1.639,
+    -1.85,
+    -0.02
+   ],
+   "max": [
+    1.639,
+    0.01,
+    1.517
+   ],
+   "triangles": 700,
+   "materials": [
+    "glow",
+    "tint",
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": true,
+   "range": 300.0,
+   "glb": "kit.glb"
+  },
+  "piloti": {
+   "size": [
+    0.52,
+    0.52,
+    1.0
+   ],
+   "min": [
+    -0.26,
+    -0.26,
+    0.0
+   ],
+   "max": [
+    0.26,
+    0.26,
+    1.0
+   ],
+   "triangles": 312,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 400.0,
+   "glb": "kit.glb"
+  },
+  "roof_railing": {
+   "size": [
+    1.0,
+    0.04,
+    1.06
+   ],
+   "min": [
+    -0.5,
+    -0.02,
+    0.0
+   ],
+   "max": [
+    0.5,
+    0.02,
+    1.06
+   ],
+   "triangles": 432,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 260.0,
+   "glb": "kit.glb"
+  },
+  "roof_unit": {
+   "size": [
+    1.0,
+    1.015,
+    1.05
+   ],
+   "min": [
+    -0.5,
+    -0.515,
+    0.0
+   ],
+   "max": [
+    0.5,
+    0.5,
+    1.05
+   ],
+   "triangles": 344,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 300.0,
+   "glb": "kit.glb"
+  },
+  "solar_panel": {
+   "size": [
+    1.0,
+    1.01,
+    0.451
+   ],
+   "min": [
+    -0.5,
+    -0.505,
+    0.0
+   ],
+   "max": [
+    0.5,
+    0.505,
+    0.451
+   ],
+   "triangles": 192,
+   "materials": [
+    "toy"
+   ],
+   "colliders": [],
+   "anchors": {},
+   "wall": false,
+   "range": 260.0,
+   "glb": "kit.glb"
+  }
+ }
+}

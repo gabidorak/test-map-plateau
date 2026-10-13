@@ -1,0 +1,206 @@
+{
+ "about": "Reference sizes (m) of the tree models built by blender/trees/build_trees.py; instances are scaled by real height / height and crown radius / radius.",
+ "lod_suffixes": [
+  "_lod0",
+  "_lod1",
+  "_lod2"
+ ],
+ "models": {
+  "round_0": {
+   "height": 9.901,
+   "radius": 4.238,
+   "crown_base": 3.977,
+   "trunk_radius": 0.203,
+   "triangles": 1974,
+   "archetype": "round",
+   "variant": 0,
+   "lods": [
+    1974,
+    510,
+    170
+   ]
+  },
+  "round_1": {
+   "height": 9.17,
+   "radius": 4.506,
+   "crown_base": 4.447,
+   "trunk_radius": 0.229,
+   "triangles": 1918,
+   "archetype": "round",
+   "variant": 1,
+   "lods": [
+    1918,
+    508,
+    170
+   ]
+  },
+  "round_2": {
+   "height": 9.422,
+   "radius": 4.181,
+   "crown_base": 4.361,
+   "trunk_radius": 0.21,
+   "triangles": 1962,
+   "archetype": "round",
+   "variant": 2,
+   "lods": [
+    1962,
+    570,
+    210
+   ]
+  },
+  "oval_0": {
+   "height": 13.571,
+   "radius": 3.709,
+   "crown_base": 4.911,
+   "trunk_radius": 0.233,
+   "triangles": 1918,
+   "archetype": "oval",
+   "variant": 0,
+   "lods": [
+    1918,
+    510,
+    170
+   ]
+  },
+  "oval_1": {
+   "height": 14.324,
+   "radius": 3.401,
+   "crown_base": 5.126,
+   "trunk_radius": 0.216,
+   "triangles": 1750,
+   "archetype": "oval",
+   "variant": 1,
+   "lods": [
+    1750,
+    510,
+    170
+   ]
+  },
+  "columnar_0": {
+   "height": 17.677,
+   "radius": 3.755,
+   "crown_base": 1.717,
+   "trunk_radius": 0.23,
+   "triangles": 1750,
+   "archetype": "columnar",
+   "variant": 0,
+   "lods": [
+    1750,
+    510,
+    170
+   ]
+  },
+  "columnar_1": {
+   "height": 15.618,
+   "radius": 3.441,
+   "crown_base": 1.039,
+   "trunk_radius": 0.195,
+   "triangles": 1750,
+   "archetype": "columnar",
+   "variant": 1,
+   "lods": [
+    1750,
+    510,
+    170
+   ]
+  },
+  "conifer_0": {
+   "height": 14.033,
+   "radius": 3.932,
+   "crown_base": 1.028,
+   "trunk_radius": 0.213,
+   "triangles": 1750,
+   "archetype": "conifer",
+   "variant": 0,
+   "lods": [
+    1750,
+    510,
+    170
+   ]
+  },
+  "conifer_1": {
+   "height": 12.085,
+   "radius": 3.141,
+   "crown_base": 0.633,
+   "trunk_radius": 0.178,
+   "triangles": 1750,
+   "archetype": "conifer",
+   "variant": 1,
+   "lods": [
+    1750,
+    510,
+    170
+   ]
+  },
+  "conifer_2": {
+   "height": 10.383,
+   "radius": 4.13,
+   "crown_base": 5.439,
+   "trunk_radius": 0.239,
+   "triangles": 1748,
+   "archetype": "conifer",
+   "variant": 2,
+   "lods": [
+    1748,
+    510,
+    170
+   ]
+  },
+  "weeping_0": {
+   "height": 9.602,
+   "radius": 4.511,
+   "crown_base": 1.392,
+   "trunk_radius": 0.235,
+   "triangles": 1918,
+   "archetype": "weeping",
+   "variant": 0,
+   "lods": [
+    1918,
+    510,
+    170
+   ]
+  },
+  "weeping_1": {
+   "height": 9.289,
+   "radius": 3.71,
+   "crown_base": 0.926,
+   "trunk_radius": 0.202,
+   "triangles": 1750,
+   "archetype": "weeping",
+   "variant": 1,
+   "lods": [
+    1750,
+    508,
+    170
+   ]
+  },
+  "sapling_0": {
+   "height": 3.338,
+   "radius": 0.89,
+   "crown_base": 1.871,
+   "trunk_radius": 0.034,
+   "triangles": 858,
+   "archetype": "sapling",
+   "variant": 0,
+   "lods": [
+    858,
+    322,
+    138
+   ]
+  },
+  "sapling_1": {
+   "height": 3.578,
+   "radius": 0.802,
+   "crown_base": 1.939,
+   "trunk_radius": 0.04,
+   "triangles": 906,
+   "archetype": "sapling",
+   "variant": 1,
+   "lods": [
+    906,
+    358,
+    162
+   ]
+  }
+ }
+}
