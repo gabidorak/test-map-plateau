@@ -2,7 +2,8 @@ extends SceneTree
 ## Headless checks for scripts/breakables.gd: a car rolling at 10 m/s into a thin tree bends it (trunk collider off,
 ## the tree tilted away) and keeps going, and the tree springs back up (collider on, upright again); a car rolling into
 ## a sign pole knocks it over (debris flying off, the pole and its faces hidden, collider off) and keeps going, and the
-## pole comes back when restored; a car creeping into another sign pole stops against it.
+## pole comes back when restored; a car creeping into another sign pole stops against it; a car at speed knocks over
+## a street lamp (its debris colliding along the whole pole) and a lift gate.
 ## godot --headless --fixed-fps 60 --path godot --script res://tools/test_breakables.gd
 
 const Layers = preload("res://scripts/physics_layers.gd")
@@ -48,6 +49,8 @@ func _run() -> void:
 	_main.add_child(car)
 	await _tree_check(car, trees)
 	await _sign_check(car, props)
+	await _knock_check(car, props, "lamp_street", 0.11)
+	await _knock_check(car, props, "lift_gate", 0.05)
 	_finish()
 
 
@@ -201,6 +204,66 @@ func _sign_check(car: Car, props: StaticBody3D) -> void:
 			owners_on += 1
 	_check(_breakables.debris.is_empty() and not is_instance_valid(rb) and shown == 1 + faces and owners_on == owners_off,
 			"restored: back in place and solid, the debris gone")
+
+
+## A car at SPEED knocks over a prop of `model` (collider radius about `r`) and drives on; the debris collides up to
+## the top of the model.
+func _knock_check(car: Car, props: StaticBody3D, model: String, r: float) -> void:
+	var data: Resource = props.data
+	var k := -1
+	var dir := Vector3.ZERO
+	for i in data.size():
+		if data.describe(i).get("model") != model:
+			continue
+		var box: AABB = props.record_aabb(i)
+		dir = _free_run(car, Vector3(box.get_center().x, box.position.y, box.get_center().z), r)
+		if dir != Vector3.ZERO:
+			k = i
+			break
+	_check(k >= 0, "found a %s with a clear run-up" % model)
+	if k < 0:
+		return
+	var box: AABB = props.record_aabb(k)
+	await _launch(car, Vector3(box.get_center().x, box.position.y, box.get_center().z), dir, SPEED)
+	var d: Dictionary = {}
+	var speeds := Vector2.ZERO
+	for i in 120:
+		var v := car.linear_velocity.length()
+		await physics_frame
+		for e: Dictionary in _breakables.debris:
+			if e["record"] == k:
+				d = e
+		if not d.is_empty():
+			speeds.x = v
+			await _frames(10)
+			speeds.y = car.linear_velocity.length()
+			break
+	var others := []
+	for e: Dictionary in _breakables.debris:
+		if e["record"] != k:
+			others.append(data.ids[e["record"]])
+	_check(not d.is_empty(), "a car at %d m/s knocks %s over (also broke %s)" % [SPEED, data.ids[k], others])
+	if d.is_empty():
+		return
+	var rb: RigidBody3D = d["body"]
+	var top := 0.0
+	for c in rb.get_children():
+		if c is CollisionShape3D:
+			var shape: Shape3D = c.shape
+			var h: float = shape.size.y if shape is BoxShape3D else shape.height
+			top = maxf(top, c.position.y + h / 2.0)
+	var height := Breakables._model_height(d["instances"][0])
+	_check(top > height - 0.4, "its debris collides up to %.1f m (model %.1f m tall)" % [top, height])
+	_check(speeds.y > speeds.x * 0.85, "the car drives on (%.1f m/s before, %.1f m/s after)" % [speeds.x, speeds.y])
+	var spot := box.get_center()
+	for i in 120:                               # the car well past the spot before it comes back
+		await physics_frame
+		if car.to_local(spot).z < -car.half_extents.z - 1.0:
+			break
+	for e: Dictionary in _breakables.debris.duplicate():
+		_breakables.restore(e)
+	await _frames(2)
+	_check(_breakables.debris.is_empty(), "restored")
 
 
 # ---------------------------------------------------------------- run-up
