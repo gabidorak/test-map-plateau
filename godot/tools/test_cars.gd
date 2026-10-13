@@ -4,7 +4,8 @@ extends SceneTree
 ## S stops it; Space gets out next to it, standing on the ground, without jumping. C parks another car; Tab opens
 ## the vehicle menu, whose buttons park the chosen model.
 ## Mouse wheel: zoomed all the way in the player goes first person and back out of it.
-## Bus: E near the driver seat from inside takes the wheel, in the cab view when the player was in first person;
+## Bus: a passenger is not shoved by a pole a remote (LAN) copy of the bus drives through, and holds still against
+## its front wall as it moves; E near the driver seat from inside takes the wheel, in the cab view when the player was in first person;
 ## the steering wheel turns with the steering, the driver's hands on its rim; the wheel zooms out of the cab view
 ## and back into it, and first person carries over when leaving the seat; Q/E turn signals (self-cancel after a turn);
 ## full steering lock at a standstill; O opens the doors (door colliders off); Space while moving leaves
@@ -243,6 +244,49 @@ func _bus_checks() -> void:
 	player.teleport(bus.to_global(bus.driver_exit))
 	await _frames(30)
 	_check(player.carrier == bus and player.is_on_floor(), "standing inside the parked bus is carried by it (on floor %s)" % player.is_on_floor())
+	# a copy of the bus posed from a LAN peer's states goes through what it hits there (a pole it knocked down, a
+	# tree it bent) until that news arrives: driven 4 m past a pole standing in the aisle and back, the passenger
+	# stays put
+	var parked: Transform3D = bus.global_transform
+	var rest_local: Vector3 = bus.to_local(player.global_position)
+	var pole := StaticBody3D.new()
+	pole.collision_layer = Layers.PROPS
+	pole.collision_mask = 0
+	var pole_shape := CollisionShape3D.new()
+	pole_shape.shape = BoxShape3D.new()
+	(pole_shape.shape as BoxShape3D).size = Vector3(0.3, 4.0, 0.3)
+	pole.add_child(pole_shape)
+	_main.add_child(pole)
+	pole.global_position = bus.to_global(rest_local + Vector3(0.0, 1.0, 2.0))
+	bus.set_remote(true)
+	for i in 120:
+		bus.global_transform = parked.translated(parked.basis.z * 4.0 * sin(PI * i / 119.0))
+		await physics_frame
+	pole.queue_free()
+	await _frames(10)
+	var drift: float = bus.to_local(player.global_position).distance_to(rest_local)
+	_check(drift < 0.02 and player.carrier == bus, "a pole a remote bus drives through does not shove its passenger (%.2f m)" % drift)
+	# pressed against its front wall while it moves in jerky steps (up to ~0.6 m a tick, forward and back), the
+	# passenger holds still in it: its walls move with it, not a step behind, and a step back does not seem to leave
+	# them outside it
+	player.teleport(player.global_position, bus.global_rotation.y + PI)
+	player.scripted_input = Vector2(0.0, 1.0)
+	await _frames(90)
+	var st: Array = bus.net_state()
+	var zs := PackedFloat64Array()
+	for i in 120:
+		st[0] = parked.translated(parked.basis.z * 6.0 * sin(PI * i / 119.0) * (1.0 + 0.1 * sin(i * 2.3)))
+		bus.apply_net_state(st, st, 0.0)
+		await physics_frame
+		zs.append(bus.to_local(player.global_position).z)
+	player.scripted_input = null
+	var shake := 0.0
+	for i in range(1, zs.size()):
+		shake = maxf(shake, absf(zs[i] - zs[i - 1]))
+	_check(shake < 0.01, "against a remote bus's front wall the passenger holds still as it moves (%.3f m shake)" % shake)
+	player.teleport(bus.to_global(bus.driver_exit))
+	await _frames(30)
+	bus.set_remote(false)
 	await _wheel(true, 12)
 	var fp_in: bool = player.first_person
 	await _wheel(false, 1)

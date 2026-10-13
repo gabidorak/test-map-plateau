@@ -16,6 +16,9 @@ var collider: AnimatableBody3D
 var _body: Node3D
 var _shape: CollisionShape3D
 var _ignored := {}                          # vehicle (car.gd) -> true while its bodies do not collide with us
+var _frame: Node3D                          # the vehicle section the player stands in (show_in), or null
+var _local_pos := Vector3.ZERO              # feet in _frame's frame
+var _local_yaw := 0.0                       # body facing relative to _frame's
 
 
 func setup(nickname: String, color: Color) -> void:
@@ -56,8 +59,32 @@ func setup(nickname: String, color: Color) -> void:
 
 ## Body (feet at the origin) facing `body_yaw` (radians, the player's Body node rotation) at global transform `xf`.
 func show_at(xf: Transform3D, body_yaw: float) -> void:
+	_frame = null
 	global_transform = xf
 	_body.rotation.y = body_yaw
+
+
+## Body with its feet at `pos` facing `body_yaw` (radians), both in the frame of vehicle section `frame` (car.gd or
+## car_trailer.gd). Posed again on it each frame (_process): a vehicle simulated here moves in the physics step,
+## after net.gd poses us, and would leave us behind by its last step.
+func show_in(frame: Node3D, pos: Vector3, body_yaw: float) -> void:
+	_frame = frame
+	_local_pos = pos
+	_local_yaw = body_yaw
+	_follow_frame()
+
+
+func _process(_delta: float) -> void:
+	if _frame:
+		_follow_frame()
+
+
+func _follow_frame() -> void:
+	if not is_instance_valid(_frame):
+		_frame = null
+		return
+	global_transform = Transform3D(Basis.IDENTITY, _frame.global_transform * _local_pos)
+	_body.rotation.y = _local_yaw + _frame.global_rotation.y
 
 
 ## Collides (`on`) or not (hidden: driving) with the vehicles; never with `in_car`, the vehicle the player stands

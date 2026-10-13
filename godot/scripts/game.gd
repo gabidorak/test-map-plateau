@@ -71,6 +71,8 @@ var _host_label: Label                      # top right while hosting: the addre
 var _host_label_t := 0.0
 var _toast: Label                           # "X joined the game"...
 var _toast_t := 0.0
+var _stats: Label                           # F3: frame rate and network timings (net.gd debug_text)
+var _stats_t := 0.0
 var _orbit_angle := 0.0
 var _orbit_ground := NAN                    # ground height under MENU_ORBIT_CENTRE
 
@@ -167,7 +169,7 @@ func start_solo() -> void:
 
 ## Starts a LAN game hosted here: the server first, so the cars parked at start get their network ids.
 func start_host() -> void:
-	var err := net.host(nickname, color)
+	var err := net.host(nickname, color, int(_args.get("port", Net.PORT)))
 	if err != "":
 		_on_join_failed(err)
 		return
@@ -238,12 +240,15 @@ func _physics_process(_delta: float) -> void:
 		return
 	# a car, or the rear section of an articulated one (car_trailer.gd)
 	var c: Node3D = player.carrier if is_instance_valid(player.carrier) else null
+	# where the player is in it now: it may have moved since the player last followed it (a remote vehicle net.gd
+	# posed this tick); against that the player would seem to slip out of its rear at speed
+	var p: Vector3 = player.followed_position()
 	# leave with a small margin so the doorway does not flicker
-	if c and not c.carries(player.global_position, 0.1):
+	if c and not c.carries(p, 0.1):
 		c = null
 	if c == null:
 		for car in cars:
-			c = car.carrier_at(player.global_position)
+			c = car.carrier_at(p)
 			if c:
 				break
 	player.set_carrier(c)
@@ -257,6 +262,11 @@ func _process(delta: float) -> void:
 		if _host_label_t >= 1.0:              # players come and go, the network may change
 			_host_label_t = 0.0
 			_host_label.text = net.lan_label()
+	if _stats.visible:
+		_stats_t += delta
+		if _stats_t >= 0.25:
+			_stats_t = 0.0
+			_stats.text = net.debug_text()
 	if _toast_t > 0.0:
 		_toast_t -= delta
 		_toast.modulate.a = clampf(_toast_t, 0.0, 1.0)
@@ -286,14 +296,17 @@ func _fly_around(delta: float) -> void:
 
 
 ## LAN games: our player's state for the other peers (net.gd _pose_remote): standing in a vehicle, the position and
-## facing are in its frame.
+## facing are in its frame. That frame is the vehicle's pose the player last followed, not its current one: net.gd
+## sends this after moving the remote vehicles but before the player follows them, so the current pose would put the
+## player behind by the vehicle's last step.
 func net_player_state() -> Array:
 	var flags := 1 if driving or not player.visible else 0
 	var c: Node3D = player.carrier if is_instance_valid(player.carrier) else null
 	if c and not driving:
 		var car: Car = c as Car if c is Car else c.head as Car
-		return [car.net_id, 0 if c == car else 1, c.to_local(player.global_position),
-				player.body_yaw() - c.global_rotation.y, flags]
+		var frame: Transform3D = player.carrier_frame()
+		return [car.net_id, 0 if c == car else 1, frame.affine_inverse() * player.global_position,
+				player.body_yaw() - frame.basis.get_euler().y, flags]
 	return ["", 0, player.global_position, player.body_yaw(), flags]
 
 
@@ -664,6 +677,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				_help.visible = not _help.visible
 			KEY_F2:
 				set_low_quality(not low_quality)
+			KEY_F3:
+				_stats.visible = not _stats.visible
+				_stats_t = 1.0
 			KEY_X:
 				picker.hide_overlay()
 
@@ -735,6 +751,17 @@ func _build_hud() -> void:
 	hud.add_child(_host_label)
 	_host_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 12)
 	_host_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_stats = Label.new()
+	_stats.add_theme_font_size_override("font_size", 15)
+	_stats.add_theme_color_override("font_outline_color", Color.BLACK)
+	_stats.add_theme_constant_override("outline_size", 4)
+	_stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_stats.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stats.visible = false
+	hud.add_child(_stats)
+	_stats.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 12)
+	_stats.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_stats.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_build_menu()
 	_update_help()
 	_help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT, Control.PRESET_MODE_MINSIZE, 12)
@@ -785,4 +812,4 @@ func _update_help() -> void:
 		_help.text = "WALK · click to capture the mouse · Esc menu · WASD/ZQSD move · Shift run · Space jump\n" + \
 				"wheel zoom (all the way in: first person) · V first/third person · E get in the nearest car (in the bus: near the driver seat)\n" + \
 				"C park a car here · Tab vehicle menu · F inspect · X close · F1 fly camera · H hide help"
-	_help.text += "\nF2 graphics: %s" % ("low" if low_quality else "high")
+	_help.text += "\nF2 graphics: %s · F3 frame rate%s" % ["low" if low_quality else "high", " and network" if net.active else ""]

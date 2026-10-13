@@ -4,7 +4,9 @@ extends CharacterBody3D
 ## zooming all the way in goes first person and zooming out of it comes back (like Roblox); V toggles too.
 ## Steps up to step_height onto vehicle floors (the bus). Inside a walkable vehicle (game.gd calls set_carrier)
 ## the player moves in the vehicle's frame: each frame first follows the vehicle's motion since the last
-## one, then walks; leaving it keeps the vehicle's velocity.
+## one, then walks; leaving it keeps the vehicle's velocity. In there it collides with the walkable hulls only: what
+## the vehicle drives through (a tree it bends, a kerb, a pole another peer's copy of it has not knocked down yet)
+## would shove it about in the vehicle.
 
 const Layers = preload("res://scripts/physics_layers.gd")
 
@@ -38,6 +40,7 @@ var _pitch := -0.12
 var _last_floor := Vector3.ZERO
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _carrier_last := Transform3D.IDENTITY   # carrier transform when last followed
+var _world_mask := 0                        # collision mask outside the vehicles
 var _step_offset := 0.0                     # camera/body lag after a step up, eased to 0
 var _zoom := 4.5                            # third-person camera distance the arm eases to
 
@@ -53,6 +56,7 @@ func _ready() -> void:
 	# vehicles are followed by set_carrier, not by the built-in moving-platform velocity
 	platform_floor_layers = 0xFFFFFFFF & ~(Layers.VEHICLES | Layers.VEHICLE_INSIDE)
 	collision_mask |= Layers.VEHICLE_INSIDE
+	_world_mask = collision_mask
 	_apply_view()
 
 
@@ -60,12 +64,15 @@ func _ready() -> void:
 func set_carrier(vehicle: Node3D) -> void:
 	if vehicle == carrier:
 		return
+	if is_instance_valid(carrier):
+		_follow_carrier()                   # its last move first (it may have moved since this tick's follow)
 	if is_instance_valid(carrier) and vehicle == null:
 		var v: Vector3 = carrier.velocity_at(global_position)
 		velocity += Vector3(v.x, 0.0, v.z)
 	carrier = vehicle
 	if carrier:
 		_carrier_last = carrier.global_transform
+	collision_mask = Layers.VEHICLE_INSIDE if carrier else _world_mask
 	# the third-person camera stays inside the vehicle
 	_arm.collision_mask = Layers.SOLID | (Layers.VEHICLE_INSIDE if carrier else 0)
 
@@ -84,6 +91,19 @@ func _follow_carrier() -> void:
 	_body.rotation.y += turn
 	_pivot.rotation = Vector3(_pitch, _yaw, 0.0)
 	velocity = Basis(Vector3.UP, turn) * velocity
+
+
+## The carrier's transform when the player last followed it: the frame the player's position is up to date in (the
+## carrier may have moved since, in this physics tick before the player's turn, or in the physics step).
+func carrier_frame() -> Transform3D:
+	return _carrier_last
+
+
+## Where the player is once it has followed its carrier's latest move (its position now without a carrier).
+func followed_position() -> Vector3:
+	if not is_instance_valid(carrier):
+		return global_position
+	return carrier.global_transform * (_carrier_last.affine_inverse() * global_position)
 
 
 ## Puts the player's feet at `pos` (Godot coordinates) facing `yaw` radians.
