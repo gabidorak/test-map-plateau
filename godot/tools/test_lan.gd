@@ -2,9 +2,12 @@ extends SceneTree
 ## Headless check of LAN games (scripts/net.gd): run it twice at once, as the host and as a client on this machine:
 ##   godot --headless --path godot --script res://tools/test_lan.gd -- --host --name=Host
 ##   godot --headless --path godot --script res://tools/test_lan.gd -- --join=127.0.0.1 --name=Guest
-## (tools/test_lan.sh does both). The host knocks a pole down before the client joins: the client sees it lying.
+## (tools/test_lan.sh does both, on port 7790). The host knocks a pole down before the client joins: the client sees
+## it lying. The host jumps a few times: the client draws each takeoff soon after the host does (the wall clock is
+## shared on this machine).
 ## The host parks a bus on Nouvelle Voie; the client sees it, steps into its aisle and stays standing inside while the
-## host drives it ~5 s; the host sees the client's player inside the bus all along (the bus passing through it). A
+## host drives it ~5 s; the host sees the client's player inside the bus all along (the bus passing through it), at
+## the same place in it as the bus speeds up (as drawn: after the frame's physics and processing). A
 ## tree the host bends bends on the client. The client then takes over one of the host's cars (it simulates it, the
 ## host shows a frozen copy with a driver), drives it a little and leaves; the host gets its car back. Last, on the
 ## host, a car rolled at a remote player's look-alike stops against it (and passes through with its collision off).
@@ -17,10 +20,26 @@ const RemotePlayer = preload("res://scripts/remote_player.gd")
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const BUS_ROAD := Vector2(165.0, -215.0)    # the straight stretch of Nouvelle Voie test_cars.gd drives the bus on
 const BUS_ROAD_DIR := Vector2(120.0, -59.0)
+const JUMPS_FILE := "/tmp/test_lan_jumps.txt"    # the host's takeoff times, for the client
+const JUMP_TIME := 12.0                     # s the host jumps for, every even second
+const RISE := 0.05                          # m up from the ground: a takeoff
+const MAX_JUMP_LAG := 0.08                  # s (~30 ms headless on a laptop; it was 120 with a fixed 100 ms delay)
 
 var _main: Node
 var _failures: PackedStringArray = []
 var _hosting := false
+
+
+## Calls `fn` each frame after every other node's _process: what is drawn.
+class LateProbe extends Node:
+	var fn: Callable
+
+	func _init(f: Callable) -> void:
+		fn = f
+		process_priority = 1000
+
+	func _process(_delta: float) -> void:
+		fn.call()
 
 
 func _initialize() -> void:
@@ -126,6 +145,7 @@ func _run_host() -> void:
 	_check(bus.net_id != "", "the bus has a network id (%s)" % bus.net_id)
 	_check(_main.spawn_car_near_player("bus-idfm-artic") != null, "an articulated bus parked too")
 	_check(await _until(func() -> bool: return net.players.size() == 2, 90.0), "the client joined")
+	await _jump_for_client()
 	var guest: int = net.players.keys().filter(func(id: int) -> bool: return id != 1)[0]
 	_check(await _until(func() -> bool: return net.cars.size() == 7, 30.0), "the client's taxi is here (%d vehicles)" % net.cars.size())
 	for id: String in net.cars:
@@ -143,6 +163,15 @@ func _run_host() -> void:
 	var inside := 0
 	var frames := 0
 	var ignored := 0
+	# where the client's player is drawn in the bus: should not slip back as it speeds up
+	var at_rest: Vector3 = bus.global_transform.affine_inverse() * remote.global_position
+	var slip := [0.0, 0.0]                  # largest drift from at_rest (m), bus speed then (m/s)
+	var probe := LateProbe.new(func() -> void:
+		var d: float = (bus.global_transform.affine_inverse() * remote.global_position).distance_to(at_rest)
+		if d > slip[0]:
+			slip[0] = d
+			slip[1] = absf(bus.speed()))
+	root.add_child(probe)
 	_key(KEY_W, true)
 	for i in 300:
 		await physics_frame
@@ -150,6 +179,8 @@ func _run_host() -> void:
 		inside += int(remote.visible and bus.carries(remote.global_position, 0.4))
 		ignored += int(remote.ignores(bus))
 	_key(KEY_W, false)
+	probe.queue_free()
+	_check(slip[0] < 0.05, "they stay put in the bus as it speeds up (drifted %.2f m at most, at %.1f m/s)" % slip)
 	_key(KEY_S, true)
 	await _until(func() -> bool: return absf(bus.speed()) < 0.5, 10.0)
 	_key(KEY_S, false)
@@ -213,6 +244,69 @@ func _check_run_into_player(car: Node) -> void:
 	dummy.queue_free()
 
 
+## Jumps at each even second of the wall clock for JUMP_TIME s, writing in JUMPS_FILE when each takeoff is drawn
+## here: the client measures how much later it draws it (_watch_host_jumps; both run on this machine).
+func _jump_for_client() -> void:
+	var player: CharacterBody3D = _main.player
+	var file := FileAccess.open(JUMPS_FILE, FileAccess.WRITE)
+	var state := [player.global_position.y, false]   # ground height, rising
+	var probe := LateProbe.new(func() -> void:
+		var up: bool = player.global_position.y > state[0] + RISE
+		if up and not state[1]:
+			file.store_line("%.6f" % Time.get_unix_time_from_system())
+			file.flush()
+		elif not up and player.is_on_floor():
+			state[0] = player.global_position.y
+		state[1] = up)
+	root.add_child(probe)
+	player.scripted_input = Vector2.ZERO
+	var end := Time.get_unix_time_from_system() + JUMP_TIME
+	var last := 0
+	while Time.get_unix_time_from_system() < end:
+		await physics_frame
+		var sec := int(Time.get_unix_time_from_system())
+		player.scripted_jump = sec % 2 == 0 and sec != last
+		if player.scripted_jump:
+			last = sec
+	player.scripted_jump = false
+	player.scripted_input = null
+	await _frames(60)
+	probe.queue_free()
+	file.close()
+
+
+## Watches the host jump (_jump_for_client): how long after it is drawn there each takeoff is drawn here.
+func _watch_host_jumps() -> void:
+	var net: Node = _main.net
+	var host: Node3D = net._remotes[1]
+	_check(await _until(func() -> bool: return host.visible, 10.0), "the host's player is shown")
+	var state := [host.global_position.y, false]     # ground height, rising
+	var rises: Array[float] = []
+	var probe := LateProbe.new(func() -> void:
+		var y := host.global_position.y
+		state[0] = minf(state[0], y)
+		var up: bool = y > state[0] + RISE
+		if up and not state[1]:
+			rises.append(Time.get_unix_time_from_system())
+		state[1] = up)
+	root.add_child(probe)
+	await _until(func() -> bool: return false, JUMP_TIME - 3.0)
+	probe.queue_free()
+	var takeoffs: Array[float] = []
+	for line in FileAccess.get_file_as_string(JUMPS_FILE).split("\n", false):
+		takeoffs.append(line.to_float())
+	var lags: Array[float] = []
+	for r in rises:
+		var before := takeoffs.filter(func(t: float) -> bool: return t <= r and r - t < 1.0)
+		if not before.is_empty():
+			lags.append(r - before.max())
+	print("jump lags (ms): ", lags.map(func(l: float) -> int: return roundi(l * 1000.0)))
+	lags.sort()
+	var median := lags[lags.size() / 2] if not lags.is_empty() else INF
+	_check(lags.size() >= 3 and median < MAX_JUMP_LAG, "the host's jumps are drawn here %.0f ms after there (median of %d)"
+			% [median * 1000.0, lags.size()])
+
+
 func _run_client() -> void:
 	var net: Node = _main.net
 	_check(await _until(func() -> bool: return _main.mode == "client", 90.0), "joined the host")
@@ -231,6 +325,7 @@ func _run_client() -> void:
 			_check(c.trailer.global_position.distance_to(c.to_global(c.rear_offset)) < 0.5, "its rear section is behind it")
 	_check(_main.spawn_car_near_player("taxi") != null and _main.cars[-1].net_id.begins_with("%d:" % net.me()),
 			"parked a taxi of ours")
+	await _watch_host_jumps()
 	var bus: Node = _bus()
 	_check(bus.remote and bus.freeze, "the bus is a frozen copy")
 	await _frames(30)

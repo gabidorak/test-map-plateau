@@ -144,6 +144,7 @@ var _bellows_mesh: ArrayMesh
 var _bellows_arrays := []                   # mesh arrays; vertices and normals rewritten when the joint bends
 var _bellows_rel := Transform3D()           # rear section in the car frame when the bellows was last built
 var _joint_walls: Array[CollisionShape3D] = []    # per segment: left wall, right wall, roof
+var _bellows_hull: StaticBody3D             # walls of the walkable passage through the bellows
 var _skin: StandardMaterial3D               # the driver look-alike's colour
 var _remote_braking := false
 
@@ -474,6 +475,7 @@ func _build_bellows(b: Dictionary, s: float, off: Vector3, floor_y: float) -> vo
 	_bellows_rel = Transform3D(Basis.IDENTITY, Vector3.INF)     # not built yet
 
 	var hull := StaticBody3D.new()
+	_bellows_hull = hull
 	hull.name = "InsideBellows"
 	hull.collision_layer = Layers.VEHICLE_INSIDE
 	hull.collision_mask = 0
@@ -743,11 +745,18 @@ func net_state() -> Array:
 
 
 ## LAN games, remote vehicle: the pose between states `a` and `b` (net_state()) at weight `w`, the switches of `b`.
+## A weight over 1 carries on from `b` as it moved from `a` (net.gd Track.at), turned as `b`.
 func apply_net_state(a: Array, b: Array, w: float) -> void:
-	global_transform = (a[0] as Transform3D).interpolate_with(b[0], w)
+	global_transform = _net_pose(a[0], b[0], w)
 	if trailer:
-		trailer.global_transform = (a[1] as Transform3D).interpolate_with(b[1], w)
-	steering = lerpf(a[2], b[2], w)
+		trailer.global_transform = _net_pose(a[1], b[1], w)
+		_update_bellows()
+	# a moved node's children reach the physics server only once this tick's physics callbacks are over: the player
+	# following the vehicle (posed here first, net.gd) would walk against its walkable hulls a step behind
+	for hull: StaticBody3D in [inside, trailer.inside if trailer else null, _bellows_hull]:
+		if hull:
+			hull.force_update_transform()
+	steering = lerpf(a[2], b[2], minf(w, 1.0))
 	_throttle = b[3]
 	var flags: int = b[4]
 	_remote_braking = flags & 4 != 0
@@ -755,6 +764,12 @@ func apply_net_state(a: Array, b: Array, w: float) -> void:
 	if b[5] != indicator:
 		set_indicator(b[5])
 	audio.engine_on = flags & 2 != 0 or has_doors
+
+
+static func _net_pose(a: Transform3D, b: Transform3D, w: float) -> Transform3D:
+	if w <= 1.0:
+		return a.interpolate_with(b, w)
+	return Transform3D(b.basis, b.origin + (b.origin - a.origin) * (w - 1.0))
 
 
 ## Driver's eye view (true) or chase camera; only vehicles with a layout have a cab.
@@ -919,10 +934,8 @@ func _physics_process(delta: float) -> void:
 	audio.update(v, throttle, max_speed, delta)
 
 
-## Remote vehicle (net.gd poses it): bellows, lamps, steering wheel, doors and engine sound from its states.
+## Remote vehicle (net.gd poses it, bellows included): lamps, steering wheel, doors and engine sound from its states.
 func _remote_process(delta: float) -> void:
-	if trailer:
-		_update_bellows()
 	_update_indicator(delta)
 	for lamp in _brake_lamps:
 		lamp.material_override = _lamp_mats["brake"][1 if _remote_braking else 0]

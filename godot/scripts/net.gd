@@ -1,7 +1,7 @@
 extends Node
 ## LAN games (game.gd creates it as Main/Net: its RPCs need the same path on every peer). ENet through Godot's
 ## high-level multiplayer, the host being the server; the other peers reach each other through it.
-## - Players: each peer sends its player SEND_RATE times a second (game.net_player_state: position, body facing,
+## - Players: each peer sends its player PLAYER_SEND_RATE times a second (game.net_player_state: position, body facing,
 ##   driving or not). A player standing in a vehicle sends its position in that vehicle's frame, so on every screen it
 ##   stays inside it however that vehicle's motion is smoothed there. Others show it as a remote_player.gd, which the
 ##   vehicles they simulate collide with.
@@ -9,8 +9,11 @@ extends Node
 ##   host takes over the vehicles of a player who leaves). The other peers pose a frozen copy from the owner's states
 ##   (car.gd set_remote / apply_net_state). Getting in asks the host, which hands the vehicle to the new driver unless
 ##   someone else drives it.
-## - States are played back INTERP_DELAY late, between the two received around that time on the sender's clock
-##   (its offset from ours estimated from the quickest arrivals).
+## - States are played back a little late, between the two received around that time on the sender's clock (its
+##   offset from ours estimated from the quickest arrivals). How late adapts to each sender: one interval between its
+##   states plus how much later than the quickest ones its states arrive (Track.delay; ~25 ms on a LAN). A state late
+##   all the same is made up for a moment by carrying on the motion (Track.at). States are sent as soon as the player
+##   has moved this tick (Sender) and read just before playing back (_physics_process): no frame waits in between.
 ## - Trees bent and props broken by a vehicle simulated here (breakables.gd `broke`) bend and break everywhere.
 ## - The host announces the game on the LAN (lan_discovery.gd) and sends newcomers the players, the vehicles, and the
 ##   trees bent and props knocked down at that moment (breakables.gd net_snapshot).
@@ -28,9 +31,18 @@ const PORT := 7777                          # the host tries the next ones when 
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
 const PROTOCOL := 2                         # bump when the messages change: other versions are refused
-const SEND_RATE := 30.0                     # states per second
+const PLAYER_SEND_RATE := 60.0              # player states per second
+const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const IDLE_SEND_EVERY := 0.5                # s, states of vehicles at rest
-const INTERP_DELAY := 0.1                   # s
+const MIN_DELAY := 0.02                     # s, bounds of the playback delay (Track.delay)
+const MAX_DELAY := 0.15
+const DELAY_MARGIN := 0.005                 # s
+const DELAY_UP := 0.1                       # s per s the playback delay grows (states arrive later)...
+const DELAY_DOWN := 0.02                    # ...and shrinks: playback runs at most 10% fast, 2% slow
+const LATE_MEMORY := 3.0                    # s, time constant over which a late arrival is forgotten (_late)
+const HITCH := 0.05                         # s between ticks: we stalled, states read now are late because of us
+const CLOCK_CREEP := 0.005                  # s per s the clock offset estimate creeps up (_stamp)
+const MAX_EXTRAPOLATION := 0.05             # s past the newest state the motion carries on (Track.at)
 const CONNECT_TIMEOUT := 6.0                # s
 const DEFAULT_COLOR := Color(1, 0.55, 0.2)
 
@@ -49,9 +61,14 @@ var _remotes := {}                          # peer id -> RemotePlayer
 var _player_tracks := {}                    # peer id -> Track
 var _car_tracks := {}                       # net id -> Track (vehicles simulated elsewhere)
 var _offsets := {}                          # peer id -> our clock minus its clock (s), estimated
+var _stamped := {}                          # peer id -> when _offsets was last updated (our clock)
+var _late := {}                             # peer id -> how much later than the quickest its states arrive (s)
+var _last_tick := 0.0                       # when _physics_process last read the states (our clock)
+var _after_hitch := false                   # reading the states that queued up while we stalled
 var _sent := {}                             # net id -> switches (flags, indicator) last sent
 var _next_car := 0
-var _send_t := 0.0
+var _send_t := 0.0                          # s since the last player state
+var _car_send_t := 0.0                      # s since the last vehicle states
 var _idle_t := 0.0
 var _pending_drive := ""                    # net id of the vehicle we asked to drive
 var _connect_t := -1.0                      # s since connecting, -1 when not waiting
@@ -61,6 +78,12 @@ var _connect_t := -1.0                      # s since connecting, -1 when not wa
 class Track:
 	var times := PackedFloat64Array()
 	var states := []
+	var interval: float                     # s between states, as sent
+	var delay := -1.0                       # s, how late they are played back (Net._playback_time); -1 not yet
+	var starved := 0                        # playbacks past the newest state
+
+	func _init(send_rate: float) -> void:
+		interval = 1.0 / send_rate
 
 	func add(t: float, s: Array) -> void:
 		if not times.is_empty() and t <= times[-1]:
@@ -77,9 +100,15 @@ class Track:
 	func latest() -> Array:
 		return states[-1]
 
-	## [older state, newer state, weight] around time t; outside the states, the nearest one alone.
+	## [older state, newer state, weight] around time t. Up to MAX_EXTRAPOLATION past the newest state, the last two
+	## and a weight over 1: the motion carries on. Further past them or before them, the nearest one alone.
 	func at(t: float) -> Array:
 		if t >= times[-1]:
+			starved += 1
+			var n := times.size()
+			if n >= 2 and times[-1] - times[-2] < 3.0 * interval:
+				var past := minf(t - times[-1], MAX_EXTRAPOLATION)
+				return [states[-2], states[-1], 1.0 + past / (times[-1] - times[-2])]
 			return [states[-1], states[-1], 0.0]
 		for i in range(times.size() - 1, 0, -1):
 			if times[i - 1] <= t:
@@ -87,8 +116,19 @@ class Track:
 		return [states[0], states[0], 0.0]
 
 
+## Sends our states each tick once the player has moved (Net plays back before it: process_physics_priority).
+class Sender extends Node:
+	func _init() -> void:
+		name = "Sender"
+		process_physics_priority = 1000
+
+	func _physics_process(delta: float) -> void:
+		get_parent()._send(delta)
+
+
 func _ready() -> void:
 	process_physics_priority = -10          # remote vehicles move before the player follows the one it stands in
+	add_child(Sender.new())
 	discovery = LanDiscovery.new()
 	discovery.name = "Discovery"
 	add_child(discovery)
@@ -102,17 +142,17 @@ func me() -> int:
 	return multiplayer.get_unique_id()
 
 
-## Starts a server on PORT (or the next free port) and announces it on the LAN. Returns an error message, or "".
-func host(nickname: String, color: Color) -> String:
+## Starts a server on `first_port` (or the next free port) and announces it on the LAN. Returns an error message, or "".
+func host(nickname: String, color: Color, first_port := PORT) -> String:
 	var peer := ENetMultiplayerPeer.new()
 	var err := ERR_CANT_CREATE
 	for k in PORT_TRIES:
-		err = peer.create_server(PORT + k, MAX_PLAYERS - 1)
+		err = peer.create_server(first_port + k, MAX_PLAYERS - 1)
 		if err == OK:
-			port = PORT + k
+			port = first_port + k
 			break
 	if err != OK:
-		return "Could not start the game: ports %d to %d are all taken." % [PORT, PORT + PORT_TRIES - 1]
+		return "Could not start the game: ports %d to %d are all taken." % [first_port, first_port + PORT_TRIES - 1]
 	multiplayer.multiplayer_peer = peer
 	players = {1: {"name": nickname, "color": color}}
 	active = true
@@ -278,7 +318,7 @@ func _add_remote(id: int) -> void:
 	r.visible = false                       # until its first state
 	game.add_child(r)
 	_remotes[id] = r
-	_player_tracks[id] = Track.new()
+	_player_tracks[id] = Track.new(PLAYER_SEND_RATE)
 
 
 func _remove_remote(id: int) -> void:
@@ -287,6 +327,8 @@ func _remove_remote(id: int) -> void:
 	_remotes.erase(id)
 	_player_tracks.erase(id)
 	_offsets.erase(id)
+	_stamped.erase(id)
+	_late.erase(id)
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered", 1)
@@ -304,19 +346,18 @@ func _pose_remote(id: int, a: Array, b: Array, w: float) -> void:
 	if a[0] != b[0]:                        # got in or out of a vehicle in between: no blending across frames
 		a = b
 	var pos: Vector3 = (a[2] as Vector3).lerp(b[2], w)
-	var yaw := lerp_angle(a[3], b[3], w)
+	var yaw := lerp_angle(a[3], b[3], minf(w, 1.0))
 	var shown: bool = b[4] & 1 == 0
 	var car: Car = null
 	if b[0] != "":
 		car = cars.get(b[0])
 		if car == null:
 			shown = false
-		else:
-			var section: Node3D = car.trailer if b[1] == 1 and car.trailer else car
-			pos = section.global_transform * pos
-			yaw += section.global_rotation.y
 	r.visible = shown
-	r.show_at(Transform3D(Basis.IDENTITY, pos), yaw)
+	if car:
+		r.show_in(car.trailer if b[1] == 1 and car.trailer else car, pos, yaw)
+	else:
+		r.show_at(Transform3D(Basis.IDENTITY, pos), yaw)
 	r.update_collision(shown, car, game.cars)
 
 
@@ -350,7 +391,7 @@ func _make_car(net_id: String, model: String, owner_id: int, driver_id: int, sta
 	driver_of[net_id] = driver_id
 	if owner_id != me():
 		car.set_remote(true)
-		_car_tracks[net_id] = Track.new()
+		_car_tracks[net_id] = Track.new(CAR_SEND_RATE)
 	car.apply_net_state(state, state, 0.0)
 	_show_driver(net_id)
 
@@ -426,7 +467,7 @@ func _car_control(net_id: String, owner_id: int, driver_id: int) -> void:
 		_car_tracks.erase(net_id)
 	elif owner_id != me() and not car.remote:
 		car.set_remote(true)
-		_car_tracks[net_id] = Track.new()
+		_car_tracks[net_id] = Track.new(CAR_SEND_RATE)
 	_show_driver(net_id)
 	if driver_id == me() and _pending_drive == net_id:
 		_pending_drive = ""
@@ -458,59 +499,120 @@ func _broke(kind: String, k: int, push: Vector3) -> void:
 
 # ---------------------------------------------------------------- states
 
-func _physics_process(delta: float) -> void:
+func _physics_process(_delta: float) -> void:
 	if not active:
 		return
+	var now := _now()
+	_after_hitch = now - _last_tick > HITCH
+	_last_tick = now
+	multiplayer.poll()                      # the states that came since the frame began, not next frame
+	_after_hitch = false
+	if multiplayer.is_server() and multiplayer.multiplayer_peer is ENetMultiplayerPeer:
+		(multiplayer.multiplayer_peer as ENetMultiplayerPeer).host.flush()   # the states relayed between clients
 	_play_back()
-	_send_t += delta
-	if _send_t < 1.0 / SEND_RATE - 0.001:
+
+
+## Sender: our player's state every tick, those of the vehicles simulated here CAR_SEND_RATE times a second (at rest:
+## every IDLE_SEND_EVERY s), straight onto the network.
+func _send(delta: float) -> void:
+	if not active:
 		return
-	_idle_t += _send_t
-	_send_t = 0.0
 	var t := _now()
-	_player_state.rpc(t, game.net_player_state())
-	var idle := _idle_t >= IDLE_SEND_EVERY
-	if idle:
-		_idle_t = 0.0
-	var states := []
-	for net_id: String in cars:
-		var car: Car = cars[net_id]
-		if car.remote:
-			continue
-		var s := car.net_state()
-		var switches := [s[4], s[5]]
-		var moving := car.linear_velocity.length_squared() > 0.0025 or car.angular_velocity.length_squared() > 0.0025
-		if idle or moving or car.driving or _sent.get(net_id) != switches:
-			states.append([net_id, s])
-			_sent[net_id] = switches
-	if not states.is_empty():
-		_cars_state.rpc(t, states)
+	_send_t += delta
+	if _send_t >= 1.0 / PLAYER_SEND_RATE - 0.001:
+		_send_t = 0.0
+		_player_state.rpc(t, game.net_player_state())
+	_car_send_t += delta
+	if _car_send_t >= 1.0 / CAR_SEND_RATE - 0.001:
+		_idle_t += _car_send_t
+		_car_send_t = 0.0
+		var idle := _idle_t >= IDLE_SEND_EVERY
+		if idle:
+			_idle_t = 0.0
+		var states := []
+		for net_id: String in cars:
+			var car: Car = cars[net_id]
+			if car.remote:
+				continue
+			var s := car.net_state()
+			var switches := [s[4], s[5]]
+			var moving := car.linear_velocity.length_squared() > 0.0025 or car.angular_velocity.length_squared() > 0.0025
+			if idle or moving or car.driving or _sent.get(net_id) != switches:
+				states.append([net_id, s])
+				_sent[net_id] = switches
+		if not states.is_empty():
+			_cars_state.rpc(t, states)
+	var peer := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if peer:
+		peer.host.flush()                   # else ENet sends them at the next poll, a frame later
 
 
 ## Poses the vehicles simulated elsewhere, then the remote players (who may stand in them).
 func _play_back() -> void:
 	var now := _now()
+	var dt := get_physics_process_delta_time()
 	for net_id: String in _car_tracks:
 		var track: Track = _car_tracks[net_id]
 		if not track.is_empty():
-			var s := track.at(now - _offsets.get(owner_of[net_id], 0.0) - INTERP_DELAY)
+			var s := track.at(_playback_time(track, owner_of[net_id], now, dt))
 			(cars[net_id] as Car).apply_net_state(s[0], s[1], s[2])
 	for id: int in _player_tracks:
 		var track: Track = _player_tracks[id]
 		if not track.is_empty():
-			var s := track.at(now - _offsets.get(id, 0.0) - INTERP_DELAY)
+			var s := track.at(_playback_time(track, id, now, dt))
 			_pose_remote(id, s[0], s[1], s[2])
 
 
+## The time on peer `id`'s clock to show `track` at: its delay eased towards one interval between states plus how
+## late they arrive, so that the next state is there before it is needed.
+func _playback_time(track: Track, id: int, now: float, dt: float) -> float:
+	var target := clampf(track.interval + _late.get(id, 0.0) + DELAY_MARGIN, MIN_DELAY, MAX_DELAY)
+	if track.delay < 0.0:
+		track.delay = target
+	elif target > track.delay:
+		track.delay = minf(track.delay + DELAY_UP * dt, target)
+	else:
+		track.delay = maxf(track.delay - DELAY_DOWN * dt, target)
+	return now - _offsets.get(id, 0.0) - track.delay
+
+
 ## Clock offset of peer `id` from a state it sent at its time `t`: the quickest arrival so far, creeping up slowly
-## so the estimate follows clock drift.
+## so the estimate follows clock drift. And how much later than that its states arrive: the latest of the recent
+## ones, forgotten over LATE_MEMORY, but not those that waited for us through a stall of ours (a hitch here is not
+## the network's doing, and would hold playback back for seconds).
 func _stamp(id: int, t: float) -> void:
-	var off := _now() - t
-	_offsets[id] = minf(_offsets.get(id, INF) + 0.0002, off)
+	var now := _now()
+	var since: float = now - _stamped.get(id, now)
+	_stamped[id] = now
+	var off := now - t
+	_offsets[id] = minf(_offsets.get(id, INF) + CLOCK_CREEP * since, off)
+	var late: float = _late.get(id, 0.0) * exp(-since / LATE_MEMORY)
+	_late[id] = late if _after_hitch else maxf(late, off - _offsets[id])
 
 
 func _now() -> float:
 	return Time.get_ticks_usec() / 1e6
+
+
+## The F3 overlay (game.gd): frame rate, and for each other player the round trip to them, how late their states
+## arrive and how late they are shown.
+func debug_text() -> String:
+	var text := "%d fps" % Engine.get_frames_per_second()
+	if not active:
+		return text
+	var peer := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	for id: int in _player_tracks:
+		var track: Track = _player_tracks[id]
+		var via := id if multiplayer.is_server() else 1      # clients reach each other through the host
+		var link: ENetPacketPeer = peer.get_peer(via) if peer else null
+		var rtt := link.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME) if link else -1.0
+		var ahead := 0.0
+		if not track.is_empty():
+			ahead = track.times[-1] - (_now() - _offsets.get(id, 0.0) - track.delay)
+		text += "\n%s: ping %d ms%s · late %d ms · shown %d ms late (+ half the ping) · buffer %d ms · starved %d" % [
+				player_name(id), rtt, "" if via == id else " (host)", roundi(_late.get(id, 0.0) * 1000.0),
+				roundi(track.delay * 1000.0), roundi(ahead * 1000.0), track.starved]
+	return text
 
 
 ## What the host shows at the top right: how to join.
