@@ -2,7 +2,7 @@ extends VehicleBody3D
 ## Drivable toy car built at runtime from a downloaded model (assets/cars, see CREDITS.md): the
 ## model's four wheel nodes become VehicleWheel3D, the body gets a box collider. Call setup() before
 ## adding it to the tree. While `driving`: W/S throttle and brake/reverse, A/D steer (physical keys),
-## Q/E turn signals (A/E on AZERTY), R puts the car back on its wheels, the mouse orbits the chase camera
+## Q/E turn signals (A/E on AZERTY), G (held) sounds the horn, R puts the car back on its wheels, the mouse orbits the chase camera
 ## (it eases back behind the car while moving, in front of it while reversing; hold the right button to keep it).
 ## game.gd handles getting in (E) and out (Space). The models face +Z, which is also VehicleBody3D's
 ## forward; their left side is +X.
@@ -24,7 +24,8 @@ extends VehicleBody3D
 ## walking through it inside (over the turntable floor disc); each section carries the player standing in it
 ## (carrier_at). Move the vehicle with place(), which puts the rear section straight behind.
 ## LAN games (scripts/net.gd): a vehicle another peer simulates is `remote`, its bodies frozen kinematic and posed from
-## that peer's states (apply_net_state); the wheels still turn and steer, and lamps, doors and sound follow the states.
+## that peer's states (apply_net_state); the wheels still turn and steer, and lamps, doors, horn and sound follow the
+## states.
 
 const Layers = preload("res://scripts/physics_layers.gd")
 const VehicleAudio = preload("res://scripts/vehicle_audio.gd")
@@ -710,6 +711,7 @@ func set_driving(on: bool) -> void:
 		_update_steering()
 	else:
 		audio.engine_on = has_doors         # a bus keeps idling for its passengers
+		audio.horn = false
 		set_indicator(0)
 
 
@@ -743,9 +745,10 @@ func set_remote(on: bool) -> void:
 
 
 ## LAN games: this vehicle's state for the other peers: [pose, rear section pose, steering, pedal, flags (1 doors
-## open, 2 someone drives, 4 braking), indicator].
+## open, 2 someone drives, 4 braking, 8 horn), indicator].
 func net_state() -> Array:
-	var flags := (1 if doors_open else 0) | (2 if driving else 0) | (4 if driving and _throttle < 0.0 else 0)
+	var flags := (1 if doors_open else 0) | (2 if driving else 0) | (4 if driving and _throttle < 0.0 else 0) \
+			| (8 if audio.horn else 0)
 	return [global_transform, trailer.global_transform if trailer else Transform3D(), steering, _throttle, flags, indicator]
 
 
@@ -769,6 +772,7 @@ func apply_net_state(a: Array, b: Array, w: float) -> void:
 	if b[5] != indicator:
 		set_indicator(b[5])
 	audio.engine_on = flags & 2 != 0 or has_doors
+	audio.horn = flags & 8 != 0
 
 
 static func _net_pose(a: Transform3D, b: Transform3D, w: float) -> Transform3D:
@@ -892,6 +896,7 @@ func _physics_process(delta: float) -> void:
 		if Input.is_physical_key_pressed(KEY_S): throttle -= 1.0
 		if Input.is_physical_key_pressed(KEY_A): steer_in += 1.0
 		if Input.is_physical_key_pressed(KEY_D): steer_in -= 1.0
+	audio.horn = driving and controls and Input.is_physical_key_pressed(KEY_G)
 	var v := speed()
 	engine_force = 0.0
 	brake = 0.0

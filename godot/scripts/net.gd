@@ -15,6 +15,8 @@ extends Node
 ##   all the same is made up for a moment by carrying on the motion (Track.at). States are sent as soon as the player
 ##   has moved this tick (Sender) and read just before playing back (_physics_process): no frame waits in between.
 ## - Trees bent and props broken by a vehicle simulated here (breakables.gd `broke`) bend and break everywhere.
+## - A dedicated server (game.gd --dedicated) hosts without playing: it is not in `players` and sends no player state,
+##   but it still simulates the vehicles nobody else does.
 ## - The host announces the game on the LAN (lan_discovery.gd) and sends newcomers the players, the vehicles, and the
 ##   trees bent and props knocked down at that moment (breakables.gd net_snapshot).
 
@@ -49,6 +51,7 @@ const DEFAULT_COLOR := Color(1, 0.55, 0.2)
 var game: Node3D                            # game.gd
 var discovery: LanDiscovery
 var active := false                         # hosting, or welcomed by a host
+var dedicated := false                      # hosting without a player of our own
 var port := 0                               # the game's port (hosting) or the host's (client)
 var host_address := ""                      # client: the address joined
 var players := {}                           # peer id -> {"name": String, "color": Color}, ourselves included
@@ -143,7 +146,8 @@ func me() -> int:
 
 
 ## Starts a server on `first_port` (or the next free port) and announces it on the LAN. Returns an error message, or "".
-func host(nickname: String, color: Color, first_port := PORT) -> String:
+## `server_only`: a dedicated server, `nickname` names the game.
+func host(nickname: String, color: Color, first_port := PORT, server_only := false) -> String:
 	var peer := ENetMultiplayerPeer.new()
 	var err := ERR_CANT_CREATE
 	for k in PORT_TRIES:
@@ -154,10 +158,11 @@ func host(nickname: String, color: Color, first_port := PORT) -> String:
 	if err != OK:
 		return "Could not start the game: ports %d to %d are all taken." % [first_port, first_port + PORT_TRIES - 1]
 	multiplayer.multiplayer_peer = peer
-	players = {1: {"name": nickname, "color": color}}
+	dedicated = server_only
+	players = {} if dedicated else {1: {"name": nickname, "color": color}}
 	active = true
 	discovery.start_beacon(func() -> Dictionary:
-		return {"port": port, "name": players[1]["name"], "players": players.size(), "max": MAX_PLAYERS,
+		return {"port": port, "name": nickname, "players": players.size(), "max": MAX_PLAYERS,
 				"version": PROTOCOL})
 	return ""
 
@@ -521,7 +526,8 @@ func _send(delta: float) -> void:
 	_send_t += delta
 	if _send_t >= 1.0 / PLAYER_SEND_RATE - 0.001:
 		_send_t = 0.0
-		_player_state.rpc(t, game.net_player_state())
+		if not dedicated:
+			_player_state.rpc(t, game.net_player_state())
 	_car_send_t += delta
 	if _car_send_t >= 1.0 / CAR_SEND_RATE - 0.001:
 		_idle_t += _car_send_t

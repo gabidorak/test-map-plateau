@@ -6,7 +6,8 @@ extends Node3D
 ## campus: Explore solo, Host a game on LAN (the host's address shows at the top right), Join a game. LAN games are
 ## scripts/net.gd's: the other players show as scripts/remote_player.gd, vehicles are simulated by whoever drives
 ## them, and a player can walk in a bus another one drives. Command line (after `--`): --solo, --host, --join=IP[:PORT],
-## --name=NICK, --color=N skip the menu. Instanced by the tools, it starts solo at once as before.
+## --name=NICK, --color=N skip the menu. --dedicated [--port=N] [--name=GAME] runs a server without a player (headless,
+## server/ at the repository root): it quits once a newer release is out and nobody plays (or UPDATE_WAIT s on). Instanced by the tools, it starts solo at once as before.
 ## Debug cars (scripts/car.gd) are parked next to the spawn point; C parks another one next to the
 ## player, E gets into the nearest car and Space gets out. Tab opens the vehicle menu, which parks any model (Car.MODELS)
 ## next to the player. The bus is walkable: the player standing in it
@@ -33,6 +34,8 @@ const RemotePlayer = preload("res://scripts/remote_player.gd")
 const UiStyle = preload("res://scripts/ui_style.gd")
 const ENTER_RANGE := 3.0                    # metres from the car body
 const SEAT_RANGE := 1.6                     # metres from the driver seat, from inside a walkable vehicle
+const UPDATE_POLL := 300.0                  # s between release checks (dedicated server)
+const UPDATE_WAIT := 1800.0                 # s a dedicated server waits for its players to leave before updating
 
 ## Spawn point in pipeline coordinates (x east, y north): the street in front of the
 ## Télécom Paris main entrance, facing it (south).
@@ -59,7 +62,7 @@ var _menu_status: Label
 var _menu_mouse := Input.MOUSE_MODE_VISIBLE # mouse mode to restore when the menu closes
 var low_quality := false
 var _high := {}                             # the scene's own settings, restored by "high"
-var mode := ""                              # "solo", "host", "client"; "" in the welcome menu
+var mode := ""                              # "solo", "host", "client", "server" (dedicated); "" in the welcome menu
 var net: Net
 var nickname := "Player"
 var color := MainMenu.COLORS[0]
@@ -75,6 +78,8 @@ var _stats: Label                           # F3: frame rate and network timings
 var _stats_t := 0.0
 var _orbit_angle := 0.0
 var _orbit_ground := NAN                    # ground height under MENU_ORBIT_CENTRE
+var _update_poll_t := 0.0                   # dedicated server: s since the last release check
+var _outdated_t := 0.0                      # dedicated server: s since a newer release was found
 
 @onready var player: CharacterBody3D = $Player
 @onready var fly_camera: Camera3D = $Camera
@@ -117,7 +122,8 @@ func _ready() -> void:
 	nickname = _args.get("name", profile[0])
 	color = MainMenu.COLORS[clampi(int(_args.get("color", profile[1])), 0, MainMenu.COLORS.size() - 1)]
 	# the tools instance the scene themselves: no menu for them
-	var welcome := get_tree().current_scene == self and not (_args.has("solo") or _args.has("host") or _args.has("join"))
+	var welcome := get_tree().current_scene == self and not (_args.has("solo") or _args.has("host") or _args.has("join") \
+			or _args.has("dedicated"))
 	fly_camera.active = false
 	if welcome:
 		_open_main_menu()
@@ -127,7 +133,9 @@ func _ready() -> void:
 	spawn_at(spawn_xy, deg_to_rad(spawn_yaw_deg))
 	if welcome:
 		return
-	if _args.has("host"):
+	if _args.has("dedicated"):
+		start_dedicated()
+	elif _args.has("host"):
 		start_host()
 	elif _args.has("join"):
 		var where: String = _args["join"]
@@ -180,6 +188,43 @@ func start_host() -> void:
 			spawn_car_near_player()
 
 
+## A server without a player of its own (headless on a VPS): the player stays hidden at the spawn point, next to the
+## cars parked at start.
+func start_dedicated() -> void:
+	Engine.max_fps = 60                     # nothing to draw: do not spin between physics ticks
+	net.message.connect(func(text: String) -> void: print(text))
+	var err := net.host(_args.get("name", "Plateau server"), color, int(_args.get("port", Net.PORT)), true)
+	if err != "":
+		printerr(err)
+		get_tree().quit(1)
+		return
+	mode = "server"
+	hud.visible = false
+	_set_player_enabled(false)
+	print("Dedicated server on UDP port %d (%s)" % [net.port, AutoUpdater.version if AutoUpdater.version != "" \
+			else "unversioned build: no update checks"])
+	_update_poll_t = UPDATE_POLL
+	if debug_cars:
+		for i in 4:
+			spawn_car_near_player()
+
+
+## Dedicated server: quits when a newer build is out, once nobody plays or after UPDATE_WAIT; its container restarts it
+## on the new build.
+func _watch_updates(delta: float) -> void:
+	_update_poll_t += delta
+	if _update_poll_t >= UPDATE_POLL:
+		_update_poll_t = 0.0
+		AutoUpdater.check_tag()
+	if not AutoUpdater.outdated():
+		return
+	_outdated_t += delta
+	if net.players.is_empty() or _outdated_t >= UPDATE_WAIT:
+		print("Quitting for %s (%d players)" % [AutoUpdater.latest, net.players.size()])
+		set_process(false)
+		get_tree().quit()
+
+
 ## Connects to a LAN game; _on_joined starts playing once the host has sent its players and vehicles.
 func start_join(address: String, port: int) -> void:
 	var err := net.join(address, port, nickname, color)
@@ -195,7 +240,7 @@ func _on_joined() -> void:
 	_begin()
 	# a step aside per player, so newcomers do not all land in the same spot
 	spawn_at(spawn_xy + Vector2(1.2 * (net.me() % 5 - 2), 0.0), deg_to_rad(spawn_yaw_deg))
-	_show_toast("Joined %s's game" % net.player_name(1))
+	_show_toast("Joined %s's game" % net.player_name(1) if net.players.has(1) else "Joined the server")
 
 
 func _on_join_failed(reason: String) -> void:
@@ -257,6 +302,9 @@ func _physics_process(_delta: float) -> void:
 func _process(delta: float) -> void:
 	if mode == "":
 		_fly_around(delta)
+	elif mode == "server":
+		_watch_updates(delta)
+		return
 	if mode == "host":
 		_host_label_t += delta
 		if _host_label_t >= 1.0:              # players come and go, the network may change
@@ -609,7 +657,8 @@ func set_pause_open(on: bool) -> void:
 			info = "Hosting a LAN game: others join with %s.\nGoing back to the main menu ends it for everyone." % \
 					net.lan_label().get_slice("  ·  ", 1)
 		elif mode == "client":
-			info = "Playing in %s's game (%s:%d)." % [net.player_name(1), net.host_address, net.port]
+			info = "Playing in %s (%s:%d)." % ["%s's game" % net.player_name(1) if net.players.has(1) else "a server",
+					net.host_address, net.port]
 		if net.active:
 			for id: int in net.players:
 				players.append([net.player_name(id) + (" (you)" if id == net.me() else ""), net.player_color(id)])
@@ -804,7 +853,7 @@ func _update_help() -> void:
 		_help.text = "FLY CAMERA · hold right mouse to look · WASD/ZQSD move · Q/E (A/E on AZERTY) down/up\n" + \
 				"Shift faster · wheel speed · F1 land the player here · F inspect · X close · Esc menu · H hide help"
 	elif driving:
-		_help.text = "DRIVE · WASD/ZQSD: W throttle, S brake then reverse, A/D steer · Q/E (A/E on AZERTY) turn signals\n" + \
+		_help.text = "DRIVE · WASD/ZQSD: W throttle, S brake then reverse, A/D steer · Q/E (A/E on AZERTY) turn signals · G horn\n" + \
 				"mouse look · wheel zoom%s · R back on wheels · %sSpace %s\nF inspect · X close · F1 fly camera · Esc menu · H hide help" % [
 				" (all the way in: cab view)" if driving.has_cab() else "", "O doors · V cab view · " if driving.has_doors else "",
 				"leave the seat" if driving.has_doors else "get out"]

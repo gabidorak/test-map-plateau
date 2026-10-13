@@ -173,13 +173,19 @@ func _run_host() -> void:
 			slip[1] = absf(bus.speed()))
 	root.add_child(probe)
 	_key(KEY_W, true)
+	_key(KEY_G, true)                       # a honk as it pulls away, for the client to hear
+	var honked := false
 	for i in 300:
 		await physics_frame
 		frames += 1
+		honked = honked or bus.audio.horn
+		if i == 60:
+			_key(KEY_G, false)
 		inside += int(remote.visible and bus.carries(remote.global_position, 0.4))
 		ignored += int(remote.ignores(bus))
 	_key(KEY_W, false)
 	probe.queue_free()
+	_check(honked and not bus.audio.horn, "G sounded the horn while held")
 	_check(slip[0] < 0.05, "they stay put in the bus as it speeds up (drifted %.2f m at most, at %.1f m/s)" % slip)
 	_key(KEY_S, true)
 	await _until(func() -> bool: return absf(bus.speed()) < 0.5, 10.0)
@@ -339,16 +345,19 @@ func _run_client() -> void:
 	# while the host drives it, until it has gone some way and stopped again
 	var k := _test_tree()
 	var tree_bent := false                  # it springs back up within a couple of seconds
+	var honk := 0                           # frames its horn sounded here
 	var t0 := Time.get_ticks_msec()
 	while Time.get_ticks_msec() - t0 < 30000:
 		await physics_frame
 		frames += 1
+		honk += int(bus.audio.horn)
 		inside += int(bus.carries(player.global_position, 0.1) and player.carrier == bus)
 		tree_bent = tree_bent or _main.breakables.bent.has(k)
 		if bus.global_position.distance_to(start) > 15.0 and absf(bus.speed()) < 0.3 and net.driver_of[bus.net_id] == 0:
 			break
 	var moved: float = bus.global_position.distance_to(start)
 	_check(moved > 15.0, "the host's bus drove %.0f m here" % moved)
+	_check(honk > 30 and honk < 90 and not bus.audio.horn, "its horn sounded here as long as the host held it (%d frames)" % honk)
 	_check(inside == frames, "stood inside it all the way (%d/%d frames, fell %.1f m below its floor)" % [inside, frames,
 			maxf(0.0, bus.global_position.y - player.global_position.y)])
 	t0 = Time.get_ticks_msec()
