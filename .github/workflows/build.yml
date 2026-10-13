@@ -80,3 +80,40 @@ jobs:
           name: ${{ matrix.artifact }}
           path: godot/${{ matrix.output }}
           if-no-files-found: error
+
+  release:
+    name: Release
+    needs: export
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release assets
+        run: |
+          mkdir release
+          mv "artifacts/plateau-map-windows/Plateau Map.exe" release/plateau-map-windows.exe
+          mv artifacts/plateau-map-linux/plateau-map-linux.tar.gz release/
+          mv "artifacts/plateau-map-macos/Plateau Map.zip" release/plateau-map-macos.zip
+
+      # Pushed v* tags are released as-is; every push to main gets its own build-N tag.
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            tag="$GITHUB_REF_NAME"
+            title="$GITHUB_REF_NAME"
+          else
+            tag="build-${GITHUB_RUN_NUMBER}"
+            title="Build ${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})"
+          fi
+          gh release create "$tag" release/* \
+            --target "$GITHUB_SHA" \
+            --title "$title" \
+            --generate-notes
