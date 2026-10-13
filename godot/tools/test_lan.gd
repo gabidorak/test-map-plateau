@@ -196,11 +196,15 @@ func _run_host() -> void:
 		honked = honked or bus.audio.horn
 		if i == 60:
 			_key(KEY_G, false)
+		if i == 90 or i == 100:                 # ding-ding
+			_key(KEY_B, true)
+			_key(KEY_B, false)
 		inside += int(remote.visible and bus.carries(remote.global_position, 0.4))
 		ignored += int(remote.ignores(bus))
 	_key(KEY_W, false)
 	probe.queue_free()
 	_check(honked and not bus.audio.horn, "G sounded the horn while held")
+	_check(bus.bells == 2, "B rang the bell twice (%d)" % bus.bells)
 	_check(slip[0] < 0.05, "they stay put in the bus as it speeds up (drifted %.2f m at most, at %.1f m/s)" % slip)
 	_key(KEY_S, true)
 	await _until(func() -> bool: return absf(bus.speed()) < 0.5, 10.0)
@@ -383,6 +387,7 @@ func _run_client() -> void:
 	var k := _test_tree()
 	var tree_bent := false                  # it springs back up within a couple of seconds
 	var honk := 0                           # frames its horn sounded here
+	var bells0: int = bus.bells
 	var t0 := Time.get_ticks_msec()
 	while Time.get_ticks_msec() - t0 < 30000:
 		await physics_frame
@@ -395,6 +400,7 @@ func _run_client() -> void:
 	var moved: float = bus.global_position.distance_to(start)
 	_check(moved > 15.0, "the host's bus drove %.0f m here" % moved)
 	_check(honk > 30 and honk < 90 and not bus.audio.horn, "its horn sounded here as long as the host held it (%d frames)" % honk)
+	_check(bus.bells - bells0 == 2, "its bell rang here as often as the host rang it (%d)" % (bus.bells - bells0))
 	_check(inside == frames, "stood inside it all the way (%d/%d frames, fell %.1f m below its floor)" % [inside, frames,
 			maxf(0.0, bus.global_position.y - player.global_position.y)])
 	t0 = Time.get_ticks_msec()
