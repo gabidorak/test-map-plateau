@@ -914,6 +914,10 @@ func set_stowed(on: bool) -> void:
 		b.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 		b.freeze = on or remote
 		b.visible = not on
+	# the walkable hulls too (a stowed bot stays where it vanished, where the next bus pulls up)
+	for hull: StaticBody3D in [inside, trailer.inside if trailer else null, _bellows_hull]:
+		if hull:
+			hull.process_mode = Node.PROCESS_MODE_DISABLED if on else Node.PROCESS_MODE_INHERIT
 	audio.engine_on = not on and (is_bot() or driving or has_doors) and not broken
 
 
@@ -1017,9 +1021,10 @@ func zoom(notches: float) -> void:
 	_cam_zoom = clampf(_cam_zoom, _zoom_range.x, _zoom_range.y)
 
 
-## True when `p` (global) is inside the walkable interior (of the front section, for an articulated vehicle).
+## True when `p` (global) is inside the walkable interior (of the front section, for an articulated vehicle); never
+## while stowed (a bot bus off the map stays hidden where it vanished).
 func carries(p: Vector3, margin := 0.0) -> bool:
-	return interior.size != Vector3.ZERO and interior.grow(margin).has_point(to_local(p))
+	return not stowed and interior.size != Vector3.ZERO and interior.grow(margin).has_point(to_local(p))
 
 
 ## The section (this car or its rear section) whose walkable interior contains `p` (global), or null.
@@ -1208,6 +1213,8 @@ func _physics_process(delta: float) -> void:
 	elif piloted:
 		# [throttle, brake, steering (-1..1, left positive)] and pilot.horn: a bot never reverses
 		var c: Array = pilot.drive(delta)
+		if pilot.gliding or stowed:
+			return                              # posed by the bot far from every player, or off the map: nothing to run
 		pedals = [clampf(c[0], 0.0, 1.0), clampf(c[1], 0.0, 1.0)]
 		steer_in = clampf(c[2], -1.0, 1.0)
 		throttle = pedals[0] - pedals[1]

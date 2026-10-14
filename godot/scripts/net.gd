@@ -51,6 +51,7 @@ const PROTOCOL := 7                         # bump when the messages change (bui
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const IDLE_SEND_EVERY := 0.5                # s, states of vehicles at rest
+const FAR_SEND_EVERY := 3                   # vehicle sends between two of a bot gliding far from every player
 const MIN_DELAY := 0.02                     # s, bounds of the playback delay (Track.delay)
 const MAX_DELAY := 0.15
 const DELAY_MARGIN := 0.005                 # s
@@ -100,6 +101,7 @@ var _ping_t := 0.0
 var _water_out := {}                        # "net id|section" -> [owner, impulse, weighted offset, weight, seconds]
 var _water_t := 0.0
 var _clock_offset := NAN                    # client: the host's clock minus ours (s), from the quickest arrival
+var _car_sends := 0                         # vehicle sends so far (FAR_SEND_EVERY)
 var clock_shift := 0.0                      # s added to our clock when it is the game's (tests set the lights)
 var _clock_t := 0.0
 
@@ -583,7 +585,7 @@ func _release(net_id: String) -> void:
 func _drive_refused(net_id: String, driver_id: int) -> void:
 	if _pending_drive == net_id:
 		_pending_drive = ""
-		message.emit("A bot drives this bus" if driver_id == 0 else "%s is driving it" % player_name(driver_id))
+		message.emit("A bot drives it" if driver_id == 0 else "%s is driving it" % player_name(driver_id))
 
 
 ## Everyone: who simulates and who drives vehicle `net_id` now.
@@ -725,7 +727,7 @@ func _physics_process(_delta: float) -> void:
 
 
 ## Sender: our player's state every tick, those of the vehicles simulated here CAR_SEND_RATE times a second (at rest:
-## every IDLE_SEND_EVERY s), straight onto the network.
+## every IDLE_SEND_EVERY s; bots gliding far from every player: every FAR_SEND_EVERY sends), straight onto the network.
 func _send(delta: float) -> void:
 	if not active:
 		return
@@ -742,10 +744,14 @@ func _send(delta: float) -> void:
 		var idle := _idle_t >= IDLE_SEND_EVERY
 		if idle:
 			_idle_t = 0.0
+		_car_sends += 1
+		var far_turn := _car_sends % FAR_SEND_EVERY == 0
 		var states := []
 		for net_id: String in cars:
 			var car: Car = cars[net_id]
 			if car.remote:
+				continue
+			if car.pilot != null and car.pilot.gliding and not (idle or far_turn):
 				continue
 			var s := car.net_state()
 			var switches := [s[4], s[5], s[6]]      # flags, indicator, health

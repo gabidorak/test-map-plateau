@@ -29,9 +29,9 @@ extends Node3D
 ## there (`riding`: looking around with the truck's cameras, the cab view from the passenger's eye); E there takes the
 ## wheel if nobody has it, Space gets out on the right.
 ## Vehicles bend thin trees and knock over sign poles, bollards and the like (scripts/breakables.gd).
-## Bot buses (scripts/traffic.gd, scripts/bus_bot.gd) drive their lines when playing solo, hosting, or on a dedicated
-## server: the player can ride them (in through the open doors at a stop) but not drive them. Instanced by the tools
-## they stay off unless PLATEAU_BUSES=1. The traffic lights cycle on the game's shared clock (the same on every screen).
+## Bot buses and bot cars (scripts/traffic.gd, scripts/bus_bot.gd) drive their lines and routes when playing solo,
+## hosting, or on a dedicated server: the player can ride the buses (in through the open doors at a stop) but drive
+## none of them. Instanced by the tools they stay off unless PLATEAU_BUSES=1. The traffic lights cycle on the game's shared clock (the same on every screen).
 ## Graphics: "low" (no SSIL/SSAO/glow, FXAA instead of MSAA) keeps 60 fps on an integrated GPU; it is
 ## the default there, "high" elsewhere. PLATEAU_QUALITY=low|high overrides, F2 switches, the settings page
 ## (scripts/settings_menu.gd, from either menu) sets it. Keys are the Settings actions (scripts/settings.gd): the
@@ -68,7 +68,7 @@ const UPDATE_WAIT := 1800.0                 # s a dedicated server waits for its
 @export var spawn_xy := Vector2(-34, 55.0)
 @export var spawn_yaw_deg := 180.0
 @export var debug_cars := true              # park a few cars next to the player at start (solo and hosting)
-@export var bus_bots := true                # bot buses on their lines (solo, hosting, dedicated server)
+@export var bus_bots := true                # bot buses on their lines and bot cars (solo, hosting, dedicated server)
 ## Welcome menu flight: circles this point (pipeline x, y) at MENU_ORBIT radius and height above it.
 const MENU_ORBIT_CENTRE := Vector2(260.0, -120.0)
 const MENU_ORBIT := Vector2(330.0, 140.0)
@@ -530,7 +530,7 @@ func spawn_car_near_player(model := "") -> Car:
 	return car
 
 
-## A bot bus (scripts/traffic.gd): `car` (new_vehicle, not in the tree yet) at `xf`, driven by `bot` (bus_bot.gd).
+## A bot bus or car (scripts/traffic.gd): `car` (new_vehicle, not in the tree yet) at `xf`, driven by `bot` (bus_bot.gd).
 func add_bot_bus(car: Car, xf: Transform3D, bot: Object) -> void:
 	add_child(car)
 	car.place(xf)
@@ -710,9 +710,12 @@ func _paved(map: GroundMap, w: Vector3) -> bool:
 
 
 ## True when a car stands within `d` metres (horizontally, plus that car's half length) of `p`; cars
-## parked this frame are not in the physics space yet, so the shape query alone misses them.
+## parked this frame are not in the physics space yet, so the shape query alone misses them. (Bots off the map, hidden
+## where they vanished, do not count.)
 func _near_a_car(p: Vector3, d: float) -> bool:
 	for car in cars:
+		if car.stowed:
+			continue
 		var c := car.to_global(car.extents_center)
 		if Vector2(c.x - p.x, c.z - p.z).length() < d + car.half_extents.z:
 			return true
@@ -734,14 +737,14 @@ func nearest_car() -> Car:
 	return best
 
 
-## True when the player stands in or next to a bot bus.
-func _bot_bus_near() -> bool:
+## The bot vehicle the player stands in or next to, or null.
+func _bot_near() -> Car:
 	for car in cars:
 		if car.is_bot() and not car.stowed:
 			var p := car.to_local(player.global_position) - car.extents_center
 			if absf(p.x) < car.half_extents.x + ENTER_RANGE and absf(p.z) < car.half_extents.z + ENTER_RANGE:
-				return true
-	return false
+				return car
+	return null
 
 
 ## Car to get into with E: from inside a walkable vehicle, that one when the player is near its driver
@@ -1005,8 +1008,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		set_flying(not flying)
 	elif event.is_action_pressed("interact") and not flying and not driving:
 		var car := riding if riding else car_to_enter()
-		if car == null and _bot_bus_near():
-			_show_toast("A bot drives this bus: get on at a stop, while its doors are open")
+		var bot := _bot_near() if car == null else null
+		if bot:
+			_show_toast("A bot drives this bus: get on at a stop, while its doors are open" if bot.has_doors \
+					else "A bot drives this car")
 		if car and not riding and wants_passenger_seat(car):
 			ride_car(car)
 		elif car and net.active:

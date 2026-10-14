@@ -12,7 +12,7 @@ var door_centres: Array[Vector3] = []       # this section's frame, doorway cent
 
 ## True when `p` (global) is inside the walkable interior.
 func carries(p: Vector3, margin := 0.0) -> bool:
-	return interior.size != Vector3.ZERO and interior.grow(margin).has_point(to_local(p))
+	return not head.stowed and interior.size != Vector3.ZERO and interior.grow(margin).has_point(to_local(p))
 
 
 ## Velocity of the section at global point `p`.
