@@ -4,9 +4,10 @@ extends "res://scripts/car.gd"
 ## fades with the airspeed) and rate-hold controls: released keys keep the attitude, the nose follows the airflow
 ## (weathervane) and the wings level themselves gently from a shallow bank. game.gd gets in and out of it like a car,
 ## LAN games sync it like a car (net_state also carries the throttle lever and the control surfaces).
-## Keys while flying (physical positions): Shift / Ctrl throttle up / down, W / S nose down / up (a stick: S pulls),
-## A / D roll (steer on the ground), Q / E rudder (A / E on AZERTY), Ctrl at idle brakes on the ground, R levels the
-## wings in the air (back on the wheels on the ground), V or the mouse wheel zoomed all the way in: cockpit view.
+## Keys while flying (the Settings actions, scripts/settings.gd; defaults on physical positions): Shift / Ctrl throttle
+## up / down, W / S nose down / up (a stick: S pulls), A / D roll (steer on the ground), Q / E rudder (A / E on AZERTY),
+## Ctrl at idle brakes on the ground, R levels the wings in the air (back on the wheels on the ground), V or the mouse
+## wheel zoomed all the way in: cockpit view.
 ## The upper wing tips leave a thin white trail at flying speed (WingTrail), on every peer.
 ## The armed version (Car.SPECS "guns": "biplane-armed") wears a khaki livery with French roundels and has two machine
 ## guns under the lower wing (scripts/plane_guns.gd), fired with the left mouse button (held), converging AIM_DISTANCE
@@ -490,15 +491,14 @@ func _put_back_on_wheels() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not driving or not controls:
 		return
-	if event is InputEventKey:
-		if event.pressed and not event.echo and event.physical_keycode in [KEY_R, KEY_V]:
-			if event.physical_keycode == KEY_R:
-				_put_back_on_wheels()
-			else:
-				set_cab_view(not cab_view)
-			get_viewport().set_input_as_handled()
-		return
-	super(event)                            # mouse look and zoom
+	if event.is_action_pressed("reset_vehicle"):
+		_put_back_on_wheels()
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("toggle_view"):
+		set_cab_view(not cab_view)
+		get_viewport().set_input_as_handled()
+	elif not event is InputEventKey:
+		super(event)                        # mouse look and zoom
 
 
 func _physics_process(delta: float) -> void:
@@ -510,13 +510,12 @@ func _physics_process(delta: float) -> void:
 	var braking := false
 	var trigger := false
 	if driving and controls:
-		var k := func(code: Key) -> float: return 1.0 if Input.is_physical_key_pressed(code) else 0.0
-		keys = Vector3(k.call(KEY_S) + k.call(KEY_DOWN) - k.call(KEY_W) - k.call(KEY_UP),
-				k.call(KEY_A) + k.call(KEY_LEFT) - k.call(KEY_D) - k.call(KEY_RIGHT), k.call(KEY_Q) - k.call(KEY_E))
-		keys = keys.clamp(-Vector3.ONE, Vector3.ONE)
-		lever_in = k.call(KEY_SHIFT) - k.call(KEY_CTRL)
+		keys = Vector3(Input.get_axis("plane_nose_down", "plane_nose_up"),
+				Input.get_axis("plane_roll_right", "plane_roll_left"),
+				Input.get_axis("plane_rudder_right", "plane_rudder_left"))
+		lever_in = Input.get_axis("plane_throttle_down", "plane_throttle_up")
 		braking = lever == 0.0 and lever_in < 0.0
-		trigger = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+		trigger = Input.is_action_pressed("fire")
 	if guns:
 		guns.firing = trigger
 	lever = clampf(lever + lever_in * LEVER_RATE * delta, 0.0, 1.0)

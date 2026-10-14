@@ -1,7 +1,8 @@
 extends CharacterBody3D
-## Street-level player. Movement keys are physical positions (WASD on QWERTY = ZQSD on AZERTY).
-## Shift runs, Space jumps, the mouse looks around once captured. The mouse wheel zooms the third-person camera;
-## zooming all the way in goes first person and zooming out of it comes back (like Roblox); V toggles too.
+## Street-level player. Keys are the Settings actions (scripts/settings.gd): by default physical positions, WASD on
+## QWERTY = ZQSD on AZERTY, Shift runs, Space jumps. The mouse looks around once captured. The mouse wheel zooms the
+## third-person camera; zooming all the way in goes first person and zooming out of it comes back (like Roblox); V
+## toggles too.
 ## Steps up to step_height onto vehicle floors (the bus). Inside a walkable vehicle (game.gd calls set_carrier)
 ## the player moves in the vehicle's frame: each frame first follows the vehicle's motion since the last
 ## one, then walks; leaving it keeps the vehicle's velocity. In there it collides with the walkable hulls only: what
@@ -9,6 +10,7 @@ extends CharacterBody3D
 ## would shove it about in the vehicle.
 
 const Layers = preload("res://scripts/physics_layers.gd")
+const Prefs = preload("res://scripts/settings.gd")
 
 @export var walk_speed := 4.5
 @export var run_speed := 9.0
@@ -106,6 +108,12 @@ func followed_position() -> Vector3:
 	return carrier.global_transform * (_carrier_last.affine_inverse() * global_position)
 
 
+## A shove of `dv` (m/s) by something hitting the player (the fire truck's water jet, game.gd / net.gd); walking eases
+## it off again.
+func push(dv: Vector3) -> void:
+	velocity += dv
+
+
 ## Puts the player's feet at `pos` (Godot coordinates) facing `yaw` radians.
 func teleport(pos: Vector3, yaw := _yaw) -> void:
 	global_position = pos
@@ -171,13 +179,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not active:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		_yaw -= event.relative.x * sensitivity
-		_pitch = clampf(_pitch - event.relative.y * sensitivity, -1.45, 1.2)
+		var look: Vector2 = event.screen_relative * sensitivity * Prefs.mouse_scale
+		_yaw -= look.x
+		_pitch = clampf(_pitch - look.y, -1.45, 1.2)
 		_pivot.rotation = Vector3(_pitch, _yaw, 0.0)
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 		zoom((1.0 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1.0) * (event.factor if event.factor > 0.0 else 1.0))
-	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_V:
+	elif event.is_action_pressed("toggle_view"):
 		toggle_view()
 
 
@@ -186,20 +195,15 @@ func _move_input() -> Vector2:
 		return scripted_input
 	if not active:
 		return Vector2.ZERO
-	var v := Vector2.ZERO
-	if Input.is_physical_key_pressed(KEY_W): v.y += 1.0
-	if Input.is_physical_key_pressed(KEY_S): v.y -= 1.0
-	if Input.is_physical_key_pressed(KEY_D): v.x += 1.0
-	if Input.is_physical_key_pressed(KEY_A): v.x -= 1.0
-	return v.limit_length(1.0)
+	return Input.get_vector("move_left", "move_right", "move_back", "move_forward")
 
 
 func _physics_process(delta: float) -> void:
 	_follow_carrier()
 	var scripted := scripted_input != null
 	var input := _move_input()
-	var running := scripted_run if scripted else (active and Input.is_physical_key_pressed(KEY_SHIFT))
-	var space_down := Input.is_physical_key_pressed(KEY_SPACE)
+	var running := scripted_run if scripted else (active and Input.is_action_pressed("run"))
+	var space_down := Input.is_action_pressed("jump")
 	wait_jump_release = wait_jump_release and space_down
 	var jumping := scripted_jump if scripted else (active and space_down and not wait_jump_release)
 

@@ -1,0 +1,39 @@
+{
+ "wheels": [
+  "wheel_front_left",
+  "wheel_front_right",
+  "wheel_middle_left",
+  "wheel_middle_right",
+  "wheel_rear_left",
+  "wheel_rear_right"
+ ],
+ "indicators": {
+  "left": [
+   "indicator_left"
+  ],
+  "right": [
+   "indicator_right"
+  ]
+ },
+ "brake_lights": [
+  "brake_lights"
+ ],
+ "beacons": {
+  "left": [
+   "beacon_left"
+  ],
+  "right": [
+   "beacon_right"
+  ],
+  "amber": [
+   "beacon_amber"
+  ]
+ },
+ "monitor": "monitor",
+ "barrel": "monitor_barrel",
+ "nozzle": [
+  0.0,
+  3.6,
+  4.6
+ ]
+}

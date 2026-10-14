@@ -21,9 +21,14 @@ extends Node3D
 ## its machine guns with the left mouse button (scripts/plane_guns.gd; a ring on the screen shows where the rounds
 ## converge): a vehicle hit takes damage (net.gd hit_vehicle, car.gd damage) and smokes black once broken, a breakable
 ## prop hit falls over (breakables.gd shoot).
+## The fire truck (scripts/fire_truck.gd) sprays its roof water cannon where the driver looks while the left mouse button
+## is held (a dashed blue ring shows where the jet lands): the water pushes vehicles and puts out burning ones (net.gd
+## water_vehicle, car.gd hose), shoves other players (water_player), and knocks light props over (breakables.gd soak).
 ## Vehicles bend thin trees and knock over sign poles, bollards and the like (scripts/breakables.gd).
 ## Graphics: "low" (no SSIL/SSAO/glow, FXAA instead of MSAA) keeps 60 fps on an integrated GPU; it is
-## the default there, "high" elsewhere. PLATEAU_QUALITY=low|high overrides, F2 switches.
+## the default there, "high" elsewhere. PLATEAU_QUALITY=low|high overrides, F2 switches, the settings page
+## (scripts/settings_menu.gd, from either menu) sets it. Keys are the Settings actions (scripts/settings.gd): the
+## letters above are their defaults, on physical key positions, and the help lines show the current ones.
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
@@ -33,6 +38,8 @@ const GroundMap = preload("res://scripts/ground_map.gd")
 const Car = preload("res://scripts/car.gd")
 const Biplane = preload("res://scripts/plane.gd")
 const PlaneGuns = preload("res://scripts/plane_guns.gd")
+const FireTruck = preload("res://scripts/fire_truck.gd")
+const WaterCannon = preload("res://scripts/water_cannon.gd")
 const Breakables = preload("res://scripts/breakables.gd")
 const Net = preload("res://scripts/net.gd")
 const MainMenu = preload("res://scripts/main_menu.gd")
@@ -41,6 +48,7 @@ const RemotePlayer = preload("res://scripts/remote_player.gd")
 const UiStyle = preload("res://scripts/ui_style.gd")
 const Chat = preload("res://scripts/chat.gd")
 const PlayerList = preload("res://scripts/player_list.gd")
+const WATER_SHOVE := 0.7                    # m/s a full-power water packet shoves a player along the jet
 const ENTER_RANGE := 3.0                    # metres from the car body
 const SEAT_RANGE := 1.6                     # metres from the driver seat, from inside a walkable vehicle
 const UPDATE_POLL := 300.0                  # s between release checks (dedicated server)
@@ -66,9 +74,11 @@ var hud: CanvasLayer
 var _help: Label
 var _dash: Label                            # speed, gear, indicators, doors while driving
 var _gunsight: Control                      # armed plane: where its rounds converge
+var _water_sight: Control                   # fire truck: where its water jet lands
 var _menu: PanelContainer                   # vehicle menu (U)
 var _menu_buttons: GridContainer            # one per model, named after it
 var _menu_status: Label
+var _menu_hint: Label
 var _menu_mouse := Input.MOUSE_MODE_VISIBLE # mouse mode to restore when the menu closes
 var low_quality := false
 var _high := {}                             # the scene's own settings, restored by "high"
@@ -127,9 +137,8 @@ func _ready() -> void:
 	var env: Environment = $WorldEnvironment.environment
 	_high = {"ssil": env.ssil_enabled, "ssao": env.ssao_enabled, "glow": env.glow_enabled,
 			"msaa": get_viewport().msaa_3d, "aa": get_viewport().screen_space_aa}
-	var q := OS.get_environment("PLATEAU_QUALITY")
-	set_low_quality(q == "low" if q in ["low", "high"] \
-			else RenderingServer.get_video_adapter_type() == RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU)
+	set_low_quality(Settings.low_quality())
+	Settings.changed.connect(_on_settings_changed)
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		_args[kv[0]] = kv[1] if kv.size() > 1 else ""
@@ -356,6 +365,8 @@ func _process(delta: float) -> void:
 			line += "\ndoors " + ("OPEN" if driving.doors_open else "closed")
 		if driving.broken:
 			line += "\nBROKEN · repaired in %d s" % ceili(driving.repair_in())
+		if driving is FireTruck and (driving as FireTruck).dash_line() != "":
+			line += "\n" + (driving as FireTruck).dash_line()
 		_dash.text = line
 
 
@@ -366,6 +377,11 @@ func _update_gunsight() -> void:
 	_gunsight.visible = plane != null and plane.armed and cam != null and not cam.is_position_behind(plane.aim_point())
 	if _gunsight.visible:
 		_gunsight.position = cam.unproject_position(plane.aim_point()) - _gunsight.size * 0.5
+	var truck := driving as FireTruck
+	var spot: Variant = truck.sight_point() if truck else null
+	_water_sight.visible = spot != null and cam != null and not cam.is_position_behind(spot)
+	if _water_sight.visible:
+		_water_sight.position = cam.unproject_position(spot) - _water_sight.size * 0.5
 
 
 ## Welcome menu: the fly camera circles the campus, looking at its middle.
@@ -439,6 +455,14 @@ func set_low_quality(on: bool) -> void:
 		_update_help()
 
 
+## Settings page or F11: quality, and keys in the help lines.
+func _on_settings_changed() -> void:
+	if Settings.low_quality() != low_quality:
+		set_low_quality(Settings.low_quality())
+	else:
+		_update_help()
+
+
 ## For tools/screenshot*.gd: fly camera, no HUD, no player.
 func set_screenshot_mode() -> void:
 	set_flying(true)
@@ -484,9 +508,11 @@ func add_net_car(model: String, xf: Transform3D) -> Car:
 	return car
 
 
-## A vehicle of `model`, set up but not in the tree yet: a Biplane for the aircraft (Car.SPECS "plane"), else a Car.
+## A vehicle of `model`, set up but not in the tree yet: a Biplane for the aircraft (Car.SPECS "plane"), a FireTruck
+## for the fire truck ("fittings"), else a Car.
 static func new_vehicle(model: String) -> Car:
-	var car: Car = Biplane.new() if Car.SPECS[model].get("plane", false) else Car.new()
+	var spec: Dictionary = Car.SPECS[model]
+	var car: Car = Biplane.new() if spec.get("plane", false) else (FireTruck.new() if spec.has("fittings") else Car.new())
 	car.setup(model)
 	return car
 
@@ -497,6 +523,8 @@ func _add_car(car: Car) -> void:
 			player.add_collision_exception_with(body)   # the player collides with its walkable hull instead
 	if car is Biplane and (car as Biplane).guns:
 		(car as Biplane).guns.hit.connect(_on_round_hit)
+	if car is FireTruck:
+		(car as FireTruck).cannon.hit.connect(_on_water_hit)
 	cars.append(car)
 
 
@@ -510,6 +538,38 @@ func _on_round_hit(collider: Object, shape: int, _point: Vector3, velocity: Vect
 			net.hit_vehicle(car, PlaneGuns.DAMAGE)
 	else:
 		breakables.shoot(collider, shape, velocity)
+
+
+## A packet of the water cannon of a fire truck simulated here hit something, giving it `impulse`: a vehicle is pushed
+## and its fire hosed (on the peer simulating it), another player shoved (on theirs), debris pushed, a light breakable
+## prop soaked until it falls over.
+func _on_water_hit(collider: Object, shape: int, point: Vector3, impulse: Vector3) -> void:
+	var node := collider as CollisionObject3D
+	if node == null:
+		return
+	if node.is_in_group("vehicles"):
+		var car := node as Car if node is Car else node.get("head") as Car
+		if car:
+			net.water_vehicle(car, node as RigidBody3D, impulse, point, 1.0 / WaterCannon.RATE)
+	elif node.collision_layer & Layers.REMOTE_PLAYER:
+		net.water_player(node, water_shove(impulse))
+	elif node is RigidBody3D:
+		var rb := node as RigidBody3D
+		rb.apply_impulse(impulse.limit_length(rb.mass * WaterCannon.MAX_DV), point - rb.global_position)
+	else:
+		breakables.soak(node, shape, impulse)
+
+
+## How hard a water packet giving `impulse` shoves a player (m/s): along the jet, lifting a little off the feet.
+static func water_shove(impulse: Vector3) -> Vector3:
+	var k := impulse.length() / WaterCannon.PUSH
+	return Vector3(impulse.x, 0.0, impulse.z).normalized() * WATER_SHOVE * k + Vector3.UP * 0.5 * k
+
+
+## Another player's water jet hit us (net.gd).
+func water_push(dv: Vector3) -> void:
+	if not driving and not flying:
+		player.push(dv)
 
 
 ## Car transform (+Z forward, origin on the ground) for a free spot around the player for a vehicle of
@@ -777,26 +837,26 @@ func _spawn_from_menu(model: String) -> void:
 		_menu_status.text = "No free spot for the %s here: try somewhere more open." % Car.display_name(model).to_lower()
 
 
-## U, Tab and Esc are caught before the GUI: with a menu button focused, Tab would only move the focus. Tab (held) shows
+## The vehicle menu key, Tab and Esc are caught before the GUI: with a menu button focused, Tab would only move the focus. Tab (held) shows
 ## the player list (_process). While typing in the chat, only Esc (close it) is caught.
 func _input(event: InputEvent) -> void:
-	if not event is InputEventKey or mode == "":
+	if not (event is InputEventKey or event is InputEventMouseButton) or mode == "":
 		return
-	if event.physical_keycode == KEY_TAB:
+	var key := (event as InputEventKey).physical_keycode if event is InputEventKey else KEY_NONE
+	if key == KEY_TAB:
 		get_viewport().set_input_as_handled()
 		return
-	if not event.pressed or event.echo:
+	if not event.is_pressed() or event.is_echo():
 		return
 	if chat.is_open():
-		if event.physical_keycode == KEY_ESCAPE:
+		if key == KEY_ESCAPE:
 			set_chat_open(false)
 			get_viewport().set_input_as_handled()
 		return
-	if event.physical_keycode == KEY_U and not pause.visible \
-			or (event.physical_keycode == KEY_ESCAPE and _menu.visible):
+	if event.is_action_pressed("vehicle_menu") and not pause.visible or (key == KEY_ESCAPE and _menu.visible):
 		set_menu_open(not _menu.visible)
 		get_viewport().set_input_as_handled()
-	elif event.physical_keycode == KEY_ESCAPE:
+	elif key == KEY_ESCAPE:
 		set_pause_open(not pause.visible)
 		get_viewport().set_input_as_handled()
 
@@ -806,37 +866,34 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not flying:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	elif event is InputEventKey and event.pressed and not event.echo:
-		match event.physical_keycode:
-			KEY_ENTER, KEY_KP_ENTER:
-				set_chat_open(true)
-				get_viewport().set_input_as_handled()
-			KEY_F1:
-				set_flying(not flying)
-			KEY_E:
-				if not flying and not driving:
-					var car := car_to_enter()
-					if car and net.active:
-						net.request_drive(car)
-					elif car:
-						enter_car(car)
-			KEY_SPACE:
-				if driving:
-					exit_car()
-			KEY_C:
-				if not flying and not driving:
-					spawn_car_near_player()
-			KEY_F:
-				picker.pick_and_show(get_viewport().get_camera_3d())
-			KEY_H:
-				_help.visible = not _help.visible
-			KEY_F2:
-				set_low_quality(not low_quality)
-			KEY_F3:
-				_stats.visible = not _stats.visible
-				_stats_t = 1.0
-			KEY_X:
-				picker.hide_overlay()
+	elif event is InputEventKey and event.pressed and not event.echo \
+			and event.physical_keycode in [KEY_ENTER, KEY_KP_ENTER]:
+		set_chat_open(true)
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("fly_camera"):
+		set_flying(not flying)
+	elif event.is_action_pressed("interact") and not flying and not driving:
+		var car := car_to_enter()
+		if car and net.active:
+			net.request_drive(car)
+		elif car:
+			enter_car(car)
+	elif event.is_action_pressed("exit_vehicle") and driving:
+		exit_car()
+	elif event.is_action_pressed("park_car") and not flying and not driving:
+		spawn_car_near_player()
+	elif event.is_action_pressed("inspect"):
+		picker.pick_and_show(get_viewport().get_camera_3d())
+	elif event.is_action_pressed("toggle_help"):
+		_help.visible = not _help.visible
+	elif event.is_action_pressed("toggle_quality"):
+		Settings.set_value("quality", "high" if low_quality else "low")
+	elif event.is_action_pressed("toggle_stats"):
+		_stats.visible = not _stats.visible
+		_stats_t = 1.0
+	# not elif: X closes the inspection, and drifts too by default
+	if event.is_action_pressed("inspect_close"):
+		picker.hide_overlay()
 
 
 func _build_hud() -> void:
@@ -901,6 +958,19 @@ func _build_hud() -> void:
 				_gunsight.draw_line(c + d * 9.0, c + d * 21.0, col, w, true)
 		_gunsight.draw_circle(c, 2.0, Color(1.0, 0.85, 0.5, 0.95)))
 	hud.add_child(_gunsight)
+	_water_sight = Control.new()
+	_water_sight.size = Vector2(52, 52)
+	_water_sight.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_water_sight.visible = false
+	_water_sight.draw.connect(func() -> void:
+		var c := _water_sight.size * 0.5
+		for k in 2:                         # dark outline under a light blue dashed ring
+			var col := Color(0, 0, 0, 0.5) if k == 0 else Color(0.6, 0.85, 1.0, 0.95)
+			var w := 4.0 if k == 0 else 2.0
+			for a in 8:
+				_water_sight.draw_arc(c, 20.0, TAU * a / 8.0, TAU * (a + 0.6) / 8.0, 6, col, w, true)
+		_water_sight.draw_circle(c, 3.0, Color(0.6, 0.85, 1.0, 0.95)))
+	hud.add_child(_water_sight)
 	_toast = Label.new()
 	_toast.add_theme_font_size_override("font_size", 19)
 	_toast.add_theme_color_override("font_outline_color", Color.BLACK)
@@ -971,34 +1041,67 @@ func _build_menu() -> void:
 		_menu_buttons.add_child(b)
 	_menu_status = UiStyle.label("", 16, UiStyle.TEXT_WARN)
 	box.add_child(_menu_status)
-	box.add_child(UiStyle.label("click or arrows + Enter: park it next to you · U / Esc close", 16, UiStyle.TEXT_DIM))
+	_menu_hint = UiStyle.label("", 16, UiStyle.TEXT_DIM)
+	box.add_child(_menu_hint)
 	hud.add_child(_menu)
 	UiStyle.centre(_menu)
 
 
 func _update_help() -> void:
+	var k := Settings.key_text
+	var common := "%s inspect · %s close · %s fly camera · Esc menu · %s hide help" % [k.call("inspect"),
+			k.call("inspect_close"), k.call("fly_camera"), k.call("toggle_help")]
+	var moves := _keys(["move_forward", "move_left", "move_back", "move_right"])
 	if flying:
-		_help.text = "FLY CAMERA · hold right mouse to look · WASD/ZQSD move · Q/E (A/E on AZERTY) down/up\n" + \
-				"Shift faster · wheel speed · F1 land the player here · F inspect · X close · Esc menu · H hide help"
+		_help.text = "FLY CAMERA · hold right mouse to look · %s move · %s/%s down/up\n" % [moves, k.call("cam_down"),
+				k.call("cam_up")] + "%s faster · wheel speed · %s land the player here · %s inspect · %s close · " % [
+				k.call("run"), k.call("fly_camera"), k.call("inspect"), k.call("inspect_close")] + \
+				"Esc menu · %s hide help" % k.call("toggle_help")
 	elif driving is Biplane:
-		_help.text = "FLY · Shift/Ctrl throttle · W/S nose down/up · A/D roll (on the ground: steer) · Q/E (A/E on AZERTY) rudder\n" + \
-				"Ctrl at idle brakes · R level the wings (on the ground: back on the wheels) · mouse look · wheel zoom (all the way in: cockpit) · V cockpit\n" + \
-				("left click (held) fire the guns · " if (driving as Biplane).armed else "") + \
-				"Space get out · F inspect · X close · F1 fly camera · Esc menu · H hide help"
+		_help.text = ("FLY · %s/%s throttle · %s/%s nose down/up · %s/%s roll (on the ground: steer) · %s/%s rudder\n" % [
+				k.call("plane_throttle_up"), k.call("plane_throttle_down"), k.call("plane_nose_down"),
+				k.call("plane_nose_up"), k.call("plane_roll_left"), k.call("plane_roll_right"), k.call("plane_rudder_left"),
+				k.call("plane_rudder_right")]) + \
+				("%s at idle brakes · %s level the wings (on the ground: back on the wheels) · mouse look · " % [
+				k.call("plane_throttle_down"), k.call("reset_vehicle")]) + \
+				"wheel zoom (all the way in: cockpit) · %s cockpit\n" % k.call("toggle_view") + \
+				("%s (held) fire the guns · " % k.call("fire") if (driving as Biplane).armed else "") + \
+				"%s get out · %s" % [k.call("exit_vehicle"), common]
 	elif driving:
-		_help.text = "DRIVE · WASD/ZQSD: W throttle, S brake then reverse, A/D steer · Q/E (A/E on AZERTY) turn signals · G horn · X (held) drift\n" + \
-				"mouse look · wheel zoom%s · R back on wheels · %sSpace %s\nF inspect · X close · F1 fly camera · Esc menu · H hide help" % [
-				" (all the way in: cab view)" if driving.has_cab() else "", "O doors · B bell · V cab view · " if driving.has_doors else "",
-				"leave the seat" if driving.has_doors else "get out"]
+		_help.text = ("DRIVE · %s throttle, %s brake then reverse, %s/%s steer · %s/%s turn signals · %s horn · " % [
+				k.call("throttle"), k.call("brake"), k.call("steer_left"), k.call("steer_right"), k.call("signal_left"),
+				k.call("signal_right"), k.call("horn")]) + "%s (held) drift\n" % k.call("drift") + \
+				"mouse look · wheel zoom%s · %s back on wheels · %s%s %s\n%s" % [
+				" (all the way in: cab view)" if driving.has_cab() else "", k.call("reset_vehicle"),
+				"%s doors · %s bell · %s cab view · " % [k.call("doors"), k.call("bell"), k.call("toggle_view")] \
+				if driving.has_doors else "", k.call("exit_vehicle"),
+				"leave the seat" if driving.has_doors else "get out", common]
 	else:
-		_help.text = "WALK · click to capture the mouse · Esc menu · WASD/ZQSD move · Shift run · Space jump\n" + \
-				"wheel zoom (all the way in: first person) · V first/third person · E get in the nearest car (in the bus: near the driver seat)\n" + \
-				"C park a car here · U vehicle menu · F inspect · X close · F1 fly camera · H hide help"
-	_help.text += "\nF2 graphics: %s · F3 frame rate%s" % ["low" if low_quality else "high", " and network" if net.active else ""]
+		_help.text = "WALK · click to capture the mouse · %s move · %s run · %s jump\n" % [moves, k.call("run"),
+				k.call("jump")] + \
+				"wheel zoom (all the way in: first person) · %s first/third person · %s get in the nearest car " % [
+				k.call("toggle_view"), k.call("interact")] + "(in the bus: near the driver seat)\n" + \
+				"%s park a car here · %s vehicle menu · %s" % [k.call("park_car"), k.call("vehicle_menu"), common]
+	if driving is FireTruck:
+		_help.text += "\n%s (held) water cannon, aimed where you look · %s siren and beacons" % [k.call("fire"), k.call("bell")]
+	_help.text += "\n%s graphics: %s · %s frame rate%s · F11 fullscreen" % [k.call("toggle_quality"),
+			"low" if low_quality else "high", k.call("toggle_stats"), " and network" if net.active else ""]
 	if net.active:
 		_help.text += " · Enter chat · Tab players"
+	if _menu_hint:
+		_menu_hint.text = "click or arrows + Enter: park it next to you · %s / Esc close" % k.call("vehicle_menu")
 	if chat:
 		_place_chat()
+
+
+## Keys of `actions` run together ("WASD", "ZQSD" on AZERTY), or with slashes when one is not a single letter.
+func _keys(actions: Array) -> String:
+	var names := PackedStringArray()
+	var short := true
+	for a: String in actions:
+		names.append(Settings.key_text(a))
+		short = short and names[-1].length() == 1
+	return ("" if short else "/").join(names)
 
 
 ## The chat sits bottom left, just above the help.

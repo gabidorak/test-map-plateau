@@ -1,8 +1,9 @@
 extends VehicleBody3D
 ## Drivable toy car built at runtime from a downloaded model (assets/cars, see CREDITS.md): the
 ## model's four wheel nodes become VehicleWheel3D, the body gets a box collider. Call setup() before
-## adding it to the tree. While `driving`: W/S throttle and brake/reverse, A/D steer (physical keys),
-## Q/E turn signals (A/E on AZERTY), G (held) sounds the horn, X (held) drifts, B rings a bus's bell, R puts the car back on its wheels, the mouse orbits the chase camera
+## adding it to the tree. While `driving` (keys: the Settings actions, scripts/settings.gd; defaults on physical
+## positions): W/S throttle and brake/reverse, A/D steer, Q/E turn signals (A/E on AZERTY), G (held) sounds the horn,
+## X (held) drifts, B rings a bus's bell, R puts the car back on its wheels, the mouse orbits the chase camera
 ## (it eases back behind the car while moving, in front of it while reversing; hold the right button to keep it).
 ## game.gd handles getting in (E) and out (Space). The models face +Z, which is also VehicleBody3D's
 ## forward; their left side is +X.
@@ -32,20 +33,22 @@ extends VehicleBody3D
 ## more for heavier ones); hits only count on the peer simulating it (damage), the others follow its states. Under
 ## half of it, grey smoke comes out of the engine; at 0 it is `broken`: a boom and a ball of fire, the engine dies, the
 ## body is scorched and black smoke billows out of it (scripts/wreck_smoke.gd) until it is repaired REPAIR_AFTER s
-## later.
+## later, or until the fire truck's water cannon has hosed it for EXTINGUISH s (douse), which puts the fire out.
 
 const Layers = preload("res://scripts/physics_layers.gd")
 const VehicleAudio = preload("res://scripts/vehicle_audio.gd")
 const Trailer = preload("res://scripts/car_trailer.gd")
 const WreckSmoke = preload("res://scripts/wreck_smoke.gd")
+const Prefs = preload("res://scripts/settings.gd")
 const KENNEY_WHEELS := ["wheel-front-left", "wheel-front-right", "wheel-back-left", "wheel-back-right"]
 ## Per model: file in assets/cars, scale, body mesh node, wheel nodes (front left, front right, back
 ## left, back right), credit, mass (kg; engine, brakes and suspension scale with it), power (engine
 ## factor), max_speed (m/s), max_steer (rad at walking pace), layout (json next to the model), sound
 ## (vehicle_audio kind), traction_from (index of the first driven wheel; all drive by default), trailer_mass (kg,
 ## rear section of an articulated vehicle), label (name in the vehicle menu, see display_name), plane (built and flown
-## by scripts/plane.gd, which extends this script, instead), guns (a plane's machine guns). Missing keys take the
-## Kenney Car Kit values (scale 1.5: ~2.8 m -> ~4.2 m).
+## by scripts/plane.gd, which extends this script, instead), guns (a plane's machine guns), fittings (the fire truck's
+## lamps and water cannon, json next to the model: scripts/fire_truck.gd, which extends this script, drives it). Missing
+## keys take the Kenney Car Kit values (scale 1.5: ~2.8 m -> ~4.2 m); the wheels beyond the first four are a third axle.
 const SPECS := {
 	"bus-idfm": {"label": "IDFM bus (12 m)", "file": "bus_idfm.glb", "scale": 1.0,
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
@@ -63,12 +66,17 @@ const SPECS := {
 	"sedan": {}, "taxi": {}, "suv": {"label": "SUV"}, "police": {}, "hatchback-sports": {"label": "Sports hatchback"},
 	"van": {}, "sedan-sports": {"label": "Sports sedan"}, "suv-luxury": {"label": "Luxury SUV"}, "delivery": {"label": "Delivery van"},
 	"ambulance": {},
+	"fire-truck": {"label": "Fire truck", "file": "fire_truck.glb", "scale": 1.0,
+			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_middle_left", "wheel_middle_right",
+				"wheel_rear_left", "wheel_rear_right"],
+			"mass": 16000.0, "power": 0.32, "max_speed": 28.0, "max_steer": 0.6, "fittings": "fire_truck.json",
+			"sound": "truck", "credit": "6x6 airport crash tender, built by blender/vehicles/build_fire_truck.py"},
 	"biplane": {"label": "Biplane", "plane": true, "credit": "toy biplane built by scripts/plane.gd"},
 	"biplane-armed": {"label": "Armed biplane", "plane": true, "guns": true,
 			"credit": "toy fighter biplane built by scripts/plane.gd"},
 }
 const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "taxi", "suv", "police", "hatchback-sports", "van",
-		"sedan-sports", "suv-luxury", "delivery", "ambulance", "biplane", "biplane-armed"]
+		"sedan-sports", "suv-luxury", "delivery", "ambulance", "fire-truck", "biplane", "biplane-armed"]
 const REST_LENGTH := 0.2
 const BLINK := 0.75                         # s, indicator period
 const DOOR_TIME := 1.6                      # s to open or close
@@ -89,6 +97,7 @@ const BELLOWS_SEGMENTS := 4                 # wall boxes along the bellows (walk
 const HEALTH := 100.0                       # a 1,200 kg car's; heavier vehicles have more (with the square root of the mass)
 const DAMAGED := 0.5                        # share of the health under which the engine smokes grey
 const REPAIR_AFTER := 60.0                  # s a broken vehicle smokes before it is repaired
+const EXTINGUISH := 2.0                     # s of the fire truck's water on a broken vehicle that put its fire out
 
 @export var engine_per_wheel := 2800.0      # N on each of the four driven wheels, more when starting
 @export var max_brake := 80.0
@@ -181,6 +190,7 @@ var _skin: StandardMaterial3D               # the driver look-alike's colour
 var _remote_braking := false
 var _smoke: WreckSmoke                      # made at the first smoke
 var _broken_t := 0.0                        # s since it broke
+var _doused := 0.0                          # s of water on it since it broke
 var _net_seen := false                      # LAN, remote vehicle: a state came already (no boom for a wreck on joining)
 
 static var _soot: StandardMaterial3D        # drawn over a broken vehicle's meshes
@@ -884,6 +894,23 @@ func damage(amount: float) -> void:
 		set_health(health - amount)
 
 
+## The fire truck's water cannon (scripts/water_cannon.gd: game.gd, through net.gd on the peer simulating the vehicle)
+## hosed it for `seconds`: a broken vehicle's fire is out after EXTINGUISH s of it, and it runs again.
+func douse(seconds: float) -> void:
+	if not broken:
+		return
+	_doused += seconds
+	if _doused >= EXTINGUISH:
+		set_health(max_health)
+
+
+## The fire truck's water hit `body` (this car or its rear section) at `point` (global): pushed by `impulse` (N·s) and
+## hosed for `seconds` (douse). Only on the peer simulating it (net.gd water_vehicle).
+func hose(body: RigidBody3D, impulse: Vector3, point: Vector3, seconds: float) -> void:
+	body.apply_impulse(impulse, point - body.global_position)
+	douse(seconds)
+
+
 ## Health `h` (clamped to 0..max_health): grey smoke under DAMAGED of max_health; at 0 broken (with a boom and a ball
 ## of fire when `effects`): engine dead, scorched, black smoke; above 0 again, repaired.
 func set_health(h: float, effects := true) -> void:
@@ -907,6 +934,7 @@ func set_health(h: float, effects := true) -> void:
 	_set_scorched(broken)
 	if broken:
 		_broken_t = 0.0
+		_doused = 0.0
 		audio.engine_on = false
 		if effects:
 			audio.play("boom")
@@ -983,30 +1011,30 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not driving or not controls:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		_look_yaw -= event.relative.x * sensitivity
-		_look_pitch = clampf(_look_pitch - event.relative.y * sensitivity, -1.2, 0.4)
+		var look: Vector2 = event.screen_relative * sensitivity * Prefs.mouse_scale
+		_look_yaw -= look.x
+		_look_pitch = clampf(_look_pitch - look.y, -1.2, 0.4)
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 		zoom((1.0 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1.0) * (event.factor if event.factor > 0.0 else 1.0))
 		get_viewport().set_input_as_handled()
-	elif event is InputEventKey and event.pressed and not event.echo:
-		match event.physical_keycode:
-			KEY_R:
-				_put_back_on_wheels()
-			KEY_Q:
-				set_indicator(0 if indicator == 1 else 1)
-			KEY_E:
-				set_indicator(0 if indicator == -1 else -1)
-			KEY_O:
-				set_doors(not doors_open)
-			KEY_V:
-				set_cab_view(not cab_view)
-			KEY_B:
-				if audio.kind != "bus":
-					return
-				ring_bell()
-			_:
-				return
+	elif event.is_action_pressed("reset_vehicle"):
+		_put_back_on_wheels()
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("signal_left"):
+		set_indicator(0 if indicator == 1 else 1)
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("signal_right"):
+		set_indicator(0 if indicator == -1 else -1)
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("doors"):
+		set_doors(not doors_open)
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("toggle_view"):
+		set_cab_view(not cab_view)
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("bell") and audio.kind == "bus":
+		ring_bell()
 		get_viewport().set_input_as_handled()
 
 
@@ -1028,12 +1056,10 @@ func _physics_process(delta: float) -> void:
 	var throttle := 0.0
 	var steer_in := 0.0
 	if driving and controls:
-		if Input.is_physical_key_pressed(KEY_W): throttle += 1.0
-		if Input.is_physical_key_pressed(KEY_S): throttle -= 1.0
-		if Input.is_physical_key_pressed(KEY_A): steer_in += 1.0
-		if Input.is_physical_key_pressed(KEY_D): steer_in -= 1.0
-	var drifting := driving and controls and Input.is_physical_key_pressed(KEY_X)
-	audio.horn = driving and controls and Input.is_physical_key_pressed(KEY_G)
+		throttle = Input.get_axis("brake", "throttle")
+		steer_in = Input.get_axis("steer_right", "steer_left")
+	var drifting := driving and controls and Input.is_action_pressed("drift")
+	audio.horn = driving and controls and Input.is_action_pressed("horn")
 	var v := speed()
 	engine_force = 0.0
 	brake = 0.0

@@ -7,3 +7,5 @@
 - `bus_idfm.glb`: Île-de-France Mobilités city bus (Iveco Urbanway 12 m CNG), built from code by
   `blender/vehicles/build_bus.py`; livery after the photos in `ref/`.
 - `bus_idfm_artic.glb`: the same as an 18 m articulated bus (Iveco Urbanway 18 m CNG), `build_bus.py --model=artic`.
+- `fire_truck.glb`: 6x6 airport fire truck (crash tender on a heavy cab-over chassis), built from code by
+  `blender/vehicles/build_fire_truck.py` after the photo `ref/fire_truck.png`.

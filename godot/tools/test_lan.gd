@@ -13,7 +13,8 @@ extends SceneTree
 ## host, a car rolled at a remote player's look-alike stops against it (and passes through with its collision off).
 ## Chat: the client opens it with Enter and says hello, the host answers; holding Tab shows both players and pings.
 ## Damage: rounds of the host's hit the client's taxi (net.gd hit_vehicle): it breaks on the client, which simulates it,
-## and smokes black on both.
+## and smokes black on both; then the host's fire truck water hoses it (net.gd water_vehicle): its fire goes out on the
+## client, and on both it runs again.
 ## Exit code 1 on failure. No --fixed-fps: the states are stamped with the real clock.
 
 const Layers = preload("res://scripts/physics_layers.gd")
@@ -176,6 +177,13 @@ func _run_host() -> void:
 		_check(not taxi.broken, "hits on the client's taxi do not count here")
 		_check(await _until(func() -> bool: return taxi.broken and taxi.smoking_black(), 10.0),
 				"the client's taxi breaks and smokes black here too (from its states)")
+		net.water_vehicle(taxi, taxi, Vector3(0.0, -50.0, 0.0), taxi.global_position, 0.5)
+		_check(taxi.broken, "water on the client's taxi does not put it out here")
+		for i in 5:                         # 3 s of the jet in all, a batch every ~0.13 s
+			await _frames(8)
+			net.water_vehicle(taxi, taxi, Vector3(0.0, -50.0, 0.0), taxi.global_position, 0.5)
+		_check(await _until(func() -> bool: return not taxi.broken and not taxi.smoking_black(), 10.0),
+				"the host's water puts the client's taxi out (from its states)")
 	_check(net.lan_label().contains(":%d" % net.port), "top right label: " + net.lan_label())
 	var remote: Node3D = net._remotes[guest]
 	_check(await _until(func() -> bool: return remote.visible and bus.carries(remote.global_position, 0.3), 40.0),
@@ -386,6 +394,8 @@ func _run_client() -> void:
 	var taxi: Node = _main.cars.filter(func(c: Node) -> bool: return c.model_name == "taxi")[0]
 	_check(await _until(func() -> bool: return taxi.broken and taxi.smoking_black(), 10.0),
 			"the host's hits broke our taxi here, which simulates it")
+	_check(await _until(func() -> bool: return not taxi.broken and not taxi.smoking_black(), 10.0),
+			"the host's water put our taxi's fire out here")
 	var bus: Node = _bus()
 	_check(bus.remote and bus.freeze, "the bus is a frozen copy")
 	await _frames(30)

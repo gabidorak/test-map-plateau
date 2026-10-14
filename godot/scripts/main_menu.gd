@@ -1,13 +1,15 @@
 extends CanvasLayer
 ## Welcome menu, over the campus flyover (game.gd shows it when the game starts). The player picks a nickname and a
 ## colour (kept in user://settings.cfg), then: Explore solo, Host a game on LAN, Join a game (a page with the games
-## found on the LAN by scripts/lan_discovery.gd and an address + port field), or Quit. game.gd does the rest and
+## found on the LAN by scripts/lan_discovery.gd and an address + port field), Settings (scripts/settings_menu.gd), or
+## Quit. game.gd does the rest and
 ## reports back with set_status. The bottom row shows the build and what the updater (scripts/updater.gd) is doing:
 ## downloading the latest release, then "Restart now".
 
 const UiStyle = preload("res://scripts/ui_style.gd")
 const LanDiscovery = preload("res://scripts/lan_discovery.gd")
 const Updater = preload("res://scripts/updater.gd")
+const SettingsMenu = preload("res://scripts/settings_menu.gd")
 const SETTINGS := "user://settings.cfg"
 const COLORS: Array[Color] = [Color(1, 0.55, 0.2), Color(0.25, 0.55, 1.0), Color(0.3, 0.8, 0.35), Color(0.95, 0.3, 0.35),
 		Color(0.7, 0.4, 0.95), Color(1.0, 0.85, 0.2), Color(0.2, 0.8, 0.8), Color(1.0, 0.5, 0.75)]
@@ -42,6 +44,8 @@ var _busy := false
 var _updater: Updater
 var _update_label: Label
 var _update_button: Button
+var _panel: PanelContainer
+var _settings: SettingsMenu
 
 
 func _ready() -> void:
@@ -67,6 +71,12 @@ func _ready() -> void:
 	_join_page.visible = false
 	pages.add_child(_join_page)
 	UiStyle.centre(panel)
+	_panel = panel
+	_settings = SettingsMenu.new()
+	root.add_child(_settings)
+	_settings.closed.connect(func() -> void:
+		_panel.visible = true
+		_solo_button.grab_focus())
 	if notice != "":
 		set_status(notice, true)
 		notice = ""
@@ -107,6 +117,12 @@ func _build_main_page(cfg: ConfigFile) -> VBoxContainer:
 	buttons.add_child(b)
 	b = UiStyle.button("Join a game", _looks, Vector2(320, 48), 20)
 	b.pressed.connect(_show_join_page.bind(true))
+	buttons.add_child(b)
+	b = UiStyle.button("Settings", _looks, Vector2(320, 44), 18)
+	b.pressed.connect(func() -> void:
+		if not _busy:
+			_panel.visible = false
+			_settings.open())
 	buttons.add_child(b)
 	b = UiStyle.button("Quit", _looks, Vector2(320, 40), 17)
 	b.pressed.connect(func() -> void: quit.emit())

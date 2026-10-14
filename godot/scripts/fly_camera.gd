@@ -1,6 +1,9 @@
 extends Camera3D
-## Free-flying debug camera: hold right mouse to look, WASD to move, Q/E down/up (physical key
-## positions, so ZQSD + A/E on AZERTY), Shift for speed, mouse wheel changes base speed.
+## Free-flying debug camera: hold right mouse to look, the walking keys to move, cam_up / cam_down (Settings actions:
+## physical key positions, WASD and Q/E by default, so ZQSD + A/E on AZERTY), Run for speed, mouse wheel changes base
+## speed.
+
+const Prefs = preload("res://scripts/settings.gd")
 
 @export var speed := 12.0
 @export var sensitivity := 0.003
@@ -33,8 +36,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			speed /= 1.2
 	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		_yaw -= event.relative.x * sensitivity
-		_pitch = clampf(_pitch - event.relative.y * sensitivity, -1.55, 1.55)
+		var look: Vector2 = event.screen_relative * sensitivity * Prefs.mouse_scale
+		_yaw -= look.x
+		_pitch = clampf(_pitch - look.y, -1.55, 1.55)
 		rotation = Vector3(_pitch, _yaw, 0.0)
 
 
@@ -42,12 +46,12 @@ func _process(delta: float) -> void:
 	if not active:
 		return
 	var dir := Vector3.ZERO
-	if Input.is_physical_key_pressed(KEY_W): dir -= basis.z
-	if Input.is_physical_key_pressed(KEY_S): dir += basis.z
-	if Input.is_physical_key_pressed(KEY_A): dir -= basis.x
-	if Input.is_physical_key_pressed(KEY_D): dir += basis.x
-	if Input.is_physical_key_pressed(KEY_E): dir += Vector3.UP
-	if Input.is_physical_key_pressed(KEY_Q): dir -= Vector3.UP
+	if Input.is_action_pressed("move_forward"): dir -= basis.z
+	if Input.is_action_pressed("move_back"): dir += basis.z
+	if Input.is_action_pressed("move_left"): dir -= basis.x
+	if Input.is_action_pressed("move_right"): dir += basis.x
+	if Input.is_action_pressed("cam_up"): dir += Vector3.UP
+	if Input.is_action_pressed("cam_down"): dir -= Vector3.UP
 	if dir != Vector3.ZERO:
-		var s := speed * (4.0 if Input.is_physical_key_pressed(KEY_SHIFT) else 1.0)
+		var s := speed * (4.0 if Input.is_action_pressed("run") else 1.0)
 		position += dir.normalized() * s * delta
