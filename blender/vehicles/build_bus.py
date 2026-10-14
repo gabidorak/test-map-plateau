@@ -15,7 +15,7 @@ front = +Z, left = +X, as scripts/car.gd expects). Exports one "body" mesh, the 
 wheel_front_right, wheel_rear_left, wheel_rear_right) with their origin at the wheel centre, and the moving parts
 scripts/car.gd animates: door leaves door<i>_a/b (sliding plug doors, a = front leaf), indicator_left/right, brake_lights,
 steering (the steering wheel, spins about its local Z = glTF Y; a name ending in "_wheel" would become a
-VehicleWheel3D in Godot's importer). <out>.json (next to the .glb) gives car.gd the layout in glTF
+VehicleWheel3D in Godot's importer), and "mirrors" (outside the body box, so they do not widen the collision box). <out>.json (next to the .glb) gives car.gd the layout in glTF
 coordinates: collision boxes (the door boxes tagged with their door), doors, interior box, floor height, driver seat,
 eye and exit point.
 
@@ -607,6 +607,22 @@ def steering_wheel(s: Section) -> bpy.types.Object:
     return rim
 
 
+def mirrors(s: Section) -> bpy.types.Object:
+    """The "rabbit ear" mirrors, an object of their own: outside the body box, so they do not widen the collision box."""
+    y0 = s.y0
+    parts = []
+    for sx in (-1, 1):
+        p0 = (sx * (HW - 0.10), y0 + 0.05, 2.62)
+        p1 = (sx * (HW + 0.12), y0 - 0.42, 2.55)
+        p2 = (sx * (HW + 0.12), y0 - 0.45, 2.05)
+        parts.append(bar("mirror_arm", p0, p1, 0.05, 0.05, "plastic_black"))
+        parts.append(bar("mirror_arm", p1, p2, 0.05, 0.05, "plastic_black"))
+        parts.append(box("mirror", (sx * (HW + 0.12), y0 - 0.45, 1.88), (0.22, 0.08, 0.38), "plastic_black"))
+    join(parts[0], parts)
+    parts[0].name = parts[0].data.name = "mirrors"
+    return parts[0]
+
+
 def inner_skin(name, s: Section, profile, keep, m) -> bpy.types.Object:
     """Faces along the body outline between consecutive (inset, z) profile points, turned towards the cabin;
     keep(Vector2 midpoint, tag) selects the outline segments."""
@@ -922,14 +938,6 @@ def body(s: Section) -> bpy.types.Object:
         parts += place(logo(0.075, "display_amber", symbol=False), face("front", 0.0, 2.585, 0.012, y0))
         for sx in (-1, 1):
             parts.append(bar("wiper", (sx * 0.95, y0 - 0.015, 1.12), (sx * 0.25, y0 - 0.015, 1.55), 0.025, 0.02, "plastic_black"))
-        # "rabbit ear" mirrors
-        for sx in (-1, 1):
-            p0 = (sx * (HW - 0.10), y0 + 0.05, 2.62)
-            p1 = (sx * (HW + 0.12), y0 - 0.42, 2.55)
-            p2 = (sx * (HW + 0.12), y0 - 0.45, 2.05)
-            parts.append(bar("mirror_arm", p0, p1, 0.05, 0.05, "plastic_black"))
-            parts.append(bar("mirror_arm", p1, p2, 0.05, 0.05, "plastic_black"))
-            parts.append(box("mirror", (sx * (HW + 0.12), y0 - 0.45, 1.88), (0.22, 0.08, 0.38), "plastic_black"))
 
     # sides: logos, "100% gaz naturel", doors, side markers
     for side, (a, b) in s.logo_bays.items():
@@ -1127,6 +1135,7 @@ def main() -> None:
         own += indicators(s)
         if s.nose:
             own.append(steering_wheel(s))
+            own.append(mirrors(s))
         objs += own
         per_section.append(own)
         doors.append(door_infos)
