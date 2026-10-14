@@ -28,6 +28,9 @@ extends Node3D
 ## Its cab has a passenger seat: E from the truck's right side, or while another player drives it, sits the player
 ## there (`riding`: looking around with the truck's cameras, the cab view from the passenger's eye); E there takes the
 ## wheel if nobody has it, Space gets out on the right.
+## The two-seat biplane's passenger seat is its gunner's (same E rule): the mouse aims its belly turret, which fires
+## forward only (up to 45° off the nose) with the left mouse button; V or the mouse wheel goes to the turret view, and a
+## ring shows where the barrel points.
 ## Vehicles bend thin trees and knock over sign poles, bollards and the like (scripts/breakables.gd).
 ## Bot buses and bot cars (scripts/traffic.gd, scripts/bus_bot.gd) drive their lines and routes when playing solo,
 ## hosting, or on a dedicated server: the player can ride the buses (in through the open doors at a stop) but drive
@@ -375,10 +378,12 @@ func _process(delta: float) -> void:
 	if _toast_t > 0.0:
 		_toast_t -= delta
 		_toast.modulate.a = clampf(_toast_t, 0.0, 1.0)
-	_dash.visible = driving != null
+	_dash.visible = driving != null or riding is Biplane
 	_update_gunsight()
 	if driving is Biplane:
 		_dash.text = (driving as Biplane).dash_text()
+	elif riding is Biplane:
+		_dash.text = (riding as Biplane).dash_text()
 	elif driving is Horse:
 		_dash.text = (driving as Horse).dash_text()
 	elif driving:
@@ -396,13 +401,17 @@ func _process(delta: float) -> void:
 		_dash.text = line
 
 
-## The armed plane's gunsight: a ring where its guns' rounds converge, on the screen.
+## The armed plane's gunsight: a ring where its guns' rounds converge, on the screen; for the gunner of the two-seater,
+## where its turret's are aimed.
 func _update_gunsight() -> void:
 	var plane := driving as Biplane
+	var gunner := riding as Biplane
 	var cam := get_viewport().get_camera_3d()
-	_gunsight.visible = plane != null and plane.armed and cam != null and not cam.is_position_behind(plane.aim_point())
+	var aim: Variant = plane.aim_point() if plane and plane.armed \
+			else gunner.turret_aim_point() if gunner and gunner.turret else null
+	_gunsight.visible = aim != null and cam != null and not cam.is_position_behind(aim)
 	if _gunsight.visible:
-		_gunsight.position = cam.unproject_position(plane.aim_point()) - _gunsight.size * 0.5
+		_gunsight.position = cam.unproject_position(aim) - _gunsight.size * 0.5
 	var truck := driving as FireTruck
 	var spot: Variant = truck.sight_point() if truck else null
 	_water_sight.visible = spot != null and cam != null and not cam.is_position_behind(spot)
@@ -431,7 +440,10 @@ func _fly_around(delta: float) -> void:
 func net_player_state() -> Array:
 	var flags := 1 if driving or not player.visible else 0
 	if riding:
-		return [riding.net_id, 0, riding.passenger_seat, 0.0, flags | 2]
+		var seated := [riding.net_id, 0, riding.passenger_seat, 0.0, flags | 2]
+		if riding is Biplane and (riding as Biplane).turret:
+			seated.append_array((riding as Biplane).gunner_state())
+		return seated
 	var c: Node3D = player.carrier if is_instance_valid(player.carrier) else null
 	if c and not driving:
 		var car: Car = c as Car if c is Car else c.head as Car
@@ -598,6 +610,8 @@ func _add_car(car: Car) -> void:
 			player.add_collision_exception_with(body)   # the player collides with its walkable hull instead
 	if car is Biplane and (car as Biplane).guns:
 		(car as Biplane).guns.hit.connect(_on_round_hit)
+	if car is Biplane and (car as Biplane).turret_guns:
+		(car as Biplane).turret_guns.hit.connect(_on_round_hit)
 	if car is FireTruck:
 		(car as FireTruck).cannon.hit.connect(_on_water_hit)
 	cars.append(car)
@@ -1208,6 +1222,7 @@ func _update_help() -> void:
 				k.call("plane_throttle_down"), k.call("reset_vehicle")]) + \
 				"wheel zoom (all the way in: cockpit) · %s cockpit\n" % k.call("toggle_view") + \
 				("%s (held) fire the guns · " % k.call("fire") if (driving as Biplane).armed else "") + \
+				("your gunner boards from the right side · " if (driving as Biplane).turret else "") + \
 				"%s get out · %s" % [k.call("exit_vehicle"), common]
 	elif driving is Horse:
 		_help.text = ("RIDE · %s go (canter), with %s gallop · %s stop, then back up · %s/%s turn · " % [k.call("throttle"),
@@ -1225,6 +1240,10 @@ func _update_help() -> void:
 				if driving.has_doors else ("%s cab view · " % k.call("toggle_view") if driving.has_cab() else ""),
 				k.call("exit_vehicle"),
 				"leave the seat" if driving.has_doors else "get out", common]
+	elif riding is Biplane:
+		_help.text = ("GUNNER · mouse aims the belly turret (forward only, up to 45° off the nose) · %s (held) fire · " % \
+				k.call("fire")) + "wheel zoom (all the way in: turret view) · %s turret view\n" % k.call("toggle_view") + \
+				"%s take the controls (if nobody flies) · %s get out\n%s" % [k.call("interact"), k.call("exit_vehicle"), common]
 	elif riding:
 		_help.text = "PASSENGER · mouse look · wheel zoom (all the way in: cab view) · %s cab view · " % \
 				k.call("toggle_view") + "%s take the wheel (if nobody drives) · %s get out\n%s" % [k.call("interact"),
@@ -1234,7 +1253,7 @@ func _update_help() -> void:
 				k.call("jump")] + \
 				"wheel zoom (all the way in: first person) · %s first/third person · %s get in the nearest car " % [
 				k.call("toggle_view"), k.call("interact")] + "(in the bus: near the driver seat; fire truck: " + \
-				"from its right side, the passenger seat)\n" + \
+				"from its right side, the passenger seat; biplane with gunner: from its right side, the turret)\n" + \
 				"%s park a car here · %s vehicle menu · %s" % [k.call("park_car"), k.call("vehicle_menu"), common]
 	if driving is FireTruck:
 		_help.text += "\n%s (held) water cannon, aimed where you look · %s siren and beacons" % [k.call("fire"), k.call("bell")]

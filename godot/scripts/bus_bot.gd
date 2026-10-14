@@ -81,6 +81,7 @@ const PASS_IN := 10.0                       # m over which it moves out (and bac
 const PASS_CLEAR := 80.0                    # m of the lane it takes that must be free ahead
 const PASS_SPEED := 6.0                     # m/s at most while overtaking
 const BERTH := 20.0                         # m behind its stop a bus queued behind one there may serve it
+const JUNCTION_REACH := 120.0               # m from a junction traffic is watched (6 s away at 70 km/h)
 
 var traffic: Node                           # traffic.gd
 var car: Node3D                             # car.gd
@@ -374,7 +375,7 @@ func _plan(v: float, delta: float) -> float:
 		var d := float(l["s"]) - front
 		if d < -0.5:
 			continue
-		if d > 90.0:
+		if d > maxf(90.0, v * v / (2.0 * BRAKE) + 20.0):
 			break
 		var c: int = traffic.light(traffic.clock(), l["phase"])
 		if c == 2 or (c == 1 and d > v * v / (2.0 * AMBER_DECEL) + 1.0):
@@ -617,7 +618,7 @@ func _look(v: float) -> void:
 		_yield = nxt
 		_yield_wait = 0.0
 	_conflict = false
-	if _yield >= 0 and float(yields[_yield]["s"]) - front < 60.0:
+	if _yield >= 0 and float(yields[_yield]["s"]) - front < maxf(60.0, v * v / (2.0 * BRAKE) + 15.0):
 		_conflict = _junction_busy(yields[_yield], front)
 
 
@@ -779,7 +780,7 @@ func _junction_busy(y: Dictionary, front: float) -> bool:
 			continue
 		var p: Vector2 = traffic.snap_pos[k]
 		var d := p.distance_to(j)
-		if d > 60.0:
+		if d > JUNCTION_REACH:
 			continue
 		var vel: Vector2 = traffic.snap_vel[k]
 		# behind the bus or beside it in its lane: not crossing its way
