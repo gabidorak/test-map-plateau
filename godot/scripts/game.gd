@@ -17,6 +17,7 @@ extends Node3D
 ## The mouse wheel zooms the camera, all the way in is first person (walking) or the cab view (driving the bus);
 ## first person and the cab view carry over when taking and leaving the driver seat. The articulated bus carries the
 ## player in whichever of its two sections they stand (Car.carrier_at).
+## The horse (scripts/horse.gd, in the vehicle menu) is got on and off with E: Space jumps, over fences too.
 ## The biplane (scripts/plane.gd, in the vehicle menu) is got in and out of like a car, and flies. The armed one fires
 ## its machine guns with the left mouse button (scripts/plane_guns.gd; a ring on the screen shows where the rounds
 ## converge): a vehicle hit takes damage (net.gd hit_vehicle, car.gd damage) and smokes black once broken, a breakable
@@ -24,6 +25,9 @@ extends Node3D
 ## The fire truck (scripts/fire_truck.gd) sprays its roof water cannon where the driver looks while the left mouse button
 ## is held (a dashed blue ring shows where the jet lands): the water pushes vehicles and puts out burning ones (net.gd
 ## water_vehicle, car.gd hose), shoves other players (water_player), and knocks light props over (breakables.gd soak).
+## Its cab has a passenger seat: E from the truck's right side, or while another player drives it, sits the player
+## there (`riding`: looking around with the truck's cameras, the cab view from the passenger's eye); E there takes the
+## wheel if nobody has it, Space gets out on the right.
 ## Vehicles bend thin trees and knock over sign poles, bollards and the like (scripts/breakables.gd).
 ## Graphics: "low" (no SSIL/SSAO/glow, FXAA instead of MSAA) keeps 60 fps on an integrated GPU; it is
 ## the default there, "high" elsewhere. PLATEAU_QUALITY=low|high overrides, F2 switches, the settings page
@@ -37,6 +41,7 @@ const Picker = preload("res://scripts/picker.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const Car = preload("res://scripts/car.gd")
 const Biplane = preload("res://scripts/plane.gd")
+const Horse = preload("res://scripts/horse.gd")
 const PlaneGuns = preload("res://scripts/plane_guns.gd")
 const FireTruck = preload("res://scripts/fire_truck.gd")
 const WaterCannon = preload("res://scripts/water_cannon.gd")
@@ -66,6 +71,7 @@ const MENU_ORBIT_SPEED := 0.02              # rad/s
 
 var flying := false
 var driving: Car                            # the car the player is in, or null
+var riding: Car                             # the car whose passenger seat the player sits in, or null
 var cars: Array[Car] = []
 var _next_model := 0
 var picker: Picker
@@ -306,7 +312,7 @@ func _set_player_enabled(on: bool) -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	if driving or flying:
+	if driving or flying or riding:
 		return
 	# a car, or the rear section of an articulated one (car_trailer.gd)
 	var c: Node3D = player.carrier if is_instance_valid(player.carrier) else null
@@ -355,6 +361,8 @@ func _process(delta: float) -> void:
 	_update_gunsight()
 	if driving is Biplane:
 		_dash.text = (driving as Biplane).dash_text()
+	elif driving is Horse:
+		_dash.text = (driving as Horse).dash_text()
 	elif driving:
 		var arrows := ["  ", "  "]
 		if driving.indicator != 0 and fmod(Time.get_ticks_msec() / 1000.0, Car.BLINK) < Car.BLINK * 0.5:
@@ -397,12 +405,15 @@ func _fly_around(delta: float) -> void:
 	fly_camera.look_at_from_position(eye, centre + Vector3.UP * 20.0)
 
 
-## LAN games: our player's state for the other peers (net.gd _pose_remote): standing in a vehicle, the position and
+## LAN games: our player's state for the other peers (net.gd _pose_remote): in a passenger seat, that vehicle, the seat
+## and flag 2 (the vehicle shows the player seated); standing in a vehicle, the position and
 ## facing are in its frame. That frame is the vehicle's pose the player last followed, not its current one: net.gd
 ## sends this after moving the remote vehicles but before the player follows them, so the current pose would put the
 ## player behind by the vehicle's last step.
 func net_player_state() -> Array:
 	var flags := 1 if driving or not player.visible else 0
+	if riding:
+		return [riding.net_id, 0, riding.passenger_seat, 0.0, flags | 2]
 	var c: Node3D = player.carrier if is_instance_valid(player.carrier) else null
 	if c and not driving:
 		var car: Car = c as Car if c is Car else c.head as Car
@@ -423,6 +434,8 @@ func set_flying(on: bool) -> void:
 		return
 	if on and driving:
 		exit_car()
+	elif on and riding:
+		leave_ride()
 	if on:
 		player.set_carrier(null)
 	flying = on
@@ -508,11 +521,13 @@ func add_net_car(model: String, xf: Transform3D) -> Car:
 	return car
 
 
-## A vehicle of `model`, set up but not in the tree yet: a Biplane for the aircraft (Car.SPECS "plane"), a FireTruck
+## A vehicle of `model`, set up but not in the tree yet: a Horse (Car.SPECS "horse"), a Biplane for the aircraft
+## ("plane"), a FireTruck
 ## for the fire truck ("fittings"), else a Car.
 static func new_vehicle(model: String) -> Car:
 	var spec: Dictionary = Car.SPECS[model]
-	var car: Car = Biplane.new() if spec.get("plane", false) else (FireTruck.new() if spec.has("fittings") else Car.new())
+	var car: Car = Horse.new() if spec.get("horse", false) else Biplane.new() if spec.get("plane", false) \
+			else FireTruck.new() if spec.has("fittings") else Car.new()
 	car.setup(model)
 	return car
 
@@ -568,7 +583,7 @@ static func water_shove(impulse: Vector3) -> Vector3:
 
 ## Another player's water jet hit us (net.gd).
 func water_push(dv: Vector3) -> void:
-	if not driving and not flying:
+	if not driving and not flying and not riding:
 		player.push(dv)
 
 
@@ -676,6 +691,9 @@ func drive_granted(car: Car) -> void:
 
 
 func enter_car(car: Car) -> void:
+	if riding:                              # sliding over from the passenger seat
+		riding.set_riding(false)
+		riding = null
 	driving = car
 	car.set_driver_color(color)
 	car.controls = not (pause.visible or chat.is_open())
@@ -701,6 +719,41 @@ func exit_car() -> void:
 	if car.interior.size != Vector3.ZERO:
 		_leave_seat(car)
 		return
+	_put_beside(car, 1.0)
+
+
+## True when E should sit the player in the passenger seat of `car` rather than at the wheel: it has a free one, and
+## another player drives it or the player stands on its passenger side (the right, -X).
+func wants_passenger_seat(car: Car) -> bool:
+	if not car.has_passenger_seat or car.passenger_taken():
+		return false
+	var driver: int = net.driver_of.get(car.net_id, 0) if net.active else 0
+	return (driver != 0 and driver != net.me()) or car.to_local(player.global_position).x < 0.0
+
+
+## Sits the player in the passenger seat of `car`: hidden, looking around with the car's cameras.
+func ride_car(car: Car) -> void:
+	riding = car
+	player.set_carrier(null)
+	_set_player_enabled(false)
+	if car.has_cab():
+		car.cab_view = player.first_person
+	car.controls = not (pause.visible or chat.is_open())
+	car.set_riding(true, color)
+	_update_help()
+
+
+## Out of the passenger seat, beside the car on its passenger side.
+func leave_ride() -> void:
+	var car := riding
+	riding = null
+	car.set_riding(false)
+	_put_beside(car, -1.0)
+
+
+## Puts the player on the ground beside the car, on the `side` given first (1: left, the driver's side; -1: right),
+## then the other one, else on the roof.
+func _put_beside(car: Car, side: float) -> void:
 	var space := get_world_3d().direct_space_state
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = 0.35
@@ -709,8 +762,8 @@ func exit_car() -> void:
 	q.shape = capsule
 	q.collision_mask = Layers.SOLID | Layers.BOUNDARY | Layers.VEGETATION | Layers.PROPS | Layers.VEHICLES
 	var target := car.to_global(Vector3(0.0, car.half_extents.y * 2.0 + 0.3, 0.0))
-	for side: float in [1.0, -1.0]:
-		var p := car.to_global(Vector3(side * (car.half_extents.x + 0.7), 0.0, 0.3))
+	for s: float in [side, -side]:
+		var p := car.to_global(Vector3(s * (car.half_extents.x + 0.7), 0.0, 0.3))
 		var g := WorldQuery.ground_y(get_world_3d(), p.x, p.z, Layers.SOLID, car.global_position.y + 2.5)
 		if is_nan(g):
 			continue
@@ -723,6 +776,8 @@ func exit_car() -> void:
 	player.visible = true
 	player.active = true
 	player.wait_jump_release = true
+	if car.has_cab():
+		player.set_first_person(car.cab_view)
 	player.teleport(target, car.camera.global_rotation.y)
 	player.camera.make_current()
 	_update_help()
@@ -744,7 +799,7 @@ func _leave_seat(car: Car) -> void:
 
 ## Opens (walking only) or closes the vehicle menu; the player stands still while it is open.
 func set_menu_open(on: bool) -> void:
-	if on == _menu.visible or (on and (flying or driving or pause.visible or chat.is_open())):
+	if on == _menu.visible or (on and (flying or driving or riding or pause.visible or chat.is_open())):
 		return
 	_menu.visible = on
 	_menu_status.text = ""
@@ -790,10 +845,12 @@ func set_pause_open(on: bool) -> void:
 ## The player, the fly camera or the vehicle driven take the keys and mouse unless a menu or the chat is open.
 func _update_controls() -> void:
 	var ui := _menu.visible or pause.visible or chat.is_open()
-	player.active = not ui and not flying and not driving
+	player.active = not ui and not flying and not driving and not riding
 	fly_camera.active = flying and not ui
 	if driving:
 		driving.controls = not ui
+	if riding:
+		riding.controls = not ui
 
 
 ## Opens the chat line (LAN games, Enter); chat.gd closes it on Enter or Esc.
@@ -873,13 +930,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("fly_camera"):
 		set_flying(not flying)
 	elif event.is_action_pressed("interact") and not flying and not driving:
-		var car := car_to_enter()
-		if car and net.active:
+		var car := riding if riding else car_to_enter()
+		if car and not riding and wants_passenger_seat(car):
+			ride_car(car)
+		elif car and net.active:
 			net.request_drive(car)
 		elif car:
 			enter_car(car)
-	elif event.is_action_pressed("exit_vehicle") and driving:
+	elif driving and event.is_action_pressed("interact" if driving is Horse else "exit_vehicle"):   # Space: the horse jumps
 		exit_car()
+	elif event.is_action_pressed("exit_vehicle") and riding:
+		leave_ride()
 	elif event.is_action_pressed("park_car") and not flying and not driving:
 		spawn_car_near_player()
 	elif event.is_action_pressed("inspect"):
@@ -1067,6 +1128,12 @@ func _update_help() -> void:
 				"wheel zoom (all the way in: cockpit) · %s cockpit\n" % k.call("toggle_view") + \
 				("%s (held) fire the guns · " % k.call("fire") if (driving as Biplane).armed else "") + \
 				"%s get out · %s" % [k.call("exit_vehicle"), common]
+	elif driving is Horse:
+		_help.text = ("RIDE · %s go (canter), with %s gallop · %s stop, then back up · %s/%s turn · " % [k.call("throttle"),
+				k.call("run"), k.call("brake"), k.call("steer_left"), k.call("steer_right")]) + \
+				"%s jump (the faster, the higher: fences!) · %s neigh\n" % [k.call("jump"), k.call("horn")] + \
+				("mouse look · wheel zoom (all the way in: rider's view) · %s rider's view · %s back on its feet · " % [
+				k.call("toggle_view"), k.call("reset_vehicle")]) + "%s get off · %s" % [k.call("interact"), common]
 	elif driving:
 		_help.text = ("DRIVE · %s throttle, %s brake then reverse, %s/%s steer · %s/%s turn signals · %s horn · " % [
 				k.call("throttle"), k.call("brake"), k.call("steer_left"), k.call("steer_right"), k.call("signal_left"),
@@ -1074,13 +1141,19 @@ func _update_help() -> void:
 				"mouse look · wheel zoom%s · %s back on wheels · %s%s %s\n%s" % [
 				" (all the way in: cab view)" if driving.has_cab() else "", k.call("reset_vehicle"),
 				"%s doors · %s gong · %s cab view · " % [k.call("doors"), k.call("bell"), k.call("toggle_view")] \
-				if driving.has_doors else "", k.call("exit_vehicle"),
+				if driving.has_doors else ("%s cab view · " % k.call("toggle_view") if driving.has_cab() else ""),
+				k.call("exit_vehicle"),
 				"leave the seat" if driving.has_doors else "get out", common]
+	elif riding:
+		_help.text = "PASSENGER · mouse look · wheel zoom (all the way in: cab view) · %s cab view · " % \
+				k.call("toggle_view") + "%s take the wheel (if nobody drives) · %s get out\n%s" % [k.call("interact"),
+				k.call("exit_vehicle"), common]
 	else:
 		_help.text = "WALK · click to capture the mouse · %s move · %s run · %s jump\n" % [moves, k.call("run"),
 				k.call("jump")] + \
 				"wheel zoom (all the way in: first person) · %s first/third person · %s get in the nearest car " % [
-				k.call("toggle_view"), k.call("interact")] + "(in the bus: near the driver seat)\n" + \
+				k.call("toggle_view"), k.call("interact")] + "(in the bus: near the driver seat; fire truck: " + \
+				"from its right side, the passenger seat)\n" + \
 				"%s park a car here · %s vehicle menu · %s" % [k.call("park_car"), k.call("vehicle_menu"), common]
 	if driving is FireTruck:
 		_help.text += "\n%s (held) water cannon, aimed where you look · %s siren and beacons" % [k.call("fire"), k.call("bell")]

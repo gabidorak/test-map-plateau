@@ -3,7 +3,8 @@ extends Node
 ## high-level multiplayer, the host being the server; the other peers reach each other through it.
 ## - Players: each peer sends its player PLAYER_SEND_RATE times a second (game.net_player_state: position, body facing,
 ##   driving or not). A player standing in a vehicle sends its position in that vehicle's frame, so on every screen it
-##   stays inside it however that vehicle's motion is smoothed there. Others show it as a remote_player.gd, which the
+##   stays inside it however that vehicle's motion is smoothed there; one in a vehicle's passenger seat (the fire
+##   truck's) sends flag 2, and that vehicle shows them seated. Others show it as a remote_player.gd, which the
 ##   vehicles they simulate collide with.
 ## - Vehicles: each one is simulated by a single peer, its owner: the one who parked it, then whoever drives it (the
 ##   host takes over the vehicles of a player who leaves). The other peers pose a frozen copy from the owner's states
@@ -42,7 +43,7 @@ signal chat(id: int, text: String)          # player `id` said `text`
 const PORT := 7777                          # the host tries the next ones when it is taken
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
-const PROTOCOL := 5                         # bump when the messages change (build_id: other builds are refused anyway)
+const PROTOCOL := 6                         # bump when the messages change (build_id: other builds are refused anyway)
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const IDLE_SEND_EVERY := 0.5                # s, states of vehicles at rest
@@ -365,6 +366,7 @@ func _add_remote(id: int) -> void:
 
 func _remove_remote(id: int) -> void:
 	if _remotes.has(id):
+		(_remotes[id] as RemotePlayer).sit_in(null)
 		(_remotes[id] as Node).queue_free()
 	_remotes.erase(id)
 	_player_tracks.erase(id)
@@ -382,7 +384,8 @@ func _player_state(t: float, s: Array) -> void:
 
 
 ## Shows remote player `id` from its states around now: [vehicle net id or "", section (0 front, 1 rear), position
-## (in that section's frame, else global), body yaw (relative to the section's), flags (1 hidden)].
+## (in that section's frame, else global), body yaw (relative to the section's), flags (1 hidden, 2 in the vehicle's
+## passenger seat)].
 func _pose_remote(id: int, a: Array, b: Array, w: float) -> void:
 	var r: RemotePlayer = _remotes[id]
 	if a[0] != b[0]:                        # got in or out of a vehicle in between: no blending across frames
@@ -396,6 +399,7 @@ func _pose_remote(id: int, a: Array, b: Array, w: float) -> void:
 		if car == null:
 			shown = false
 	r.visible = shown
+	r.sit_in(car if b[4] & 2 else null)
 	if car:
 		r.show_in(car.trailer if b[1] == 1 and car.trailer else car, pos, yaw)
 	else:

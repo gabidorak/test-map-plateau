@@ -14,6 +14,10 @@ extends VehicleBody3D
 ## opens and closes with O, an interior that carries the player (carries()), a driver seat and a cab view (V, or
 ## the mouse wheel zoomed all the way in, like Roblox). The driver's arms reach to hands on the steering wheel, which
 ## turns with the steering (STEERING_RATIO); the hands follow it up to HAND_TURN, then let it slide.
+## A cab without a walkable interior (the fire truck: its fittings file's "cab", see _cab_layout) has the same driver
+## seat, steering wheel and cab view, and can have a passenger seat: the player sitting there (set_riding, game.gd)
+## looks around with the car's cameras (the cab view from the passenger's eye); another player of a LAN game sitting
+## there shows as a look-alike in their colour (show_passenger).
 ## Steering lock is large at low speed and fades with the speed. Drifting (X held) is a handbrake: the rear wheels (the
 ## non-steering ones, the rear section's too) lose most of their grip and drag a little, so the tail swings out under
 ## power; the steering keeps more lock for countersteering, and the grip comes back gradually on release. Engine, indicator and door sounds come
@@ -43,21 +47,23 @@ const Prefs = preload("res://scripts/settings.gd")
 const KENNEY_WHEELS := ["wheel-front-left", "wheel-front-right", "wheel-back-left", "wheel-back-right"]
 ## Per model: file in assets/cars, scale, body mesh node, wheel nodes (front left, front right, back
 ## left, back right), credit, mass (kg; engine, brakes and suspension scale with it), power (engine
-## factor), max_speed (m/s), max_steer (rad at walking pace), layout (json next to the model), sound
-## (vehicle_audio kind), traction_from (index of the first driven wheel; all drive by default), trailer_mass (kg,
+## factor), max_speed (m/s), max_steer (rad at walking pace), steer_fade_speed (m/s, the lock is halved there),
+## layout (json next to the model), sound (vehicle_audio kind), traction_from (index of the first driven wheel; all drive by default), trailer_mass (kg,
 ## rear section of an articulated vehicle), label (name in the vehicle menu, see display_name), plane (built and flown
 ## by scripts/plane.gd, which extends this script, instead), guns (a plane's machine guns), fittings (the fire truck's
-## lamps and water cannon, json next to the model: scripts/fire_truck.gd, which extends this script, drives it). Missing
+## lamps and water cannon, json next to the model: scripts/fire_truck.gd, which extends this script, drives it), horse
+## (ridden instead: scripts/horse.gd, which extends this script). Missing
 ## keys take the Kenney Car Kit values (scale 1.5: ~2.8 m -> ~4.2 m); the wheels beyond the first four are a third axle.
 const SPECS := {
 	"bus-idfm": {"label": "IDFM bus (12 m)", "file": "bus_idfm.glb", "scale": 1.0,
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
-			"mass": 12000.0, "power": 0.6, "max_speed": 38.0, "max_steer": 0.8, "layout": "bus_idfm.json",
+			"mass": 12000.0, "power": 0.6, "max_speed": 38.0, "max_steer": 0.8, "steer_fade_speed": 11.0,
+			"layout": "bus_idfm.json",
 			"sound": "bus", "credit": "Iveco Urbanway, IDFM livery, built by blender/vehicles/build_bus.py"},
 	"bus-idfm-artic": {"label": "Articulated bus (18 m)", "file": "bus_idfm_artic.glb", "scale": 1.0,
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_middle_left", "wheel_middle_right"],
 			"traction_from": 2, "mass": 10000.0, "trailer_mass": 7000.0, "power": 0.6, "max_speed": 36.0,
-			"max_steer": 0.8, "layout": "bus_idfm_artic.json", "sound": "bus",
+			"max_steer": 0.8, "steer_fade_speed": 11.0, "layout": "bus_idfm_artic.json", "sound": "bus",
 			"credit": "Iveco Urbanway 18 m articulated, IDFM livery, built by blender/vehicles/build_bus.py"},
 	"kaykit-hatchback": {"label": "Hatchback", "file": "kaykit_hatchback.glb", "scale": 5.0, "body": "car_hatchback",
 			"wheels": ["car_hatchback_wheel_front_left", "car_hatchback_wheel_front_right",
@@ -69,14 +75,16 @@ const SPECS := {
 	"fire-truck": {"label": "Fire truck", "file": "fire_truck.glb", "scale": 1.0,
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_middle_left", "wheel_middle_right",
 				"wheel_rear_left", "wheel_rear_right"],
-			"mass": 16000.0, "power": 0.32, "max_speed": 28.0, "max_steer": 0.6, "fittings": "fire_truck.json",
+			"mass": 16000.0, "power": 0.32, "max_speed": 28.0, "max_steer": 0.8, "steer_fade_speed": 11.0,
+			"fittings": "fire_truck.json",
 			"sound": "truck", "credit": "6x6 airport crash tender, built by blender/vehicles/build_fire_truck.py"},
 	"biplane": {"label": "Biplane", "plane": true, "credit": "toy biplane built by scripts/plane.gd"},
 	"biplane-armed": {"label": "Armed biplane", "plane": true, "guns": true,
 			"credit": "toy fighter biplane built by scripts/plane.gd"},
+	"horse": {"label": "Horse", "horse": true, "credit": "toy horse built by scripts/horse.gd"},
 }
 const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "taxi", "suv", "police", "hatchback-sports", "van",
-		"sedan-sports", "suv-luxury", "delivery", "ambulance", "fire-truck", "biplane", "biplane-armed"]
+		"sedan-sports", "suv-luxury", "delivery", "ambulance", "fire-truck", "biplane", "biplane-armed", "horse"]
 const REST_LENGTH := 0.2
 const BLINK := 0.75                         # s, indicator period
 const DOOR_TIME := 1.6                      # s to open or close
@@ -122,6 +130,9 @@ var has_doors := false
 var interior := AABB()                      # walkable volume in the car frame (size 0: not walkable)
 var driver_seat := Vector3.ZERO             # car frame
 var driver_exit := Vector3.ZERO             # car frame, in the aisle beside the driver seat
+var passenger_seat := Vector3.ZERO          # car frame, only when has_passenger_seat
+var has_passenger_seat := false
+var riding := false                         # the player sits in the passenger seat (set_riding)
 var audio: VehicleAudio
 var inside: StaticBody3D                    # walkable hull, only with a layout
 var door_centres: Array[Vector3] = []       # car frame, doorway centre on the floor
@@ -141,7 +152,9 @@ var smoke_size := 1.0
 
 var _cam_pivot: Node3D
 var _arm: SpringArm3D
-var _cab_camera: Camera3D                   # driver's eye view (V), only with a layout
+var _cab_camera: Camera3D                   # driver's (or passenger's) eye view (V), only with a cab
+var _driver_eye := Vector3.ZERO             # car frame
+var _passenger_eye := Vector3.ZERO
 var _cam_zoom := 7.5                        # chase camera distance the arm eases to
 var _zoom_range := Vector2(3.0, 20.0)       # closest (zooming in past it: cab view) and furthest
 var _follow_yaw := 0.0
@@ -187,6 +200,9 @@ var _bellows_rel := Transform3D()           # rear section in the car frame when
 var _joint_walls: Array[CollisionShape3D] = []    # per segment: left wall, right wall, roof
 var _bellows_hull: StaticBody3D             # walls of the walkable passage through the bellows
 var _skin: StandardMaterial3D               # the driver look-alike's colour
+var _passenger: MeshInstance3D              # look-alike in the passenger seat
+var _passenger_skin: StandardMaterial3D
+var _passenger_taken := false               # LAN games: another player sits in the passenger seat
 var _remote_braking := false
 var _smoke: WreckSmoke                      # made at the first smoke
 var _broken_t := 0.0                        # s since it broke
@@ -208,6 +224,7 @@ func setup(model: String) -> void:
 	mass = float(spec.get("mass", 1200.0))
 	max_speed = float(spec.get("max_speed", max_speed))
 	max_steer = float(spec.get("max_steer", max_steer))
+	steer_fade_speed = float(spec.get("steer_fade_speed", steer_fade_speed))
 	_configure_body(self)
 	set_meta("plateau", {"type": "car", "id": "%s vehicle (%s)" % [model, spec.get("credit", "Kenney Car Kit, CC0")]})
 	var layout: Dictionary = {}
@@ -259,6 +276,9 @@ func setup(model: String) -> void:
 			else Vector3(box.get_center().x, box.position.y + box.size.y * 0.55, box.end.z - box.size.z * 0.22)
 	if not layout.is_empty():
 		_build_layout(m, layout)
+	var cab := _cab_layout(layout)
+	if cab.has("driver_seat"):
+		_build_cab(m, cab)
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass = Vector3(0.0, wheel_y - com_drop, 0.0 if trailer else box.get_center().z)
 	_build_lamps(m, box, layout)
@@ -268,14 +288,20 @@ func setup(model: String) -> void:
 	audio.setup(spec.get("sound", "car"))
 	add_child(audio)
 
+	_build_chase_camera(maxf(camera_distance, half_extents.z * 2.1), box.end.y + 0.5)
+
+
+## Chase camera: a top-level pivot `height` above the car origin, with a spring arm `length` long (the mouse wheel
+## zooms it from 0.45 to 2.5 times that) holding `camera`.
+func _build_chase_camera(length: float, height: float) -> void:
 	_cam_pivot = Node3D.new()
 	_cam_pivot.top_level = true
 	add_child(_cam_pivot)
 	_arm = SpringArm3D.new()
-	_arm.spring_length = maxf(camera_distance, half_extents.z * 2.1)
-	_cam_zoom = _arm.spring_length
-	_zoom_range = Vector2(0.45, 2.5) * _cam_zoom
-	_cam_height = box.end.y + 0.5
+	_arm.spring_length = length
+	_cam_zoom = length
+	_zoom_range = Vector2(0.45, 2.5) * length
+	_cam_height = height
 	_arm.collision_mask = Layers.SOLID
 	var arm_shape := SphereShape3D.new()
 	arm_shape.radius = 0.2
@@ -418,7 +444,7 @@ func _add_box(to: Node3D, centre: Vector3, size: Vector3) -> CollisionShape3D:
 	return cs
 
 
-## Collision boxes, doors, interior and driver positions from the model's layout file (glTF frame, so
+## Collision boxes, doors, interior and the driver's way out of the seat from the model's layout file (glTF frame, so
 ## shifted like the model); for an articulated vehicle also the rear section's, the hitch, the turntable floor and
 ## the bellows.
 func _build_layout(m: Node3D, layout: Dictionary) -> void:
@@ -444,9 +470,26 @@ func _build_layout(m: Node3D, layout: Dictionary) -> void:
 		inside.add_child(cs)
 		_build_bellows(layout["bellows"], m.scale.x, off, floor_y)
 	has_doors = not _doors.is_empty()
-	driver_seat = v.call(layout["driver_seat"])
 	driver_exit = v.call(layout["driver_exit"])
-	_steering_wheel = m.find_child(layout.get("steering_wheel", ""), true, false) as Node3D
+
+
+## The model's cab (driver seat and eye, steering wheel, passenger seat and eye; see _build_cab): a walkable vehicle's
+## layout has them.
+func _cab_layout(layout: Dictionary) -> Dictionary:
+	return layout
+
+
+## Driver seat and eye, steering wheel and passenger seat from `cab` (glTF frame, so shifted like the model `m`): the cab
+## camera and the look-alikes of the driver and the passenger.
+func _build_cab(m: Node3D, cab: Dictionary) -> void:
+	var v := func(a: Array) -> Vector3: return Vector3(a[0], a[1], a[2]) * m.scale + m.position
+	driver_seat = v.call(cab["driver_seat"])
+	_driver_eye = v.call(cab["driver_eye"])
+	has_passenger_seat = cab.has("passenger_seat")
+	if has_passenger_seat:
+		passenger_seat = v.call(cab["passenger_seat"])
+		_passenger_eye = v.call(cab["passenger_eye"])
+	_steering_wheel = m.find_child(cab.get("steering_wheel", ""), true, false) as Node3D
 	if _steering_wheel:
 		_steering_rest = _steering_wheel.transform
 		var t := _in_car(_steering_wheel)
@@ -461,7 +504,7 @@ func _build_layout(m: Node3D, layout: Dictionary) -> void:
 	_cab_camera.fov = 75.0
 	_cab_camera.near = 0.05
 	_cab_camera.far = 1500.0
-	_cab_camera.position = v.call(layout["driver_eye"])
+	_cab_camera.position = _driver_eye
 	_cab_camera.rotation = Vector3(-0.27, PI, 0.0)
 	add_child(_cab_camera)
 	_build_driver()
@@ -623,6 +666,16 @@ func _build_driver() -> void:
 	_driver_body.mesh = capsule
 	_driver_body.position = driver_seat + Vector3(0.0, 0.62, 0.0)
 	_driver_dummy.add_child(_driver_body)
+	if has_passenger_seat:
+		_passenger_skin = skin.duplicate()
+		var seated := capsule.duplicate() as CapsuleMesh
+		seated.material = _passenger_skin
+		_passenger = MeshInstance3D.new()
+		_passenger.name = "Passenger"
+		_passenger.mesh = seated
+		_passenger.position = passenger_seat + Vector3(0.0, 0.62, 0.0)
+		_passenger.visible = false
+		add_child(_passenger)
 	if _steering_wheel == null:
 		return
 	var arm := CylinderMesh.new()               # along +Y from the shoulder (bottom) to the hand (top)
@@ -759,17 +812,53 @@ func set_driving(on: bool) -> void:
 		_driver_dummy.visible = on
 	if on:
 		audio.engine_on = not broken
-		_follow_yaw = _heading()
-		_look_yaw = 0.0
-		_reverse_view = false
-		_reverse_t = 0.0
-		_update_camera(1.0)
-		set_cab_view(cab_view)
+		_reset_camera()
 		_update_steering()
 	else:
 		audio.engine_on = has_doors and not broken      # a bus keeps idling for its passengers
 		audio.horn = false
 		set_indicator(0)
+
+
+## The player sits in the passenger seat (on, their look-alike in `color` while the chase camera shows the car) or gets
+## up: the car's cameras show them the ride, the cab view from the passenger's eye.
+func set_riding(on: bool, color := Color(1, 0.55, 0.2)) -> void:
+	riding = on
+	_cab_camera.position = _passenger_eye if on else _driver_eye
+	if on:
+		_passenger_skin.albedo_color = color
+		_reset_camera()
+	_update_passenger()
+
+
+## LAN games: another player sits in the passenger seat (on: their look-alike in `color`) or nobody does.
+func show_passenger(on: bool, color := Color(1, 0.55, 0.2)) -> void:
+	if not has_passenger_seat:
+		return
+	_passenger_taken = on
+	if on:
+		_passenger_skin.albedo_color = color
+	_update_passenger()
+
+
+## True while another player sits in the passenger seat.
+func passenger_taken() -> bool:
+	return _passenger_taken
+
+
+func _update_passenger() -> void:
+	if _passenger:
+		_passenger.visible = _passenger_taken or (riding and not cab_view)
+
+
+## Chase camera behind the car, the mouse look reset, and this car's camera (chase or cab) current.
+func _reset_camera() -> void:
+	_follow_yaw = _heading()
+	_look_yaw = 0.0
+	_reverse_view = false
+	_reverse_t = 0.0
+	_update_camera(1.0)
+	set_cab_view(cab_view)
 
 
 ## LAN games: someone on another peer drives (on) or nobody does: shows the driver look-alike in `color`.
@@ -847,12 +936,13 @@ static func _net_pose(a: Transform3D, b: Transform3D, w: float) -> Transform3D:
 	return Transform3D(b.basis, b.origin + (b.origin - a.origin) * (w - 1.0))
 
 
-## Driver's eye view (true) or chase camera; only vehicles with a layout have a cab.
+## Driver's (or passenger's) eye view (true) or chase camera; only vehicles with a cab have one.
 func set_cab_view(on: bool) -> void:
 	cab_view = on and _cab_camera != null
 	if _driver_body:
-		_driver_body.visible = not cab_view
-	if driving:
+		_driver_body.visible = not (cab_view and driving)
+	_update_passenger()
+	if driving or riding:
 		(_cab_camera if cab_view else camera).make_current()
 
 
@@ -963,7 +1053,7 @@ func _set_scorched(on: bool) -> void:
 	for mi: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
 		var m := mi.material_override as BaseMaterial3D
 		if mi.top_level or (m and m.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED) \
-				or (_driver_dummy and _driver_dummy.is_ancestor_of(mi)):
+				or (_driver_dummy and _driver_dummy.is_ancestor_of(mi)) or mi == _passenger:
 			continue
 		mi.material_overlay = _soot if on else null
 
@@ -1008,7 +1098,7 @@ func _heading() -> float:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not driving or not controls:
+	if not (driving or riding) or not controls:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var look: Vector2 = event.screen_relative * sensitivity * Prefs.mouse_scale
@@ -1018,6 +1108,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 		zoom((1.0 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1.0) * (event.factor if event.factor > 0.0 else 1.0))
 		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("toggle_view"):
+		set_cab_view(not cab_view)
+		get_viewport().set_input_as_handled()
+	elif not driving:
+		return                                  # the passenger only looks around
 	elif event.is_action_pressed("reset_vehicle"):
 		_put_back_on_wheels()
 		get_viewport().set_input_as_handled()
@@ -1029,9 +1124,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("doors"):
 		set_doors(not doors_open)
-		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("toggle_view"):
-		set_cab_view(not cab_view)
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("bell") and audio.kind == "bus":
 		ring_bell()
@@ -1214,7 +1306,7 @@ func _update_doors(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
-	if driving:
+	if driving or riding:
 		_update_camera(delta)
 
 

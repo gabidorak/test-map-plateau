@@ -1,6 +1,7 @@
 extends Node3D
 ## Another player of a LAN game (scripts/net.gd moves it): the player's capsule and nose in their colour, with their
-## nickname above the head. Hidden while they drive (the vehicle shows its driver).
+## nickname above the head. Hidden while they drive or sit in a passenger seat (the vehicle shows its driver and its
+## passenger).
 ## The vehicles simulated here collide with it (a kinematic capsule on the REMOTE_PLAYER layer, frictionless so it
 ## does not hold back a car it stands on): they stop against it instead of driving through. Not the walkable vehicle
 ## the player stands in, nor one they walk in or out of through its open doors: there their own peer walks through
@@ -19,6 +20,8 @@ var _ignored := {}                          # vehicle (car.gd) -> true while its
 var _frame: Node3D                          # the vehicle section the player stands in (show_in), or null
 var _local_pos := Vector3.ZERO              # feet in _frame's frame
 var _local_yaw := 0.0                       # body facing relative to _frame's
+var _color := Color.WHITE
+var _seat: Node3D                           # the vehicle (car.gd) whose passenger seat they sit in, or null
 
 
 func setup(nickname: String, color: Color) -> void:
@@ -44,6 +47,7 @@ func setup(nickname: String, color: Color) -> void:
 	collider.add_child(_shape)
 	add_child(collider)
 	set_color(_body, color)
+	_color = color
 	label = Label3D.new()
 	label.text = nickname
 	label.position = Vector3(0.0, 2.15, 0.0)
@@ -85,6 +89,17 @@ func _follow_frame() -> void:
 		return
 	global_transform = Transform3D(Basis.IDENTITY, _frame.global_transform * _local_pos)
 	_body.rotation.y = _local_yaw + _frame.global_rotation.y
+
+
+## Sits the player in the passenger seat of `car` (car.gd, which shows them there) or nowhere (null).
+func sit_in(car: Node3D) -> void:
+	if car == _seat:
+		return
+	if is_instance_valid(_seat):
+		_seat.show_passenger(false)
+	_seat = car
+	if car:
+		car.show_passenger(true, _color)
 
 
 ## Collides (`on`) or not (hidden: driving) with the vehicles; never with `in_car`, the vehicle the player stands

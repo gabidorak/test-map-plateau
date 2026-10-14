@@ -15,6 +15,9 @@ extends SceneTree
 ## Damage: rounds of the host's hit the client's taxi (net.gd hit_vehicle): it breaks on the client, which simulates it,
 ## and smokes black on both; then the host's fire truck water hoses it (net.gd water_vehicle): its fire goes out on the
 ## client, and on both it runs again.
+## Passenger seat: after the bus, the client sits in the passenger seat of the host's fire truck (E from its right side);
+## the host sees its look-alike seated there (the player itself hidden) while it drives the truck a little, the client
+## rides along in it, gets out with Space, and the seat is empty again on the host.
 ## Exit code 1 on failure. No --fixed-fps: the states are stamped with the real clock.
 
 const Layers = preload("res://scripts/physics_layers.gd")
@@ -158,6 +161,8 @@ func _run_host() -> void:
 	bus.place(Transform3D(Basis(Vector3.UP, atan2(BUS_ROAD_DIR.x, -BUS_ROAD_DIR.y)), Vector3(BUS_ROAD.x, g + 0.3, -BUS_ROAD.y)))
 	_check(bus.net_id != "", "the bus has a network id (%s)" % bus.net_id)
 	_check(_main.spawn_car_near_player("bus-idfm-artic") != null, "an articulated bus parked too")
+	var truck: Node = _main.spawn_car_near_player("fire-truck")
+	_check(truck != null, "a fire truck parked too")
 	_check(await _until(func() -> bool: return net.players.size() == 2, 90.0), "the client joined")
 	await _jump_for_client()
 	var guest: int = net.players.keys().filter(func(id: int) -> bool: return id != 1)[0]
@@ -165,7 +170,7 @@ func _run_host() -> void:
 			"the client's chat message is here")
 	net.say("hi guest")
 	_check(net.ping(guest) >= 0 and net.ping(1) == 0, "pings known here (guest %d ms)" % net.ping(guest))
-	_check(await _until(func() -> bool: return net.cars.size() == 7, 30.0), "the client's taxi is here (%d vehicles)" % net.cars.size())
+	_check(await _until(func() -> bool: return net.cars.size() == 8, 30.0), "the client's taxi is here (%d vehicles)" % net.cars.size())
 	var taxi: Node = null
 	for id: String in net.cars:
 		if net.cars[id].model_name == "taxi":
@@ -238,6 +243,28 @@ func _run_host() -> void:
 	_main.breakables.bend_tree(k, Vector3(3.0, 0.0, 0.0))
 	net.broke("bend", k, Vector3(3.0, 0.0, 0.0))
 	print("bent tree %d for the client" % k)
+
+	# the client sits in the fire truck's passenger seat while we drive it a little
+	var seated := func() -> bool: return truck._passenger.visible and not remote.visible
+	_check(await _until(seated, 40.0), "the client sits in the fire truck's passenger seat (its look-alike there, the player hidden)")
+	_check(truck._passenger_skin.albedo_color.is_equal_approx(net.player_color(guest)), "in the client's colour")
+	net.request_drive(truck)
+	_check(_main.driving == truck, "the host drives the fire truck")
+	var t_start: Vector3 = truck.global_position
+	var seated_frames := 0
+	_key(KEY_W, true)
+	for i in 70:
+		await physics_frame
+		seated_frames += int(seated.call())
+	_key(KEY_W, false)
+	_key(KEY_S, true)
+	await _until(func() -> bool: return absf(truck.speed()) < 0.3, 10.0)
+	_key(KEY_S, false)
+	_check(seated_frames == 70 and truck.global_position.distance_to(t_start) > 2.0,
+			"they stay seated as it drives %.1f m (%d/70 frames)" % [truck.global_position.distance_to(t_start), seated_frames])
+	_main.exit_car()
+	_check(await _until(func() -> bool: return not truck._passenger.visible and remote.visible, 30.0),
+			"the client got out: the seat is empty, the player shown again")
 
 	# the client takes one of our cars
 	var taken := func() -> Node:
@@ -381,8 +408,8 @@ func _run_client() -> void:
 	await process_frame
 	await process_frame
 	_check(not list.visible, "and hides them once released")
-	_check(await _until(func() -> bool: return _main.cars.size() == 6 and _off_road(_bus()) < 3.0, 30.0),
-			"the host's 6 vehicles are here (%d), its bus on Nouvelle Voie" % _main.cars.size())
+	_check(await _until(func() -> bool: return _main.cars.size() == 7 and _off_road(_bus()) < 3.0, 30.0),
+			"the host's 7 vehicles are here (%d), its bus on Nouvelle Voie" % _main.cars.size())
 	for c: Node in _main.cars:
 		if c.model_name == "bus-idfm-artic":
 			_check(c.remote and c.freeze and c.trailer.freeze, "the articulated bus is a frozen copy, both sections")
@@ -431,6 +458,31 @@ func _run_client() -> void:
 		await physics_frame
 		tree_bent = _main.breakables.bent.has(k)
 	_check(tree_bent, "the tree the host bent bends here")
+
+	# ride in the passenger seat of the host's fire truck while the host drives it
+	var truck: Node = _main.cars.filter(func(c: Node) -> bool: return c.model_name == "fire-truck")[0]
+	player.teleport(truck.to_global(Vector3(-truck.half_extents.x - 1.0, 0.3, 1.0)))
+	await _frames(10)
+	_press(KEY_E)
+	await _frames(2)
+	_check(_main.riding == truck and truck.riding and not player.visible, "E from its right side: in the fire truck's passenger seat")
+	var r_start: Vector3 = truck.global_position
+	var with_it := true                     # our view stays in the truck
+	t0 = Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < 30000:
+		await physics_frame
+		var cam := root.get_camera_3d()
+		with_it = with_it and (cam == truck.camera or cam == truck._cab_camera)
+		if truck.global_position.distance_to(r_start) > 2.0 and absf(truck.speed()) < 0.3 \
+				and net.driver_of[truck.net_id] == 0:
+			break
+	_check(truck.global_position.distance_to(r_start) > 2.0 and with_it,
+			"rode %.1f m in it as the host drove, seen from the truck" % truck.global_position.distance_to(r_start))
+	_press(KEY_SPACE)
+	await _frames(3)
+	_check(_main.riding == null and player.visible and truck.to_local(player.global_position).x < 0.0,
+			"Space: out on its right side")
+	await _frames(60)
 
 	# out of the bus, then take one of the host's cars
 	_main.spawn_at(Vector2(-34, 55.0))
