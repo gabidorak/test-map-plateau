@@ -2,7 +2,8 @@
 // Vertex COLOR (blender/toylib.py) = (toy colour in sRGB, ambient occlusion). One material per slot, told
 // apart by `mode`: 0 toy, 1 tint (colour x INSTANCE_CUSTOM.rgb), 2 glow (lamp diffusers, ad panels),
 // 3 car signal lenses, 4 pedestrian signal lenses. MultiMesh INSTANCE_CUSTOM = (tint in sRGB, phase):
-// signals run a 30 s cycle offset by the phase (car: green, amber, red; pedestrians green while cars are red).
+// signals run a 30 s cycle offset by the phase (car: green, amber, red; pedestrians green while cars are red), on
+// the game's shared clock: the global `signal_clock` (scripts/traffic.gd, which runs the same cycle for the bot buses).
 shader_type spatial;
 render_mode cull_back, diffuse_burley;
 
@@ -12,6 +13,7 @@ uniform int mode = 0;
 uniform float glow_energy = 1.2;
 uniform float signal_energy = 4.0;
 uniform float cycle = 30.0;
+global uniform float signal_clock;
 uniform float ao_strength = 0.55;
 
 varying vec4 data;
@@ -46,7 +48,7 @@ void fragment() {
 		ALBEDO = c;
 		EMISSION = c * glow_energy;
 	} else if (mode >= 3) {
-		bool on = lit(data.rgb, fract(TIME / cycle + inst.a), mode == 4);
+		bool on = lit(data.rgb, fract(signal_clock / cycle + inst.a), mode == 4);
 		ALBEDO = on ? c : c * 0.18;
 		EMISSION = on ? c * signal_energy : vec3(0.0);
 		ROUGHNESS = 0.2;
