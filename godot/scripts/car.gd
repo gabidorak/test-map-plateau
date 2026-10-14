@@ -3,7 +3,7 @@ extends VehicleBody3D
 ## model's four wheel nodes become VehicleWheel3D, the body gets a box collider. Call setup() before
 ## adding it to the tree. While `driving` (keys: the Settings actions, scripts/settings.gd; defaults on physical
 ## positions): W/S throttle and brake/reverse, A/D steer, Q/E turn signals (A/E on AZERTY), G (held) sounds the horn,
-## X (held) drifts, B rings a bus's bell, R puts the car back on its wheels, the mouse orbits the chase camera
+## X (held) drifts, B sounds a bus's RATP gong, R puts the car back on its wheels, the mouse orbits the chase camera
 ## (it eases back behind the car while moving, in front of it while reversing; hold the right button to keep it).
 ## game.gd handles getting in (E) and out (Space). The models face +Z, which is also VehicleBody3D's
 ## forward; their left side is +X.
@@ -1038,7 +1038,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-## One strike of the bus bell (counted in `bells` for the other peers).
+## One RATP gong of the bus (counted in `bells` for the other peers).
 func ring_bell() -> void:
 	bells += 1
 	audio.ring()
