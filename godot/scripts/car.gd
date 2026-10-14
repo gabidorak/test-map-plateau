@@ -33,6 +33,10 @@ extends VehicleBody3D
 ## LAN games (scripts/net.gd): a vehicle another peer simulates is `remote`, its bodies frozen kinematic and posed from
 ## that peer's states (apply_net_state); the wheels still turn and steer, and lamps, doors, horn and sound follow the
 ## states.
+## Bot drivers (scripts/bus_bot.gd, the bot buses of scripts/traffic.gd): a vehicle with a `pilot` takes its pedals,
+## steering, horn and indicators from it instead of the keys (pilot.drive), on the peer simulating it; its states tell
+## the others (bot_driven: the driver look-alike shows, nobody can take the wheel). A bot bus waiting to come back in
+## at the map edge is `stowed`: hidden, out of the physics, everywhere.
 ## Damage (the armed biplane's rounds, scripts/plane_guns.gd): each vehicle has `health` (HEALTH for a 1,200 kg car,
 ## more for heavier ones); hits only count on the peer simulating it (damage), the others follow its states. Under
 ## half of it, grey smoke comes out of the engine; at 0 it is `broken`: a boom and a ball of fire, the engine dies, the
@@ -208,6 +212,12 @@ var _smoke: WreckSmoke                      # made at the first smoke
 var _broken_t := 0.0                        # s since it broke
 var _doused := 0.0                          # s of water on it since it broke
 var _net_seen := false                      # LAN, remote vehicle: a state came already (no boom for a wreck on joining)
+var pilot: Object                           # bot driver (scripts/bus_bot.gd) on the peer simulating it, or null
+var bot_driven := false                     # LAN, remote vehicle: a bot drives it (its states say so)
+var stowed := false                         # hidden and out of the physics (a bot bus off the map, set_stowed)
+var _braking := false                       # brake lamps on (the driver's or the pilot's pedal)
+var _stowed_layers := Vector2i.ZERO         # collision layer and mask of the bodies before stowing
+const BOT_COLOR := Color(0.16, 0.3, 0.55)   # the bot drivers' uniform
 
 static var _soot: StandardMaterial3D        # drawn over a broken vehicle's meshes
 
@@ -796,6 +806,11 @@ func bodies() -> Array[VehicleBody3D]:
 	return out
 
 
+## Where the rear section is hinged, in the car frame (articulated vehicles).
+func hitch() -> Vector3:
+	return _hitch
+
+
 ## Articulation angle in radians (the rear section's yaw relative to this one; 0 straight or not articulated).
 func articulation() -> float:
 	if trailer == null:
@@ -863,9 +878,43 @@ func _reset_camera() -> void:
 
 ## LAN games: someone on another peer drives (on) or nobody does: shows the driver look-alike in `color`.
 func show_driver(on: bool, color := Color(1, 0.55, 0.2)) -> void:
-	set_driver_color(color)
+	set_driver_color(BOT_COLOR if is_bot() else color)
 	if _driver_dummy:
-		_driver_dummy.visible = on or driving
+		_driver_dummy.visible = on or driving or is_bot()
+
+
+## True when a bot drives it (here or, for a remote vehicle, on the peer simulating it).
+func is_bot() -> bool:
+	return pilot != null or bot_driven
+
+
+## A bot takes the wheel (`p`: scripts/bus_bot.gd) or leaves it (null).
+func set_pilot(p: Object) -> void:
+	pilot = p
+	for b in bodies():
+		b.sleeping = false
+	show_driver(false)
+	audio.engine_on = (p != null or driving or has_doors) and not broken
+
+
+## Hidden and out of the physics (on), or back (off). Frozen while stowed; a remote copy stays frozen afterwards.
+func set_stowed(on: bool) -> void:
+	if on == stowed:
+		return
+	stowed = on
+	visible = not on
+	for b in bodies():
+		if on:
+			_stowed_layers = Vector2i(b.collision_layer, b.collision_mask)
+			b.collision_layer = 0
+			b.collision_mask = 0
+		else:
+			b.collision_layer = _stowed_layers.x
+			b.collision_mask = _stowed_layers.y
+		b.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		b.freeze = on or remote
+		b.visible = not on
+	audio.engine_on = not on and (is_bot() or driving or has_doors) and not broken
 
 
 func set_driver_color(color: Color) -> void:
@@ -892,10 +941,10 @@ func set_remote(on: bool) -> void:
 
 
 ## LAN games: this vehicle's state for the other peers: [pose, rear section pose, steering, pedal, flags (1 doors
-## open, 2 someone drives, 4 braking, 8 horn, 16 bell strikes are odd), indicator, health].
+## open, 2 someone drives, 4 braking, 8 horn, 16 bell strikes are odd, 32 a bot drives, 64 stowed), indicator, health].
 func net_state() -> Array:
-	var flags := (1 if doors_open else 0) | (2 if driving else 0) | (4 if driving and _throttle < 0.0 else 0) \
-			| (8 if audio.horn else 0) | (16 if bells & 1 else 0)
+	var flags := (1 if doors_open else 0) | (2 if driving or pilot else 0) | (4 if _braking else 0) \
+			| (8 if audio.horn else 0) | (16 if bells & 1 else 0) | (32 if pilot else 0) | (64 if stowed else 0)
 	return [global_transform, trailer.global_transform if trailer else Transform3D(), steering, _throttle, flags, indicator,
 			health]
 
@@ -916,13 +965,17 @@ func apply_net_state(a: Array, b: Array, w: float) -> void:
 	_throttle = b[3]
 	var flags: int = b[4]
 	_remote_braking = flags & 4 != 0
+	if bot_driven != (flags & 32 != 0):
+		bot_driven = flags & 32 != 0
+		show_driver(false)
+	set_stowed(flags & 64 != 0)
 	set_doors(flags & 1 != 0)
 	if b[5] != indicator:
 		set_indicator(b[5])
 	if b.size() > 6:
 		set_health(b[6], _net_seen)
 	_net_seen = true
-	audio.engine_on = (flags & 2 != 0 or has_doors) and not broken
+	audio.engine_on = (flags & 2 != 0 or has_doors) and not broken and not stowed
 	audio.horn = flags & 8 != 0
 	var bell := 1 if flags & 16 else 0
 	if _net_bell >= 0 and bell != _net_bell:
@@ -1147,15 +1200,27 @@ func _physics_process(delta: float) -> void:
 		return
 	var throttle := 0.0
 	var steer_in := 0.0
+	var piloted := pilot != null and not driving
+	var pedals := [0.0, 0.0]                # the pilot's throttle and brake, 0..1 each
 	if driving and controls:
 		throttle = Input.get_axis("brake", "throttle")
 		steer_in = Input.get_axis("steer_right", "steer_left")
+	elif piloted:
+		# [throttle, brake, steering (-1..1, left positive)] and pilot.horn: a bot never reverses
+		var c: Array = pilot.drive(delta)
+		pedals = [clampf(c[0], 0.0, 1.0), clampf(c[1], 0.0, 1.0)]
+		steer_in = clampf(c[2], -1.0, 1.0)
+		throttle = pedals[0] - pedals[1]
 	var drifting := driving and controls and Input.is_action_pressed("drift")
-	audio.horn = driving and controls and Input.is_action_pressed("horn")
+	audio.horn = (driving and controls and Input.is_action_pressed("horn")) or (piloted and pilot.horn)
 	var v := speed()
 	engine_force = 0.0
 	brake = 0.0
-	if not driving:
+	if piloted:
+		if pedals[0] > 0.0 and v < max_speed:
+			engine_force = engine_per_wheel * pedals[0]
+		brake = maxf(max_brake * pedals[1], 1.5 if pedals[0] == 0.0 else 0.0)
+	elif not driving:
 		# nobody at the wheel: roll on (passengers may be walking inside), handbrake once slow
 		brake = 1.5 if absf(v) > 1.0 else max_brake * 0.5
 	elif throttle > 0.0:
@@ -1177,7 +1242,7 @@ func _physics_process(delta: float) -> void:
 	engine_force *= _force_scale
 	brake *= _total_mass / 300.0 / _wheel_count     # per wheel: a 4-wheel car's share of its mass / 1200
 	# full lock at walking pace, fading with the speed
-	var steer_max := maxf(max_steer / (1.0 + pow(absf(v) / steer_fade_speed, 1.5)), 0.08)
+	var steer_max := steer_limit(v)
 	if _drift > 0.0:
 		steer_max = lerpf(steer_max, maxf(steer_max, max_steer * DRIFT_STEER), _drift)
 	var back := steer_in == 0.0 or steer_in * steering < 0.0
@@ -1196,13 +1261,18 @@ func _physics_process(delta: float) -> void:
 	_update_drift(drifting, v, delta)
 
 	_update_indicator(delta)
-	var braking := driving and throttle < 0.0
+	_braking = (driving and throttle < 0.0) or (piloted and pedals[1] > 0.05)
 	for lamp in _brake_lamps:
-		lamp.material_override = _lamp_mats["brake"][1 if braking else 0]
+		lamp.material_override = _lamp_mats["brake"][1 if _braking else 0]
 	_update_steering()
 	_update_doors(delta)
 	_update_damage(delta)
 	audio.update(v, throttle, max_speed, delta)
+
+
+## Steering lock (rad) at speed `v` (m/s): full at walking pace, fading with the speed.
+func steer_limit(v: float) -> float:
+	return maxf(max_steer / (1.0 + pow(absf(v) / steer_fade_speed, 1.5)), 0.08)
 
 
 ## Handbrake drift: eases the rear wheels' grip down while `drifting` (quickly) and back up after (DRIFT_RECOVER), and
@@ -1265,8 +1335,8 @@ func _update_indicator(delta: float) -> void:
 	if indicator == 0:
 		return
 	# self-cancel once the wheel has turned the signalled way and come back (the driver's peer does it for remote ones)
-	if remote:
-		pass
+	if remote or pilot:
+		pass                                # the bot switches them off itself
 	elif steering * indicator > 0.25:
 		_signal_armed = true
 	elif _signal_armed and steering * indicator < 0.04:

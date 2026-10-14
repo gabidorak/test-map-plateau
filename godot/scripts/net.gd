@@ -24,6 +24,10 @@ extends Node
 ##   a player hit is pushed by their own peer (water_player). Remote copies of the truck spray for show.
 ## - A dedicated server (game.gd --dedicated) hosts without playing: it is not in `players` and sends no player state,
 ##   but it still simulates the vehicles nobody else does.
+## - Clock: the host's clock is the game's (clock(): the traffic lights' cycle, traffic.gd); it sends it every
+##   CLOCK_EVERY s, and each client keeps its offset from its own clock from the quickest arrival.
+## - Bot buses (traffic.gd) are the host's vehicles; their states say a bot drives them, and the host lets nobody take
+##   their wheel.
 ## - Chat: a message goes to the host, which sends it to everyone with who said it. The host also sends everyone each
 ##   player's ping to it every PING_EVERY s (the player list, game.gd Tab).
 ## - The host announces the game on the LAN (lan_discovery.gd) and sends newcomers the players, the vehicles, and the
@@ -43,7 +47,7 @@ signal chat(id: int, text: String)          # player `id` said `text`
 const PORT := 7777                          # the host tries the next ones when it is taken
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
-const PROTOCOL := 6                         # bump when the messages change (build_id: other builds are refused anyway)
+const PROTOCOL := 7                         # bump when the messages change (build_id: other builds are refused anyway)
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const IDLE_SEND_EVERY := 0.5                # s, states of vehicles at rest
@@ -61,6 +65,8 @@ const PING_EVERY := 1.0                     # s between the host's ping lists
 const CHAT_LENGTH := 200                    # characters per chat message
 const DEFAULT_COLOR := Color(1, 0.55, 0.2)
 const WATER_SEND_RATE := 10.0               # water pushes on vehicles simulated elsewhere, batches per second
+const CLOCK_EVERY := 0.5                    # s between the host's clock messages (the first ones come in while loading)
+const CLOCK_CREEP_DOWN := 0.002             # s per s the clock offset estimate eases back (drift, a quick outlier)
 
 var game: Node3D                            # game.gd
 var discovery: LanDiscovery
@@ -93,6 +99,9 @@ var _pings := {}                            # client: peer id -> its round trip 
 var _ping_t := 0.0
 var _water_out := {}                        # "net id|section" -> [owner, impulse, weighted offset, weight, seconds]
 var _water_t := 0.0
+var _clock_offset := NAN                    # client: the host's clock minus ours (s), from the quickest arrival
+var clock_shift := 0.0                      # s added to our clock when it is the game's (tests set the lights)
+var _clock_t := 0.0
 
 
 ## Recent states of one remote player or vehicle, stamped with the sender's clock.
@@ -170,6 +179,18 @@ func me() -> int:
 	return multiplayer.get_unique_id()
 
 
+## The game's clock in seconds: the host's in a LAN game (as well as we know it), ours otherwise.
+func clock() -> float:
+	if active and not multiplayer.is_server() and not is_nan(_clock_offset):
+		return _now() + _clock_offset
+	return _now() + clock_shift
+
+
+## The other players' avatars (remote_player.gd).
+func avatars() -> Array:
+	return _remotes.values()
+
+
 ## Starts a server on `first_port` (or the next free port) and announces it on the LAN. Returns an error message, or "".
 ## `server_only`: a dedicated server, `nickname` names the game.
 func host(nickname: String, color: Color, first_port := PORT, server_only := false) -> String:
@@ -215,6 +236,7 @@ func leave() -> void:
 	active = false
 	_connect_t = -1.0
 	_pending_drive = ""
+	_clock_offset = NAN
 	for id: int in _remotes.keys():
 		_remove_remote(id)
 	players.clear()
@@ -227,6 +249,10 @@ func leave() -> void:
 
 func _process(delta: float) -> void:
 	if active and multiplayer.is_server():
+		_clock_t += delta
+		if _clock_t >= CLOCK_EVERY:
+			_clock_t = 0.0
+			_signal_clock.rpc(clock())
 		_ping_t += delta
 		if _ping_t >= PING_EVERY:
 			_ping_t = 0.0
@@ -297,6 +323,7 @@ func _register(protocol: int, nickname: String, color: Color) -> void:
 	for net_id: String in cars:
 		snapshot.append([net_id, cars[net_id].model_name, owner_of[net_id], driver_of[net_id], cars[net_id].net_state()])
 	_welcome.rpc_id(id, players, snapshot, game.breakables.net_snapshot())
+	_signal_clock.rpc_id(id, clock())
 	_player_joined.rpc(id, players[id])
 	_add_remote(id)
 	message.emit("%s joined the game" % players[id]["name"])
@@ -426,6 +453,17 @@ func _ping_list(pings: Dictionary) -> void:
 	_pings = pings
 
 
+## Client: the host's clock `t` when it sent this. The quickest arrival gives the offset (it creeps back slowly, so
+## clock drift and a lucky outlier wear off). (Named to sort after _refused and _register, like _vehicle_hit.)
+@rpc("authority", "call_remote", "unreliable")
+func _signal_clock(t: float) -> void:
+	var off := t - _now()
+	if is_nan(_clock_offset) or off > _clock_offset:
+		_clock_offset = off
+	else:
+		_clock_offset -= CLOCK_CREEP_DOWN * CLOCK_EVERY
+
+
 # ---------------------------------------------------------------- chat
 
 ## Says `text` to everyone (game.gd's chat box), through the host.
@@ -520,6 +558,12 @@ func _ask_drive(net_id: String) -> void:
 		return
 	var id := _sender()
 	var d: int = driver_of[net_id]
+	if (cars[net_id] as Car).is_bot():
+		if id == me():
+			_drive_refused(net_id, 0)
+		else:
+			_drive_refused.rpc_id(id, net_id, 0)
+		return
 	if d != 0 and d != id and players.has(d):
 		if id == me():
 			_drive_refused(net_id, d)
@@ -539,7 +583,7 @@ func _release(net_id: String) -> void:
 func _drive_refused(net_id: String, driver_id: int) -> void:
 	if _pending_drive == net_id:
 		_pending_drive = ""
-		message.emit("%s is driving it" % player_name(driver_id))
+		message.emit("A bot drives this bus" if driver_id == 0 else "%s is driving it" % player_name(driver_id))
 
 
 ## Everyone: who simulates and who drives vehicle `net_id` now.
@@ -705,7 +749,9 @@ func _send(delta: float) -> void:
 				continue
 			var s := car.net_state()
 			var switches := [s[4], s[5], s[6]]      # flags, indicator, health
-			var moving := car.linear_velocity.length_squared() > 0.0025 or car.angular_velocity.length_squared() > 0.0025
+			# (a bot gliding far from the players is frozen: no velocity, yet it moves)
+			var moving := car.linear_velocity.length_squared() > 0.0025 or car.angular_velocity.length_squared() > 0.0025 \
+					or (car.pilot != null and not car.stowed)
 			if idle or moving or car.driving or _sent.get(net_id) != switches:
 				states.append([net_id, s])
 				_sent[net_id] = switches

@@ -91,6 +91,13 @@ func _follow_frame() -> void:
 	_body.rotation.y = _local_yaw + _frame.global_rotation.y
 
 
+## The vehicle section they stand in, or the vehicle whose passenger seat they sit in, or null.
+func riding_in() -> Node3D:
+	if is_instance_valid(_frame):
+		return _frame
+	return _seat if is_instance_valid(_seat) else null
+
+
 ## Sits the player in the passenger seat of `car` (car.gd, which shows them there) or nowhere (null).
 func sit_in(car: Node3D) -> void:
 	if car == _seat:
