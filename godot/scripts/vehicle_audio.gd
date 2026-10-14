@@ -3,7 +3,8 @@ extends Node3D
 ## gearbox, a two-tone horn held as long as `horn` is on, indicator relay ticks, bus door chime with air hiss, the bus's city
 ## bell (ring()), and the air-brake sigh when a bus stops; also the
 ## knocks of scripts/breakables.gd (a sign pole's clang, a sapling's swish, a broken hydrant's gush), the armed
-## biplane's gunshots and their pings on vehicles (scripts/plane_guns.gd), and the boom of a vehicle breaking down.
+## biplane's gunshots and their pings on vehicles (scripts/plane_guns.gd), the boom of a vehicle breaking down, and the
+## fire truck's two-tone siren (scripts/fire_truck.gd), sounding as long as `siren` is on.
 ## Each sound is generated once per kind and cached. scripts/car.gd adds one as a child and calls
 ## update() every physics frame and play() for one-shots.
 
@@ -17,6 +18,10 @@ const KINDS := {
 	"car": {"f0": 48, "amps": [1.0, 0.6, 0.55, 0.35, 0.3, 0.18, 0.12, 0.08], "sub": 0.15, "noise": 0.45,
 			"pitch_top": 3.6, "gears": [0.16, 0.3, 0.46, 0.64, 0.82, 1.0], "unit_size": 7.0, "idle_db": -9.0,
 			"horn": [415, 523], "horn_harmonics": 9},
+	# fire truck (scripts/fire_truck.gd): big slow diesel, deep air horn
+	"truck": {"f0": 26, "amps": [1.0, 0.9, 0.85, 0.6, 0.5, 0.42, 0.3, 0.25, 0.15, 0.12], "sub": 0.7, "noise": 0.9,
+			"pitch_top": 2.4, "gears": [0.08, 0.16, 0.26, 0.38, 0.52, 0.7, 1.0], "unit_size": 12.0, "idle_db": -5.0,
+			"horn": [185, 233], "horn_harmonics": 16},
 	# biplane (scripts/plane.gd): one "gear", the engine speed follows the throttle lever; buzzy radial and prop
 	"plane": {"f0": 36, "amps": [1.0, 0.9, 0.75, 0.6, 0.55, 0.45, 0.35, 0.3, 0.22, 0.18, 0.12, 0.1], "sub": 0.3,
 			"noise": 0.55, "pitch_top": 2.3, "gears": [1.0], "unit_size": 16.0, "idle_db": -8.0,
@@ -30,9 +35,11 @@ var kind := "car"
 var engine_on := false
 var gear := 0                               # 0-based, shown on the HUD
 var horn := false                           # sounds while on (fades in and out in update())
+var siren := false                          # likewise (the fire truck's)
 var _engine: AudioStreamPlayer3D
 var _horn: AudioStreamPlayer3D
 var _horn_gain := 0.0
+var _siren: AudioStreamPlayer3D             # made when first switched on
 var _fx: AudioStreamPlayer3D                # doors, air brake
 var _bell: AudioStreamPlayer3D              # own player: a ding neither cuts nor is cut by the doors
 var _cabin: AudioStreamPlayer               # indicator relay, heard only by the driver
@@ -108,8 +115,19 @@ func update(speed: float, throttle: float, max_speed: float, delta: float) -> vo
 	elif _horn_gain == 0.0 and _horn.playing:
 		_horn.stop()
 	_horn.volume_db = linear_to_db(maxf(_horn_gain, 0.0001))
-	# buses sigh when they come to a stop
-	if kind == "bus":
+	if siren and _siren == null:
+		_siren = AudioStreamPlayer3D.new()
+		_siren.stream = _siren_loop()
+		_siren.unit_size = 25.0
+		_siren.max_distance = 400.0
+		add_child(_siren)
+	if _siren and siren != _siren.playing:
+		if siren:
+			_siren.play()
+		else:
+			_siren.stop()
+	# buses and trucks sigh when they come to a stop
+	if kind in ["bus", "truck"]:
 		if _was_moving and v < 0.3:
 			play("air_brake")
 		_was_moving = v > 1.5 or (_was_moving and v >= 0.3)
@@ -180,6 +198,35 @@ static func _horn_loop(vehicle_kind: String) -> AudioStreamWAV:
 		buf[i] = tanh(x * 0.6)
 	var s := _to_wav(buf, true)
 	_cache[key] = s
+	return s
+
+
+## French fire brigade two-tone ("pin-pon"): la 435 Hz and si 488 Hz, half a second each, gliding quickly from one to
+## the other, brassy (a compressor siren's horn). 2 s loop, its end cross-faded into its start.
+static func _siren_loop() -> AudioStreamWAV:
+	if _cache.has("siren"):
+		return _cache["siren"]
+	var fade := int(0.03 * RATE)
+	var buf := _silence(2.0)
+	buf.resize(buf.size() + fade)
+	var phase := 0.0
+	var f := 435.0
+	for i in buf.size():
+		var t := float(i) / RATE
+		var target := 435.0 if fmod(t, 1.0) < 0.5 else 488.0
+		f += (target - f) * 0.004                       # ~10 ms glide
+		phase += f / RATE
+		var x := 0.0
+		for h in range(1, 9):
+			x += sin(TAU * phase * h) / pow(h, 0.9)
+		buf[i] = tanh(x * 0.8)
+	var n := buf.size() - fade
+	for j in fade:
+		var a := float(j) / fade
+		buf[j] = buf[j] * a + buf[n + j] * (1.0 - a)
+	buf.resize(n)
+	var s := _to_wav(buf, true)
+	_cache["siren"] = s
 	return s
 
 

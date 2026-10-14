@@ -18,6 +18,9 @@ extends Node
 ## - Damage: the rounds of an armed plane hit on the peer flying it (scripts/plane_guns.gd); a hit vehicle takes the
 ##   damage on the peer simulating it (hit_vehicle), whose states carry its health to the others. Remote copies of the
 ##   plane fire the same rounds for show (its states carry the trigger).
+## - Water: the fire truck's jet hits on the peer simulating the truck (scripts/water_cannon.gd); a vehicle hit is
+##   pushed (and its fire put out) by the peer simulating it (water_vehicle, batched WATER_SEND_RATE times a second),
+##   a player hit is pushed by their own peer (water_player). Remote copies of the truck spray for show.
 ## - A dedicated server (game.gd --dedicated) hosts without playing: it is not in `players` and sends no player state,
 ##   but it still simulates the vehicles nobody else does.
 ## - Chat: a message goes to the host, which sends it to everyone with who said it. The host also sends everyone each
@@ -39,7 +42,7 @@ signal chat(id: int, text: String)          # player `id` said `text`
 const PORT := 7777                          # the host tries the next ones when it is taken
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
-const PROTOCOL := 4                         # bump when the messages change (build_id: other builds are refused anyway)
+const PROTOCOL := 5                         # bump when the messages change (build_id: other builds are refused anyway)
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const IDLE_SEND_EVERY := 0.5                # s, states of vehicles at rest
@@ -56,6 +59,7 @@ const CONNECT_TIMEOUT := 6.0                # s
 const PING_EVERY := 1.0                     # s between the host's ping lists
 const CHAT_LENGTH := 200                    # characters per chat message
 const DEFAULT_COLOR := Color(1, 0.55, 0.2)
+const WATER_SEND_RATE := 10.0               # water pushes on vehicles simulated elsewhere, batches per second
 
 var game: Node3D                            # game.gd
 var discovery: LanDiscovery
@@ -86,6 +90,8 @@ var _pending_drive := ""                    # net id of the vehicle we asked to 
 var _connect_t := -1.0                      # s since connecting, -1 when not waiting
 var _pings := {}                            # client: peer id -> its round trip to the host (ms), from the host
 var _ping_t := 0.0
+var _water_out := {}                        # "net id|section" -> [owner, impulse, weighted offset, weight, seconds]
+var _water_t := 0.0
 
 
 ## Recent states of one remote player or vehicle, stamped with the sender's clock.
@@ -599,6 +605,62 @@ func _vehicle_hit(net_id: String, damage: float) -> void:
 		car.damage(clampf(damage, 0.0, 50.0))
 
 
+# ---------------------------------------------------------------- water
+
+## A packet of a fire truck simulated here hit `body` (`car` or its rear section) at `point` (global) with `impulse`,
+## standing for `seconds` of the jet (game.gd): the peer simulating `car` pushes it and hoses its fire (car.gd hose).
+## Batched per vehicle section for the other peers (_send_water).
+func water_vehicle(car: Car, body: RigidBody3D, impulse: Vector3, point: Vector3, seconds: float) -> void:
+	var owner_id: int = owner_of.get(car.net_id, 0)
+	if not active or owner_id == me():
+		car.hose(body, impulse, point, seconds)
+	elif owner_id != 0:
+		var key := "%s|%d" % [car.net_id, 0 if body == car else 1]
+		var w: Array = _water_out.get(key, [owner_id, Vector3.ZERO, Vector3.ZERO, 0.0, 0.0])
+		var k := impulse.length()
+		w[1] += impulse
+		w[2] += body.global_transform.affine_inverse() * point * k
+		w[3] += k
+		w[4] += seconds
+		_water_out[key] = w
+
+
+func _send_water(delta: float) -> void:
+	_water_t += delta
+	if _water_t < 1.0 / WATER_SEND_RATE - 0.001 or _water_out.is_empty():
+		return
+	_water_t = 0.0
+	for key: String in _water_out:
+		var w: Array = _water_out[key]
+		var at := key.rfind("|")
+		_water_on_vehicle.rpc_id(w[0], key.left(at), int(key.substr(at + 1)), w[1], w[2] / maxf(w[3], 0.001), w[4])
+	_water_out.clear()
+
+
+## (The RPCs are named to sort after _refused and _register, like _vehicle_hit.)
+@rpc("any_peer", "call_remote", "reliable")
+func _water_on_vehicle(net_id: String, section: int, impulse: Vector3, offset: Vector3, seconds: float) -> void:
+	var car: Car = cars.get(net_id)
+	if car == null or owner_of.get(net_id) != me():
+		return
+	var body: RigidBody3D = car.trailer if section == 1 and car.trailer else car
+	car.hose(body, impulse.limit_length(20000.0), body.global_transform * offset.limit_length(20.0), clampf(seconds, 0.0, 1.0))
+
+
+## A packet of a fire truck simulated here hit the remote player `collider` belongs to (game.gd): their own peer
+## shoves them by `dv` (m/s).
+func water_player(collider: Object, dv: Vector3) -> void:
+	for id: int in _remotes:
+		if (_remotes[id] as RemotePlayer).collider == collider:
+			_water_on_player.rpc_id(id, dv)
+			return
+
+
+@rpc("any_peer", "call_remote", "unreliable")
+func _water_on_player(dv: Vector3) -> void:
+	game.water_push(dv.limit_length(5.0))
+
+
 # ---------------------------------------------------------------- states
 
 func _physics_process(_delta: float) -> void:
@@ -645,6 +707,7 @@ func _send(delta: float) -> void:
 				_sent[net_id] = switches
 		if not states.is_empty():
 			_cars_state.rpc(t, states)
+	_send_water(delta)
 	var peer := multiplayer.multiplayer_peer as ENetMultiplayerPeer
 	if peer:
 		peer.host.flush()                   # else ENet sends them at the next poll, a frame later

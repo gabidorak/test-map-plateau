@@ -18,7 +18,8 @@ extends Node
 ## tree's instance is turned about its foot in its three LODs, a broken prop's instances are scaled to nothing while
 ## its debris draws one-instance copies of them. Those MultiMeshes are edited through a CPU copy of their buffer
 ## (reading one back from the GPU stalls; the headless renderer only keeps whole buffers), uploaded once per frame.
-## The armed biplane's rounds knock breakable props over too (shoot).
+## The armed biplane's rounds knock breakable props over too (shoot), and the fire truck's water cannon the light ones
+## (up to SOAK_MAX_MASS) once it has pushed them hard enough (soak).
 ## LAN games: only vehicles simulated on this peer sweep (remote ones are frozen); what they bend or break is sent to
 ## the other peers (`broke`, scripts/net.gd), which do the same with bend_tree / break_prop. A peer joining gets what
 ## is bent and broken at that moment from the host (net_snapshot / apply_net_snapshot).
@@ -61,6 +62,9 @@ const RESTORE_AFTER := 20.0                 # s
 const RESTORE_DISTANCE := 60.0              # m
 const MAX_DEBRIS := 40
 const SHOT_PUSH := 4.0                      # m/s, a prop knocked over by a round
+const SOAK_MAX_MASS := 40.0                 # kg: heavier props stand up to the water cannon
+const SOAK_PER_KG := 120.0                  # N·s of water per kg of prop that knock it over...
+const SOAK_DRY := 1.0                       # s, ...piling up from hits less than about this far apart
 
 ## A vehicle simulated here bent tree k ("bend") or broke prop k ("break"), pushing it at `push` (m/s, horizontal).
 signal broke(kind: String, k: int, push: Vector3)
@@ -73,6 +77,7 @@ var debris: Array[Dictionary] = []          # {record, body, instances [[MultiMe
 var _trees: StaticBody3D                    # TreeCollision/Bendable
 var _props: StaticBody3D                    # PropCollision/Breakable
 var _broken := {}                           # prop record -> true while its debris is out
+var _soaked := {}                           # prop record -> [N·s of water piled up, time of the last hit (s)]
 var _query := PhysicsShapeQueryParameters3D.new()
 var _box := BoxShape3D.new()
 var _boxes: Array = []                      # this frame: [vehicle body, box global transform, box size]
@@ -249,6 +254,30 @@ func shoot(collider: Object, shape: int, velocity: Vector3) -> bool:
 		return false
 	var push := Vector3(velocity.x, 0.0, velocity.z).normalized() * SHOT_PUSH
 	var k: int = _props.record_for_shape(shape)
+	if push == Vector3.ZERO or not break_prop(k, push):
+		return false
+	broke.emit("break", k, push)
+	return true
+
+
+## A packet of the fire truck's water cannon (scripts/water_cannon.gd, from a truck simulated here) hit shape `shape` of
+## `collider`, giving it `impulse` (N·s): a light breakable prop snaps off once enough water has hit it in a row. True
+## when something broke.
+func soak(collider: Object, shape: int, impulse: Vector3) -> bool:
+	if _props == null or collider != _props:
+		return false
+	var k: int = _props.record_for_shape(shape)
+	var mass: float = BREAKABLE_PROPS.get(_props.data.describe(k).get("model", ""), 0.0)
+	if k < 0 or _broken.has(k) or mass <= 0.0 or mass > SOAK_MAX_MASS:
+		return false
+	var now := float(Engine.get_physics_frames()) / Engine.physics_ticks_per_second     # game time
+	var s: Array = _soaked.get(k, [0.0, now])
+	var total: float = s[0] * exp(-(now - s[1]) / SOAK_DRY) + impulse.length()
+	if total < mass * SOAK_PER_KG:
+		_soaked[k] = [total, now]
+		return false
+	_soaked.erase(k)
+	var push := Vector3(impulse.x, 0.0, impulse.z).normalized() * SHOT_PUSH
 	if push == Vector3.ZERO or not break_prop(k, push):
 		return false
 	broke.emit("break", k, push)

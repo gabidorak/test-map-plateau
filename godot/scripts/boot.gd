@@ -2,9 +2,12 @@ extends Control
 ## First scene of the packed release builds (application/run/main_scene.packed: the "... Packed" export presets have
 ## the "packed" feature). To keep the download small, their executable does not carry the game's pack as it is:
 ## .github/workflows/build.yml exports it, tools/pack_game.sh compresses it into zstd chunks (res://pack/, with
-## manifest.json), and only the chunks, this scene and the updater go into the executable. At the first start of each
-## build the chunks are unpacked into the cache folder (game-<id>.pck; the other builds' packs are deleted), then the
-## pack is mounted and the game opens. Editor runs and the other exports start main.tscn directly.
+## manifest.json), and only the chunks, this scene and the autoloads (scripts/settings.gd, scripts/updater.gd) go into
+## the executable: the "Packed" presets' export_files list them. At the first start of each build the chunks are
+## unpacked into the cache folder (game-<id>.pck; the other builds' packs are deleted), then the pack is mounted and the
+## game opens. While the updater updates in the foreground (its own full-screen page), nothing is unpacked or loaded:
+## the game restarts on the new build, or carries on once the update is skipped. Editor runs and the other exports start
+## main.tscn directly.
 
 const UiStyle = preload("res://scripts/ui_style.gd")
 const MANIFEST := "res://pack/manifest.json"
@@ -18,6 +21,9 @@ var _bar: ProgressBar
 
 
 func _ready() -> void:
+	var updater := get_node_or_null("/root/AutoUpdater")
+	while updater and updater.foreground():
+		await updater.changed
 	var manifest: Variant = JSON.parse_string(FileAccess.get_file_as_string(MANIFEST)) \
 			if FileAccess.file_exists(MANIFEST) else null
 	if not manifest is Dictionary:

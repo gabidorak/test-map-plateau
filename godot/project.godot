@@ -18,12 +18,15 @@ run/main_scene.packed="res://scenes/boot.tscn"
 
 [autoload]
 
+Settings="*res://scripts/settings.gd"
 AutoUpdater="*res://scripts/updater.gd"
 
 [display]
 
 window/size/viewport_width=1600
 window/size/viewport_height=900
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
 
 [editor_plugins]
 

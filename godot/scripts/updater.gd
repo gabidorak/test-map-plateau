@@ -4,8 +4,10 @@ extends Node
 ## release tag and commit into application/config/version and application/config/commit before exporting. Editor
 ## runs and local exports have no version: no check.
 ## At start the updater asks GitHub for the latest release; when it is another build, it downloads this platform's file
-## in the background next to the game (a hidden ".update" file, ".part" while downloading). The swap happens on
-## "Restart now" in the welcome menu (scripts/main_menu.gd) or at the next start. The game reads its embedded pack by
+## next to the game (a hidden ".update" file, ".part" while downloading) in the foreground: a full-screen progress bar
+## over the game, which restarts on the new build once it is downloaded. Esc skips: the download goes on in the
+## background, and the swap happens on "Restart now" in the welcome menu (scripts/main_menu.gd) or at the next start.
+## The packed builds' boot scene (scripts/boot.gd) waits for the foreground update before unpacking the game. The game reads its embedded pack by
 ## path while it runs, so the files are swapped only right before the process ends: the new build is launched and
 ## this one killed at once. Windows and Linux rename the running executable aside (".old", deleted at the next start),
 ## macOS unzips the new .app with ditto and swaps the bundles. Where the game's folder is not writable, or when anything
@@ -19,6 +21,8 @@ const ASSETS := {"Windows": "plateau-map-windows.exe", "Linux": "plateau-map-lin
 		"macOS": "plateau-map-macos.zip"}
 const STATE_FILE := "user://update.cfg"     # tag and commit of the downloaded update
 const USER_AGENT := "User-Agent: plateau-map-updater"
+const UiStyle = preload("res://scripts/ui_style.gd")
+const SHOW_CHECK_AFTER := 0.4               # s: a quick check does not flash the screen
 
 enum State { OFF, CHECKING, UP_TO_DATE, DOWNLOADING, READY, MANUAL, FAILED }
 
@@ -33,9 +37,20 @@ var _target := ""                           # the executable (Windows, Linux) or
 var _http: HTTPRequest
 var _size := 0
 var _latest_commit := ""
+var _skipped := false                       # Esc: the update goes on behind the game
+var _check_t := 0.0                         # s since the check started
+var _rate := 0.0                            # download speed, bytes/s
+var _rate_t := 0.0
+var _rate_bytes := 0
+var _screen: CanvasLayer
+var _title: Label
+var _detail: Label
+var _bar: ProgressBar
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	set_process(false)
 	version = str(ProjectSettings.get_setting("application/config/version", ""))
 	_commit = str(ProjectSettings.get_setting("application/config/commit", ""))
 	if version == "" or not OS.has_feature("template") or not ASSETS.has(OS.get_name()) \
@@ -63,8 +78,10 @@ func _ready() -> void:
 
 ## Asks GitHub for the latest release (State.CHECKING), then downloads it when it is another build.
 func check() -> void:
+	_check_t = 0.0
+	set_process(true)
 	_set_state(State.CHECKING)
-	_new_request(15.0).request_completed.connect(_on_release, CONNECT_ONE_SHOT)
+	_new_request(10.0).request_completed.connect(_on_release, CONNECT_ONE_SHOT)
 	if _http.request(API, [USER_AGENT, "Accept: application/vnd.github+json"]) != OK:
 		_set_state(State.OFF)
 
@@ -88,6 +105,11 @@ func check_tag() -> void:
 ## A published build whose newest release (check_tag) is another build.
 func outdated() -> bool:
 	return version != "" and latest != "" and latest != version and _latest_commit != _commit
+
+
+## True while the update screen is up, or about to be: checking, downloading, restarting (not skipped).
+func foreground() -> bool:
+	return not _skipped and state in [State.CHECKING, State.DOWNLOADING, State.READY]
 
 
 ## Downloaded fraction (State.DOWNLOADING).
@@ -158,6 +180,11 @@ func _on_downloaded(result: int, code: int, _headers: PackedStringArray, _body: 
 	cfg.set_value("update", "commit", _latest_commit)
 	cfg.save(STATE_FILE)
 	_set_state(State.READY)
+	if not _skipped:
+		_show_screen()                      # "Restarting…" drawn before the swap
+		await get_tree().process_frame
+		await get_tree().process_frame
+		restart_now()
 
 
 ## Puts the downloaded build in place of this one; "" when done, else why not (this one is then left as it was).
@@ -221,7 +248,104 @@ func _fail(why: String) -> void:
 
 func _set_state(s: State) -> void:
 	state = s
+	_show_screen()
 	changed.emit()
+
+
+func _process(delta: float) -> void:
+	_check_t += delta
+	if state == State.DOWNLOADING:
+		_rate_t += delta
+		if _rate_t >= 0.5:
+			var got := _http.get_downloaded_bytes()
+			_rate = lerpf(float(got - _rate_bytes) / _rate_t, _rate, 0.5 if _rate > 0.0 else 0.0)
+			_rate_bytes = got
+			_rate_t = 0.0
+	_show_screen()
+
+
+## The full-screen update page, while foreground(): over everything (the boot screen, the welcome menu), with the 3D
+## world not drawn behind it.
+func _show_screen() -> void:
+	var on := foreground() and (state != State.CHECKING or _check_t >= SHOW_CHECK_AFTER)
+	if on and _screen == null:
+		_build_screen()
+	if _screen and _screen.visible != on:
+		_screen.visible = on
+		get_tree().root.disable_3d = on
+	if not on:
+		set_process(foreground())           # still checking: the screen may come up
+		return
+	match state:
+		State.CHECKING:
+			_title.text = "Looking for updates…"
+			_bar.indeterminate = true
+			_detail.text = pretty(version)
+		State.DOWNLOADING:
+			_title.text = "Updating to %s" % pretty(latest)
+			_bar.indeterminate = false
+			_bar.value = progress()
+			var got := _http.get_downloaded_bytes() / 1048576.0
+			_detail.text = "%.0f of %.0f MB" % [got, _size / 1048576.0] + \
+					("  ·  %.1f MB/s" % (_rate / 1048576.0) if _rate > 0.0 else "")
+		State.READY:
+			_title.text = "Restarting on %s…" % pretty(latest)
+			_bar.indeterminate = false
+			_bar.value = 1.0
+			_detail.text = ""
+
+
+func _build_screen() -> void:
+	_screen = CanvasLayer.new()
+	_screen.layer = 100
+	_screen.visible = false
+	add_child(_screen)
+	var bg := ColorRect.new()
+	bg.color = Color(0.05, 0.06, 0.08)
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_screen.add_child(bg)                   # stops the mouse from reaching the menus behind
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 16)
+	box.custom_minimum_size.x = 640
+	_screen.add_child(box)
+	box.add_child(UiStyle.label("Plateau Map", 40))
+	_title = UiStyle.label("", 22)
+	box.add_child(_title)
+	_bar = ProgressBar.new()
+	_bar.custom_minimum_size = Vector2(640, 26)
+	_bar.max_value = 1.0
+	_bar.show_percentage = false
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color(0.25, 0.55, 1.0)
+	fill.set_corner_radius_all(6)
+	var back := StyleBoxFlat.new()
+	back.bg_color = Color(0.16, 0.18, 0.23)
+	back.set_corner_radius_all(6)
+	_bar.add_theme_stylebox_override("fill", fill)
+	_bar.add_theme_stylebox_override("background", back)
+	box.add_child(_bar)
+	_detail = UiStyle.label("", 17, UiStyle.TEXT_DIM)
+	box.add_child(_detail)
+	var gap := Control.new()
+	gap.custom_minimum_size.y = 24
+	box.add_child(gap)
+	box.add_child(UiStyle.label("Esc  skip: play %s now, the update installs at the next start" % pretty(version), 16,
+			UiStyle.TEXT_DIM))
+	UiStyle.centre(box)
+
+
+## While the update screen is up the game behind it gets no keys or clicks; Esc skips the update (F11 still switches
+## fullscreen: Settings).
+func _input(event: InputEvent) -> void:
+	if _screen == null or not _screen.visible or not (event is InputEventKey or event is InputEventMouseButton):
+		return
+	if event is InputEventKey and event.physical_keycode == KEY_F11:
+		return
+	get_viewport().set_input_as_handled()
+	if event is InputEventKey and event.pressed and event.physical_keycode == KEY_ESCAPE and state != State.READY:
+		_skipped = true
+		_show_screen()
+		changed.emit()
 
 
 func _hidden(suffix: String) -> String:
