@@ -194,7 +194,7 @@ func _stop() -> void:
 		if left and _front(b) > float(stop["s"]) + 20.0:
 			break
 	_check(right, "right indicator on the way into the stop %s" % stop["name"])
-	_check(opened and at_pole < b.STOP_REACH + 0.5, "doors open at the stop, front %.1f m from the pole" % at_pole)
+	_check(opened and at_pole < b.STOP_REACH + 0.5, "doors open at the stop, front %.1f m from its stopping point" % at_pole)
 	_check(left and _front(b) > float(stop["s"]) + 20.0, "left indicator pulling out, then on its way")
 
 

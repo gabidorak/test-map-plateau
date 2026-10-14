@@ -7,8 +7,9 @@ extends RefCounted
 ##   front section (between its axles: in a bend its front swings out and its rear wheels cut in about as much,
 ##   which transit.py leaves room for); the speed follows the route's planned speed (limits, curves) and brakes for what
 ##   is ahead.
-## - Stops: every stop of the line: the right indicator on the way in, a stop with the front at the pole, the doors open
-##   for DWELL_TIME s (longer while a player is at a door), closed, the left indicator, and off.
+## - Stops: every stop of the line: the right indicator on the way in, a stop with the front at the stop's "s" (the pole;
+##   the articulated bus's bellows at the pole, transit.py), the doors open for DWELL_TIME s (longer while a player is at
+##   a door), closed, the left indicator, and off.
 ## - Traffic lights: waits at the red (and at the amber when it can stop), on the shared light clock (traffic.gd).
 ## - Junctions where it gives way (transit.py): waits at the line while a vehicle comes from a conflicting arm or moves
 ##   in the junction; a stop sign is a full stop first. It does not wait more than YIELD_PATIENCE s for nothing.
