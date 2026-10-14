@@ -34,7 +34,7 @@ const ACTIONS := [
 	["signal_right", "Right turn signal", "Driving", [KEY_E]],
 	["horn", "Horn", "Driving", [KEY_G]],
 	["doors", "Doors (bus)", "Driving", [KEY_O]],
-	["bell", "Bell (bus), siren (fire truck)", "Driving", [KEY_B]],
+	["bell", "Gong (bus), siren (fire truck)", "Driving", [KEY_B]],
 	["exit_vehicle", "Get out (bus: leave the seat)", "Vehicles and plane", [KEY_SPACE]],
 	["reset_vehicle", "Back on the wheels / level the wings", "Vehicles and plane", [KEY_R]],
 	["plane_nose_down", "Nose down", "Plane", [KEY_W, KEY_UP]],

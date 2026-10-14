@@ -1073,7 +1073,7 @@ func _update_help() -> void:
 				k.call("signal_right"), k.call("horn")]) + "%s (held) drift\n" % k.call("drift") + \
 				"mouse look · wheel zoom%s · %s back on wheels · %s%s %s\n%s" % [
 				" (all the way in: cab view)" if driving.has_cab() else "", k.call("reset_vehicle"),
-				"%s doors · %s bell · %s cab view · " % [k.call("doors"), k.call("bell"), k.call("toggle_view")] \
+				"%s doors · %s gong · %s cab view · " % [k.call("doors"), k.call("bell"), k.call("toggle_view")] \
 				if driving.has_doors else "", k.call("exit_vehicle"),
 				"leave the seat" if driving.has_doors else "get out", common]
 	else:
