@@ -28,18 +28,24 @@ extends VehicleBody3D
 ## LAN games (scripts/net.gd): a vehicle another peer simulates is `remote`, its bodies frozen kinematic and posed from
 ## that peer's states (apply_net_state); the wheels still turn and steer, and lamps, doors, horn and sound follow the
 ## states.
+## Damage (the armed biplane's rounds, scripts/plane_guns.gd): each vehicle has `health` (HEALTH for a 1,200 kg car,
+## more for heavier ones); hits only count on the peer simulating it (damage), the others follow its states. Under
+## half of it, grey smoke comes out of the engine; at 0 it is `broken`: a boom and a ball of fire, the engine dies, the
+## body is scorched and black smoke billows out of it (scripts/wreck_smoke.gd) until it is repaired REPAIR_AFTER s
+## later.
 
 const Layers = preload("res://scripts/physics_layers.gd")
 const VehicleAudio = preload("res://scripts/vehicle_audio.gd")
 const Trailer = preload("res://scripts/car_trailer.gd")
+const WreckSmoke = preload("res://scripts/wreck_smoke.gd")
 const KENNEY_WHEELS := ["wheel-front-left", "wheel-front-right", "wheel-back-left", "wheel-back-right"]
 ## Per model: file in assets/cars, scale, body mesh node, wheel nodes (front left, front right, back
 ## left, back right), credit, mass (kg; engine, brakes and suspension scale with it), power (engine
 ## factor), max_speed (m/s), max_steer (rad at walking pace), layout (json next to the model), sound
 ## (vehicle_audio kind), traction_from (index of the first driven wheel; all drive by default), trailer_mass (kg,
 ## rear section of an articulated vehicle), label (name in the vehicle menu, see display_name), plane (built and flown
-## by scripts/plane.gd, which extends this script, instead). Missing keys take the Kenney Car Kit values (scale 1.5:
-## ~2.8 m -> ~4.2 m).
+## by scripts/plane.gd, which extends this script, instead), guns (a plane's machine guns). Missing keys take the
+## Kenney Car Kit values (scale 1.5: ~2.8 m -> ~4.2 m).
 const SPECS := {
 	"bus-idfm": {"label": "IDFM bus (12 m)", "file": "bus_idfm.glb", "scale": 1.0,
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
@@ -58,9 +64,11 @@ const SPECS := {
 	"van": {}, "sedan-sports": {"label": "Sports sedan"}, "suv-luxury": {"label": "Luxury SUV"}, "delivery": {"label": "Delivery van"},
 	"ambulance": {},
 	"biplane": {"label": "Biplane", "plane": true, "credit": "toy biplane built by scripts/plane.gd"},
+	"biplane-armed": {"label": "Armed biplane", "plane": true, "guns": true,
+			"credit": "toy fighter biplane built by scripts/plane.gd"},
 }
 const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "taxi", "suv", "police", "hatchback-sports", "van",
-		"sedan-sports", "suv-luxury", "delivery", "ambulance", "biplane"]
+		"sedan-sports", "suv-luxury", "delivery", "ambulance", "biplane", "biplane-armed"]
 const REST_LENGTH := 0.2
 const BLINK := 0.75                         # s, indicator period
 const DOOR_TIME := 1.6                      # s to open or close
@@ -78,6 +86,9 @@ const DRIFT_BRAKE := 0.12                   # rear handbrake while drifting, fra
 const DRIFT_STEER := 0.45                   # steering lock kept while drifting, fraction of max_steer
 const DRIFT_RECOVER := 2.0                  # /s, the rear grip coming back once X is released
 const BELLOWS_SEGMENTS := 4                 # wall boxes along the bellows (walkable articulation)
+const HEALTH := 100.0                       # a 1,200 kg car's; heavier vehicles have more (with the square root of the mass)
+const DAMAGED := 0.5                        # share of the health under which the engine smokes grey
+const REPAIR_AFTER := 60.0                  # s a broken vehicle smokes before it is repaired
 
 @export var engine_per_wheel := 2800.0      # N on each of the four driven wheels, more when starting
 @export var max_brake := 80.0
@@ -113,6 +124,11 @@ var net_id := ""                            # LAN games: the vehicle's id on eve
 var remote := false                         # LAN games: simulated by another peer (set_remote)
 var bells := 0                              # bell strikes so far (LAN: its parity tells the peers to ring)
 var controls := true                        # false while a menu is open: the driver's keys do nothing
+var health := HEALTH
+var max_health := HEALTH
+var broken := false                         # health 0: engine dead, black smoke
+var smoke_spot := Vector3.ZERO              # car frame: where the smoke comes out (the engine)
+var smoke_size := 1.0
 
 var _cam_pivot: Node3D
 var _arm: SpringArm3D
@@ -163,6 +179,11 @@ var _joint_walls: Array[CollisionShape3D] = []    # per segment: left wall, righ
 var _bellows_hull: StaticBody3D             # walls of the walkable passage through the bellows
 var _skin: StandardMaterial3D               # the driver look-alike's colour
 var _remote_braking := false
+var _smoke: WreckSmoke                      # made at the first smoke
+var _broken_t := 0.0                        # s since it broke
+var _net_seen := false                      # LAN, remote vehicle: a state came already (no boom for a wreck on joining)
+
+static var _soot: StandardMaterial3D        # drawn over a broken vehicle's meshes
 
 
 ## Name of `model` for menus: its spec's label, else the model name capitalized ("sedan" -> "Sedan").
@@ -222,6 +243,10 @@ func setup(model: String) -> void:
 		half_extents = whole.size * 0.5
 		extents_center = Vector3(whole.get_center().x, 0.0, whole.get_center().z)
 	_force_scale = _total_mass / 1200.0 * float(spec.get("power", 1.0))
+	_set_max_health()
+	# the engine: under the bonnet, at the back of a bus
+	smoke_spot = Vector3(box.get_center().x, box.end.y - 0.3, box.position.z + 1.2) if spec.has("layout") \
+			else Vector3(box.get_center().x, box.position.y + box.size.y * 0.55, box.end.z - box.size.z * 0.22)
 	if not layout.is_empty():
 		_build_layout(m, layout)
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
@@ -252,6 +277,14 @@ func setup(model: String) -> void:
 	camera.near = 0.1
 	camera.far = 1500.0
 	_arm.add_child(camera)
+
+
+## Health from the mass of the whole vehicle (_total_mass), full.
+func _set_max_health() -> void:
+	var k := clampf(sqrt(_total_mass / 1200.0), 0.6, 3.0)
+	max_health = HEALTH * k
+	health = max_health
+	smoke_size = clampf(k, 0.8, 1.8)
 
 
 ## Physics settings shared by the car and its rear section.
@@ -715,7 +748,7 @@ func set_driving(on: bool) -> void:
 	if _driver_dummy:
 		_driver_dummy.visible = on
 	if on:
-		audio.engine_on = true
+		audio.engine_on = not broken
 		_follow_yaw = _heading()
 		_look_yaw = 0.0
 		_reverse_view = false
@@ -724,7 +757,7 @@ func set_driving(on: bool) -> void:
 		set_cab_view(cab_view)
 		_update_steering()
 	else:
-		audio.engine_on = has_doors         # a bus keeps idling for its passengers
+		audio.engine_on = has_doors and not broken      # a bus keeps idling for its passengers
 		audio.horn = false
 		set_indicator(0)
 
@@ -760,11 +793,12 @@ func set_remote(on: bool) -> void:
 
 
 ## LAN games: this vehicle's state for the other peers: [pose, rear section pose, steering, pedal, flags (1 doors
-## open, 2 someone drives, 4 braking, 8 horn, 16 bell strikes are odd), indicator].
+## open, 2 someone drives, 4 braking, 8 horn, 16 bell strikes are odd), indicator, health].
 func net_state() -> Array:
 	var flags := (1 if doors_open else 0) | (2 if driving else 0) | (4 if driving and _throttle < 0.0 else 0) \
 			| (8 if audio.horn else 0) | (16 if bells & 1 else 0)
-	return [global_transform, trailer.global_transform if trailer else Transform3D(), steering, _throttle, flags, indicator]
+	return [global_transform, trailer.global_transform if trailer else Transform3D(), steering, _throttle, flags, indicator,
+			health]
 
 
 ## LAN games, remote vehicle: the pose between states `a` and `b` (net_state()) at weight `w`, the switches of `b`.
@@ -786,7 +820,10 @@ func apply_net_state(a: Array, b: Array, w: float) -> void:
 	set_doors(flags & 1 != 0)
 	if b[5] != indicator:
 		set_indicator(b[5])
-	audio.engine_on = flags & 2 != 0 or has_doors
+	if b.size() > 6:
+		set_health(b[6], _net_seen)
+	_net_seen = true
+	audio.engine_on = (flags & 2 != 0 or has_doors) and not broken
 	audio.horn = flags & 8 != 0
 	var bell := 1 if flags & 16 else 0
 	if _net_bell >= 0 and bell != _net_bell:
@@ -839,6 +876,76 @@ func carrier_at(p: Vector3, margin := 0.0) -> Node3D:
 	if trailer and trailer.carries(p, margin):
 		return trailer
 	return null
+
+
+## A hit (scripts/plane_guns.gd: game.gd, through net.gd on the peer simulating the vehicle) taking `amount` of health.
+func damage(amount: float) -> void:
+	if not broken:
+		set_health(health - amount)
+
+
+## Health `h` (clamped to 0..max_health): grey smoke under DAMAGED of max_health; at 0 broken (with a boom and a ball
+## of fire when `effects`): engine dead, scorched, black smoke; above 0 again, repaired.
+func set_health(h: float, effects := true) -> void:
+	h = clampf(h, 0.0, max_health)
+	if h == health:
+		return
+	health = h
+	var was_broken := broken
+	broken = h <= 0.0
+	var level := 2 if broken else (1 if h < max_health * DAMAGED else 0)
+	if level > 0 and _smoke == null:
+		_smoke = WreckSmoke.new()
+		_smoke.name = "Smoke"
+		_smoke.size = smoke_size
+		_smoke.position = smoke_spot
+		add_child(_smoke)
+	if _smoke:
+		_smoke.set_level(level)
+	if broken == was_broken:
+		return
+	_set_scorched(broken)
+	if broken:
+		_broken_t = 0.0
+		audio.engine_on = false
+		if effects:
+			audio.play("boom")
+			_smoke.burst()
+	else:
+		audio.engine_on = driving or has_doors
+
+
+## Seconds until a broken vehicle is repaired.
+func repair_in() -> float:
+	return maxf(REPAIR_AFTER - _broken_t, 0.0)
+
+
+## True while black smoke comes out of it.
+func smoking_black() -> bool:
+	return _smoke != null and _smoke.emitting_black()
+
+
+## Soot over the meshes of a broken vehicle (not over glass, trails, flashes and the driver).
+func _set_scorched(on: bool) -> void:
+	if _soot == null:
+		_soot = StandardMaterial3D.new()
+		_soot.albedo_color = Color(0.05, 0.045, 0.04, 0.6)
+		_soot.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_soot.roughness = 1.0
+	for mi: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
+		var m := mi.material_override as BaseMaterial3D
+		if mi.top_level or (m and m.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED) \
+				or (_driver_dummy and _driver_dummy.is_ancestor_of(mi)):
+			continue
+		mi.material_overlay = _soot if on else null
+
+
+## Broken vehicle simulated here: repaired once REPAIR_AFTER s have gone by (the others follow its health).
+func _update_damage(delta: float) -> void:
+	if broken:
+		_broken_t += delta
+		if _broken_t >= REPAIR_AFTER:
+			set_health(max_health)
 
 
 ## Velocity of the car body at global point `p`.
@@ -947,6 +1054,8 @@ func _physics_process(delta: float) -> void:
 		brake = 1.5                             # rolling resistance
 	if engine_force != 0.0 and absf(v) < 5.0:
 		engine_force *= 1.6                     # quicker start, like a low gear
+	if broken:
+		engine_force = 0.0                      # it still brakes
 	engine_force *= _force_scale
 	brake *= _total_mass / 300.0 / _wheel_count     # per wheel: a 4-wheel car's share of its mass / 1200
 	# full lock at walking pace, fading with the speed
@@ -974,6 +1083,7 @@ func _physics_process(delta: float) -> void:
 		lamp.material_override = _lamp_mats["brake"][1 if braking else 0]
 	_update_steering()
 	_update_doors(delta)
+	_update_damage(delta)
 	audio.update(v, throttle, max_speed, delta)
 
 

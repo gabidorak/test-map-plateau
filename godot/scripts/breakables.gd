@@ -18,6 +18,7 @@ extends Node
 ## tree's instance is turned about its foot in its three LODs, a broken prop's instances are scaled to nothing while
 ## its debris draws one-instance copies of them. Those MultiMeshes are edited through a CPU copy of their buffer
 ## (reading one back from the GPU stalls; the headless renderer only keeps whole buffers), uploaded once per frame.
+## The armed biplane's rounds knock breakable props over too (shoot).
 ## LAN games: only vehicles simulated on this peer sweep (remote ones are frozen); what they bend or break is sent to
 ## the other peers (`broke`, scripts/net.gd), which do the same with bend_tree / break_prop. A peer joining gets what
 ## is bent and broken at that moment from the host (net_snapshot / apply_net_snapshot).
@@ -59,6 +60,7 @@ const SWEEP_MARGIN := 0.05                  # m added around the swept boxes
 const RESTORE_AFTER := 20.0                 # s
 const RESTORE_DISTANCE := 60.0              # m
 const MAX_DEBRIS := 40
+const SHOT_PUSH := 4.0                      # m/s, a prop knocked over by a round
 
 ## A vehicle simulated here bent tree k ("bend") or broke prop k ("break"), pushing it at `push` (m/s, horizontal).
 signal broke(kind: String, k: int, push: Vector3)
@@ -238,6 +240,19 @@ func _break(body: RigidBody3D, k: int) -> void:
 	if mass > 0.0 and break_prop(k, push):
 		body.apply_impulse(-push * mass, hit - body.global_position)
 		broke.emit("break", k, push)
+
+
+## A round (scripts/plane_guns.gd, from a plane simulated here) flying at `velocity` hit shape `shape` of `collider`:
+## a breakable prop snaps off, pushed along. True when something broke.
+func shoot(collider: Object, shape: int, velocity: Vector3) -> bool:
+	if _props == null or collider != _props:
+		return false
+	var push := Vector3(velocity.x, 0.0, velocity.z).normalized() * SHOT_PUSH
+	var k: int = _props.record_for_shape(shape)
+	if push == Vector3.ZERO or not break_prop(k, push):
+		return false
+	broke.emit("break", k, push)
+	return true
 
 
 ## Snaps prop k off its foot, flying off along `push` (m/s, horizontal), with a clang when `sound`; false when it
