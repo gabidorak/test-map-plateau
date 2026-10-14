@@ -34,6 +34,12 @@ next start. When the game's folder is not writable (or on a macOS app still in D
 releases page instead. Runs from the editor and local exports never update (the release workflow stamps the build
 tag into `application/config/version`).
 
+To keep the download small, the release executables carry the game data as zstd chunks (the `... Packed` export
+presets, built by `.github/workflows/build.yml` with `godot/tools/prepare_packed.gd` and `godot/tools/pack_game.sh`):
+the first start of each build unpacks them (~570 MB) into the cache folder (`%LOCALAPPDATA%\plateau-map`,
+`~/.cache/plateau-map`, `~/Library/Caches/plateau-map`) and deletes the previous build's. The plain presets still
+export a self-contained game.
+
 ## What is in this repository
 
 The game (`godot/`), the generated map it loads (`godot/world/` and `godot/scenes/generated/`) and the Blender
