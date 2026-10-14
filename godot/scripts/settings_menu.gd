@@ -1,8 +1,8 @@
 extends PanelContainer
 ## Settings page (scripts/settings.gd, the "Settings" autoload), opened from the welcome menu (main_menu.gd) and the
-## in-game menu (pause_menu.gd): a Graphics tab (display mode, quality, 3D resolution, vsync, UI scale) and a Controls
-## tab (mouse sensitivity, then every rebindable action with two bindings each). Click a binding, then press the new
-## key or mouse button (Esc cancels); right click clears it. Esc or Back closes the page.
+## in-game menu (pause_menu.gd): a Graphics tab (display mode, quality, 3D resolution, vsync, UI scale, time of day) and
+## a Controls tab (mouse sensitivity, then every rebindable action with two bindings each). Click a binding, then press
+## the new key or mouse button (Esc cancels); right click clears it. Esc or Back closes the page.
 
 const UiStyle = preload("res://scripts/ui_style.gd")
 const WIDTH := 820.0
@@ -125,6 +125,7 @@ func _build_graphics() -> Control:
 	_choice(grid, "Vertical sync", "vsync", [[true, "On"], [false, "Off"]])
 	_choice(grid, "Interface size", "ui_scale", [[0.75, "75 %"], [0.85, "85 %"], [1.0, "100 %"], [1.15, "115 %"],
 			[1.3, "130 %"], [1.5, "150 %"]])
+	_choice(grid, "Time of day", "night", [[false, "Day"], [true, "Night (moonlight, headlights)"]])
 	var c := CenterContainer.new()
 	c.custom_minimum_size.y = PAGE_HEIGHT
 	c.add_child(grid)

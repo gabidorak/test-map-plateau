@@ -60,3 +60,7 @@ signal_clock={
 "type": "float",
 "value": 0.0
 }
+night={
+"type": "float",
+"value": 0.0
+}

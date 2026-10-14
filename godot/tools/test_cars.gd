@@ -164,6 +164,23 @@ func _run() -> void:
 	_key(KEY_S, false)
 	_check(car.global_basis.y.y > 0.9, "still on its wheels after driving (up %.2f)" % car.global_basis.y.y)
 	await _frames(60)
+	_key(KEY_L, true)
+	_key(KEY_L, false)
+	await _frames(2)
+	var tail: Material = car._lamp_mats.get("tail")
+	_check(car.headlights and car._beam.visible and car._brake_lamps.all(func(l: MeshInstance3D) -> bool:
+			return l.material_override == tail), "L switches the headlights on: beam, dimly lit tail lamps")
+	_key(KEY_N, true)
+	_key(KEY_N, false)
+	await _frames(2)
+	_check(_main.night.on and _main.night._lamps.size() > 0 and _main.Car.night,
+			"N switches to night (%d street and path lamps lit)" % _main.night._lamps.size())
+	_key(KEY_N, true)
+	_key(KEY_N, false)
+	_key(KEY_L, true)
+	_key(KEY_L, false)
+	await _frames(2)
+	_check(not _main.night.on and not car.headlights and not car._beam.visible, "N back to day, L the headlights off")
 
 	_key(KEY_SPACE, true)
 	await _frames(2)

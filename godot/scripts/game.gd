@@ -39,6 +39,9 @@ extends Node3D
 ## the default there, "high" elsewhere. PLATEAU_QUALITY=low|high overrides, F2 switches, the settings page
 ## (scripts/settings_menu.gd, from either menu) sets it. Keys are the Settings actions (scripts/settings.gd): the
 ## letters above are their defaults, on physical key positions, and the help lines show the current ones.
+## N switches night and day (scripts/night.gd: moonlight, a starry sky, lit windows and street lamps; also on the
+## settings page); at night the bots drive with their headlights on and the player's switch on as they get in. L
+## switches the headlights of the vehicle driven (the plane's landing lights), which the other players see too.
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
@@ -60,6 +63,7 @@ const UiStyle = preload("res://scripts/ui_style.gd")
 const Chat = preload("res://scripts/chat.gd")
 const PlayerList = preload("res://scripts/player_list.gd")
 const Traffic = preload("res://scripts/traffic.gd")
+const Night = preload("res://scripts/night.gd")
 const WATER_SHOVE := 0.7                    # m/s a full-power water packet shoves a player along the jet
 const ENTER_RANGE := 3.0                    # metres from the car body
 const SEAT_RANGE := 1.6                     # metres from the driver seat, from inside a walkable vehicle
@@ -85,6 +89,7 @@ var _next_model := 0
 var picker: Picker
 var breakables: Breakables
 var traffic: Traffic
+var night: Night
 var hud: CanvasLayer
 var _help: Label
 var _dash: Label                            # speed, gear, indicators, doors while driving
@@ -157,6 +162,14 @@ func _ready() -> void:
 	_high = {"ssil": env.ssil_enabled, "ssao": env.ssao_enabled, "glow": env.glow_enabled,
 			"msaa": get_viewport().msaa_3d, "aa": get_viewport().screen_space_aa}
 	set_low_quality(Settings.low_quality())
+	night = Night.new()
+	night.name = "Night"
+	night.game = self
+	night.env = $WorldEnvironment.environment
+	night.sun = $Sun
+	night.world_root = world_root
+	add_child(night)
+	night.set_night(Settings.night())
 	Settings.changed.connect(_on_settings_changed)
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
@@ -498,8 +511,9 @@ func set_low_quality(on: bool) -> void:
 		_update_help()
 
 
-## Settings page or F11: quality, and keys in the help lines.
+## Settings page or F11: quality, night, and keys in the help lines.
 func _on_settings_changed() -> void:
+	night.set_night(Settings.night())
 	if Settings.low_quality() != low_quality:
 		set_low_quality(Settings.low_quality())
 	else:
@@ -795,6 +809,8 @@ func enter_car(car: Car) -> void:
 	player.get_node("CollisionShape3D").set_deferred("disabled", true)
 	if car.has_cab():
 		car.cab_view = player.first_person
+	if night.on:
+		car.set_headlights(true)
 	car.set_driving(true)
 	_update_help()
 
@@ -1044,6 +1060,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		_help.visible = not _help.visible
 	elif event.is_action_pressed("toggle_quality"):
 		Settings.set_value("quality", "high" if low_quality else "low")
+	elif event.is_action_pressed("night"):
+		Settings.set_value("night", not night.on)
+	elif event.is_action_pressed("headlights") and driving:
+		driving.set_headlights(not driving.headlights)
 	elif event.is_action_pressed("toggle_stats"):
 		_stats.visible = not _stats.visible
 		_stats_t = 1.0
@@ -1222,6 +1242,7 @@ func _update_help() -> void:
 				k.call("plane_throttle_down"), k.call("reset_vehicle")]) + \
 				"wheel zoom (all the way in: cockpit) · %s cockpit\n" % k.call("toggle_view") + \
 				("%s (held) fire the guns · " % k.call("fire") if (driving as Biplane).armed else "") + \
+				"%s landing lights · " % k.call("headlights") + \
 				("your gunner boards from the right side · " if (driving as Biplane).turret else "") + \
 				"%s get out · %s" % [k.call("exit_vehicle"), common]
 	elif driving is Horse:
@@ -1233,7 +1254,8 @@ func _update_help() -> void:
 	elif driving:
 		_help.text = ("DRIVE · %s throttle, %s brake then reverse, %s/%s steer · %s/%s turn signals · %s horn · " % [
 				k.call("throttle"), k.call("brake"), k.call("steer_left"), k.call("steer_right"), k.call("signal_left"),
-				k.call("signal_right"), k.call("horn")]) + "%s (held) drift\n" % k.call("drift") + \
+				k.call("signal_right"), k.call("horn")]) + "%s headlights · %s (held) drift\n" % [k.call("headlights"),
+				k.call("drift")] + \
 				"mouse look · wheel zoom%s · %s back on wheels · %s%s %s\n%s" % [
 				" (all the way in: cab view)" if driving.has_cab() else "", k.call("reset_vehicle"),
 				"%s doors · %s gong · %s cab view · " % [k.call("doors"), k.call("bell"), k.call("toggle_view")] \
@@ -1257,8 +1279,9 @@ func _update_help() -> void:
 				"%s park a car here · %s vehicle menu · %s" % [k.call("park_car"), k.call("vehicle_menu"), common]
 	if driving is FireTruck:
 		_help.text += "\n%s (held) water cannon, aimed where you look · %s siren and beacons" % [k.call("fire"), k.call("bell")]
-	_help.text += "\n%s graphics: %s · %s frame rate%s · F11 fullscreen" % [k.call("toggle_quality"),
-			"low" if low_quality else "high", k.call("toggle_stats"), " and network" if net.active else ""]
+	_help.text += "\n%s graphics: %s · %s %s · %s frame rate%s · F11 fullscreen" % [k.call("toggle_quality"),
+			"low" if low_quality else "high", k.call("night"), "day" if night and night.on else "night",
+			k.call("toggle_stats"), " and network" if net.active else ""]
 	if net.active:
 		_help.text += " · Enter chat · Tab players"
 	if _menu_hint:

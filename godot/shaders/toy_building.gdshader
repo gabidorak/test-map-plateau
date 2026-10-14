@@ -11,6 +11,7 @@
 // material pattern; everything fades to its average colour when a pixel covers several windows.
 // Landmarks (M9) add the podium ground floor, panel and shingle materials and window variants (thick frames,
 // pairs, staggered from floor to floor).
+// At night (global `night`, scripts/night.gd) the glass reflects a dark sky and about half the rooms are lit.
 shader_type spatial;
 render_mode cull_back, diffuse_burley;
 
@@ -66,6 +67,9 @@ uniform vec4 plant_color : source_color = vec4(0.73, 0.75, 0.77, 1.0);
 uniform float min_run = 2.2;            // facades shorter than this get no windows (corners)
 uniform float frame = 0.06;             // window frame width (m)
 uniform float recess = 0.14;            // window recess depth (m)
+uniform vec4 room_light : source_color = vec4(1.0, 0.7, 0.38, 1.0);   // lit rooms at night
+uniform float lit_share = 0.4;          // of the rooms lit at night
+global uniform float night;
 
 varying vec3 wpos;
 varying vec3 wnrm;
@@ -166,7 +170,7 @@ vec3 sky_reflection(vec3 v, vec3 n) {
 	vec3 r = reflect(-v, n);
 	vec3 sky = mix(glass_sky_color.rgb * 1.15, glass_sky_color.rgb * vec3(0.7, 0.85, 1.05), clamp(r.y * 1.6, 0.0, 1.0));
 	vec3 below = mix(glass_deep_color.rgb * 1.6, vec3(0.45, 0.5, 0.45), 0.4);
-	return mix(below, sky, smoothstep(-0.08, 0.05, r.y));
+	return mix(below, sky, smoothstep(-0.08, 0.05, r.y)) * (1.0 - 0.88 * night);
 }
 
 void fragment() {
@@ -325,6 +329,10 @@ void fragment() {
 					// blinds half down in some windows
 					float blind = step(0.86, wid) * step(gq.y, hh - fr) * step(hh - (0.3 + 0.6 * fract(wid * 7.0)) * hh * 2.0, gq.y);
 					room = mix(room, vec3(0.86, 0.82, 0.72), blind * 0.85);
+					float lit = night * step(1.0 - lit_share, fract(wid * 13.7 + 0.3));
+					vec3 lamp = room_light.rgb * (0.55 + 0.6 * fract(wid * 31.3)) * mix(1.0, 0.6, blind);
+					room = mix(room, lamp * 0.6, lit);
+					emis = lamp * lit * (1.0 - fres) * 1.1;
 					outc = mix(room, sky_reflection(v_world, wnrm), fres);
 					// mullion and transom
 					float mull = curtain || fs == F_RIBBON || gs == G_LOBBY ? 1.0 - smoothstep(0.02, 0.02 + fw, abs(gq.x)) : 0.0;
@@ -363,6 +371,7 @@ void fragment() {
 		float far = 1.0 - detail(min(bw, max(rect.z - rect.y, 0.4)), fw);
 		vec3 avg = mix(wall, mix(glass_deep_color.rgb, glass_sky_color.rgb, 0.45), coverage * 0.8);
 		outc = mix(outc, avg, far * step(0.001, rect.w));
+		emis = mix(emis, room_light.rgb * lit_share * coverage * 0.8 * night * 0.85, far * step(0.001, rect.w));
 		col = outc;
 		// contact shadow at the foot of the walls
 		col *= mix(0.72, 1.0, smoothstep(-0.2, 0.6, h + 0.0 * c3.w));
