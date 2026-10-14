@@ -5,7 +5,10 @@ extends SceneTree
 ## second) and the water lands on a car there, nudging it; a broken (burning) car is put out by the water and runs
 ## again; B switches the siren and the flashing beacons; light breakable props fall over under the water, heavy ones
 ## hold; debris and players are pushed; a remote copy turns its turret and sprays from the LAN state without its hits
-## counting.
+## counting. The cab: V gives the cab view from the driver's eye inside it, the steering wheel turns with the steering
+## and the driver's hands stay on it; E from the right side sits the player in the passenger seat (the cab view from
+## the passenger's eye, a look-alike in the chase view), E there takes the wheel, Space gets out on the right; another
+## player in the passenger seat (LAN) keeps it.
 ## godot --headless --fixed-fps 60 --path godot --script res://tools/test_fire_truck.gd
 ## Without --headless it also saves shots to /tmp/fire_truck_*.png.
 
@@ -89,6 +92,19 @@ func _run() -> void:
 	await process_frame
 	_check(_main.driving == truck and "water cannon" in _main._help.text, "E gets in; the help says how to spray")
 
+	# the cab view, from the driver's eye inside the cab
+	_check(truck.has_cab() and truck.has_passenger_seat and truck._steering_wheel != null, "it has a cab with a steering wheel and a passenger seat")
+	var was_cab: bool = truck.cab_view
+	if not was_cab:
+		_tap(KEY_V)
+	await process_frame
+	var cam := root.get_camera_3d()
+	var eye_local: Vector3 = truck.to_local(cam.global_position)
+	_check(truck.cab_view and cam == truck._cab_camera and eye_local.x > 0.2 and eye_local.z > 2.0
+			and eye_local.y > 2.3 and eye_local.y < 3.1, "V: the cab view from the driver seat (%s)" % eye_local)
+	_check(not truck._driver_body.visible and truck._hands[0].visible, "the driver's body is hidden there, the hands on the wheel show")
+	await _shot("fire_truck_cab.png")
+
 	# drives and turns
 	var yaw0: float = truck.global_rotation.y
 	_key(KEY_W, true)
@@ -96,8 +112,14 @@ func _run() -> void:
 	var v: float = truck.speed()
 	_key(KEY_A, true)
 	await _frames(60)
+	var rest: Transform3D = truck._steering_rest
+	var turned: float = (rest.basis.inverse() * truck._steering_wheel.transform.basis).get_euler().y
+	var hand_on := absf(truck._hands[0].position.distance_to(truck._wheel_centre) - truck._grip_radius) < 0.03
+	await _shot("fire_truck_cab_turn.png")
 	_key(KEY_A, false)
 	_key(KEY_W, false)
+	_check(turned > 0.3 and absf(turned - truck.steering * Car.STEERING_RATIO) < 0.01 and hand_on,
+			"A turns the steering wheel left (%.0f°), a hand on its rim" % rad_to_deg(turned))
 	_check(v > 4.0, "W drives it (%.1f m/s after 2.5 s)" % v)
 	_check(absf(angle_difference(yaw0, truck.global_rotation.y)) > 0.1, "A turns it (%.0f°)" % rad_to_deg(angle_difference(yaw0, truck.global_rotation.y)))
 	_key(KEY_S, true)
@@ -264,7 +286,63 @@ func _run() -> void:
 	var pv: Vector3 = player.velocity
 	_main.water_push(_main.water_shove(Vector3(WaterCannon.PUSH, 0.0, 0.0)))
 	_check(player.velocity.x - pv.x > 0.5, "a player hit by the jet is shoved")
+	await _passenger_seat(truck)
 	_finish()
+
+
+## E from the truck's right side: the passenger seat; V, E (takes the wheel), Space; a LAN player seated there.
+func _passenger_seat(truck: VehicleBody3D) -> void:
+	var player: CharacterBody3D = _main.player
+	await _frames(30)
+	player.teleport(truck.to_global(Vector3(-truck.half_extents.x - 1.0, 0.3, 1.0)))
+	await _frames(5)
+	_tap(KEY_E)
+	await _frames(2)
+	await process_frame
+	_check(_main.riding == truck and _main.driving == null and truck.riding and not player.visible
+			and "PASSENGER" in _main._help.text, "E from the right side sits the player in the passenger seat")
+	if _main.riding != truck:
+		return
+	if not truck.cab_view:
+		_tap(KEY_V)
+	await process_frame
+	var eye: Vector3 = truck.to_local(root.get_camera_3d().global_position)
+	_check(root.get_camera_3d() == truck._cab_camera and eye.x < -0.2 and eye.z > 2.0, "V: the cab view from the passenger's eye")
+	await _shot("fire_truck_passenger.png")
+	_tap(KEY_V)
+	await process_frame
+	_check(root.get_camera_3d() == truck.camera and truck._passenger.visible, "V again: the chase camera, the passenger seated in the cab")
+	if DisplayServer.get_name() != "headless":     # the cab from the front, the passenger seated
+		var front := Camera3D.new()
+		root.add_child(front)
+		front.global_position = truck.to_global(Vector3(-2.5, 2.6, 8.0))
+		front.look_at(truck.to_global(Vector3(0.0, 2.3, 3.4)))
+		front.make_current()
+		await _shot("fire_truck_passenger_front.png")
+		front.queue_free()
+		truck.camera.make_current()
+	_key(KEY_W, true)
+	await _frames(30)
+	_key(KEY_W, false)
+	_check(absf(truck.speed()) < 0.2, "the passenger's keys do not drive it")
+	_tap(KEY_SPACE)
+	await _frames(3)
+	var out: Vector3 = truck.to_local(player.global_position)
+	_check(_main.riding == null and not truck.riding and player.visible and out.x < -truck.half_extents.x
+			and not truck._passenger.visible, "Space gets out on the right (%.1f m off the side)" % (-out.x - truck.half_extents.x))
+	await _frames(20)
+	_tap(KEY_E)
+	await _frames(2)
+	_tap(KEY_E)
+	await _frames(2)
+	_check(_main.driving == truck and _main.riding == null and not truck.riding, "E in the passenger seat takes the wheel")
+	_main.exit_car()
+	await _frames(5)
+	truck.show_passenger(true, Color.RED)
+	player.teleport(truck.to_global(Vector3(-truck.half_extents.x - 1.0, 0.3, 1.0)))
+	await _frames(5)
+	_check(truck._passenger.visible and not _main.wants_passenger_seat(truck), "another player seated there: shown, and E does not take the seat")
+	truck.show_passenger(false)
 
 
 ## A spot on the ground ~22 m from the truck, 15-50° off to either side, that the nozzle sees clearly (and a car

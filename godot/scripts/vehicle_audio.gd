@@ -4,7 +4,8 @@ extends Node3D
 ## stop-request gong (ring()), and the air-brake sigh when a bus stops; also the
 ## knocks of scripts/breakables.gd (a sign pole's clang, a sapling's swish, a broken hydrant's gush), the armed
 ## biplane's gunshots and their pings on vehicles (scripts/plane_guns.gd), the boom of a vehicle breaking down, and the
-## fire truck's two-tone siren (scripts/fire_truck.gd), sounding as long as `siren` is on.
+## fire truck's two-tone siren (scripts/fire_truck.gd), sounding as long as `siren` is on, and the horse's hoofbeats,
+## neigh, snort and landing thud (scripts/horse.gd).
 ## Each sound is generated once per kind and cached. scripts/car.gd adds one as a child and calls
 ## update() every physics frame and play() for one-shots.
 
@@ -309,6 +310,55 @@ static func one_shot(sound: String) -> AudioStreamWAV:
 				lp2 += (noise - lp2) * 0.5
 				buf[i] = lp1 * 5.0 * exp(-t * 2.0) + lp2 * 0.6 * exp(-t * 8.0) \
 						+ sin(TAU * (60.0 - 12.0 * t) * t) * exp(-t * 4.0) * 0.9
+		"hoof":                                             # a hoof on the road: hollow clop
+			buf = _silence(0.14)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 13
+			for i in buf.size():
+				var t := float(i) / RATE
+				buf[i] = rng.randf_range(-1.0, 1.0) * 0.5 * exp(-t * 300.0) + sin(TAU * 480.0 * t) * exp(-t * 55.0) * 0.8 \
+						+ sin(TAU * 1150.0 * t) * exp(-t * 80.0) * 0.45 + sin(TAU * 150.0 * t) * exp(-t * 40.0) * 0.5
+		"neigh":                                            # whinny: a nasal cry rising, then trilling down
+			buf = _silence(1.5)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 17
+			var phase := 0.0
+			var lp1 := 0.0
+			var lp2 := 0.0
+			for i in buf.size():
+				var t := float(i) / RATE
+				var base := lerpf(600.0, 1150.0, t / 0.15) if t < 0.15 else lerpf(1150.0, 420.0, pow((t - 0.15) / 1.2, 0.8))
+				var trill := 0.02 + 0.1 * smoothstep(0.1, 0.5, t) * (1.0 - smoothstep(1.0, 1.35, t))
+				phase += base * (1.0 + trill * sin(TAU * 11.0 * t)) / RATE
+				var x := 0.0
+				for h in range(1, 7):
+					x += sin(TAU * phase * h) / pow(h, 1.2)
+				var noise := rng.randf_range(-1.0, 1.0)
+				lp1 += (noise - lp1) * 0.5
+				lp2 += (noise - lp2) * 0.05
+				var env := minf(t / 0.04, 1.0) * (1.0 - smoothstep(1.05, 1.35, t))
+				buf[i] = (tanh(x * 0.9) + (lp1 - lp2) * 0.25) * env
+			_add_hiss(buf, 1.3, 0.2, 0.01, 0.6)             # and a breath out
+		"snort":                                            # air blown through the nostrils, lips fluttering
+			buf = _silence(0.5)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 19
+			var lp1 := 0.0
+			var lp2 := 0.0
+			for i in buf.size():
+				var t := float(i) / RATE
+				var noise := rng.randf_range(-1.0, 1.0)
+				lp1 += (noise - lp1) * 0.15
+				lp2 += (noise - lp2) * 0.01
+				var env := minf(t / 0.02, 1.0) * pow(1.0 - t / 0.5, 2.0)
+				buf[i] = (lp1 - lp2) * env * (0.7 + 0.3 * sin(TAU * 32.0 * t))
+		"land":                                             # a horse landing a jump: thud and two clops
+			buf = _silence(0.4)
+			_add_thump(buf, 0.0, 1.2)
+			for c: float in [0.0, 0.07]:
+				for j in int(0.1 * RATE):
+					var t := float(j) / RATE
+					buf[int(c * RATE) + j] += sin(TAU * 480.0 * t) * exp(-t * 55.0) * 0.6
 		"gush":                                             # broken hydrant: steady roar of water (loops)
 			buf = _silence(2.0)
 			var rng := RandomNumberGenerator.new()

@@ -133,25 +133,7 @@ func setup(model: String) -> void:
 	audio.setup("plane")
 	add_child(audio)
 
-	_cam_pivot = Node3D.new()
-	_cam_pivot.top_level = true
-	add_child(_cam_pivot)
-	_arm = SpringArm3D.new()
-	_arm.spring_length = camera_distance
-	_cam_zoom = camera_distance
-	_zoom_range = Vector2(0.45, 2.5) * _cam_zoom
-	_cam_height = 1.2
-	_arm.collision_mask = Layers.SOLID
-	var arm_shape := SphereShape3D.new()
-	arm_shape.radius = 0.2
-	_arm.shape = arm_shape
-	_arm.margin = 0.1
-	_cam_pivot.add_child(_arm)
-	camera = Camera3D.new()
-	camera.fov = 70.0
-	camera.near = 0.1
-	camera.far = 1500.0
-	_arm.add_child(camera)
+	_build_chase_camera(camera_distance, 1.2)
 	_cab_camera = Camera3D.new()
 	_cab_camera.fov = 80.0
 	_cab_camera.near = 0.05

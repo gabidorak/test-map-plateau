@@ -8,14 +8,19 @@ Red cab and water tank body with a white stripe under the roof edge, white bumpe
 of big off-road tyres (front steering, tandem rear), roller-shutter lockers, side ladder, roof hatch and hand rails,
 blue beacons on the cab roof and in the grille, an amber beacon at the back, and the roof water cannon (a white
 monitor with a long barrel) over the cab. Real PBR materials, like the bus (build_bus.py).
+The cab is hollow, for the cab view (scripts/car.gd): window openings with see-through tinted glass, a dashboard with
+its gauges, a driver and a passenger seat over the engine hump, the cannon's joystick, and the steering wheel
+("steering", spins about its local Z = glTF Y; a name ending in "_wheel" would become a VehicleWheel3D in Godot).
 Blender space: metres, z up, front = -Y, left = +X, origin on the ground under the middle of the truck, which is also
 its centre of mass (glTF/Godot: front = +Z, left = +X, as scripts/car.gd expects). Exports one "body" mesh, the wheel
 objects (wheel_front_left ... wheel_rear_right, origin at the wheel centre), "mirrors" (outside the body box, so they do
 not widen the collision box), the lamps scripts/fire_truck.gd lights (indicator_left/right, brake_lights,
 beacon_left/right (blue), beacon_amber) and the water cannon: "monitor" turns about its local Y (glTF), its child
 "monitor_barrel" pitches about its local X; at rest the barrel points straight ahead. <out>.json (next to the .glb)
-names them and gives the nozzle tip in glTF coordinates.
---preview renders <prefix>_front.png and <prefix>_rear.png (Cycles, a few seconds each)."""
+names them and gives the nozzle tip and the cab ("cab": driver and passenger seat and eye, steering wheel) in glTF
+coordinates.
+--preview renders <prefix>_front.png, <prefix>_rear.png and <prefix>_cab.png (the driver's view; Cycles, a few seconds
+each)."""
 import json
 import math
 import sys
@@ -40,6 +45,13 @@ BODY = (-2.12, 1.40, 3.05)          # tank body: front y, bottom z, top z
 LOCKER_Z = 0.55                     # lockers between the axles reach down to here
 MONITOR = (-3.55, 3.30, 3.60)       # water cannon: y, base of the turning head, barrel pivot height
 BARREL = 1.05                       # pivot to nozzle tip
+CAB_FLOOR = 1.42                    # inside the cab
+WALL = 0.07                         # cab shell thickness
+SEATS = (0.55, -3.15, CAB_FLOOR + 0.42)     # driver seat (x; passenger at -x), y and cushion top
+EYE = 0.95                          # eyes over the cushion
+SIDE_WINDOW = ((FRONT + 0.25, 2.10), (-2.90, 2.10), (-2.90, 2.95), (FRONT + 0.32, 2.95))   # side view (y, z)
+STEERING = (Vector((SEATS[0], -3.68, 2.25)), Vector((0.0, 0.55, 0.84)).normalized())     # centre, axis to the driver
+STEERING_R = 0.25                   # rim (centre line of its tube)
 
 # name: base colour, metallic, roughness, (emission strength)
 MATERIALS = {
@@ -52,6 +64,14 @@ MATERIALS = {
     "alu": ("#B4B9BF", 0.5, 0.45, 0.0),
     "shutter": ("#9EA4AA", 0.3, 0.55, 0.0),
     "glass": ("#141C24", 0.0, 0.05, 0.0),
+    "windscreen": ("#141C24", 0.0, 0.05, 0.0),
+    "trim": ("#8A9097", 0.0, 0.7, 0.0),
+    "trim_dark": ("#2B2E33", 0.0, 0.6, 0.0),
+    "seat": ("#2F3742", 0.0, 0.9, 0.0),
+    "floor_mat": ("#1A1B1D", 0.0, 0.95, 0.0),
+    "gauge": ("#F2F4F6", 0.0, 0.3, 0.8),
+    "screen": ("#3DA5FF", 0.0, 0.2, 1.2),
+    "button_red": ("#D01010", 0.0, 0.35, 0.2),
     "tyre": ("#1B1B1D", 0.0, 0.92, 0.0),
     "rim": ("#C3C7CC", 0.8, 0.3, 0.0),
     "hub": ("#4E5359", 0.6, 0.45, 0.0),
@@ -63,6 +83,7 @@ MATERIALS = {
     "monitor_white": ("#ECEDEE", 0.1, 0.35, 0.0),
     "nozzle": ("#8E959C", 0.8, 0.3, 0.0),
 }
+ALPHA = {"glass": 0.55, "windscreen": 0.35}     # tinted, see-through from the cab; both faces drawn
 
 
 def args() -> dict:
@@ -93,6 +114,10 @@ def mat(name: str) -> bpy.types.Material:
     if emit:
         p.inputs["Emission Color"].default_value = srgb(col)
         p.inputs["Emission Strength"].default_value = emit
+    if name in ALPHA:
+        p.inputs["Alpha"].default_value = ALPHA[name]
+        m.surface_render_method = "BLENDED"
+        m.use_backface_culling = False
     m.diffuse_color = srgb(col)
     return m
 
@@ -211,9 +236,9 @@ def arch(group, y, x0, x1, m, a0=8.0, a1=172.0, n=16) -> None:
     prism(group, prof, x0, x1, m)
 
 
-def plate_on_slope(group, p0, p1, x_half, m, out=0.012, depth=0.01) -> None:
-    """Thin plate across the truck on the sloped front face from side-view points p0 (bottom) to p1 (top), raised `out`
-    off it (towards the front)."""
+def plate_on_slope(group, p0, p1, x0, x1, m, out=0.012, depth=0.01) -> None:
+    """Thin plate across the truck from x0 to x1 on the sloped front face from side-view points p0 (bottom) to p1
+    (top), raised `out` off it (towards the front)."""
     d = Vector((0, p1[0] - p0[0], p1[1] - p0[1]))
     n = Vector((0, -d.z, d.y)).normalized()     # outward (towards -Y)
     if n.y > 0:
@@ -221,7 +246,7 @@ def plate_on_slope(group, p0, p1, x_half, m, out=0.012, depth=0.01) -> None:
     bm = bmesh.new()
     corners = []
     for s in (0.0, 1.0):
-        for x in (-x_half, x_half):
+        for x in (x0, x1):
             corners.append(Vector((x, p0[0], p0[1])) + d * s + n * out)
     v = [bm.verts.new(c) for c in (corners[0], corners[1], corners[3], corners[2])]
     w = [bm.verts.new(c.co + n * depth) for c in v]
@@ -236,13 +261,53 @@ def plate_on_slope(group, p0, p1, x_half, m, out=0.012, depth=0.01) -> None:
 
 # ---------------------------------------------------------------- the truck
 
+def carve(target: bpy.types.Object, cutters: list) -> None:
+    """Cuts the cutter objects out of `target` (exact boolean; the cut faces take the cutter's material) and deletes
+    them."""
+    for c in cutters:
+        mod = target.modifiers.new("cut", "BOOLEAN")
+        mod.operation = "DIFFERENCE"
+        mod.solver = "EXACT"
+        mod.material_mode = "TRANSFER"
+        mod.object = c
+    bpy.context.view_layer.update()
+    me = bpy.data.meshes.new_from_object(target.evaluated_get(bpy.context.evaluated_depsgraph_get()))
+    target.modifiers.clear()
+    old = target.data
+    target.data = me
+    bpy.data.meshes.remove(old)
+    for c in cutters:
+        bpy.data.objects.remove(c)
+
+
+def screen_y(z: float) -> float:
+    """y of the windscreen's outer face at height z."""
+    return FRONT + 0.13 * (z - 2.05) / 1.05
+
+
 def cab() -> None:
     y1, z0, z1 = CAB
     screen = ((FRONT, 2.05), (FRONT + 0.13, 3.10))      # windscreen bottom and top, raked back
-    prism("body", [(FRONT, z0), (y1, z0), (y1, z1), (FRONT + 0.20, z1), screen[1], screen[0]], -HW, HW, "paint_red", 0.07, 3)
-    # windscreen, its black surround, sun visor and wipers
-    plate_on_slope("body", (FRONT - 0.002, 2.00), (FRONT + 0.135, 3.13), HW - 0.08, "plastic_black", out=0.004)
-    plate_on_slope("body", (FRONT + 0.004, 2.08), (FRONT + 0.128, 3.04), HW - 0.14, "glass", out=0.012)
+    # hollow shell: the outline less the cabin (trim inside), with the windscreen and side window openings
+    prism("_cab", [(FRONT, z0), (y1, z0), (y1, z1), (FRONT + 0.20, z1), screen[1], screen[0]], -HW, HW, "paint_red", 0.07, 3)
+    w = WALL
+    prism("_cut", [(FRONT + w, CAB_FLOOR), (y1 - w, CAB_FLOOR), (y1 - w, z1 - w), (FRONT + 0.20 + w, z1 - w),
+                   (screen[1][0] + w, screen[1][1]), (screen[0][0] + w, screen[0][1])], -HW + w, HW - w, "trim")
+    zb, zt = 2.09, 3.03
+    prism("_cut", [(screen_y(zb) - 0.1, zb), (screen_y(zb) + 0.15, zb), (screen_y(zt) + 0.15, zt), (screen_y(zt) - 0.1, zt)],
+          -HW + 0.16, HW - 0.16, "plastic_black")
+    for s in (1, -1):
+        prism("_cut", list(SIDE_WINDOW), s * (HW - 0.15), s * (HW + 0.1), "plastic_black")
+    shell = _parts.pop("_cab")[0]
+    carve(shell, _parts.pop("_cut"))
+    _parts.setdefault("body", []).append(shell)
+    # windscreen: its black surround (a frame round the opening), glass, sun visor and wipers
+    for a, b in ((2.00, 2.08), (3.04, 3.13)):
+        plate_on_slope("body", (screen_y(a) - 0.002, a), (screen_y(b) - 0.002, b), -HW + 0.08, HW - 0.08, "plastic_black", out=0.004)
+    for s in (1, -1):
+        x0, x1 = sorted((s * (HW - 0.08), s * (HW - 0.17)))
+        plate_on_slope("body", (screen_y(2.08) - 0.002, 2.08), (screen_y(3.04) - 0.002, 3.04), x0, x1, "plastic_black", out=0.004)
+    plate_on_slope("body", (FRONT + 0.004, 2.08), (FRONT + 0.128, 3.04), -HW + 0.14, HW - 0.14, "windscreen", out=0.012)
     box("body", (-HW + 0.05, FRONT - 0.10, 3.10), (HW - 0.05, FRONT + 0.22, 3.17), "plastic_black", 0.02)
     for x in (-0.55, 0.35):
         box("body", (x - 0.35, FRONT - 0.035, 2.05), (x + 0.35, FRONT - 0.01, 2.08), "plastic_black", 0.008)
@@ -256,7 +321,7 @@ def cab() -> None:
     for s in (1, -1):
         x = s * (HW + 0.006)
         bm = bmesh.new()
-        prof = [(FRONT + 0.25, 2.10), (-3.10, 2.10), (-3.10, 2.95), (FRONT + 0.32, 2.95)]
+        prof = SIDE_WINDOW
         v0 = [bm.verts.new((x, y, z)) for y, z in prof]
         v1 = [bm.verts.new((x + s * 0.01, y, z)) for y, z in prof]
         bm.faces.new(v0)
@@ -265,8 +330,8 @@ def cab() -> None:
             bm.faces.new((v0[i], v0[(i + 1) % 4], v1[(i + 1) % 4], v1[i]))
         bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
         put("body", bm, "glass")
-    mirrored_box("body", (HW - 0.01, -3.30, 1.95), (HW + 0.02, -3.12, 1.99), "plastic_black", 0.008)    # door handles
-    for y in (FRONT + 0.22, -3.02):         # door shut lines
+    mirrored_box("body", (HW - 0.01, -3.06, 1.95), (HW + 0.02, -2.88, 1.99), "plastic_black", 0.008)    # door handles
+    for y in (FRONT + 0.22, -2.80):         # door shut lines
         mirrored_box("body", (HW - 0.002, y, 1.35), (HW + 0.006, y + 0.012, 3.0), "grille", 0.0)
     # under the cab: black lower front, corner blocks with the headlights, white bumper
     box("body", (-0.82, FRONT, 0.55), (0.82, CAB[0], z0 + 0.02), "plastic_black", 0.03)
@@ -279,6 +344,72 @@ def cab() -> None:
     for y in (AXLES[0][1],):
         arch("body", y, 0.80, HW + 0.03, "plastic_black", 8, 172)
         arch("body", y, -HW - 0.03, -0.80, "plastic_black", 8, 172)
+
+
+def cab_interior() -> None:
+    """Floor mat and engine hump, dashboard with the gauges in a hood behind the wheel and a centre screen, steering
+    column, door cards, sun visors, the two seats, the cannon's joystick on the hump, breathing apparatus bottles on
+    the back wall and a roof lamp."""
+    F = CAB_FLOOR
+    y1 = CAB[0] - WALL
+    dx, sy, sz = SEATS
+    box("body", (-HW + WALL, FRONT + 0.08, F - 0.01), (HW - WALL, y1, F + 0.012), "floor_mat", 0.0)
+    box("body", (-0.26, -3.75, F - 0.01), (0.26, y1 + 0.01, F + 0.32), "trim_dark", 0.05)
+    prism("body", [(FRONT + 0.05, F), (-4.15, F), (-3.93, 1.86), (-3.90, 1.99), (-4.00, 2.07), (FRONT + 0.05, 2.07)],
+          -HW + WALL + 0.01, HW - WALL - 0.01, "trim_dark", 0.03)
+    # gauges in a hood over the dashboard, seen through the top of the steering wheel
+    prism("body", [(-4.16, 2.0), (-3.95, 2.0), (-3.95, 2.31), (-4.0, 2.35), (-4.16, 2.35)], dx - 0.25, dx + 0.25, "trim_dark", 0.03)
+    for x in (dx - 0.11, dx + 0.11):
+        cyl("body", (x, -3.948, 2.20), (0, 1, 0), 0.066, 0.012, "chrome", 24)
+        cyl("body", (x, -3.942, 2.20), (0, 1, 0), 0.056, 0.006, "gauge", 24)
+        box("body", (x - 0.004, -3.939, 2.20), (x + 0.004, -3.936, 2.248), "button_red", 0.0)      # needles
+    box("body", (-0.17, -4.08, 2.04), (0.17, -4.03, 2.21), "trim_dark", 0.015)     # centre screen
+    box("body", (-0.15, -4.031, 2.06), (0.15, -4.024, 2.19), "screen", 0.0)
+    box("body", (-dx - 0.30, -3.97, 1.95), (-dx + 0.30, -3.93, 1.98), "alu", 0.01)  # passenger grab bar
+    centre, axis = STEERING
+    cyl("body", centre - axis * 0.20, axis, 0.045, 0.36, "trim_dark", 16)     # column, into the dashboard
+    for s in (1, -1):
+        side_box("body", s, (HW - WALL - 0.03, FRONT + 0.30, F + 0.05), (HW - WALL + 0.005, -2.86, 2.07), "trim_dark", 0.02)
+        side_box("body", s, (HW - WALL - 0.09, -3.95, 1.97), (HW - WALL, -3.05, 2.03), "trim_dark", 0.02)    # armrest
+        box("body", (s * dx - 0.30, FRONT + 0.28, 3.09), (s * dx + 0.30, FRONT + 0.50, 3.15), "trim", 0.015)    # visor
+        x = s * dx
+        box("body", (x - 0.16, sy - 0.15, F), (x + 0.16, sy + 0.15, sz - 0.12), "chassis", 0.02)    # air-sprung base
+        box("body", (x - 0.26, sy - 0.27, sz - 0.12), (x + 0.26, sy + 0.25, sz), "seat", 0.05)
+        prism("body", [(sy + 0.22, sz - 0.08), (sy + 0.36, sz - 0.08), (sy + 0.47, sz + 0.70), (sy + 0.33, sz + 0.70)],
+              x - 0.26, x + 0.26, "seat", 0.05)
+        prism("body", [(sy + 0.36, sz + 0.73), (sy + 0.48, sz + 0.73), (sy + 0.51, sz + 0.95), (sy + 0.39, sz + 0.95)],
+              x - 0.15, x + 0.15, "seat", 0.04)                                                      # headrest
+    # the cannon's joystick on the front of the hump
+    box("body", (-0.12, -3.73, F + 0.31), (0.12, -3.50, F + 0.39), "trim_dark", 0.02)
+    tube("body", [(0.0, -3.62, F + 0.39), (0.0, -3.63, F + 0.56)], 0.014, "chassis")
+    sphere("body", (0.0, -3.63, F + 0.58), 0.032, "button_red", (1, 1, 1.25), 14)
+    for x in (-0.06, 0.06):
+        cyl("body", (x + 0.03, -3.68, F + 0.395), (0, 0, 1), 0.015, 0.012, "button_red" if x < 0 else "screen", 12)
+    # two breathing apparatus bottles in a bracket on the back wall, a roof lamp
+    for x in (-0.13, 0.13):
+        cyl("body", (x, y1 - 0.11, F + 0.72), (0, 0, 1), 0.085, 0.62, "alu", 20, bevel=0.02)
+        cyl("body", (x, y1 - 0.11, F + 1.08), (0, 0, 1), 0.03, 0.10, "chassis", 12)
+    box("body", (-0.26, y1 - 0.03, F + 0.55), (0.26, y1, F + 0.62), "trim_dark", 0.01)
+    box("body", (-0.15, -3.05, CAB[2] - WALL - 0.03), (0.15, -2.85, CAB[2] - WALL + 0.005), "gauge", 0.01)
+
+
+def steering_wheel() -> bpy.types.Object:
+    """Rim, three spokes (3, 6 and 9 o'clock seen from the seat) and hub around the local Z axis, tilted towards the
+    driver; local +Y is 12 o'clock, +X the driver's right. A red band at 12 o'clock on the black rim, so the cab view
+    (car.gd) shows it turning."""
+    R = STEERING_R
+    arc = lambda a0, a1: [(R * math.cos(math.radians(a)), R * math.sin(math.radians(a)), 0.0)
+                          for a in (a0 + (a1 - a0) * k / 40 for k in range(41))]
+    tube("steering", arc(102.0, 438.0), 0.024, "plastic_black", 10)
+    tube("steering", arc(78.0, 102.0), 0.025, "paint_red", 10)
+    cyl("steering", (0, 0, 0.012), (0, 0, 1), 0.075, 0.05, "trim_dark", 24)
+    cyl("steering", (0, 0, 0.04), (0, 0, 1), 0.045, 0.012, "paint_red", 24)
+    box("steering", (-R, -0.02, -0.006), (R, 0.02, 0.012), "trim", 0.006)
+    box("steering", (-0.022, -R, -0.006), (0.022, 0.0, 0.012), "trim", 0.006)
+    rim = finish("steering")
+    centre, axis = STEERING
+    rim.matrix_world = Matrix.Translation(centre) @ axis.to_track_quat("Z", "Y").to_matrix().to_4x4()
+    return rim
 
 
 def tank_body() -> None:
@@ -539,9 +670,12 @@ def preview(prefix: str) -> None:
     cam = bpy.data.objects.new("cam", cam_data)
     scene.collection.objects.link(cam)
     scene.camera = cam
-    for suffix, pos, look in (("front", (9.5, -10.5, 2.2), (0.3, -1.0, 1.6)),
-                              ("rear", (-9.0, 10.0, 3.2), (0, 0.8, 1.5))):
+    eye = (SEATS[0], SEATS[1] - 0.05, SEATS[2] + EYE)
+    for suffix, pos, look, lens in (("front", (9.5, -10.5, 2.2), (0.3, -1.0, 1.6), 35),
+                                    ("rear", (-9.0, 10.0, 3.2), (0, 0.8, 1.5), 35),
+                                    ("cab", eye, (SEATS[0] - 0.3, -6.0, 1.95), 16)):
         cam.location = pos
+        cam_data.lens = lens
         cam.rotation_euler = (Vector(look) - Vector(pos)).to_track_quat("-Z", "Y").to_euler()
         scene.render.filepath = f"{prefix}_{suffix}.png"
         bpy.ops.render.render(write_still=True)
@@ -554,6 +688,7 @@ def main() -> None:
     for o in list(bpy.data.objects):
         bpy.data.objects.remove(o)
     cab()
+    cab_interior()
     tank_body()
     chassis()
     mirrors()
@@ -561,6 +696,7 @@ def main() -> None:
     tip = monitor()
     objs = [finish(g) for g in ("body", "mirrors", "indicator_left", "indicator_right", "brake_lights", "beacon_left",
                                 "beacon_right", "beacon_amber")]
+    objs.append(steering_wheel())
     head = finish("monitor", (0.0, MONITOR[0], MONITOR[1]))
     barrel = finish("monitor_barrel", (0.0, MONITOR[0], MONITOR[2]))
     bpy.context.view_layer.update()
@@ -586,6 +722,13 @@ def main() -> None:
         "monitor": "monitor",
         "barrel": "monitor_barrel",
         "nozzle": gd(tip),
+        "cab": {
+            "driver_seat": gd((SEATS[0], SEATS[1], SEATS[2])),
+            "driver_eye": gd((SEATS[0], SEATS[1] - 0.05, SEATS[2] + EYE)),
+            "passenger_seat": gd((-SEATS[0], SEATS[1], SEATS[2])),
+            "passenger_eye": gd((-SEATS[0], SEATS[1] - 0.05, SEATS[2] + EYE)),
+            "steering_wheel": "steering",
+        },
     }
     out.with_suffix(".json").write_text(json.dumps(layout, indent=1) + "\n")
     tris = sum(len(p.vertices) - 2 for o in objs for p in o.data.polygons)

@@ -13,7 +13,8 @@ extends Node
 ## Every physics frame each moving vehicle body (group "vehicles": scripts/car.gd and its rear section) sweeps its
 ## collision boxes LOOKAHEAD frames ahead along its velocity and looks for those objects on the BREAKABLE layer, so
 ## they give way before the solver stops the vehicle against them; the vehicle loses the momentum it gives them.
-## Slower than BEND_SPEED / BREAK_SPEED they hold like any other obstacle.
+## Slower than BEND_SPEED / BREAK_SPEED they hold like any other obstacle. The horse (meta "knocks_props" false) does
+## not sweep.
 ## The models stay in their MultiMeshes (built by scripts/builder/vegetation_builder.gd and prop_placer.gd): a bent
 ## tree's instance is turned about its foot in its three LODs, a broken prop's instances are scaled to nothing while
 ## its debris draws one-instance copies of them. Those MultiMeshes are edited through a CPU copy of their buffer
@@ -107,6 +108,8 @@ func _physics_process(delta: float) -> void:
 	_clock += delta
 	_boxes.clear()
 	for body: RigidBody3D in get_tree().get_nodes_in_group("vehicles"):
+		if not body.get_meta("knocks_props", true):     # the horse (scripts/horse.gd) goes round them
+			continue
 		for c in body.get_children():
 			var cs := c as CollisionShape3D
 			if cs and not cs.disabled and cs.shape is BoxShape3D:

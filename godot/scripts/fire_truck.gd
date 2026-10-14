@@ -1,7 +1,8 @@
 extends "res://scripts/car.gd"
 ## Airport fire truck (Car.SPECS "fire-truck"): a 6x6 crash tender built by blender/vehicles/build_fire_truck.py, driven
 ## like the other vehicles (all six wheels drive, the front two steer), with a working roof water cannon
-## (scripts/water_cannon.gd), blue beacons and a two-tone siren.
+## (scripts/water_cannon.gd), blue beacons and a two-tone siren. Its cab (fittings "cab") has the cab view with a
+## turning steering wheel and a passenger seat (car.gd _build_cab).
 ## The cannon aims where the driver looks: the point under the middle of the screen (the chase camera's line of sight,
 ## up to AIM_RANGE) is where the turret turns (YAW_RATE) and the barrel rises (PITCH_RATE) to drop the jet, allowing for
 ## gravity and air drag (or at its longest reach); the fire action (left mouse button, held) sprays. game.gd draws a ring
@@ -96,6 +97,11 @@ func setup(model: String) -> void:
 ## Lamps from the truck's fittings file (no walkable layout).
 func _build_lamps(m: Node3D, box: AABB, _layout: Dictionary) -> void:
 	super(m, box, _fittings)
+
+
+## Driver and passenger seats and steering wheel from the fittings file.
+func _cab_layout(_layout: Dictionary) -> Dictionary:
+	return _fittings.get("cab", {})
 
 
 func _ready() -> void:
