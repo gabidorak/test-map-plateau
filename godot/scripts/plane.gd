@@ -8,6 +8,10 @@ extends "res://scripts/car.gd"
 ## A / D roll (steer on the ground), Q / E rudder (A / E on AZERTY), Ctrl at idle brakes on the ground, R levels the
 ## wings in the air (back on the wheels on the ground), V or the mouse wheel zoomed all the way in: cockpit view.
 ## The upper wing tips leave a thin white trail at flying speed (WingTrail), on every peer.
+## The armed version (Car.SPECS "guns": "biplane-armed") wears a khaki livery with French roundels and has two machine
+## guns under the lower wing (scripts/plane_guns.gd), fired with the left mouse button (held), converging AIM_DISTANCE
+## ahead on the line through the ring sight; game.gd shows where on the screen (aim_point). Shot down (car.gd health),
+## its engine dies and it glides down trailing black smoke.
 ## Frame: like the cars, +Z forward, +X the left wing, origin on the ground under the main wheels with the fuselage
 ## level; parked, the plane rests on its tail wheel, nose up by ~11°.
 
@@ -42,8 +46,14 @@ const LOWER_WING := Vector4(3.0, 0.86, 0.45, 1.1)
 const PROP_HUB := Vector3(0.0, 1.3, 2.18)
 const PROP_RADIUS := 0.95
 const PILOT_SEAT := Vector3(0.0, 1.3, -0.6)            # cockpit opening, on the fuselage axis
+const GUN := Vector3(1.55, 0.76, 1.72)      # armed: left wing gun's barrel axis (x, height) and muzzle z; mirrored
+const AIM_DISTANCE := 200.0                 # m ahead where the two guns' rounds cross...
+const EYE_HEIGHT := 2.08                    # ...on the pilot's line of sight through the ring sight
 const COLORS := {"body": Color(0.86, 0.22, 0.2), "wing": Color(0.98, 0.82, 0.3), "trim": Color(0.96, 0.95, 0.9),
 		"metal": Color(0.75, 0.77, 0.8), "dark": Color(0.16, 0.16, 0.18), "wood": Color(0.55, 0.33, 0.16)}
+const ARMED_COLORS := {"body": Color(0.36, 0.43, 0.22), "wing": Color(0.66, 0.62, 0.4), "trim": Color(0.93, 0.9, 0.78),
+		"blue": Color(0.1, 0.24, 0.62), "white": Color(0.97, 0.97, 0.95), "red": Color(0.86, 0.13, 0.12)}
+const Guns = preload("res://scripts/plane_guns.gd")
 
 var lever := 0.0                            # throttle lever 0..1
 var surfaces := Vector3.ZERO                # control surfaces -1..1: pitch up, roll left, yaw left (smoothed keys)
@@ -64,6 +74,8 @@ var _last_pos := Vector3.INF                # for the trails' speed (remote plan
 var _trail_time := 0.0                      # s of game time, the trails' clock
 var _cam_q := Quaternion.IDENTITY           # chase camera orientation, eased towards the plane's
 var _mats := {}
+var armed := false
+var guns: Guns                              # armed version only
 
 
 func setup(model: String) -> void:
@@ -80,9 +92,11 @@ func setup(model: String) -> void:
 	linear_damp = 0.0
 	continuous_cd = true                    # 45 m/s is most of a metre per physics tick
 	set_meta("plateau", {"type": "car", "id": "%s vehicle (%s)" % [model, spec.get("credit", "")]})
-	for k: String in COLORS:
+	armed = spec.get("guns", false)
+	var colors: Dictionary = COLORS.merged(ARMED_COLORS, true) if armed else COLORS
+	for k: String in colors:
 		var m := StandardMaterial3D.new()
-		m.albedo_color = COLORS[k]
+		m.albedo_color = colors[k]
 		m.roughness = 0.55 if k != "metal" else 0.35
 		m.metallic = 0.4 if k == "metal" else 0.0
 		m.cull_mode = BaseMaterial3D.CULL_DISABLED  # lofts whatever their winding: back faces flip their normals
@@ -105,6 +119,13 @@ func setup(model: String) -> void:
 	inertia = Vector3(700.0, 1100.0, 650.0)  # pitch, yaw, roll
 	_total_mass = mass
 	_wheel_count = 3
+	_set_max_health()
+	smoke_spot = Vector3(0.0, 1.5, 1.7)     # the engine, behind the cowling
+	if armed:
+		guns = Guns.new()
+		var muzzles: Array[Vector3] = [Vector3(GUN.x, GUN.y, GUN.z), Vector3(-GUN.x, GUN.y, GUN.z)]
+		guns.setup(muzzles, Vector3(0.0, EYE_HEIGHT, AIM_DISTANCE))
+		add_child(guns)
 
 	audio = VehicleAudio.new()
 	audio.position = PROP_HUB - Vector3(0.0, 0.0, 0.6)
@@ -284,6 +305,49 @@ func _build_model(root: Node3D) -> void:
 	goggles.inner_radius = 0.2
 	goggles.outer_radius = 0.235
 	_mesh(_driver_body, goggles, "dark").transform = Transform3D(Basis.from_scale(Vector3(1.0, 0.5, 1.0)), Vector3(0.0, 0.3, 0.0))
+	if armed:
+		_build_armament(root)
+
+
+## Armed version: a machine gun under each lower wing (receiver, cooling jacket, barrel), roundels on the upper wing and
+## the fuselage sides, a ring sight ahead of the windscreen.
+func _build_armament(root: Node3D) -> void:
+	var receiver := BoxMesh.new()
+	receiver.size = Vector3(0.13, 0.11, 0.5)
+	for side: float in [1.0, -1.0]:
+		var x := side * GUN.x
+		_mesh(root, receiver, "dark").position = Vector3(x, GUN.y + 0.02, 0.8)
+		_rod(root, Vector3(x, GUN.y, 1.05), Vector3(x, GUN.y, 1.38), 0.045, "dark")         # jacket
+		_rod(root, Vector3(x, GUN.y, 1.38), Vector3(x, GUN.y, GUN.z), 0.022, "metal")       # barrel
+		_rod(root, Vector3(x, GUN.y, GUN.z - 0.07), Vector3(x, GUN.y, GUN.z), 0.034, "dark")  # muzzle
+		# roundels: blue, white, red discs, on top of the upper wing and on the fuselage sides
+		for k in 3:
+			var c := ["blue", "white", "red"][k] as String
+			var disc := CylinderMesh.new()
+			disc.top_radius = 0.42 * (1.0 - k / 3.0)
+			disc.bottom_radius = disc.top_radius
+			disc.height = 0.006
+			disc.radial_segments = 32
+			disc.rings = 1
+			_mesh(root, disc, c).position = Vector3(side * 2.45, UPPER_WING.y + 0.072 + 0.004 * k, UPPER_WING.z)
+			var side_disc := CylinderMesh.new()
+			side_disc.top_radius = 0.22 * (1.0 - k / 3.0)
+			side_disc.bottom_radius = side_disc.top_radius
+			side_disc.height = 0.006
+			side_disc.radial_segments = 32
+			side_disc.rings = 1
+			_mesh(root, side_disc, c).transform = Transform3D(Basis(Vector3.BACK, PI * 0.5),
+					Vector3(side * (0.35 + 0.004 * k), 1.4, -1.45))
+	# ring sight with cross wires on a post, on the line of sight
+	var sight := Vector3(0.0, EYE_HEIGHT, 0.35)
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.085
+	ring.outer_radius = 0.1
+	ring.rings = 24
+	_mesh(root, ring, "dark").transform = Transform3D(Basis(Vector3.RIGHT, PI * 0.5), sight)
+	_rod(root, sight + Vector3(-0.09, 0.0, 0.0), sight + Vector3(0.09, 0.0, 0.0), 0.004, "dark")
+	_rod(root, sight + Vector3(0.0, -0.09, 0.0), sight + Vector3(0.0, 0.09, 0.0), 0.004, "dark")
+	_rod(root, Vector3(0.0, 1.8, 0.35), sight + Vector3(0.0, -0.095, 0.0), 0.012, "dark")
 
 
 func _mesh(parent: Node3D, mesh: Mesh, mat: String) -> MeshInstance3D:
@@ -405,7 +469,9 @@ func set_driving(on: bool) -> void:
 	can_sleep = not on                      # a resting body ignores forces: the propeller's would never move it
 	if not on:
 		lever = 0.0                         # whoever gets out cuts the engine: the plane glides on
-	audio.engine_on = on
+		if guns:
+			guns.firing = false
+	audio.engine_on = on and not broken
 
 
 ## R: in the air, wings level along the current heading, at no less than a gliding speed; on the ground, back on the
@@ -442,6 +508,7 @@ func _physics_process(delta: float) -> void:
 	var keys := Vector3.ZERO                # pitch up, roll left, yaw left
 	var lever_in := 0.0
 	var braking := false
+	var trigger := false
 	if driving and controls:
 		var k := func(code: Key) -> float: return 1.0 if Input.is_physical_key_pressed(code) else 0.0
 		keys = Vector3(k.call(KEY_S) + k.call(KEY_DOWN) - k.call(KEY_W) - k.call(KEY_UP),
@@ -449,6 +516,9 @@ func _physics_process(delta: float) -> void:
 		keys = keys.clamp(-Vector3.ONE, Vector3.ONE)
 		lever_in = k.call(KEY_SHIFT) - k.call(KEY_CTRL)
 		braking = lever == 0.0 and lever_in < 0.0
+		trigger = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	if guns:
+		guns.firing = trigger
 	lever = clampf(lever + lever_in * LEVER_RATE * delta, 0.0, 1.0)
 	surfaces = surfaces.move_toward(keys, 6.0 * delta)
 	_throttle = lever
@@ -478,8 +548,7 @@ func _physics_process(delta: float) -> void:
 		var flat := vl.y / air
 		force -= vdir * LIFT_K * (CD0 + CDI * cl * cl + CD_FLAT * flat * flat) * air * air
 		force -= b.x * SIDE_K * vl.x * air
-	var thin := 1.0 - smoothstep(CEILING - 60.0, CEILING, global_position.y)
-	force += b.z * THRUST * lever * clampf(1.0 - fwd / PROP_MAX, 0.0, 1.0) * thin
+	force += b.z * thrust(fwd)
 	apply_central_force(force)
 
 	# controls: wanted rates in the plane frame (x pitch: + nose down; y yaw: + nose left; z roll: + right wing down)
@@ -505,12 +574,23 @@ func _physics_process(delta: float) -> void:
 	else:
 		brake = 12.0 if braking else 0.15
 	audio.horn = false
+	_update_damage(delta)
 	audio.update(_rpm() * max_speed, lever, max_speed, delta)
+
+
+## Propeller thrust (N) at forward airspeed `fwd`: the lever's share, fading with the speed and near the ceiling; none
+## once broken.
+func thrust(fwd: float) -> float:
+	if broken:
+		return 0.0
+	var thin := 1.0 - smoothstep(CEILING - 60.0, CEILING, global_position.y)
+	return THRUST * lever * clampf(1.0 - fwd / PROP_MAX, 0.0, 1.0) * thin
 
 
 ## Engine speed for the sound, 0..1: the lever, plus a little windmilling with the airspeed.
 func _rpm() -> float:
-	return clampf(lerpf(0.25, 1.0, lever) + 0.15 * speed() / PROP_MAX, 0.0, 1.0) if audio.engine_on or lever > 0.0 else 0.0
+	return clampf(lerpf(0.25, 1.0, lever) + 0.15 * speed() / PROP_MAX, 0.0, 1.0) \
+			if (audio.engine_on or lever > 0.0) and not broken else 0.0
 
 
 func _measure_height() -> void:
@@ -524,25 +604,43 @@ func _remote_process(delta: float) -> void:
 	audio.update(_rpm() * max_speed, lever, max_speed, delta)
 
 
-## LAN games: the car's state with the throttle lever as the pedal, and the control surfaces after it.
+## LAN games: the car's state with the throttle lever as the pedal, and the control surfaces and the trigger after it.
 func net_state() -> Array:
 	var s := super()
 	s.append(surfaces)
+	s.append(guns != null and guns.firing)
 	return s
 
 
 func apply_net_state(a: Array, b: Array, w: float) -> void:
 	super(a, b, w)
 	lever = b[3]
-	if b.size() > 6:
-		surfaces = a[6].lerp(b[6], minf(w, 1.0)) if a.size() > 6 else b[6]
-	audio.engine_on = b[4] & 2 != 0 or lever > 0.0
+	if b.size() > 7:
+		surfaces = a[7].lerp(b[7], minf(w, 1.0)) if a.size() > 7 else b[7]
+	if guns and b.size() > 8:
+		guns.firing = b[8]
+	audio.engine_on = (b[4] & 2 != 0 or lever > 0.0) and not broken
+
+
+## A remote copy's guns fire for show only: the hits count on the peer flying it.
+func set_remote(on: bool) -> void:
+	super(on)
+	if guns:
+		guns.live = not on
+		guns.firing = false
+
+
+## Where the guns' rounds converge (global), for the gunsight on the screen.
+func aim_point() -> Vector3:
+	return to_global(guns.aim if guns else Vector3(0.0, EYE_HEIGHT, AIM_DISTANCE))
 
 
 func dash_text() -> String:
 	var line := "%3d km/h   alt %d m   throttle %d%%" % [roundi(linear_velocity.length() * 3.6), roundi(height),
 			roundi(lever * 100.0)]
-	if stalled:
+	if broken:
+		line += "\nENGINE DEAD · repaired in %d s" % ceili(repair_in())
+	elif stalled:
 		line += "\nSTALL"
 	elif not on_ground and height < 15.0 and linear_velocity.y < -6.0:
 		line += "\nPULL UP"
@@ -555,6 +653,8 @@ func _process(delta: float) -> void:
 	super(delta)
 	# propeller: visibly turning when idle, a blur disc at full power
 	var spin := 0.0 if not audio.engine_on and lever == 0.0 else lerpf(14.0, 70.0, lever)
+	if broken:
+		spin = maxf(speed(), 0.0) * 0.4     # windmilling
 	_prop_angle = fmod(_prop_angle + spin * delta, TAU)
 	_prop.rotation.z = _prop_angle
 	(_prop_disc.material_override as StandardMaterial3D).albedo_color.a = 0.22 * smoothstep(20.0, 60.0, spin)

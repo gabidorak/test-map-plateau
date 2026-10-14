@@ -17,7 +17,10 @@ extends Node3D
 ## The mouse wheel zooms the camera, all the way in is first person (walking) or the cab view (driving the bus);
 ## first person and the cab view carry over when taking and leaving the driver seat. The articulated bus carries the
 ## player in whichever of its two sections they stand (Car.carrier_at).
-## The biplane (scripts/plane.gd, in the vehicle menu) is got in and out of like a car, and flies.
+## The biplane (scripts/plane.gd, in the vehicle menu) is got in and out of like a car, and flies. The armed one fires
+## its machine guns with the left mouse button (scripts/plane_guns.gd; a ring on the screen shows where the rounds
+## converge): a vehicle hit takes damage (net.gd hit_vehicle, car.gd damage) and smokes black once broken, a breakable
+## prop hit falls over (breakables.gd shoot).
 ## Vehicles bend thin trees and knock over sign poles, bollards and the like (scripts/breakables.gd).
 ## Graphics: "low" (no SSIL/SSAO/glow, FXAA instead of MSAA) keeps 60 fps on an integrated GPU; it is
 ## the default there, "high" elsewhere. PLATEAU_QUALITY=low|high overrides, F2 switches.
@@ -29,6 +32,7 @@ const Picker = preload("res://scripts/picker.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const Car = preload("res://scripts/car.gd")
 const Biplane = preload("res://scripts/plane.gd")
+const PlaneGuns = preload("res://scripts/plane_guns.gd")
 const Breakables = preload("res://scripts/breakables.gd")
 const Net = preload("res://scripts/net.gd")
 const MainMenu = preload("res://scripts/main_menu.gd")
@@ -61,6 +65,7 @@ var breakables: Breakables
 var hud: CanvasLayer
 var _help: Label
 var _dash: Label                            # speed, gear, indicators, doors while driving
+var _gunsight: Control                      # armed plane: where its rounds converge
 var _menu: PanelContainer                   # vehicle menu (U)
 var _menu_buttons: GridContainer            # one per model, named after it
 var _menu_status: Label
@@ -338,6 +343,7 @@ func _process(delta: float) -> void:
 		_toast_t -= delta
 		_toast.modulate.a = clampf(_toast_t, 0.0, 1.0)
 	_dash.visible = driving != null
+	_update_gunsight()
 	if driving is Biplane:
 		_dash.text = (driving as Biplane).dash_text()
 	elif driving:
@@ -348,7 +354,18 @@ func _process(delta: float) -> void:
 				"R" if driving.speed() < -0.5 else str(driving.audio.gear + 1), arrows[1]]
 		if driving.has_doors:
 			line += "\ndoors " + ("OPEN" if driving.doors_open else "closed")
+		if driving.broken:
+			line += "\nBROKEN · repaired in %d s" % ceili(driving.repair_in())
 		_dash.text = line
+
+
+## The armed plane's gunsight: a ring where its guns' rounds converge, on the screen.
+func _update_gunsight() -> void:
+	var plane := driving as Biplane
+	var cam := get_viewport().get_camera_3d()
+	_gunsight.visible = plane != null and plane.armed and cam != null and not cam.is_position_behind(plane.aim_point())
+	if _gunsight.visible:
+		_gunsight.position = cam.unproject_position(plane.aim_point()) - _gunsight.size * 0.5
 
 
 ## Welcome menu: the fly camera circles the campus, looking at its middle.
@@ -478,7 +495,21 @@ func _add_car(car: Car) -> void:
 	if car.inside:
 		for body in car.bodies():
 			player.add_collision_exception_with(body)   # the player collides with its walkable hull instead
+	if car is Biplane and (car as Biplane).guns:
+		(car as Biplane).guns.hit.connect(_on_round_hit)
 	cars.append(car)
+
+
+## A round of an armed plane simulated here hit something: a vehicle takes damage (on the peer simulating it), a
+## breakable prop falls over.
+func _on_round_hit(collider: Object, shape: int, _point: Vector3, velocity: Vector3) -> void:
+	var node := collider as Node
+	if node and node.is_in_group("vehicles"):
+		var car := node as Car if node is Car else node.get("head") as Car
+		if car:
+			net.hit_vehicle(car, PlaneGuns.DAMAGE)
+	else:
+		breakables.shoot(collider, shape, velocity)
 
 
 ## Car transform (+Z forward, origin on the ground) for a free spot around the player for a vehicle of
@@ -856,6 +887,20 @@ func _build_hud() -> void:
 	hud.add_child(_dash)
 	_dash.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE, 16)
 	_dash.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_gunsight = Control.new()
+	_gunsight.size = Vector2(44, 44)
+	_gunsight.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_gunsight.visible = false
+	_gunsight.draw.connect(func() -> void:
+		var c := _gunsight.size * 0.5
+		for k in 2:                         # dark outline under a light ring and pips
+			var col := Color(0, 0, 0, 0.6) if k == 0 else Color(1.0, 0.85, 0.5, 0.95)
+			var w := 4.0 if k == 0 else 2.0
+			_gunsight.draw_arc(c, 16.0, 0.0, TAU, 40, col, w, true)
+			for d: Vector2 in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
+				_gunsight.draw_line(c + d * 9.0, c + d * 21.0, col, w, true)
+		_gunsight.draw_circle(c, 2.0, Color(1.0, 0.85, 0.5, 0.95)))
+	hud.add_child(_gunsight)
 	_toast = Label.new()
 	_toast.add_theme_font_size_override("font_size", 19)
 	_toast.add_theme_color_override("font_outline_color", Color.BLACK)
@@ -938,6 +983,7 @@ func _update_help() -> void:
 	elif driving is Biplane:
 		_help.text = "FLY · Shift/Ctrl throttle · W/S nose down/up · A/D roll (on the ground: steer) · Q/E (A/E on AZERTY) rudder\n" + \
 				"Ctrl at idle brakes · R level the wings (on the ground: back on the wheels) · mouse look · wheel zoom (all the way in: cockpit) · V cockpit\n" + \
+				("left click (held) fire the guns · " if (driving as Biplane).armed else "") + \
 				"Space get out · F inspect · X close · F1 fly camera · Esc menu · H hide help"
 	elif driving:
 		_help.text = "DRIVE · WASD/ZQSD: W throttle, S brake then reverse, A/D steer · Q/E (A/E on AZERTY) turn signals · G horn · X (held) drift\n" + \

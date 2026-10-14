@@ -2,7 +2,8 @@ extends Node3D
 ## Vehicle sounds synthesized at runtime (no audio files): an engine loop pitched by a toy automatic
 ## gearbox, a two-tone horn held as long as `horn` is on, indicator relay ticks, bus door chime with air hiss, the bus's city
 ## bell (ring()), and the air-brake sigh when a bus stops; also the
-## knocks of scripts/breakables.gd (a sign pole's clang, a sapling's swish, a broken hydrant's gush).
+## knocks of scripts/breakables.gd (a sign pole's clang, a sapling's swish, a broken hydrant's gush), the armed
+## biplane's gunshots and their pings on vehicles (scripts/plane_guns.gd), and the boom of a vehicle breaking down.
 ## Each sound is generated once per kind and cached. scripts/car.gd adds one as a child and calls
 ## update() every physics frame and play() for one-shots.
 
@@ -230,6 +231,33 @@ static func one_shot(sound: String) -> AudioStreamWAV:
 				var i0 := int(rng.randf_range(0.0, 0.3) * RATE)
 				for j in int(0.004 * RATE):
 					buf[i0 + j] += rng.randf_range(-1.0, 1.0) * exp(-float(j) / RATE * 900.0) * 0.8
+		"gunshot":                                          # one round of a machine gun: crack, muzzle thump
+			buf = _silence(0.2)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 9
+			for i in buf.size():
+				var t := float(i) / RATE
+				buf[i] = rng.randf_range(-1.0, 1.0) * exp(-t * 140.0) * 0.9
+			_add_hiss(buf, 0.0, 0.12, 0.0005, 1.2)
+			_add_thump(buf, 0.0, 1.1)
+		"bullet_hit":                                       # a round on a vehicle's body: a tinny ping
+			buf = _silence(0.35)
+			_add_hiss(buf, 0.0, 0.03, 0.0005, 0.7)
+			for p: Vector2 in [Vector2(1870.0, 0.5), Vector2(3150.0, 0.35), Vector2(4730.0, 0.2)]:
+				_add_ring(buf, 0.002, 0.33, p.x, p.y, 14.0 + p.x / 200.0)
+		"boom":                                             # a vehicle breaking down: a dull bang and a rumble
+			buf = _silence(2.2)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 11
+			var lp1 := 0.0
+			var lp2 := 0.0
+			for i in buf.size():
+				var t := float(i) / RATE
+				var noise := rng.randf_range(-1.0, 1.0)
+				lp1 += (noise - lp1) * 0.04
+				lp2 += (noise - lp2) * 0.5
+				buf[i] = lp1 * 5.0 * exp(-t * 2.0) + lp2 * 0.6 * exp(-t * 8.0) \
+						+ sin(TAU * (60.0 - 12.0 * t) * t) * exp(-t * 4.0) * 0.9
 		"gush":                                             # broken hydrant: steady roar of water (loops)
 			buf = _silence(2.0)
 			var rng := RandomNumberGenerator.new()

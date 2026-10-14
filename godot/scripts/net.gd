@@ -15,6 +15,9 @@ extends Node
 ##   all the same is made up for a moment by carrying on the motion (Track.at). States are sent as soon as the player
 ##   has moved this tick (Sender) and read just before playing back (_physics_process): no frame waits in between.
 ## - Trees bent and props broken by a vehicle simulated here (breakables.gd `broke`) bend and break everywhere.
+## - Damage: the rounds of an armed plane hit on the peer flying it (scripts/plane_guns.gd); a hit vehicle takes the
+##   damage on the peer simulating it (hit_vehicle), whose states carry its health to the others. Remote copies of the
+##   plane fire the same rounds for show (its states carry the trigger).
 ## - A dedicated server (game.gd --dedicated) hosts without playing: it is not in `players` and sends no player state,
 ##   but it still simulates the vehicles nobody else does.
 ## - Chat: a message goes to the host, which sends it to everyone with who said it. The host also sends everyone each
@@ -36,7 +39,7 @@ signal chat(id: int, text: String)          # player `id` said `text`
 const PORT := 7777                          # the host tries the next ones when it is taken
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
-const PROTOCOL := 3                         # bump when the messages change (build_id: other builds are refused anyway)
+const PROTOCOL := 4                         # bump when the messages change (build_id: other builds are refused anyway)
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const IDLE_SEND_EVERY := 0.5                # s, states of vehicles at rest
@@ -576,6 +579,26 @@ func _broke(kind: String, k: int, push: Vector3) -> void:
 		game.breakables.break_prop(k, push)
 
 
+# ---------------------------------------------------------------- damage
+
+## A round of a plane simulated here hit `car` (game.gd): the peer simulating `car` takes the damage.
+func hit_vehicle(car: Car, damage: float) -> void:
+	var owner_id: int = owner_of.get(car.net_id, 0)
+	if not active or owner_id == me():
+		car.damage(damage)
+	elif owner_id != 0:
+		_vehicle_hit.rpc_id(owner_id, car.net_id, damage)
+
+
+## (Named to sort after _refused and _register: RPC ids follow the names, and those two must keep theirs for other
+## builds to be refused cleanly.)
+@rpc("any_peer", "call_remote", "reliable")
+func _vehicle_hit(net_id: String, damage: float) -> void:
+	var car: Car = cars.get(net_id)
+	if car and owner_of.get(net_id) == me():
+		car.damage(clampf(damage, 0.0, 50.0))
+
+
 # ---------------------------------------------------------------- states
 
 func _physics_process(_delta: float) -> void:
@@ -615,7 +638,7 @@ func _send(delta: float) -> void:
 			if car.remote:
 				continue
 			var s := car.net_state()
-			var switches := [s[4], s[5]]
+			var switches := [s[4], s[5], s[6]]      # flags, indicator, health
 			var moving := car.linear_velocity.length_squared() > 0.0025 or car.angular_velocity.length_squared() > 0.0025
 			if idle or moving or car.driving or _sent.get(net_id) != switches:
 				states.append([net_id, s])

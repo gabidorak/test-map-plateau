@@ -10,6 +10,7 @@
 # Godot
 /godot/.godot/
 /godot/output/
+/godot/pack/
 /godot/tools/_tmp_*
 
 # Python / OS
