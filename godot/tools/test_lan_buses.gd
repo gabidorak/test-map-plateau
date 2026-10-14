@@ -72,12 +72,17 @@ func _run_host() -> void:
 	# a bot the client rides: on its way into a stop, with the physics
 	var bot: Object = null
 	for b: Object in _main.traffic.bots:
-		if b.line["ref"] == "Z":
+		if b.line["ref"] == "Z" and not b.idle:
 			bot = b
 	bot.may_glide = false
-	var stops: Array = bot.route["stops"]
-	var stop: Dictionary = stops[stops.size() - 1] if bot.route_index == 1 else stops[1]
-	bot.put(bot.route_index, float(stop["s"]) - bot.nose - 40.0)
+	# a stop with road enough after it to see it drive on
+	var at := []
+	for r in bot.line["routes"].size():
+		var rt: Dictionary = _main.traffic.routes[bot.line["routes"][r]]
+		for st: Dictionary in rt["stops"]:
+			if at.is_empty() and float(st["s"]) > 60.0 and float(st["s"]) < float(rt["length"]) - 80.0:
+				at = [r, float(st["s"])]
+	bot.put(at[0], at[1] - bot.nose - 40.0)
 	var f := FileAccess.open(RIDE_FILE, FileAccess.WRITE)
 	f.store_string(bot.car.net_id)
 	f.close()
@@ -110,8 +115,8 @@ func _run_client() -> void:
 	_check(await _until(func() -> bool: return _main.cars.filter(func(c: Node) -> bool: return c.is_bot()).size() >= 5, 30.0),
 			"the host's bot buses are here, a bot driving each")
 	var bots: Array = _main.cars.filter(func(c: Node) -> bool: return c.is_bot())
-	_check(bots.all(func(c: Node) -> bool: return c.remote and c.freeze and c._driver_dummy.visible),
-			"remote copies, the driver shown")
+	_check(bots.all(func(c: Node) -> bool: return c.remote and c.freeze and (c._driver_dummy == null or c._driver_dummy.visible)),
+			"remote copies, the driver shown (in the vehicles that have one)")
 	# the shared clock
 	_check(await _until(func() -> bool: return FileAccess.file_exists(CLOCK_FILE), 30.0), "the host writes its clock")
 	await _until(func() -> bool: return not is_nan(net._clock_offset), 10.0)
