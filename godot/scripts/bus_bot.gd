@@ -9,7 +9,7 @@ extends RefCounted
 ##   is ahead.
 ## - Stops: every stop of the line: the right indicator on the way in, a stop with the front at the stop's "s" (the pole;
 ##   the articulated bus's bellows at the pole, transit.py), the doors open for DWELL_TIME s (longer while a player is at
-##   a door), closed, the left indicator, and off.
+##   a door, outside or in the doorway), closed, the left indicator, and off.
 ## - Traffic lights: waits at the red (and at the amber when it can stop), on the shared light clock (traffic.gd).
 ## - Junctions where it gives way (transit.py): waits at the line while a vehicle comes from a conflicting arm or moves
 ##   in the junction; a stop sign is a full stop first. It does not wait more than YIELD_PATIENCE s for nothing.
@@ -57,6 +57,7 @@ const DWELL_TIME := Vector2(9.0, 14.0)      # s, doors open at a stop (random be
 const LAYOVER := 20.0                       # s, doors open at a terminus (halved, like the stops, far from the players)
 const DOOR_HOLD := 25.0                     # s more at most while a player stands at a door
 const DOOR_REACH := 3.5                     # m from a doorway
+const DOORWAY := 1.2                        # m from a doorway (level) a player already inside still holds the doors
 const PULL_OUT := 1.5                       # s of left indicator before pulling out
 const LEAVE_SIGNAL := 14.0                  # m after its stop the left indicator stays on (at most)
 const SIGNAL_STOP := 55.0                   # m before a stop the right indicator goes on
@@ -834,14 +835,18 @@ func _player_within(p: Vector3, d: float) -> bool:
 	return false
 
 
-## A player stands by one of the open doorways (inside or out).
+## A player stands by one of the open doorways outside, about to get in, or inside in the doorway itself (one who got
+## in and walks on does not keep the doors open: the bus leaves after its usual dwell).
 func _player_at_door() -> bool:
 	var spots: Array = traffic.game.player_spots(true)
 	for b: Node3D in car.bodies():
 		for dc: Vector3 in b.door_centres:
 			var g: Vector3 = b.to_global(dc)
 			for q: Vector3 in spots:
-				if q.distance_to(g) < DOOR_REACH:
+				if car.carrier_at(q) == null:
+					if q.distance_to(g) < DOOR_REACH:
+						return true
+				elif Vector2(q.x - g.x, q.z - g.z).length() < DOORWAY:
 					return true
 	return false
 
