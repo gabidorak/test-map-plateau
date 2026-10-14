@@ -1,7 +1,7 @@
 extends Node
 ## Player settings (autoload "Settings"), saved in user://settings.cfg next to main_menu.gd's profile: key bindings,
-## mouse sensitivity, graphics quality, display mode, vsync, 3D resolution and UI scale (scripts/settings_menu.gd edits
-## them). F11 switches between a window and borderless fullscreen anywhere.
+## mouse sensitivity, graphics quality, display mode, vsync, 3D resolution, UI scale and day or night
+## (scripts/settings_menu.gd edits them). F11 switches between a window and borderless fullscreen anywhere.
 ## Key bindings are InputMap actions (ACTIONS) on physical key positions, so the defaults are WASD on QWERTY and ZQSD on
 ## AZERTY; key_text() names a binding as the keyboard shows it. The UI scales with the window (project.godot: stretch
 ## mode canvas_items over 1600 x 900), times ui_scale. Tools (--script) run on the default bindings and leave the
@@ -35,6 +35,7 @@ const ACTIONS := [
 	["horn", "Horn (horse: neigh)", "Driving", [KEY_G]],
 	["doors", "Doors (bus)", "Driving", [KEY_O]],
 	["bell", "Gong (bus), siren (fire truck)", "Driving", [KEY_B]],
+	["headlights", "Headlights (plane: landing light)", "Vehicles and plane", [KEY_L]],
 	["exit_vehicle", "Get out (bus: leave the seat)", "Vehicles and plane", [KEY_SPACE]],
 	["reset_vehicle", "Back on the wheels / level the wings", "Vehicles and plane", [KEY_R]],
 	["plane_nose_down", "Nose down", "Plane", [KEY_W, KEY_UP]],
@@ -54,6 +55,7 @@ const ACTIONS := [
 	["inspect_close", "Close the inspection", "General", [KEY_X]],
 	["toggle_help", "Show / hide the help", "General", [KEY_H]],
 	["toggle_quality", "Graphics low / high", "General", [KEY_F2]],
+	["night", "Day / night", "General", [KEY_N]],
 	["toggle_stats", "Frame rate and network", "General", [KEY_F3]],
 ]
 ## Keys that cannot be changed, for the controls page.
@@ -63,7 +65,7 @@ const FIXED := [["Esc", "Menu, close"], ["Enter", "Chat (LAN games)"], ["Tab (he
 
 ## Defaults of the other settings (section "settings" of the file).
 const DEFAULTS := {"quality": "auto", "fullscreen": false, "vsync": true, "scale_3d": 0.0, "ui_scale": 1.0,
-		"mouse": 1.0}
+		"mouse": 1.0, "night": false}
 
 ## Mouse look factor (values["mouse"]) for car.gd, player.gd and fly_camera.gd: the tools preload those before the
 ## autoload's name exists, so they read it here (preload this script) instead of through "Settings".
@@ -73,6 +75,7 @@ var values := DEFAULTS.duplicate()
 var _bindings := {}                         # action -> Array of bindings
 var _tool := false                          # run by a tool (--script): defaults, window untouched
 var _env_quality := ""                      # PLATEAU_QUALITY, until the quality is changed here
+var _env_night := ""                        # PLATEAU_NIGHT (1 or 0), until night is switched here
 
 
 func _ready() -> void:
@@ -80,6 +83,8 @@ func _ready() -> void:
 	_tool = "--script" in OS.get_cmdline_args() or "-s" in OS.get_cmdline_args()
 	var q := OS.get_environment("PLATEAU_QUALITY")
 	_env_quality = q if q in ["low", "high"] else ""
+	var n := OS.get_environment("PLATEAU_NIGHT")
+	_env_night = n if n in ["0", "1"] else ""
 	register_actions()
 	var cfg := ConfigFile.new()
 	cfg.load(FILE)
@@ -195,6 +200,8 @@ func conflicts(action: String, b: int) -> PackedStringArray:
 func set_value(key: String, value: Variant) -> void:
 	if key == "quality":
 		_env_quality = ""
+	elif key == "night":
+		_env_night = ""
 	values[key] = value
 	mouse_scale = values["mouse"]
 	_apply_display()
@@ -205,6 +212,11 @@ func set_value(key: String, value: Variant) -> void:
 func low_quality() -> bool:
 	var q: String = _env_quality if _env_quality != "" else values["quality"]
 	return q == "low" if q != "auto" else integrated_gpu()
+
+
+## Night (game.gd, scripts/night.gd): the setting, or PLATEAU_NIGHT=1 / 0.
+func night() -> bool:
+	return _env_night == "1" if _env_night != "" else values["night"]
 
 
 static func integrated_gpu() -> bool:

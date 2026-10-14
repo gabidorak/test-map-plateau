@@ -7,7 +7,7 @@ extends "res://scripts/car.gd"
 ## Keys while flying (the Settings actions, scripts/settings.gd; defaults on physical positions): Shift / Ctrl throttle
 ## up / down, W / S nose down / up (a stick: S pulls), A / D roll (steer on the ground), Q / E rudder (A / E on AZERTY),
 ## Ctrl at idle brakes on the ground, R levels the wings in the air (back on the wheels on the ground), V or the mouse
-## wheel zoomed all the way in: cockpit view.
+## wheel zoomed all the way in: cockpit view; L (game.gd) switches the landing lights in the lower wing (car.gd headlights).
 ## The upper wing tips leave a thin white trail at flying speed (WingTrail), on every peer.
 ## The armed version (Car.SPECS "guns": "biplane-armed") wears a khaki livery with French roundels and has two machine
 ## guns under the lower wing (scripts/plane_guns.gd), fired with the left mouse button (held), converging AIM_DISTANCE
@@ -139,6 +139,10 @@ func setup(model: String) -> void:
 	add_child(model_root)
 	_build_model(model_root)
 	_build_wheels()
+	# landing lights in the lower wing's leading edge (the headlights, L)
+	var edge := LOWER_WING.z + LOWER_WING.w * 0.5
+	var lights: Array[Vector3] = [Vector3(2.2, LOWER_WING.y, edge), Vector3(-2.2, LOWER_WING.y, edge)]
+	add_headlights(lights, Vector3(0.26, 0.07, 0.05))
 	# collision boxes (breakables.gd sweeps them too): front and rear fuselage, both wings, tail
 	_add_box(self, Vector3(0.0, 1.32, 0.45), Vector3(0.95, 1.05, 3.3))
 	_add_box(self, Vector3(0.0, 1.45, -2.3), Vector3(0.6, 0.6, 2.2))

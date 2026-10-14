@@ -235,12 +235,16 @@ func _run_host() -> void:
 		if i == 90 or i == 100:                 # ding-ding
 			_key(KEY_B, true)
 			_key(KEY_B, false)
+		if i == 120:                            # headlights on
+			_key(KEY_L, true)
+			_key(KEY_L, false)
 		inside += int(remote.visible and bus.carries(remote.global_position, 0.4))
 		ignored += int(remote.ignores(bus))
 	_key(KEY_W, false)
 	probe.queue_free()
 	_check(honked and not bus.audio.horn, "G sounded the horn while held")
 	_check(bus.bells == 2, "B rang the bell twice (%d)" % bus.bells)
+	_check(bus.headlights, "L switched its headlights on")
 	_check(slip[0] < 0.05, "they stay put in the bus as it speeds up (drifted %.2f m at most, at %.1f m/s)" % slip)
 	_key(KEY_S, true)
 	await _until(func() -> bool: return absf(bus.speed()) < 0.5, 10.0)
@@ -477,6 +481,7 @@ func _run_client() -> void:
 	_check(moved > 15.0, "the host's bus drove %.0f m here" % moved)
 	_check(honk > 30 and honk < 90 and not bus.audio.horn, "its horn sounded here as long as the host held it (%d frames)" % honk)
 	_check(bus.bells - bells0 == 2, "its bell rang here as often as the host rang it (%d)" % (bus.bells - bells0))
+	_check(bus.headlights and bus._beam.visible, "its headlights are on here too")
 	_check(inside == frames, "stood inside it all the way (%d/%d frames, fell %.1f m below its floor)" % [inside, frames,
 			maxf(0.0, bus.global_position.y - player.global_position.y)])
 	t0 = Time.get_ticks_msec()

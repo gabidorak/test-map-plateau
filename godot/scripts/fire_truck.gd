@@ -19,8 +19,8 @@ const LONGEST := 0.66                       # rad of barrel elevation that throw
 const AIM_RANGE := 150.0                    # m, how far the driver's line of sight is followed
 const AIM_MASK := Layers.SOLID | Layers.VEGETATION | Layers.PROPS | Layers.VEHICLES | Layers.DEBRIS
 const FLASH := 0.7                          # s, the blue beacons' cycle: two quick flashes on each side in turn
-const FLAGS_SPRAY := 32
-const FLAGS_SIREN := 64
+const FLAGS_SPRAY := 256                    # above car.gd's net_state flags
+const FLAGS_SIREN := 512
 
 var cannon: WaterCannon
 var aim := Vector2.ZERO                     # turret yaw (+ to the left), barrel pitch (+ up), rad

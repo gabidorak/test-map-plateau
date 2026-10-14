@@ -42,6 +42,9 @@ extends VehicleBody3D
 ## half of it, grey smoke comes out of the engine; at 0 it is `broken`: a boom and a ball of fire, the engine dies, the
 ## body is scorched and black smoke billows out of it (scripts/wreck_smoke.gd) until it is repaired REPAIR_AFTER s
 ## later, or until the fire truck's water cannon has hosed it for EXTINGUISH s (douse), which puts the fire out.
+## Headlights (set_headlights; L for the driver, game.gd): a spot light for the beam (casting shadows from the vehicle
+## the player drives), glowing lamps, the tail lamps dimly lit and a walkable vehicle's cabin lights. Bots drive with
+## them on at night (`night`, scripts/night.gd).
 
 const Layers = preload("res://scripts/physics_layers.gd")
 const VehicleAudio = preload("res://scripts/vehicle_audio.gd")
@@ -114,6 +117,13 @@ const HEALTH := 100.0                       # a 1,200 kg car's; heavier vehicles
 const DAMAGED := 0.5                        # share of the health under which the engine smokes grey
 const REPAIR_AFTER := 60.0                  # s a broken vehicle smokes before it is repaired
 const EXTINGUISH := 2.0                     # s of the fire truck's water on a broken vehicle that put its fire out
+const HEADLIGHT := Color(1.0, 0.93, 0.8)    # beam colour, warm white
+const BEAM_RANGE := 60.0                    # m
+const BEAM_ANGLE := 32.0                    # degrees from the axis to the edge of the cone
+const BEAM_TILT := 0.04                     # rad down
+const BEAM_ENERGY := 14.0
+const BEAM_FADE := 140.0                    # m from the camera beyond which the beams fade out
+const CABIN_LIGHT := Color(0.88, 0.93, 1.0)      # a bus's cabin lights, cool white
 
 @export var engine_per_wheel := 2800.0      # N on each of the four driven wheels, more when starting
 @export var max_brake := 80.0
@@ -221,9 +231,16 @@ var bot_driven := false                     # LAN, remote vehicle: a bot drives 
 var stowed := false                         # hidden and out of the physics (a bot bus off the map, set_stowed)
 var _braking := false                       # brake lamps on (the driver's or the pilot's pedal)
 var _stowed_layers := Vector2i.ZERO         # collision layer and mask of the bodies before stowing
+var headlights := false
+var _beam: SpotLight3D                      # null: no headlights (the horse)
+var _head_lamps: Array[MeshInstance3D] = [] # lamp boxes (models without their own)
+var _lit_surfaces: Array = []               # [MeshInstance3D, surface, material when lit]: the model's own lamps
+var _cabin_lights: Array[OmniLight3D] = []
 const BOT_COLOR := Color(0.16, 0.3, 0.55)   # the bot drivers' uniform
 
 static var _soot: StandardMaterial3D        # drawn over a broken vehicle's meshes
+static var night := false                   # scripts/night.gd: bots drive with their headlights on
+static var _lamp_shader: Shader             # the model's own lamp surfaces, lit (_build_headlights)
 
 
 ## Name of `model` for menus: its spec's label, else the model name capitalized ("sedan" -> "Sedan").
@@ -745,6 +762,156 @@ func _build_lamps(m: Node3D, box: AABB, layout: Dictionary) -> void:
 			lamp.material_override = _lamp_mats["indicator"][0]
 	for lamp in _brake_lamps:
 		lamp.material_override = _lamp_mats["brake"][0]
+	_build_headlights(m, box, layout)
+
+
+## Headlights: on a model with a layout or fittings file (the buses, the fire truck), its "headlight" surfaces (only
+## their front half lights up: the fire truck's reversing lamps share them) and "taillight" ones glow, and each
+## walkable section gets a light over its aisle; else lamp boxes go inboard of the front indicators. The beam starts
+## between the headlights.
+func _build_headlights(m: Node3D, box: AABB, layout: Dictionary) -> void:
+	if layout.is_empty():
+		var y := box.position.y + box.size.y * 0.45
+		var lamps: Array[Vector3] = []
+		for side in [1, -1]:
+			lamps.append(Vector3(side * (box.size.x * 0.5 - 0.42), y, box.end.z))
+		add_headlights(lamps, Vector3(0.3, 0.1, 0.04))
+		return
+	if _lamp_shader == null:
+		_lamp_shader = Shader.new()
+		_lamp_shader.code = """shader_type spatial;
+uniform vec4 albedo : source_color;
+uniform vec4 glow : source_color;
+uniform float energy = 4.0;
+uniform bool front_only = false;
+varying float z;
+void vertex() { z = VERTEX.z; }
+void fragment() {
+	ALBEDO = albedo.rgb;
+	ROUGHNESS = 0.25;
+	EMISSION = z > 0.0 || !front_only ? glow.rgb * energy : vec3(0.0);
+}
+"""
+	var lens := AABB()
+	var lenses := 0
+	var models: Array[Node] = [m]
+	if _rear_model:
+		models.append(_rear_model)
+	for root in models:
+		for mi: MeshInstance3D in root.find_children("*", "MeshInstance3D", true, false):
+			for k in mi.mesh.get_surface_count():
+				var original := mi.mesh.surface_get_material(k) as BaseMaterial3D
+				var kind := original.resource_name if original else ""
+				if kind not in ["headlight", "taillight"]:
+					continue
+				var lit := ShaderMaterial.new()
+				lit.shader = _lamp_shader
+				lit.set_shader_parameter("albedo", original.albedo_color)
+				lit.set_shader_parameter("glow", HEADLIGHT if kind == "headlight" else Color(0.9, 0.05, 0.05))
+				lit.set_shader_parameter("energy", 5.0 if kind == "headlight" else 1.5)
+				lit.set_shader_parameter("front_only", kind == "headlight")
+				_lit_surfaces.append([mi, k, lit])
+				if kind == "headlight" and root == m:
+					var xf := _in_car(mi)
+					for v: Vector3 in mi.mesh.surface_get_arrays(k)[Mesh.ARRAY_VERTEX]:
+						if v.z > 0.0:
+							lens = AABB(xf * v, Vector3.ZERO) if lenses == 0 else lens.expand(xf * v)
+							lenses += 1
+	if lenses > 0:
+		_add_beam(Vector3(lens.get_center().x, lens.get_center().y, lens.end.z))
+	if interior.size != Vector3.ZERO:
+		_add_cabin_light(self, interior)
+	if trailer and trailer.interior.size != Vector3.ZERO:
+		_add_cabin_light(trailer, trailer.interior)
+
+
+## Glowing headlight boxes of `size` at `lamps` (car frame, on the front face), and the beam between them.
+func add_headlights(lamps: Array[Vector3], size: Vector3) -> void:
+	var off := StandardMaterial3D.new()
+	off.albedo_color = Color(0.85, 0.87, 0.82)
+	off.roughness = 0.25
+	var on := off.duplicate() as StandardMaterial3D
+	on.emission_enabled = true
+	on.emission = HEADLIGHT
+	on.emission_energy_multiplier = 5.0
+	_lamp_mats["head"] = [off, on]
+	var tail := StandardMaterial3D.new()
+	tail.albedo_color = Color(0.9, 0.05, 0.05)
+	tail.emission_enabled = true
+	tail.emission = tail.albedo_color
+	tail.emission_energy_multiplier = 1.5
+	_lamp_mats["tail"] = tail
+	var centre := Vector3.ZERO
+	for p in lamps:
+		var lamp := _lamp_box(p, size)
+		lamp.material_override = off
+		_head_lamps.append(lamp)
+		centre += p / lamps.size()
+	_add_beam(centre)
+
+
+## The headlight beam from `p` (car frame, the front of the lamps), along +Z and a little down.
+func _add_beam(p: Vector3) -> void:
+	_beam = SpotLight3D.new()
+	_beam.name = "Headlights"
+	_beam.light_color = HEADLIGHT
+	_beam.light_energy = BEAM_ENERGY
+	_beam.light_specular = 0.3
+	_beam.spot_range = BEAM_RANGE
+	_beam.spot_angle = BEAM_ANGLE
+	_beam.spot_angle_attenuation = 0.6
+	_beam.spot_attenuation = 0.7                        # reaches further than the inverse square
+	_beam.distance_fade_enabled = true
+	_beam.distance_fade_begin = BEAM_FADE
+	_beam.distance_fade_length = 20.0
+	_beam.position = p + Vector3(0.0, 0.0, 0.15)
+	_beam.rotation = Vector3(-BEAM_TILT, PI, 0.0)        # a spot light shines along its -Z
+	_beam.visible = false
+	add_child(_beam)
+
+
+## A light under the ceiling of the walkable `interior` (frame of `body`), on with the headlights.
+func _add_cabin_light(body: Node3D, box: AABB) -> void:
+	var light := OmniLight3D.new()
+	light.name = "CabinLight"
+	light.light_color = CABIN_LIGHT
+	light.light_energy = 1.2
+	light.light_specular = 0.2
+	light.omni_range = maxf(box.size.z * 0.6, 4.0)
+	light.omni_attenuation = 0.8
+	light.distance_fade_enabled = true
+	light.distance_fade_begin = BEAM_FADE * 0.5
+	light.distance_fade_length = 20.0
+	light.position = Vector3(box.get_center().x, box.end.y - 0.15, box.get_center().z)
+	light.visible = false
+	body.add_child(light)
+	_cabin_lights.append(light)
+
+
+## Headlights on or off: the beam, the lamps, the tail lamps (dimly red) and the cabin lights. Vehicles without any
+## (the horse) stay off.
+func set_headlights(on: bool) -> void:
+	if _beam == null or on == headlights:
+		return
+	headlights = on
+	_beam.visible = on
+	for light in _cabin_lights:
+		light.visible = on
+	for lamp in _head_lamps:
+		lamp.material_override = _lamp_mats["head"][1 if on else 0]
+	for e: Array in _lit_surfaces:
+		(e[0] as MeshInstance3D).set_surface_override_material(e[1], e[2] if on else null)
+	_set_brake_lamps(_braking or _remote_braking)
+
+
+## The brake lamps: bright red while braking, dimly with the headlights on.
+func _set_brake_lamps(braking: bool) -> void:
+	if _brake_lamps.is_empty():
+		return
+	var mat: Material = _lamp_mats["brake"][1] if braking \
+			else _lamp_mats.get("tail", _lamp_mats["brake"][0]) if headlights else _lamp_mats["brake"][0]
+	for lamp in _brake_lamps:
+		lamp.material_override = mat
 
 
 func _lamp_box(p: Vector3, size: Vector3) -> MeshInstance3D:
@@ -827,6 +994,8 @@ func set_driving(on: bool) -> void:
 	driving = on
 	for b in bodies():
 		b.sleeping = false
+	if _beam:
+		_beam.shadow_enabled = on               # only the player's own beam: shadows cost
 	if _driver_dummy:
 		_driver_dummy.visible = on
 	if on:
@@ -898,6 +1067,8 @@ func set_pilot(p: Object) -> void:
 	for b in bodies():
 		b.sleeping = false
 	show_driver(false)
+	if p:
+		set_headlights(night)
 	audio.engine_on = (p != null or driving or has_doors) and not broken
 
 
@@ -949,10 +1120,12 @@ func set_remote(on: bool) -> void:
 
 
 ## LAN games: this vehicle's state for the other peers: [pose, rear section pose, steering, pedal, flags (1 doors
-## open, 2 someone drives, 4 braking, 8 horn, 16 bell strikes are odd, 32 a bot drives, 64 stowed), indicator, health].
+## open, 2 someone drives, 4 braking, 8 horn, 16 bell strikes are odd, 32 a bot drives, 64 stowed, 128 headlights; the
+## fire truck adds its own above), indicator, health]. A bot's headlights follow each peer's own night instead.
 func net_state() -> Array:
 	var flags := (1 if doors_open else 0) | (2 if driving or pilot else 0) | (4 if _braking else 0) \
-			| (8 if audio.horn else 0) | (16 if bells & 1 else 0) | (32 if pilot else 0) | (64 if stowed else 0)
+			| (8 if audio.horn else 0) | (16 if bells & 1 else 0) | (32 if pilot else 0) | (64 if stowed else 0) \
+			| (128 if headlights else 0)
 	return [global_transform, trailer.global_transform if trailer else Transform3D(), steering, _throttle, flags, indicator,
 			health]
 
@@ -977,6 +1150,7 @@ func apply_net_state(a: Array, b: Array, w: float) -> void:
 		bot_driven = flags & 32 != 0
 		show_driver(false)
 	set_stowed(flags & 64 != 0)
+	set_headlights(night if bot_driven else flags & 128 != 0)
 	set_doors(flags & 1 != 0)
 	if b[5] != indicator:
 		set_indicator(b[5])
@@ -1273,8 +1447,7 @@ func _physics_process(delta: float) -> void:
 
 	_update_indicator(delta)
 	_braking = (driving and throttle < 0.0) or (piloted and pedals[1] > 0.05)
-	for lamp in _brake_lamps:
-		lamp.material_override = _lamp_mats["brake"][1 if _braking else 0]
+	_set_brake_lamps(_braking)
 	_update_steering()
 	_update_doors(delta)
 	_update_damage(delta)
@@ -1301,8 +1474,7 @@ func _update_drift(drifting: bool, v: float, delta: float) -> void:
 ## Remote vehicle (net.gd poses it, bellows included): lamps, steering wheel, doors and engine sound from its states.
 func _remote_process(delta: float) -> void:
 	_update_indicator(delta)
-	for lamp in _brake_lamps:
-		lamp.material_override = _lamp_mats["brake"][1 if _remote_braking else 0]
+	_set_brake_lamps(_remote_braking)
 	_update_steering()
 	_update_doors(delta)
 	audio.update(speed(), _throttle, max_speed, delta)
