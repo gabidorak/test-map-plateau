@@ -18,6 +18,8 @@ extends SceneTree
 ## Passenger seat: after the bus, the client sits in the passenger seat of the host's fire truck (E from its right side);
 ## the host sees its look-alike seated there (the player itself hidden) while it drives the truck a little, the client
 ## rides along in it, gets out with Space, and the seat is empty again on the host.
+## Gunner: then the client mans the turret of the host's two-seat biplane (E from its right side; its hits count on the
+## client): the host sees it seated, the turret pointing where the client looks in the turret view, and firing for show.
 ## Exit code 1 on failure. No --fixed-fps: the states are stamped with the real clock.
 
 const Layers = preload("res://scripts/physics_layers.gd")
@@ -35,6 +37,7 @@ const MAX_JUMP_LAG := 0.08                  # s (~30 ms headless on a laptop; it
 var _main: Node
 var _failures: PackedStringArray = []
 var _hosting := false
+var _gunner_aim := Vector3(0.4, -0.12, 1.0).normalized()  # where the client points the two-seater's turret (plane frame)
 
 
 ## Calls `fn` each frame after every other node's _process: what is drawn.
@@ -86,6 +89,14 @@ func _press(code: Key) -> void:
 ## True when `chat` (chat.gd) shows `text` from `who`.
 func _said(chat: Node, who: String, text: String) -> bool:
 	return chat._lines.any(func(l: Array) -> bool: return l[0] == who and l[2] == text)
+
+
+func _mouse(pressed: bool) -> void:
+	var e := InputEventMouseButton.new()
+	e.button_index = MOUSE_BUTTON_LEFT
+	e.pressed = pressed
+	Input.parse_input_event(e)
+	Input.flush_buffered_events()
 
 
 func _key(code: Key, pressed: bool) -> void:
@@ -163,6 +174,8 @@ func _run_host() -> void:
 	_check(_main.spawn_car_near_player("bus-idfm-artic") != null, "an articulated bus parked too")
 	var truck: Node = _main.spawn_car_near_player("fire-truck")
 	_check(truck != null, "a fire truck parked too")
+	var gunship: Node = _main.spawn_car_near_player("biplane-gunner")
+	_check(gunship != null, "a biplane with gunner parked too")
 	_check(await _until(func() -> bool: return net.players.size() == 2, 90.0), "the client joined")
 	await _jump_for_client()
 	var guest: int = net.players.keys().filter(func(id: int) -> bool: return id != 1)[0]
@@ -170,7 +183,7 @@ func _run_host() -> void:
 			"the client's chat message is here")
 	net.say("hi guest")
 	_check(net.ping(guest) >= 0 and net.ping(1) == 0, "pings known here (guest %d ms)" % net.ping(guest))
-	_check(await _until(func() -> bool: return net.cars.size() == 8, 30.0), "the client's taxi is here (%d vehicles)" % net.cars.size())
+	_check(await _until(func() -> bool: return net.cars.size() == 9, 30.0), "the client's taxi is here (%d vehicles)" % net.cars.size())
 	var taxi: Node = null
 	for id: String in net.cars:
 		if net.cars[id].model_name == "taxi":
@@ -265,6 +278,19 @@ func _run_host() -> void:
 	_main.exit_car()
 	_check(await _until(func() -> bool: return not truck._passenger.visible and remote.visible, 30.0),
 			"the client got out: the seat is empty, the player shown again")
+
+	# the client mans the two-seater's turret: seated there, its aim and trigger here, fired for show
+	_check(await _until(func() -> bool: return gunship._passenger.visible and not remote.visible, 40.0),
+			"the client sits in the two-seat biplane's gunner seat")
+	_check(await _until(func() -> bool: return gunship.turret_guns.firing, 30.0), "the client's trigger is here")
+	var fired0: int = gunship.turret_guns.rounds_fired
+	await _frames(30)
+	_check(gunship.turret_guns.rounds_fired > fired0 and not gunship.turret_guns.live
+			and gunship.turret_dir.angle_to(_gunner_aim) < 0.08,
+			"its turret fires here for show (%d rounds), where the client aims (%.1f° off)" % [
+			gunship.turret_guns.rounds_fired - fired0, rad_to_deg(gunship.turret_dir.angle_to(_gunner_aim))])
+	var empty := func() -> bool: return not gunship._passenger.visible and remote.visible and not gunship.turret_guns.firing
+	_check(await _until(empty, 30.0), "the client got out: the gunner seat is empty, the turret quiet")
 
 	# the client takes one of our cars
 	var taken := func() -> Node:
@@ -408,8 +434,8 @@ func _run_client() -> void:
 	await process_frame
 	await process_frame
 	_check(not list.visible, "and hides them once released")
-	_check(await _until(func() -> bool: return _main.cars.size() == 7 and _off_road(_bus()) < 3.0, 30.0),
-			"the host's 7 vehicles are here (%d), its bus on Nouvelle Voie" % _main.cars.size())
+	_check(await _until(func() -> bool: return _main.cars.size() == 8 and _off_road(_bus()) < 3.0, 30.0),
+			"the host's 8 vehicles are here (%d), its bus on Nouvelle Voie" % _main.cars.size())
 	for c: Node in _main.cars:
 		if c.model_name == "bus-idfm-artic":
 			_check(c.remote and c.freeze and c.trailer.freeze, "the articulated bus is a frozen copy, both sections")
@@ -482,6 +508,31 @@ func _run_client() -> void:
 	await _frames(3)
 	_check(_main.riding == null and player.visible and truck.to_local(player.global_position).x < 0.0,
 			"Space: out on its right side")
+	await _frames(60)
+
+	# man the turret of the host's two-seat biplane: the turret view, fire a moment, get out
+	var gunship: Node = _main.cars.filter(func(c: Node) -> bool: return c.model_name == "biplane-gunner")[0]
+	player.teleport(gunship.to_global(Vector3(-gunship.half_extents.x - 1.0, 0.3, 0.0)))
+	await _frames(10)
+	_press(KEY_E)
+	await _frames(2)
+	_check(_main.riding == gunship and gunship.remote and gunship.turret_guns.live
+			and gunship.turret_guns.hit.is_connected(_main._on_round_hit),
+			"E from its right side: in the gunner seat of the host's plane, our hits count")
+	_press(KEY_V)
+	await _frames(2)
+	gunship.gun_look = Vector2(atan2(_gunner_aim.x, _gunner_aim.z), asin(_gunner_aim.y))
+	await _frames(30)
+	_check(root.get_camera_3d() == gunship._turret_camera and gunship.turret_dir.angle_to(_gunner_aim) < 0.08,
+			"V: the turret view; the turret turns where we look")
+	_mouse(true)
+	await _frames(120)
+	_mouse(false)
+	_check(gunship.turret_guns.rounds_fired > 20, "the left mouse button fires it (%d rounds)" % gunship.turret_guns.rounds_fired)
+	await _frames(30)
+	_press(KEY_SPACE)
+	await _frames(3)
+	_check(_main.riding == null and player.visible, "Space: out of the gunner seat")
 	await _frames(60)
 
 	# out of the bus, then take one of the host's cars

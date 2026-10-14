@@ -1,5 +1,6 @@
 extends Node3D
-## Machine guns of the armed biplane (scripts/plane.gd, Car.SPECS "guns"), WWII style: two Browning-like guns under the
+## Machine guns of the armed biplane (scripts/plane.gd, Car.SPECS "guns"; the two-seater's belly turret is a single one
+## whose muzzle moves with the barrel, move_muzzle), WWII style: two Browning-like guns under the
 ## lower wing fire in turn, RATE rounds a second together, while `firing`; every round is a glowing tracer (a streak
 ## facing the camera, a glowing dot seen end-on from behind the plane) and a muzzle flash. Rounds leave at MUZZLE_SPEED plus the plane's own speed, converge on the plane's `aim` point, drop under
 ## gravity, and are traced by a ray each physics tick. Where one hits: sparks and a ping on a vehicle, a puff of dust
@@ -58,6 +59,13 @@ func setup(muzzle_points: Array[Vector3], aim_point: Vector3) -> void:
 	muzzles = muzzle_points
 	aim = aim_point
 	name = "Guns"
+
+
+## A turret's gun `i` turned: its muzzle now at `muzzle` (plane frame), pointing along `dir`.
+func move_muzzle(i: int, muzzle: Vector3, dir: Vector3) -> void:
+	muzzles[i] = muzzle
+	if i < _flashes.size():
+		_flashes[i].position = muzzle + dir * 0.2
 
 
 func _ready() -> void:

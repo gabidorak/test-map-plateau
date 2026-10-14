@@ -45,7 +45,7 @@ const ACTIONS := [
 	["plane_rudder_right", "Rudder right", "Plane", [KEY_E]],
 	["plane_throttle_up", "Throttle up", "Plane", [KEY_SHIFT]],
 	["plane_throttle_down", "Throttle down (at idle: brake)", "Plane", [KEY_CTRL]],
-	["fire", "Fire the guns (armed plane), water cannon (fire truck)", "Plane", [-MOUSE_BUTTON_LEFT]],
+	["fire", "Fire the guns (armed plane, gunner's turret), water cannon (fire truck)", "Plane", [-MOUSE_BUTTON_LEFT]],
 	["cam_up", "Up (moves with the walking keys, Run: faster)", "Fly camera", [KEY_E]],
 	["cam_down", "Down", "Fly camera", [KEY_Q]],
 	["toggle_view", "First / third person, cab view", "General", [KEY_V]],

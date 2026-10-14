@@ -13,6 +13,14 @@ extends "res://scripts/car.gd"
 ## guns under the lower wing (scripts/plane_guns.gd), fired with the left mouse button (held), converging AIM_DISTANCE
 ## ahead on the line through the ring sight; game.gd shows where on the screen (aim_point). Shot down (car.gd health),
 ## its engine dies and it glides down trailing black smoke.
+## The two-seater (Car.SPECS "turret": "biplane-gunner", navy and cream) has no wing guns: its gunner, in the rear
+## cockpit (the car's passenger seat: E from the plane's right side, or while another player flies it), works a ball
+## turret under the belly. The barrel swings at most TURRET_CONE (45°) off the nose and no higher than TURRET_UP (the
+## lower wing is just above it); it turns at TURRET_RATE towards what the middle of the gunner's screen shows (up to
+## TURRET_RANGE ahead), and the left mouse button (held) fires it. The turret view (V, or the mouse wheel zoomed all
+## the way in) looks down the barrel from the ball, the mouse turning it within its reach; game.gd rings where the
+## barrel points (turret_aim_point). LAN games: the gunner's own player state carries the turret (gunner_state), so
+## the hits count on the gunner's peer, whoever simulates the plane, and the other peers fire it for show.
 ## Frame: like the cars, +Z forward, +X the left wing, origin on the ground under the main wheels with the fuselage
 ## level; parked, the plane rests on its tail wheel, nose up by ~11°.
 
@@ -50,10 +58,21 @@ const PILOT_SEAT := Vector3(0.0, 1.3, -0.6)            # cockpit opening, on the
 const GUN := Vector3(1.55, 0.76, 1.72)      # armed: left wing gun's barrel axis (x, height) and muzzle z; mirrored
 const AIM_DISTANCE := 200.0                 # m ahead where the two guns' rounds cross...
 const EYE_HEIGHT := 2.08                    # ...on the pilot's line of sight through the ring sight
+const REAR_SEAT := Vector3(0.0, 1.26, -1.55)           # two-seater: the gunner's cockpit opening
+const TURRET := Vector3(0.0, 0.62, -0.3)    # ball turret under the belly: its centre, where the barrel pivots
+const TURRET_BALL := 0.2                    # m, radius
+const TURRET_BARREL := 0.78                 # m from the pivot to the muzzle
+const TURRET_CONE := PI / 4.0               # rad, furthest the barrel swings off the nose...
+const TURRET_UP := 0.12                     # ...and above the plane's axis (rad)
+const TURRET_RATE := 3.5                    # rad/s
+const TURRET_RANGE := 600.0                 # m, how far the gunner's line of sight is followed
+const TURRET_LAYER := 1 << 19               # render layer the turret view leaves out: the ball, its neck, the landing
+											# gear right in front of it
 const COLORS := {"body": Color(0.86, 0.22, 0.2), "wing": Color(0.98, 0.82, 0.3), "trim": Color(0.96, 0.95, 0.9),
 		"metal": Color(0.75, 0.77, 0.8), "dark": Color(0.16, 0.16, 0.18), "wood": Color(0.55, 0.33, 0.16)}
 const ARMED_COLORS := {"body": Color(0.36, 0.43, 0.22), "wing": Color(0.66, 0.62, 0.4), "trim": Color(0.93, 0.9, 0.78),
 		"blue": Color(0.1, 0.24, 0.62), "white": Color(0.97, 0.97, 0.95), "red": Color(0.86, 0.13, 0.12)}
+const GUNNER_COLORS := {"body": Color(0.17, 0.3, 0.52), "wing": Color(0.94, 0.88, 0.7), "trim": Color(0.86, 0.22, 0.2)}
 const Guns = preload("res://scripts/plane_guns.gd")
 
 var lever := 0.0                            # throttle lever 0..1
@@ -77,6 +96,17 @@ var _cam_q := Quaternion.IDENTITY           # chase camera orientation, eased to
 var _mats := {}
 var armed := false
 var guns: Guns                              # armed version only
+var turret := false                         # two-seater with a belly turret
+var turret_guns: Guns                       # its gun (live while the gunner is the player here)
+var turret_dir := Vector3.BACK              # where the barrel points, plane frame (unit)
+var gun_look := Vector2(0.0, -0.1)          # turret view: yaw (+ to the left) and pitch (+ up) of the gunner's eye
+var gunner_target := Vector3.INF            # global, what the gunner looks at (INF: none yet)
+var _aim_dist := AIM_DISTANCE               # m along the barrel where its rounds are aimed (the target's distance)
+var _out_of_arc := false                    # the gunner looks where the turret cannot point
+var _turret_yaw: Node3D
+var _turret_pitch: Node3D
+var _turret_camera: Camera3D
+var _turret_query := PhysicsRayQueryParameters3D.new()
 
 
 func setup(model: String) -> void:
@@ -94,7 +124,9 @@ func setup(model: String) -> void:
 	continuous_cd = true                    # 45 m/s is most of a metre per physics tick
 	set_meta("plateau", {"type": "car", "id": "%s vehicle (%s)" % [model, spec.get("credit", "")]})
 	armed = spec.get("guns", false)
-	var colors: Dictionary = COLORS.merged(ARMED_COLORS, true) if armed else COLORS
+	turret = spec.get("turret", false)
+	var colors: Dictionary = COLORS.merged(ARMED_COLORS, true) if armed \
+			else COLORS.merged(GUNNER_COLORS, true) if turret else COLORS
 	for k: String in colors:
 		var m := StandardMaterial3D.new()
 		m.albedo_color = colors[k]
@@ -127,6 +159,25 @@ func setup(model: String) -> void:
 		var muzzles: Array[Vector3] = [Vector3(GUN.x, GUN.y, GUN.z), Vector3(-GUN.x, GUN.y, GUN.z)]
 		guns.setup(muzzles, Vector3(0.0, EYE_HEIGHT, AIM_DISTANCE))
 		add_child(guns)
+	if turret:
+		has_passenger_seat = true
+		passenger_seat = REAR_SEAT
+		turret_guns = Guns.new()
+		var muzzle: Array[Vector3] = [TURRET + turret_dir * TURRET_BARREL]
+		turret_guns.setup(muzzle, TURRET + turret_dir * _aim_dist)
+		turret_guns.name = "TurretGun"
+		turret_guns.live = false
+		add_child(turret_guns)
+		_turret_query.collision_mask = Guns.MASK
+		_turret_query.exclude = [get_rid()]
+		_turret_camera = Camera3D.new()
+		_turret_camera.name = "TurretCamera"
+		_turret_camera.fov = 65.0
+		_turret_camera.near = 0.05
+		_turret_camera.far = 1500.0
+		_turret_camera.cull_mask = 0xFFFFF & ~TURRET_LAYER
+		_turret_camera.position = TURRET + Vector3(0.0, 0.15, -0.05)
+		add_child(_turret_camera)
 
 	audio = VehicleAudio.new()
 	audio.position = PROP_HUB - Vector3(0.0, 0.0, 0.6)
@@ -200,9 +251,10 @@ func _build_model(root: Node3D) -> void:
 			_rod(root, Vector3(side * 0.28, 1.72, UPPER_WING.z + dz), Vector3(side * 0.5, UPPER_WING.y, UPPER_WING.z + dz), 0.03, "dark")
 		# landing gear: a V from the fuselage to the axle
 		var axle := Vector3(side * MAIN_GEAR.x, MAIN_GEAR.y, MAIN_GEAR.z)
-		_rod(root, Vector3(side * 0.3, 0.85, 1.05), axle, 0.035, "dark")
-		_rod(root, Vector3(side * 0.3, 0.85, 0.05), axle, 0.035, "dark")
-	_rod(root, Vector3(MAIN_GEAR.x, MAIN_GEAR.y, MAIN_GEAR.z), Vector3(-MAIN_GEAR.x, MAIN_GEAR.y, MAIN_GEAR.z), 0.03, "dark")
+		_rod(root, Vector3(side * 0.3, 0.85, 1.05), axle, 0.035, "dark").layers = TURRET_LAYER
+		_rod(root, Vector3(side * 0.3, 0.85, 0.05), axle, 0.035, "dark").layers = TURRET_LAYER
+	_rod(root, Vector3(MAIN_GEAR.x, MAIN_GEAR.y, MAIN_GEAR.z), Vector3(-MAIN_GEAR.x, MAIN_GEAR.y, MAIN_GEAR.z), 0.03,
+			"dark").layers = TURRET_LAYER
 	_rod(root, Vector3(0.0, 1.38, -3.05), TAIL_WHEEL + Vector3(0.0, 0.03, 0.0), 0.03, "dark")     # tail wheel leg
 	# ailerons behind the outer upper wing, hinged on its trailing edge
 	var te := UPPER_WING.z - UPPER_WING.w * 0.5
@@ -290,6 +342,8 @@ func _build_model(root: Node3D) -> void:
 	_mesh(_driver_body, goggles, "dark").transform = Transform3D(Basis.from_scale(Vector3(1.0, 0.5, 1.0)), Vector3(0.0, 0.3, 0.0))
 	if armed:
 		_build_armament(root)
+	if turret:
+		_build_turret(root)
 
 
 ## Armed version: a machine gun under each lower wing (receiver, cooling jacket, barrel), roundels on the upper wing and
@@ -333,6 +387,63 @@ func _build_armament(root: Node3D) -> void:
 	_rod(root, Vector3(0.0, 1.8, 0.35), sight + Vector3(0.0, -0.095, 0.0), 0.012, "dark")
 
 
+## Two-seater: the gunner's cockpit and their look-alike (the car's passenger), the ball turret under the belly.
+func _build_turret(root: Node3D) -> void:
+	var rim := TorusMesh.new()
+	rim.inner_radius = 0.28
+	rim.outer_radius = 0.36
+	_mesh(root, rim, "dark").transform = Transform3D(Basis.from_scale(Vector3(0.85, 0.6, 1.05)), REAR_SEAT + Vector3(0.0, 0.5, 0.0))
+	_passenger_skin = _skin.duplicate()
+	var capsule := CapsuleMesh.new()
+	capsule.radius = 0.22
+	capsule.height = 0.9
+	capsule.material = _passenger_skin
+	_passenger = MeshInstance3D.new()
+	_passenger.name = "Passenger"
+	_passenger.mesh = capsule
+	_passenger.position = REAR_SEAT + Vector3(0.0, 0.36, 0.0)
+	_passenger.visible = false
+	add_child(_passenger)
+	var helmet := SphereMesh.new()
+	helmet.radius = 0.2
+	helmet.height = 0.28
+	helmet.is_hemisphere = true
+	_mesh(_passenger, helmet, "wood").position = Vector3(0.0, 0.28, 0.0)
+	var goggles := TorusMesh.new()
+	goggles.inner_radius = 0.185
+	goggles.outer_radius = 0.22
+	_mesh(_passenger, goggles, "dark").transform = Transform3D(Basis.from_scale(Vector3(1.0, 0.5, 1.0)), Vector3(0.0, 0.28, 0.0))
+	# the turret: a neck and a flange under the fuselage, the ball turning on it, the gun through the ball
+	var neck := CylinderMesh.new()
+	neck.top_radius = 0.16
+	neck.bottom_radius = 0.13
+	neck.height = 0.16
+	neck.radial_segments = 16
+	var mi := _mesh(root, neck, "metal")
+	mi.position = TURRET + Vector3(0.0, 0.17, 0.0)
+	mi.layers = TURRET_LAYER
+	_turret_yaw = Node3D.new()
+	_turret_yaw.name = "Turret"
+	_turret_yaw.position = TURRET
+	root.add_child(_turret_yaw)
+	_turret_pitch = Node3D.new()
+	_turret_yaw.add_child(_turret_pitch)
+	var ball := SphereMesh.new()
+	ball.radius = TURRET_BALL
+	ball.height = TURRET_BALL * 2.0
+	mi = _mesh(_turret_pitch, ball, "body")
+	mi.layers = TURRET_LAYER
+	var window := BoxMesh.new()                 # the gunner's sight glass on the side of the ball
+	window.size = Vector3(0.02, 0.09, 0.12)
+	mi = _mesh(_turret_pitch, window, "dark")
+	mi.position = Vector3(TURRET_BALL - 0.01, 0.05, 0.04)
+	mi.layers = TURRET_LAYER
+	_rod(_turret_pitch, Vector3(0.0, 0.0, TURRET_BALL - 0.04), Vector3(0.0, 0.0, 0.3), 0.04, "dark").layers = TURRET_LAYER
+	_rod(_turret_pitch, Vector3(0.0, 0.0, 0.3), Vector3(0.0, 0.0, 0.48), 0.032, "dark")                  # jacket
+	_rod(_turret_pitch, Vector3(0.0, 0.0, 0.48), Vector3(0.0, 0.0, TURRET_BARREL), 0.024, "metal")       # barrel
+	_rod(_turret_pitch, Vector3(0.0, 0.0, TURRET_BARREL - 0.07), Vector3(0.0, 0.0, TURRET_BARREL), 0.036, "dark")
+
+
 func _mesh(parent: Node3D, mesh: Mesh, mat: String) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
@@ -342,7 +453,7 @@ func _mesh(parent: Node3D, mesh: Mesh, mat: String) -> MeshInstance3D:
 
 
 ## A rod of radius `r` from `a` to `b`.
-func _rod(parent: Node3D, a: Vector3, b: Vector3, r: float, mat: String) -> void:
+func _rod(parent: Node3D, a: Vector3, b: Vector3, r: float, mat: String) -> MeshInstance3D:
 	var cm := CylinderMesh.new()
 	cm.top_radius = r
 	cm.bottom_radius = r
@@ -351,7 +462,9 @@ func _rod(parent: Node3D, a: Vector3, b: Vector3, r: float, mat: String) -> void
 	cm.rings = 1
 	var y := (b - a).normalized()
 	var x := y.cross(Vector3.FORWARD if absf(y.z) < 0.9 else Vector3.RIGHT).normalized()
-	_mesh(parent, cm, mat).transform = Transform3D(Basis(x, y, x.cross(y)), (a + b) * 0.5)
+	var mi := _mesh(parent, cm, mat)
+	mi.transform = Transform3D(Basis(x, y, x.cross(y)), (a + b) * 0.5)
+	return mi
 
 
 ## Wing of half span `hs` at height `y`, chord centre `zc`, with rounded tips; thick ± `t`.
@@ -434,14 +547,18 @@ func _wheel(centre: Vector3, r: float, width: float, steer: bool) -> VehicleWhee
 	tyre.height = width
 	tyre.radial_segments = 20
 	tyre.rings = 1
-	_mesh(vw, tyre, "dark").rotation = Vector3(0.0, 0.0, PI * 0.5)
+	var mi := _mesh(vw, tyre, "dark")
+	mi.rotation = Vector3(0.0, 0.0, PI * 0.5)
+	mi.layers = TURRET_LAYER
 	var hub := CylinderMesh.new()
 	hub.top_radius = r * 0.45
 	hub.bottom_radius = r * 0.45
 	hub.height = width + 0.02
 	hub.radial_segments = 12
 	hub.rings = 1
-	_mesh(vw, hub, "trim").rotation = Vector3(0.0, 0.0, PI * 0.5)
+	mi = _mesh(vw, hub, "trim")
+	mi.rotation = Vector3(0.0, 0.0, PI * 0.5)
+	mi.layers = TURRET_LAYER
 	return vw
 
 
@@ -471,6 +588,13 @@ func _put_back_on_wheels() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if riding and controls:
+		if cab_view and event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			look_turret(event.screen_relative * sensitivity * Prefs.mouse_scale)
+			get_viewport().set_input_as_handled()
+		else:
+			super(event)                        # chase camera look, zoom, turret view
+		return
 	if not driving or not controls:
 		return
 	if event.is_action_pressed("reset_vehicle"):
@@ -484,6 +608,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if turret:
+		_update_turret(delta)
 	if remote:
 		_remote_process(delta)
 		return
@@ -574,6 +700,117 @@ func _rpm() -> float:
 			if (audio.engine_on or lever > 0.0) and not broken else 0.0
 
 
+# ---------------------------------------------------------------- turret
+
+## The gunner here turns the turret towards what they look at and fires it; elsewhere it points as their states say
+## (set_gunner_state). The gun's muzzle and aim follow the barrel.
+func _update_turret(delta: float) -> void:
+	if riding:
+		var want := _gunner_aim() if controls else turret_dir
+		var a := turret_dir.angle_to(want)
+		turret_dir = clamp_aim(want if a <= TURRET_RATE * delta else turret_dir.slerp(want, TURRET_RATE * delta / a))
+		turret_guns.firing = controls and Input.is_action_pressed("fire")
+	turret_guns.move_muzzle(0, TURRET + turret_dir * TURRET_BARREL, turret_dir)
+	turret_guns.aim = TURRET + turret_dir * _aim_dist
+	_turret_yaw.rotation.y = atan2(turret_dir.x, turret_dir.z)
+	_turret_pitch.rotation.x = -asin(clampf(turret_dir.y, -1.0, 1.0))
+
+
+## What the middle of the gunner's screen shows (up to TURRET_RANGE), and the barrel direction (plane frame, within
+## reach) that points at it.
+func _gunner_aim() -> Vector3:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return turret_dir
+	_turret_query.from = cam.global_position
+	_turret_query.to = cam.global_position - cam.global_basis.z * TURRET_RANGE
+	var h := get_world_3d().direct_space_state.intersect_ray(_turret_query)
+	gunner_target = h["position"] if h else _turret_query.to
+	var d := to_local(gunner_target) - TURRET
+	_aim_dist = clampf(d.length(), 30.0, TURRET_RANGE)
+	var want := clamp_aim(d.normalized())
+	_out_of_arc = want.angle_to(d) > 0.03
+	return want
+
+
+## `d` (plane frame, unit) brought within the turret's reach: at most TURRET_CONE off the nose, no higher than
+## TURRET_UP above the plane's axis.
+static func clamp_aim(d: Vector3) -> Vector3:
+	var up := sin(TURRET_UP)
+	if d.y > up:
+		var flat := Vector2(d.x, d.z)
+		flat = flat.normalized() if flat.length_squared() > 1e-8 else Vector2(0.0, 1.0)
+		flat *= sqrt(1.0 - up * up)
+		d = Vector3(flat.x, up, flat.y)
+	var off := Vector2(d.x, d.y)
+	if atan2(off.length(), d.z) > TURRET_CONE:
+		off = (off.normalized() if off.length_squared() > 1e-8 else Vector2(0.0, -1.0)) * sin(TURRET_CONE)
+		d = Vector3(off.x, off.y, cos(TURRET_CONE))
+	return d
+
+
+## Turret view: the mouse moved the gunner's eye by `look` (rad: right, down), within the turret's reach.
+func look_turret(look: Vector2) -> void:
+	var yaw := gun_look.x - look.x
+	var pitch := gun_look.y - look.y
+	var d := clamp_aim(Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)))
+	gun_look = Vector2(atan2(d.x, d.z), asin(d.y))
+
+
+## Where the turret's rounds are aimed (global), for the ring on the gunner's screen.
+func turret_aim_point() -> Vector3:
+	return to_global(TURRET + turret_dir * _aim_dist)
+
+
+## LAN games: the gunner's turret for the other peers (game.gd net_player_state): where it points (plane frame, as
+## long as the distance its rounds are aimed at) and the trigger.
+func gunner_state() -> Array:
+	return [turret_dir * _aim_dist, turret_guns.firing]
+
+
+## LAN games: another player's turret (gunner_state), fired here for show.
+func set_gunner_state(aim: Vector3, firing: bool) -> void:
+	if riding or not turret:
+		return
+	if aim.length_squared() > 1e-6:
+		turret_dir = clamp_aim(aim.normalized())
+		_aim_dist = clampf(aim.length(), 30.0, TURRET_RANGE)
+	turret_guns.firing = firing
+
+
+## The player sits in the gunner's seat (on) or gets up: the chase camera or the turret view.
+func set_riding(on: bool, color := Color(1, 0.55, 0.2)) -> void:
+	riding = on
+	turret_guns.live = on
+	if on:
+		_passenger_skin.albedo_color = color
+		_reset_camera()
+	else:
+		turret_guns.firing = false
+		_out_of_arc = false
+	_update_passenger()
+
+
+## LAN games: another player in the gunner's seat (on) or nobody; leaving, their turret stops firing.
+func show_passenger(on: bool, color := Color(1, 0.55, 0.2)) -> void:
+	super(on, color)
+	if not on and turret_guns and not riding:
+		turret_guns.firing = false
+
+
+## The gunner's turret view (looking down the barrel, the eye where it points) or the chase camera; the pilot's cockpit
+## view as before.
+func set_cab_view(on: bool) -> void:
+	if not (riding and _turret_camera):
+		super(on)
+		return
+	cab_view = on
+	_update_passenger()
+	if on:
+		gun_look = Vector2(atan2(turret_dir.x, turret_dir.z), asin(turret_dir.y))
+	(_turret_camera if on else camera).make_current()
+
+
 func _measure_height() -> void:
 	var p := global_transform * center_of_mass
 	var q := PhysicsRayQueryParameters3D.create(p, p + Vector3.DOWN * 2000.0, Layers.SOLID)
@@ -625,6 +862,8 @@ func dash_text() -> String:
 		line += "\nSTALL"
 	elif not on_ground and height < 15.0 and linear_velocity.y < -6.0:
 		line += "\nPULL UP"
+	if riding and _out_of_arc:
+		line += "\nOUT OF THE TURRET'S REACH"
 	return line
 
 
@@ -660,12 +899,14 @@ func _update_camera(delta: float) -> void:
 	var target := Quaternion(level).slerp(Quaternion(b), smoothstep(6.0, 18.0, linear_velocity.length()))
 	_cam_q = target if delta >= 1.0 else _cam_q.slerp(target, 1.0 - exp(-4.0 * delta))
 	var cb := Basis(_cam_q)
-	if linear_velocity.length() > 2.0 and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
-		_look_yaw = lerp_angle(_look_yaw, 0.0, 1.0 - exp(-1.5 * delta))
+	if linear_velocity.length() > 2.0 and not riding and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+		_look_yaw = lerp_angle(_look_yaw, 0.0, 1.0 - exp(-1.5 * delta))     # (the gunner aims with it: no easing)
 	_arm.spring_length = lerpf(_arm.spring_length, _cam_zoom, 1.0 - exp(-10.0 * delta))
 	_cam_pivot.global_position = to_global(Vector3(0.0, 1.3, -0.6)) + cb.y * _cam_height
 	_cam_pivot.global_basis = cb * Basis(Vector3.UP, PI) * Basis.from_euler(Vector3(_look_pitch, _look_yaw, 0.0))
 	_cab_camera.rotation = Vector3(clampf(_look_pitch + 0.12, -1.0, 0.8), PI + _look_yaw, 0.0)
+	if _turret_camera:
+		_turret_camera.rotation = Vector3(gun_look.y, PI + gun_look.x, 0.0)
 
 
 ## Thin ribbon behind a wing tip: points dropped every STEP s while emitting, fading out and widening over LIFE s,

@@ -54,7 +54,8 @@ const KENNEY_WHEELS := ["wheel-front-left", "wheel-front-right", "wheel-back-lef
 ## factor), max_speed (m/s), max_steer (rad at walking pace), steer_fade_speed (m/s, the lock is halved there),
 ## layout (json next to the model), sound (vehicle_audio kind), traction_from (index of the first driven wheel; all drive by default), trailer_mass (kg,
 ## rear section of an articulated vehicle), label (name in the vehicle menu, see display_name), plane (built and flown
-## by scripts/plane.gd, which extends this script, instead), guns (a plane's machine guns), fittings (the fire truck's
+## by scripts/plane.gd, which extends this script, instead), guns (a plane's machine guns), turret (a two-seat plane's
+## belly turret, worked from the passenger seat), fittings (the fire truck's
 ## lamps and water cannon, json next to the model: scripts/fire_truck.gd, which extends this script, drives it), horse
 ## (ridden instead: scripts/horse.gd, which extends this script). Missing
 ## keys take the Kenney Car Kit values (scale 1.5: ~2.8 m -> ~4.2 m); the wheels beyond the first four are a third axle.
@@ -85,10 +86,13 @@ const SPECS := {
 	"biplane": {"label": "Biplane", "plane": true, "credit": "toy biplane built by scripts/plane.gd"},
 	"biplane-armed": {"label": "Armed biplane", "plane": true, "guns": true,
 			"credit": "toy fighter biplane built by scripts/plane.gd"},
+	"biplane-gunner": {"label": "Biplane with gunner", "plane": true, "turret": true,
+			"credit": "toy two-seat biplane built by scripts/plane.gd"},
 	"horse": {"label": "Horse", "horse": true, "credit": "toy horse built by scripts/horse.gd"},
 }
 const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "taxi", "suv", "police", "hatchback-sports", "van",
-		"sedan-sports", "suv-luxury", "delivery", "ambulance", "fire-truck", "biplane", "biplane-armed", "horse"]
+		"sedan-sports", "suv-luxury", "delivery", "ambulance", "fire-truck", "biplane", "biplane-armed", "biplane-gunner",
+		"horse"]
 const REST_LENGTH := 0.2
 const BLINK := 0.75                         # s, indicator period
 const DOOR_TIME := 1.6                      # s to open or close
