@@ -70,11 +70,27 @@ jobs:
           sed -i "/^config\/name=/a config/version=\"$tag\"\nconfig/commit=\"$GITHUB_SHA\"" project.godot
           grep -A2 "^config/name=" project.godot
 
+      # Packed build (scripts/boot.gd): the game's pack is exported on its own and compressed into zstd chunks, and
+      # the "<preset> Packed" executable carries only these chunks, unpacked at the first start of each build.
+      # prepare_packed.gd first stores the generated meshes plain (zstd does better on the whole pack) and drops the
+      # heightmap samples the game never reads.
+      - name: Prepare game data
+        working-directory: godot
+        run: godot --headless --path . --script res://tools/prepare_packed.gd -- --in-place
+
+      - name: Export game data
+        working-directory: godot
+        run: |
+          godot --headless --path . --export-pack "${{ matrix.preset }}" "$RUNNER_TEMP/game.pck"
+          command -v zstd || sudo apt-get install -y zstd
+          tools/pack_game.sh "$RUNNER_TEMP/game.pck" pack
+          rm "$RUNNER_TEMP/game.pck"
+
       - name: Export
         working-directory: godot
         run: |
           mkdir -p "${{ matrix.output }}"
-          godot --headless --path . --export-release "${{ matrix.preset }}" "${{ matrix.output }}/${{ matrix.file }}"
+          godot --headless --path . --export-release "${{ matrix.preset }} Packed" "${{ matrix.output }}/${{ matrix.file }}"
 
       # upload-artifact drops the executable bit, so the Linux build is tarred.
       - name: Package Linux build
