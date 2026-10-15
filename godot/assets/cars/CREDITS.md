@@ -9,3 +9,5 @@
 - `bus_idfm_artic.glb`: the same as an 18 m articulated bus (Iveco Urbanway 18 m CNG), `build_bus.py --model=artic`.
 - `fire_truck.glb`: 6x6 airport fire truck (crash tender on a heavy cab-over chassis), built from code by
   `blender/vehicles/build_fire_truck.py` after the photo `ref/fire_truck.png`.
+- `compact_hatchback.glb`, `family_suv.glb`: realistic five-door hatchback and compact SUV with fitted-out cabins,
+  built from code by `blender/vehicles/build_car.py` (proportions of a Renault Clio V and a Peugeot 3008 II, no badges).
