@@ -61,8 +61,9 @@ const KENNEY_WHEELS := ["wheel-front-left", "wheel-front-right", "wheel-back-lef
 ## by scripts/plane.gd, which extends this script, instead), guns (a plane's machine guns), turret (a two-seat plane's
 ## belly turret, worked from the passenger seat), cab (a car with a fitted-out cabin and real materials, built by
 ## blender/vehicles/build_car.py: json next to the model with its wheels, lamps and cab, see _cab_layout), fittings (the fire truck's
-## lamps and water cannon, json next to the model: scripts/fire_truck.gd, which extends this script, drives it), horse
-## (ridden instead: scripts/horse.gd, which extends this script). Missing
+## lamps and water cannon, json next to the model: scripts/fire_truck.gd, which extends this script, drives it), police
+## (a police car with a light bar and a siren, the "beacons" of its cab file: scripts/police_car.gd, which extends this
+## script), horse (ridden instead: scripts/horse.gd, which extends this script). Missing
 ## keys take the Kenney Car Kit values (scale 1.5: ~2.8 m -> ~4.2 m); the wheels beyond the first four are a third axle.
 const SPECS := {
 	"bus-idfm": {"label": "IDFM bus (12 m)", "file": "bus_idfm.glb", "scale": 1.0,
@@ -87,6 +88,10 @@ const SPECS := {
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
 			"mass": 1500.0, "power": 1.0, "max_speed": 52.0, "cab": "family_suv.json",
 			"credit": "compact crossover with a black roof, built by blender/vehicles/build_car.py"},
+	"police-hatchback": {"label": "Police nationale car", "file": "police_hatchback.glb", "scale": 1.0,
+			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
+			"mass": 1180.0, "power": 0.95, "max_speed": 50.0, "cab": "police_hatchback.json", "police": true,
+			"credit": "the compact hatchback in the Police nationale livery, built by blender/vehicles/build_car.py"},
 	"sedan": {}, "taxi": {}, "suv": {"label": "SUV"}, "police": {}, "hatchback-sports": {"label": "Sports hatchback"},
 	"van": {}, "sedan-sports": {"label": "Sports sedan"}, "suv-luxury": {"label": "Luxury SUV"}, "delivery": {"label": "Delivery van"},
 	"ambulance": {},
@@ -104,7 +109,7 @@ const SPECS := {
 	"horse": {"label": "Horse", "horse": true, "credit": "toy horse built by scripts/horse.gd"},
 }
 const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "taxi", "suv", "police", "hatchback-sports", "van",
-		"sedan-sports", "suv-luxury", "delivery", "ambulance", "compact-hatchback", "family-suv", "fire-truck", "biplane", "biplane-armed", "biplane-gunner",
+		"sedan-sports", "suv-luxury", "delivery", "ambulance", "compact-hatchback", "family-suv", "police-hatchback", "fire-truck", "biplane", "biplane-armed", "biplane-gunner",
 		"horse"]
 const REST_LENGTH := 0.2
 const BLINK := 0.75                         # s, indicator period
@@ -1398,6 +1403,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("bell") and audio.kind == "bus":
 		ring_bell()
 		get_viewport().set_input_as_handled()
+
+
+## Extra line on the dashboard (the fire truck's water cannon and siren, the police car's siren); none by default.
+func dash_line() -> String:
+	return ""
 
 
 ## One RATP gong of the bus (counted in `bells` for the other peers).

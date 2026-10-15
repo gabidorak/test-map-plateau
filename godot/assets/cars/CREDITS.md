@@ -11,3 +11,5 @@
   `blender/vehicles/build_fire_truck.py` after the photo `ref/fire_truck.png`.
 - `compact_hatchback.glb`, `family_suv.glb`: realistic five-door hatchback and compact SUV with fitted-out cabins,
   built from code by `blender/vehicles/build_car.py` (proportions of a Renault Clio V and a Peugeot 3008 II, no badges).
+- `police_hatchback.glb`: the compact hatchback in the Police nationale livery (2021 on), light bar and grille flashers,
+  `build_car.py`; its lettering is drawn with Noto Sans (SIL Open Font License) from the system fonts.

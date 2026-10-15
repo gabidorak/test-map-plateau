@@ -3,7 +3,9 @@ extends SceneTree
 ## six wheels and its cannon; E gets in, it drives and turns; the turret turns and the barrel rises to drop the jet on
 ## the point the driver looks at, and the jet reaches tens of metres; the left mouse button sprays (RATE packets a
 ## second) and the water lands on a car there, nudging it; a broken (burning) car is put out by the water and runs
-## again; B switches the siren and the flashing beacons; light breakable props fall over under the water, heavy ones
+## again; B switches the siren (the fire brigade's two-tone: la 435 Hz and si 488 Hz, 25 to 30 cycles a minute, each note
+## with at least two harmonics between 1 and 4 kHz louder than its fundamental, the 1987 rules) and the flashing
+## beacons; light breakable props fall over under the water, heavy ones
 ## hold; debris and players are pushed; a remote copy turns its turret and sprays from the LAN state without its hits
 ## counting. The cab: V gives the cab view from the driver's eye inside it, the steering wheel turns with the steering
 ## and the driver's hands stay on it; E from the right side sits the player in the passenger seat (the cab view from
@@ -17,6 +19,7 @@ const WorldQuery = preload("res://scripts/world_query.gd")
 const WaterCannon = preload("res://scripts/water_cannon.gd")
 const FireTruck = preload("res://scripts/fire_truck.gd")
 const Car = preload("res://scripts/car.gd")
+const VehicleAudio = preload("res://scripts/vehicle_audio.gd")
 
 var _main: Node
 var _failures: PackedStringArray = []
@@ -210,8 +213,10 @@ func _run() -> void:
 	for i in 60:
 		await process_frame
 		lit = lit or truck._beacon_lights[0].visible or truck._beacon_lights[1].visible
-	_check(truck.siren and truck.audio.siren and lit and "SIREN" in _main._dash.text,
-			"B sounds the siren and the blue beacons flash")
+	_check(truck.siren and truck.audio.siren and lit and "SIREN" in _main._dash.text
+			and truck.audio._siren.stream == VehicleAudio._siren_loop("fire"),
+			"B sounds the fire brigade's siren and the blue beacons flash")
+	_siren_sound()
 	await _shot("fire_truck_beacons.png")
 	_tap(KEY_B)
 	await process_frame
@@ -372,6 +377,59 @@ func _clear_spot(truck: VehicleBody3D) -> Vector3:
 			if clear and space.intersect_shape(box, 1).is_empty():
 				return spot
 	return Vector3.INF
+
+
+## The fire brigade's siren loop: its notes, cadence and timbre.
+func _siren_sound() -> void:
+	var wav: AudioStreamWAV = VehicleAudio._siren_loop("fire")
+	var rate := float(wav.mix_rate)
+	var x := PackedFloat32Array()
+	x.resize(wav.data.size() / 2)
+	for i in x.size():
+		x[i] = wav.data.decode_s16(i * 2) / 32768.0
+	# which note sounds, every 10 ms: the stronger harmonic series (60 ms windows: the notes are a tone apart)
+	var notes: Array[int] = []
+	var win := int(0.06 * rate)
+	for i in range(0, x.size() - win, int(0.01 * rate)):
+		var la := 0.0
+		var si := 0.0
+		for h in range(1, 6):
+			la += _level(x, i, win, 435.0 * h, rate)
+			si += _level(x, i, win, 488.0 * h, rate)
+		notes.append(435 if la > si else 488)
+	var switches := 0
+	for i in range(1, notes.size()):
+		if notes[i] != notes[i - 1]:
+			switches += 1
+	var per_minute := 60.0 / (x.size() / rate)
+	_check(wav.loop_mode == AudioStreamWAV.LOOP_FORWARD and switches <= 2 and absf(notes.count(435) / float(notes.size())
+			- 0.5) < 0.05 and per_minute >= 25.0 and per_minute <= 30.0,
+			"the siren loops one cycle of la then si, half each, %.1f cycles a minute" % per_minute)
+	for note: Array in [[435.0, 0.2], [488.0, 1.3]]:
+		var f0: float = note[0]
+		var start := int(float(note[1]) * rate)
+		var n := int(0.6 * rate)
+		var fund := _level(x, start, n, f0, rate)
+		var off := maxf(_level(x, start, n, f0 * 0.97, rate), _level(x, start, n, f0 * 1.03, rate))
+		var louder := 0
+		for h in range(2, 10):
+			if f0 * h >= 1000.0 and f0 * h <= 4000.0 and _level(x, start, n, f0 * h, rate) > fund:
+				louder += 1
+		_check(fund > 5.0 * off and louder >= 2,
+				"the %d Hz note: its fundamental is there, %d harmonics between 1 and 4 kHz are louder" % [f0, louder])
+
+
+## Amplitude of `x` at `f` Hz over n samples from `start` (Goertzel, Hann window).
+func _level(x: PackedFloat32Array, start: int, n: int, f: float, rate: float) -> float:
+	var w := TAU * f / rate
+	var c := 2.0 * cos(w)
+	var s1 := 0.0
+	var s2 := 0.0
+	for i in n:
+		var s0 := x[start + i] * (0.5 - 0.5 * cos(TAU * i / n)) + c * s1 - s2
+		s2 = s1
+		s1 = s0
+	return sqrt(maxf(s1 * s1 + s2 * s2 - c * s1 * s2, 0.0)) / n
 
 
 func _finish() -> void:

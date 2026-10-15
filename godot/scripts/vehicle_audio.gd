@@ -3,9 +3,9 @@ extends Node3D
 ## automatic gearbox, with tyre roar; a two-tone horn held as long as `horn` is on, indicator relay ticks, bus door chime with air hiss, the bus's RATP
 ## stop-request gong (ring()), and the air-brake sigh when a bus stops; also the
 ## knocks of scripts/breakables.gd (a sign pole's clang, a sapling's swish, a broken hydrant's gush), the armed
-## biplane's gunshots and their pings on vehicles (scripts/plane_guns.gd), the boom of a vehicle breaking down, and the
-## fire truck's two-tone siren (scripts/fire_truck.gd), sounding as long as `siren` is on, and the horse's hoofbeats,
-## neigh, snort and landing thud (scripts/horse.gd).
+## biplane's gunshots and their pings on vehicles (scripts/plane_guns.gd), the boom of a vehicle breaking down, the
+## two-tone sirens of the fire truck (scripts/fire_truck.gd) and the police car (scripts/police_car.gd), sounding as
+## long as `siren` is on, and the horse's hoofbeats, neigh, snort and landing thud (scripts/horse.gd).
 ## Each sound is generated once per kind and cached. scripts/car.gd adds one as a child and calls
 ## update() every physics frame and play() for one-shots.
 
@@ -64,7 +64,8 @@ var kind := "car"
 var engine_on := false
 var gear := 0                               # 0-based, shown on the HUD
 var horn := false                           # sounds while on (fades in and out in update())
-var siren := false                          # likewise (the fire truck's)
+var siren := false                          # likewise (the fire truck's, the police car's)
+var siren_tone := "fire"                    # "fire": the fire brigade's la-si, "police": the police's la-ré
 var _layers: Array[AudioStreamSynchronized] = []   # per recorded engine speed: its on and off the throttle loops
 var _engines: Array[AudioStreamPlayer3D] = []      # two: layer i plays on _engines[i % 2], so neighbours cross-fade
 var _road: AudioStreamPlayer3D              # tyre roar (none for the plane)
@@ -164,7 +165,7 @@ func update(speed: float, throttle: float, max_speed: float, delta: float) -> vo
 	_horn.volume_db = linear_to_db(maxf(_horn_gain, 0.0001))
 	if siren and _siren == null:
 		_siren = AudioStreamPlayer3D.new()
-		_siren.stream = _siren_loop()
+		_siren.stream = _siren_loop(siren_tone)
 		_siren.unit_size = 25.0
 		_siren.max_distance = 400.0
 		add_child(_siren)
@@ -494,33 +495,77 @@ static func _horn_loop(vehicle_kind: String) -> AudioStreamWAV:
 	return s
 
 
-## French fire brigade two-tone ("pin-pon"): la 435 Hz and si 488 Hz, half a second each, gliding quickly from one to
-## the other, brassy (a compressor siren's horn). 2 s loop, its end cross-faded into its start.
-static func _siren_loop() -> AudioStreamWAV:
-	if _cache.has("siren"):
-		return _cache["siren"]
-	var fade := int(0.03 * RATE)
-	var buf := _silence(2.0)
-	buf.resize(buf.size() + fade)
-	var phase := 0.0
-	var f := 435.0
-	for i in buf.size():
-		var t := float(i) / RATE
-		var target := 435.0 if fmod(t, 1.0) < 0.5 else 488.0
-		f += (target - f) * 0.004                       # ~10 ms glide
-		phase += f / RATE
-		var x := 0.0
-		for h in range(1, 9):
-			x += sin(TAU * phase * h) / pow(h, 0.9)
-		buf[i] = tanh(x * 0.8)
-	var n := buf.size() - fade
-	for j in fade:
-		var a := float(j) / fade
-		buf[j] = buf[j] * a + buf[n + j] * (1.0 - a)
+## French two-tone sirens (arrêtés of 30 October, 2 and 3 November 1987): two notes, each with harmonics between 1 and
+## 4 kHz louder than its fundamental, as the rules ask; per tone (vehicle's `siren_tone`): the notes (Hz), cycles a
+## minute, the source's even harmonics against its odd ones, the horn (_horn_response: throat cut-off Hz, bell rings
+## [Hz, width, gain], roll-off Hz), the glide between the notes (s) and the soft clipping.
+const SIRENS := {
+	# fire brigade: la-si, 25 to 30 cycles a minute; compressor horns, a buzzing reed (every harmonic) in brassy trumpets
+	"fire": {"notes": [435.0, 488.0], "per_minute": 27.5, "even": 0.7, "throat": 600.0,
+			"rings": [[1300.0, 450.0, 1.2], [2400.0, 700.0, 1.6]], "top": 5000.0, "glide": 0.012, "drive": 1.6},
+	# police: la-ré, 50 to 60 cycles a minute; an electronic siren's square wave (odd harmonics, a little of the even
+	# ones) through a horn loudspeaker
+	"police": {"notes": [435.0, 580.0], "per_minute": 55.0, "even": 0.15, "throat": 800.0,
+			"rings": [[1500.0, 450.0, 1.2], [2900.0, 600.0, 0.8]], "top": 4500.0, "glide": 0.004, "drive": 1.3},
+}
+
+
+## The two-tone siren `tone` (SIRENS): its source through its horn, pushed into soft clipping, the notes switching with
+## a short glide. One period of each note is tabulated, the two tables cross-fading with the glide. The loop is one
+## cycle, its notes nudged (under 0.1 %) to a whole number of periods so that it is seamless.
+static func _siren_loop(tone: String) -> AudioStreamWAV:
+	if _cache.has("siren_" + tone):
+		return _cache["siren_" + tone]
+	const TABLE := 2048
+	var k: Dictionary = SIRENS[tone]
+	var notes: Array = k["notes"]
+	var tables: Array[PackedFloat32Array] = []
+	for f: float in notes:
+		var t := PackedFloat32Array()
+		t.resize(TABLE + 1)
+		for h in range(1, int(7000.0 / f) + 1):
+			var a := _horn_response(f * h, k) * (1.0 if h % 2 == 1 else float(k["even"])) / h
+			for i in TABLE:
+				t[i] += a * sin(TAU * h * i / TABLE)
+		var peak := 0.0
+		for i in TABLE:
+			peak = maxf(peak, absf(t[i]))
+		for i in TABLE:
+			t[i] /= peak
+		t[TABLE] = t[0]
+		tables.append(t)
+	var n := roundi(RATE * 60.0 / float(k["per_minute"]))
+	var glide := 1.0 - exp(-1.0 / (float(k["glide"]) * RATE))
+	var drive: float = k["drive"]
+	var scale := 1.0
+	var buf := PackedFloat32Array()
 	buf.resize(n)
+	for pass_ in 2:                             # the first only measures the phase the loop ends on
+		var f: float = notes[1] * scale         # the loop starts as the second note gives way to the first
+		var phase := 0.0
+		for i in n:
+			f += ((notes[0] if i * 2 < n else notes[1]) * scale - f) * glide
+			if pass_ == 1:
+				var x := fmod(phase, 1.0) * TABLE
+				var j := int(x)
+				var w := clampf((f / scale - notes[0]) / (notes[1] - notes[0]), 0.0, 1.0)
+				buf[i] = tanh(drive * lerpf(lerpf(tables[0][j], tables[0][j + 1], x - j),
+						lerpf(tables[1][j], tables[1][j + 1], x - j), w))
+			phase += f / RATE
+		scale = roundf(phase) / phase
 	var s := _to_wav(buf, true)
-	_cache["siren"] = s
+	_cache["siren_" + tone] = s
 	return s
+
+
+## Gain of the siren `k`'s horn at f Hz: its throat cuts the low notes (fourth order), its bell rings, the driver rolls
+## off.
+static func _horn_response(f: float, k: Dictionary) -> float:
+	var hp := pow(f / float(k["throat"]), 4.0)
+	var bell := 1.0
+	for r: Array in k["rings"]:
+		bell += r[2] * exp(-pow((f - r[0]) / r[1], 2.0))
+	return hp / (1.0 + hp) * bell / (1.0 + pow(f / float(k["top"]), 4.0))
 
 
 static func one_shot(sound: String) -> AudioStreamWAV:

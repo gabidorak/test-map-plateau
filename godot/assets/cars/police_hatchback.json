@@ -1,0 +1,54 @@
+{
+ "wheels": [
+  "wheel_front_left",
+  "wheel_front_right",
+  "wheel_rear_left",
+  "wheel_rear_right"
+ ],
+ "indicators": {
+  "left": [
+   "indicator_left"
+  ],
+  "right": [
+   "indicator_right"
+  ]
+ },
+ "brake_lights": [
+  "brake_lights"
+ ],
+ "cab": {
+  "driver_seat": [
+   0.37,
+   0.5,
+   -0.06
+  ],
+  "driver_eye": [
+   0.37,
+   1.2,
+   -0.1
+  ],
+  "passenger_seat": [
+   -0.37,
+   0.5,
+   -0.06
+  ],
+  "passenger_eye": [
+   -0.37,
+   1.2,
+   -0.1
+  ],
+  "steering_wheel": "steering",
+  "figure": 0.7,
+  "eye_pitch": 0.18
+ },
+ "beacons": {
+  "left": [
+   "beacon_left",
+   "beacon_grille_left"
+  ],
+  "right": [
+   "beacon_right",
+   "beacon_grille_right"
+  ]
+ }
+}
