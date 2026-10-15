@@ -14,3 +14,5 @@ shader_parameter/plant_color = Color(0.7254902, 0.74509805, 0.76862746, 1)
 shader_parameter/min_run = null
 shader_parameter/frame = null
 shader_parameter/recess = null
+shader_parameter/room_light = null
+shader_parameter/lit_share = null

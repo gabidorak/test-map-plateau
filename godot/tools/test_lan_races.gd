@@ -131,8 +131,9 @@ func _host(lap: Dictionary) -> void:
 	if not joined:
 		return
 	var guest: int = _main.net.players.keys().filter(func(id: int) -> bool: return id != 1)[0]
-	var seen := await _until(func() -> bool: return guest in _races._drivers_in_circle(0), 20.0)
-	await process_frame
+	# the prompt follows in races.gd's next _process, which may come after this physics frame
+	var seen := await _until(func() -> bool: return guest in _races._drivers_in_circle(0) \
+			and "race with Guest" in _races.hud.prompt_text(), 20.0)
 	var prompt: String = _races.hud.prompt_text()
 	_check(seen and "race with Guest" in prompt, "the client drives in the start circle: '%s'" % prompt.replace("\n", " / "))
 	_races.invite_key()
@@ -157,8 +158,8 @@ func _client(lap: Dictionary) -> void:
 	var left: String = (_races._boards3d["lap"].get_node("Left0") as Label3D).text
 	_check("Host" in left, "...on the 3D board too: '%s'" % left.replace("\n", " / "))
 	var car := await _car_in_circle(lap, -3.0)
-	var invited := await _until(func() -> bool: return _races.state == _races.INVITED, 30.0)
-	await process_frame
+	var invited := await _until(func() -> bool: return _races.state == _races.INVITED \
+			and "Host invites you" in _races.hud.prompt_text(), 30.0)
 	var prompt: String = _races.hud.prompt_text()
 	_check(invited and "Host invites you" in prompt, "invited: '%s'" % prompt.replace("\n", " / "))
 	_races.race_key()

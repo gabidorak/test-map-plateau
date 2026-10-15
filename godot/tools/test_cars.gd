@@ -54,7 +54,8 @@ func _key(code: Key, pressed: bool) -> void:
 	Input.flush_buffered_events()
 
 
-## Turns `car` in place towards the heading with the longest free run for a car-sized box.
+## Turns `car` in place towards the heading with the longest free run for a car-sized box (up to 70 m: 3 s at full
+## throttle and the 1 s turn take ~45 m) on ground with no drop or bank on the way (a car flying off one cannot steer).
 func _face_open_road(car: VehicleBody3D) -> void:
 	var box := BoxShape3D.new()
 	# the car's own footprint: a longer box would start inside a car parked just ahead, and a cast
@@ -71,8 +72,17 @@ func _face_open_road(car: VehicleBody3D) -> void:
 		var a := TAU * i / 72.0
 		var dir := Vector3(sin(a), 0.0, cos(a))
 		q.transform = Transform3D(Basis(Vector3.UP, a), car.to_global(car.extents_center) + Vector3.UP * 1.0)
-		q.motion = dir * 40.0
-		var d: float = space.cast_motion(q)[0] * 40.0
+		q.motion = dir * 70.0
+		var d: float = space.cast_motion(q)[0] * 70.0
+		var from := car.to_global(car.extents_center)
+		var prev := WorldQuery.ground_y(car.get_world_3d(), from.x, from.z, Layers.TERRAIN, from.y + 3.0)
+		for k in range(1, int(d)):
+			var w := from + dir * float(k)
+			var g := WorldQuery.ground_y(car.get_world_3d(), w.x, w.z, Layers.TERRAIN, from.y + 30.0)
+			if is_nan(g) or absf(g - prev) > 0.3:   # a kerb is 0.12 m a metre
+				d = float(k)
+				break
+			prev = g
 		if d > best_d:
 			best_d = d
 			best_a = a
@@ -102,7 +112,9 @@ func _run() -> void:
 		var d := _box_distance(car, player.global_position)
 		print("%s on %s" % [car.model_name, map.describe(car.global_position.x, -car.global_position.z)])
 		var wheels := _wheels_on_ground(car)
-		_check(car.global_basis.y.y > 0.95 and wheels.x == wheels.y and car.linear_velocity.length() < 0.3 and d < 18.0,
+		# game.gd looks for a spot on the road first, a vehicle length at a time along it: a bus may park further away
+		var near: float = 18.0 + car.half_extents.z * 2.0
+		_check(car.global_basis.y.y > 0.95 and wheels.x == wheels.y and car.linear_velocity.length() < 0.3 and d < near,
 				"%s parked upright on its %d wheels, %.1f m from the player (up %.2f, %d on the ground, %.2f m/s)" % [
 				car.model_name, wheels.y, d, car.global_basis.y.y, wheels.x, car.linear_velocity.length()])
 	await _shot("parked.png")
