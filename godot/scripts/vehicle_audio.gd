@@ -5,7 +5,8 @@ extends Node3D
 ## knocks of scripts/breakables.gd (a sign pole's clang, a sapling's swish, a broken hydrant's gush), the armed
 ## biplane's gunshots and their pings on vehicles (scripts/plane_guns.gd), the boom of a vehicle breaking down, the
 ## two-tone sirens of the fire truck (scripts/fire_truck.gd) and the police car (scripts/police_car.gd), sounding as
-## long as `siren` is on, and the horse's hoofbeats, neigh, snort and landing thud (scripts/horse.gd).
+## long as `siren` is on, the electric car's motor whine and pedestrian warning hum, and the horse's hoofbeats, neigh,
+## snort and landing thud (scripts/horse.gd).
 ## Each sound is generated once per kind and cached. scripts/car.gd adds one as a child and calls
 ## update() every physics frame and play() for one-shots.
 
@@ -33,6 +34,15 @@ const KINDS := {
 				"formants": [[110.0, 1.2, 3.0], [260.0, 2.0, 1.5], [540.0, 3.0, 0.6], [1300.0, 2.0, 0.2]],
 				"pipe": [0.0042, 0.45], "clatter_hz": 2900.0, "intake_hz": 750.0, "turbo": [0.0, 0.0],
 				"rough": 0.12, "prop": 0.0, "drive": 1.5}},
+	# electric car (the Renault Zoe): single-speed, the motor's whine is held to the wheels' speed (_motor_take()), from
+	# a hum moving off to ~1.4 kHz at top speed, and a pedestrian warning hum ("avas": Hz at rest, fades out between
+	# the two speeds in km/h, _avas_loop()); silent when stopped
+	"electric": {"pitch_top": 24.0, "gears": [1.0], "unit_size": 6.0, "idle_db": -4.0,
+			"road_db": -1.0, "road_pitch": 1.0, "horn": [415, 523], "horn_harmonics": 9, "avas": [196.0, 20.0, 30.0],
+			"engine": {"motor": true, "idle_hz": 60.0, "layers": 8, "off": 0.45,
+				# whine harmonics [order, gain]; reduction gear mesh [order, gain on, gain off]; air and bearing hiss
+				"orders": [[1.0, 1.0], [2.0, 0.3], [3.0, 0.22], [6.0, 0.1]], "gear": [2.72, 0.3, 0.4],
+				"hiss": [2600.0, 0.6]}},
 	# fire truck (scripts/fire_truck.gd): big V8 diesel, burbling (uneven banks), deep air horn
 	"truck": {"pitch_top": 2.8, "gears": [0.08, 0.16, 0.26, 0.38, 0.52, 0.7, 1.0], "unit_size": 12.0, "idle_db": 0.0,
 			"road_db": -1.0, "road_pitch": 0.7, "horn": [185, 233], "horn_harmonics": 16,
@@ -72,6 +82,8 @@ var _road: AudioStreamPlayer3D              # tyre roar (none for the plane)
 var _horn: AudioStreamPlayer3D
 var _horn_gain := 0.0
 var _siren: AudioStreamPlayer3D             # made when first switched on
+var _avas: AudioStreamPlayer3D              # the electric car's pedestrian warning hum
+var _avas_gain := 0.0
 var _fx: AudioStreamPlayer3D                # doors, air brake
 var _bell: AudioStreamPlayer3D              # own player: a gong neither cuts nor is cut by the doors
 var _cabin: AudioStreamPlayer               # indicator relay, heard only by the driver
@@ -104,6 +116,12 @@ func setup(vehicle_kind: String) -> void:
 	_horn.max_distance = 250.0
 	_horn.volume_db = -80.0
 	add_child(_horn)
+	if k.has("avas"):
+		_avas = AudioStreamPlayer3D.new()
+		_avas.stream = _avas_loop(kind)
+		_avas.unit_size = k["unit_size"]
+		_avas.max_distance = 60.0
+		add_child(_avas)
 	_fx = AudioStreamPlayer3D.new()
 	_fx.unit_size = 9.0
 	_fx.max_distance = 80.0
@@ -141,7 +159,8 @@ func update(speed: float, throttle: float, max_speed: float, delta: float) -> vo
 	_shift = maxf(_shift - delta, 0.0)
 	var lo: float = gears[gear - 1] * max_speed * 0.5 if gear > 0 else 0.0
 	var r := clampf((v - lo) / (gears[gear] * max_speed - lo), 0.0, 1.0)
-	r = maxf(r, 0.3 * absf(throttle) if v < 2.0 else 0.0)  # clutch slip when pulling away
+	if not k["engine"].has("motor"):
+		r = maxf(r, 0.3 * absf(throttle) if v < 2.0 else 0.0)  # clutch slip when pulling away
 	_rpm = lerpf(_rpm, r, 1.0 - exp(-6.0 * delta))
 	var pull := absf(throttle) if throttle * speed >= 0.0 or v < 1.0 else 0.0   # braking is no load
 	_load = lerpf(_load, pull * (0.2 if _shift > 0.0 else 1.0), 1.0 - exp(-8.0 * delta))
@@ -149,6 +168,18 @@ func update(speed: float, throttle: float, max_speed: float, delta: float) -> vo
 	var cam := get_viewport().get_camera_3d()
 	var heard := cam != null and cam.global_position.distance_squared_to(global_position) < HEARD * HEARD
 	_update_engine(k, heard)
+	if _avas:
+		var a: Array = k["avas"]
+		var kmh := v * 3.6
+		var moving := engine_on and (v > 0.2 or absf(throttle) > 0.05)
+		_avas_gain = move_toward(_avas_gain, 1.0 if moving else 0.0, delta / 0.5)
+		var level := _avas_gain * clampf((a[2] - kmh) / (a[2] - a[1]), 0.0, 1.0)
+		if level > 0.0 and heard and not _avas.playing:
+			_avas.play()
+		elif (level == 0.0 or not heard) and _avas.playing:
+			_avas.stop()
+		_avas.volume_db = -10.0 + linear_to_db(maxf(level, 0.0001))
+		_avas.pitch_scale = 1.0 + 0.5 * minf(kmh / a[2], 1.0)
 	if _road:
 		var share := clampf(v / maxf(max_speed, 1.0), 0.0, 1.0)
 		if v > 0.6 and heard and not _road.playing:
@@ -227,7 +258,9 @@ func _update_engine(k: Dictionary, heard: bool) -> void:
 	var pos := clampf(log(ratio) / log(top) * (n - 1), 0.0, n - 1.0)
 	var i := mini(int(pos), n - 2)
 	var frac := pos - i
-	var base: float = k["idle_db"] + 3.0 * _rpm + linear_to_db(maxf(_gain, 0.0001))
+	# an engine roars a little louder revved; an electric motor's whine fades in from nothing at rest
+	var rev := linear_to_db(0.06 + _rpm) if k["engine"].has("motor") else 3.0 * _rpm
+	var base: float = k["idle_db"] + rev + linear_to_db(maxf(_gain, 0.0001))
 	for layer in [i, i + 1]:
 		var p := _engines[layer % 2]
 		var share := cos(frac * PI * 0.5) if layer == i else sin(frac * PI * 0.5)
@@ -273,7 +306,9 @@ static func _engine_takes(vehicle_kind: String) -> Array:
 	var peak := 0.0001
 	for li in int(e["layers"]):
 		var f: float = e["idle_hz"] * layer_ratio(vehicle_kind, li)
-		var pair := [_engine_take(e, f, 0), _engine_take(e, f, 1)]
+		var share: float = li / (e["layers"] - 1.0)
+		var pair := [_motor_take(e, f, 0, share), _motor_take(e, f, 1, share)] if e.has("motor") \
+				else [_engine_take(e, f, 0), _engine_take(e, f, 1)]
 		for b: PackedFloat32Array in pair:
 			for x in b:
 				peak = maxf(peak, absf(x))
@@ -412,6 +447,74 @@ static func _engine_take(e: Dictionary, f: float, off: int) -> PackedFloat32Arra
 		if i >= period:
 			out[j] = dcy
 	return out
+
+
+## One electric motor loop with its whine's fundamental at `f` (Hz), on (`off` 0) or off (1) the throttle (coasting,
+## regenerating), `share` of the way from rest to top speed: the whine's orders, one beating a hertz above the
+## fundamental, roughened by the torque ripple; the reduction gear's mesh whine, louder coasting (the teeth's slack);
+## air and bearing hiss growing with the speed. Whole-number frequencies over a 1 s loop: seamless. Orders that would
+## alias once pitched up to the next layer are left out.
+static func _motor_take(e: Dictionary, f: float, off: int, share: float) -> PackedFloat32Array:
+	var period := RATE
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var amp: float = 1.0 if off == 0 else e["off"]
+	var partials: Array[Vector3] = []           # Hz (whole), amplitude, phase
+	for o: Array in e["orders"]:
+		if f * o[0] * 1.7 < RATE * 0.45:
+			partials.append(Vector3(roundi(f * o[0]), o[1] * amp, rng.randf() * TAU))
+	partials.append(Vector3(roundi(f) + 1, 0.25 * amp, 0.0))
+	var g: Array = e["gear"]
+	var gear := Vector3(roundi(f * g[0]), g[1 + off], 0.0)
+	var ripple := maxi(1, roundi(f / 8.0))      # Hz, whole
+	var depth := 0.15 if off == 0 else 0.08
+	var noise := PackedFloat32Array()
+	noise.resize(period)
+	for i in period:
+		noise[i] = rng.randf_range(-1.0, 1.0)
+	var hb := _bandpass(e["hiss"][0], 0.8)
+	var hiss: float = e["hiss"][1] * (0.15 + share) * (1.0 if off == 0 else 0.7)
+	var h1 := 0.0
+	var h2 := 0.0
+	var out := PackedFloat32Array()
+	out.resize(period)
+	var start := period - roundi(0.2 * RATE)
+	for i in range(start, period * 2):
+		var j := i % period
+		var nz := noise[j]
+		var h := hb[0] * nz + h1                # band-passed hiss, rung in over the loop's end
+		h1 = -hb[1] * h + h2
+		h2 = -hb[0] * nz - hb[2] * h
+		if i < period:
+			continue
+		var t := float(j) / RATE
+		var w := 0.0
+		for p in partials:
+			w += sin(TAU * p.x * t + p.z) * p.y
+		w *= 1.0 + depth * sin(TAU * ripple * t)
+		if gear.x * 1.7 < RATE * 0.45:
+			w += sin(TAU * gear.x * t) * gear.y
+		out[j] = tanh(0.8 * (w + h * hiss))
+	return out
+
+
+## The Zoe's pedestrian warning hum: a soft chord on `avas`' note (root beating a hertz above, fifth, octave), its
+## upper partials swelling three times a second. Whole-number frequencies: the 1 s loop is seamless.
+static func _avas_loop(vehicle_kind: String) -> AudioStreamWAV:
+	var key := "avas_" + vehicle_kind
+	if _cache.has(key):
+		return _cache[key]
+	var b := roundi(KINDS[vehicle_kind]["avas"][0])
+	var buf := _silence(1.0)
+	for i in buf.size():
+		var t := float(i) / RATE
+		var swell := 0.75 + 0.25 * sin(TAU * 3.0 * t)
+		buf[i] = tanh(sin(TAU * b * t) + 0.5 * sin(TAU * (b + 1) * t + 1.0) + 0.45 * sin(TAU * roundi(b * 1.5) * t + 2.0)
+				+ swell * (0.3 * sin(TAU * b * 2 * t + 0.5) + 0.12 * sin(TAU * b * 3 * t + 1.5)
+				+ 0.1 * sin(TAU * b * 4 * t + 2.5)))
+	var s := _to_wav(buf, true)
+	_cache[key] = s
+	return s
 
 
 ## RBJ low-pass (Q 0.707) at `f` Hz: b0, b1, b2, a1, a2 (a0 = 1).

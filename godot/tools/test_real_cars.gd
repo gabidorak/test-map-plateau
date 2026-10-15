@@ -6,13 +6,15 @@ extends SceneTree
 ## and the hands on the steering wheel, which turns with the steering; W drives it and A turns it; the indicators, brake
 ## lamps and headlights are the model's own (its lamp meshes, its "headlight" and "taillight" surfaces lit, a beam); the
 ## paint has a clear coat; E from the right side sits the player in the passenger seat (the cab view from the
-## passenger's eye, a look-alike that fits under the roof in the chase view), Space gets out on the right.
+## passenger's eye, a look-alike that fits under the roof in the chase view), Space gets out on the right. The Zoe is
+## electric: silent at rest, its pedestrian warning hum moving off, its motor's whine pitched up with the speed, "gear D".
 ## godot --headless --fixed-fps 60 --path godot --script res://tools/test_real_cars.gd [-- <model> ...]
 ## Without --headless (add --disable-vsync) it also saves shots to /tmp/real_car_<model>_*.png.
 
 const Car = preload("res://scripts/car.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const WorldQuery = preload("res://scripts/world_query.gd")
+const VehicleAudio = preload("res://scripts/vehicle_audio.gd")
 const MODELS := {"compact-hatchback": [3.9, 4.2, 1180.0], "family-suv": [4.3, 4.6, 1500.0],    # length range, mass
 		"police-hatchback": [3.9, 4.2, 1180.0], "renault-zoe": [4.0, 4.2, 1470.0]}
 
@@ -26,6 +28,15 @@ func _initialize() -> void:
 	_main.debug_cars = false
 	root.add_child(_main)
 	_run.call_deferred()
+
+
+## The engine speed heard (times idle): the highest of its playing layers, as pitched.
+func _whine(car: Car) -> float:
+	var top := 0.0
+	for p: AudioStreamPlayer3D in car.audio._engines:
+		if p.playing:
+			top = maxf(top, p.pitch_scale * VehicleAudio.layer_ratio(car.audio.kind, car.audio._layers.find(p.stream)))
+	return top
 
 
 func _check(ok: bool, what: String) -> void:
@@ -144,9 +155,24 @@ func _car(model: String) -> void:
 	await _shot("real_car_%s_cab.png" % tag)
 
 	var yaw0: float = car.global_rotation.y
+	var electric: bool = car.audio.kind == "electric"
+	_check(electric == (model == "renault-zoe"), "its sound is %s" % ("electric" if electric else "an engine's"))
+	var until := Time.get_ticks_msec() + 5000
+	while electric and car.audio._layers.is_empty() and Time.get_ticks_msec() < until:   # synthesized on a worker thread, slower
+		await _frames(1)                                                    # than headless frames
+	var hushed: bool = electric and not car.audio._avas.playing
 	_key(KEY_W, true)
-	await _frames(120)
+	await _frames(20)
+	var hum: bool = electric and car.audio._avas.playing
+	var pitch_low := _whine(car)
+	await _frames(100)
 	var v: float = car.speed()
+	if electric:
+		var top := _whine(car)
+		_check(hushed and hum and not car.audio._avas.playing,
+				"electric: silent at rest, the warning hum moving off, gone at %.0f km/h" % (v * 3.6))
+		_check(top > pitch_low * 3.0, "the motor's whine climbs with the speed (x%.1f to x%.1f idle)" % [pitch_low, top])
+		_check("gear D" in _main._dash.text, "the HUD shows gear D")
 	_key(KEY_A, true)
 	await _frames(45)
 	var rest: Transform3D = car._steering_rest

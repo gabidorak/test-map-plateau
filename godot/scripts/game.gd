@@ -419,7 +419,8 @@ func _process(delta: float) -> void:
 		if driving.indicator != 0 and fmod(Time.get_ticks_msec() / 1000.0, Car.BLINK) < Car.BLINK * 0.5:
 			arrows[0 if driving.indicator == 1 else 1] = "◀" if driving.indicator == 1 else "▶"
 		var line := "%s  %3d km/h   gear %s  %s" % [arrows[0], roundi(absf(driving.speed()) * 3.6),
-				"R" if driving.speed() < -0.5 else str(driving.audio.gear + 1), arrows[1]]
+				"R" if driving.speed() < -0.5 else "D" if driving.audio.kind == "electric"
+				else str(driving.audio.gear + 1), arrows[1]]
 		if driving.has_doors:
 			line += "\ndoors " + ("OPEN" if driving.doors_open else "closed")
 		if driving.broken:
