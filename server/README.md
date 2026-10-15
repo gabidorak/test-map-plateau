@@ -24,3 +24,25 @@ docker compose logs -f                                        # "Dedicated serve
 
 Settings in `compose.yaml`: `SERVER_NAME`, and `PORT` (then change the port mapping to match). To force an update
 right away: `docker compose restart`.
+
+## Race records
+
+The leaderboards of the races are the server's: it keeps every player's best times in
+`/data/.local/share/godot/app_userdata/Plateau Map/race_records.json`, inside the `plateau-data` volume (`/data` is the
+container user's home), so they outlive restarts, updates and image rebuilds. The file is rewritten at each new best
+time (through a temporary file, so a crash never leaves half of it). To back it up:
+
+```sh
+docker compose cp "plateau:/data/.local/share/godot/app_userdata/Plateau Map/race_records.json" .
+```
+
+To edit it (remove a time, rename a player), stop the server first (it reads the file only when it starts), copy the
+file back, start it again:
+
+```sh
+docker compose stop
+docker compose cp race_records.json "plateau:/data/.local/share/godot/app_userdata/Plateau Map/race_records.json"
+docker compose start
+```
+
+Only `docker compose down -v` (which deletes the volume) loses them.

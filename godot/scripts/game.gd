@@ -43,6 +43,9 @@ extends Node3D
 ## N switches night and day (scripts/night.gd: moonlight, a starry sky, lit windows and street lamps; also on the
 ## settings page); at night the bots drive with their headlights on and the player's switch on as they get in. L
 ## switches the headlights of the vehicle driven (the plane's landing lights), which the other players see too.
+## Races (scripts/races.gd): a driver stopped in a glowing start circle (the campus lap in the big parking by the lake,
+## the bus race at the stop ENSTA - Les Joncherettes) is offered to race with T (alone) or Y (with the other drivers in
+## the circle); the leaderboards stand beside the circles, the host keeps the records.
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
@@ -66,6 +69,7 @@ const Chat = preload("res://scripts/chat.gd")
 const PlayerList = preload("res://scripts/player_list.gd")
 const Traffic = preload("res://scripts/traffic.gd")
 const Night = preload("res://scripts/night.gd")
+const Races = preload("res://scripts/races.gd")
 const WATER_SHOVE := 0.7                    # m/s a full-power water packet shoves a player along the jet
 const ENTER_RANGE := 3.0                    # metres from the car body
 const SEAT_RANGE := 1.6                     # metres from the driver seat, from inside a walkable vehicle
@@ -92,6 +96,7 @@ var picker: Picker
 var breakables: Breakables
 var traffic: Traffic
 var night: Night
+var races: Races
 var hud: CanvasLayer
 var _help: Label
 var _dash: Label                            # speed, gear, indicators, doors while driving
@@ -155,6 +160,11 @@ func _ready() -> void:
 	net.ended.connect(back_to_menu)
 	breakables.broke.connect(net.broke)
 	_build_hud()
+	races = Races.new()
+	races.name = "Races"
+	races.game = self
+	add_child(races)
+	net.registered.connect(races.send_boards)
 	pause = PauseMenu.new()
 	add_child(pause)
 	pause.resume.connect(set_pause_open.bind(false))
@@ -229,6 +239,7 @@ func _take_profile() -> void:
 
 func start_solo() -> void:
 	mode = "solo"
+	races.start_hosting()
 	_begin()
 	if debug_cars:
 		for i in 4:
@@ -244,6 +255,7 @@ func start_host() -> void:
 		_on_join_failed(err)
 		return
 	mode = "host"
+	races.start_hosting()
 	_begin()
 	if debug_cars:
 		for i in 4:
@@ -264,6 +276,7 @@ func start_dedicated() -> void:
 		get_tree().quit(1)
 		return
 	mode = "server"
+	races.start_hosting()
 	hud.visible = false
 	_set_player_enabled(false)
 	print("Dedicated server on UDP port %d (%s)" % [net.port, AutoUpdater.version if AutoUpdater.version != "" \
@@ -950,9 +963,14 @@ func set_pause_open(on: bool) -> void:
 	_update_controls()
 
 
+## True while the vehicle menu, the in-game menu or the chat line is open.
+func ui_open() -> bool:
+	return _menu.visible or pause.visible or chat.is_open()
+
+
 ## The player, the fly camera or the vehicle driven take the keys and mouse unless a menu or the chat is open.
 func _update_controls() -> void:
-	var ui := _menu.visible or pause.visible or chat.is_open()
+	var ui := ui_open()
 	player.active = not ui and not flying and not driving and not riding
 	fly_camera.active = flying and not ui
 	if driving:
@@ -1257,12 +1275,12 @@ func _update_help() -> void:
 				k.call("throttle"), k.call("brake"), k.call("steer_left"), k.call("steer_right"), k.call("signal_left"),
 				k.call("signal_right"), k.call("horn")]) + "%s headlights · %s (held) drift\n" % [k.call("headlights"),
 				k.call("drift")] + \
-				"mouse look · wheel zoom%s · %s back on wheels · %s%s %s\n%s" % [
+				"mouse look · wheel zoom%s · %s back on wheels · %s%s %s · %s race (in a start circle)\n%s" % [
 				" (all the way in: cab view)" if driving.has_cab() else "", k.call("reset_vehicle"),
 				"%s doors · %s gong · %s cab view · " % [k.call("doors"), k.call("bell"), k.call("toggle_view")] \
 				if driving.has_doors else ("%s cab view · " % k.call("toggle_view") if driving.has_cab() else ""),
 				k.call("exit_vehicle"),
-				"leave the seat" if driving.has_doors else "get out", common]
+				"leave the seat" if driving.has_doors else "get out", k.call("race"), common]
 	elif riding is Biplane:
 		_help.text = ("GUNNER · mouse aims the belly turret (forward only, up to 45° off the nose) · %s (held) fire · " % \
 				k.call("fire")) + "wheel zoom (all the way in: turret view) · %s turret view\n" % k.call("toggle_view") + \

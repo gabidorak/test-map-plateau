@@ -44,11 +44,12 @@ signal failed(reason: String)               # client: could not join
 signal ended(reason: String)                # client: the host closed the game
 signal message(text: String)                # someone joined or left, a vehicle is taken...
 signal chat(id: int, text: String)          # player `id` said `text`
+signal registered(id: int)                  # host: player `id` was let in (it has the players, vehicles... now)
 
 const PORT := 7777                          # the host tries the next ones when it is taken
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
-const PROTOCOL := 8                         # bump when the messages change (build_id: other builds are refused anyway)
+const PROTOCOL := 9                         # bump when the messages change (build_id: other builds are refused anyway)
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const IDLE_SEND_EVERY := 0.5                # s, states of vehicles at rest
@@ -329,6 +330,7 @@ func _register(protocol: int, nickname: String, color: Color) -> void:
 	_signal_clock.rpc_id(id, clock())
 	_player_joined.rpc(id, players[id])
 	_add_remote(id)
+	registered.emit(id)
 	message.emit("%s joined the game" % players[id]["name"])
 
 
