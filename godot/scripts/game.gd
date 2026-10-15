@@ -22,6 +22,7 @@ extends Node3D
 ## its machine guns with the left mouse button (scripts/plane_guns.gd; a ring on the screen shows where the rounds
 ## converge): a vehicle hit takes damage (net.gd hit_vehicle, car.gd damage) and smokes black once broken, a breakable
 ## prop hit falls over (breakables.gd shoot).
+## The police car (scripts/police_car.gd) switches its two-tone siren and blue lights with B.
 ## The fire truck (scripts/fire_truck.gd) sprays its roof water cannon where the driver looks while the left mouse button
 ## is held (a dashed blue ring shows where the jet lands): the water pushes vehicles and puts out burning ones (net.gd
 ## water_vehicle, car.gd hose), shoves other players (water_player), and knocks light props over (breakables.gd soak).
@@ -53,6 +54,7 @@ const Biplane = preload("res://scripts/plane.gd")
 const Horse = preload("res://scripts/horse.gd")
 const PlaneGuns = preload("res://scripts/plane_guns.gd")
 const FireTruck = preload("res://scripts/fire_truck.gd")
+const PoliceCar = preload("res://scripts/police_car.gd")
 const WaterCannon = preload("res://scripts/water_cannon.gd")
 const Breakables = preload("res://scripts/breakables.gd")
 const Net = preload("res://scripts/net.gd")
@@ -409,8 +411,8 @@ func _process(delta: float) -> void:
 			line += "\ndoors " + ("OPEN" if driving.doors_open else "closed")
 		if driving.broken:
 			line += "\nBROKEN · repaired in %d s" % ceili(driving.repair_in())
-		if driving is FireTruck and (driving as FireTruck).dash_line() != "":
-			line += "\n" + (driving as FireTruck).dash_line()
+		if driving.dash_line() != "":
+			line += "\n" + driving.dash_line()
 		_dash.text = line
 
 
@@ -608,12 +610,11 @@ func add_net_car(model: String, xf: Transform3D) -> Car:
 
 
 ## A vehicle of `model`, set up but not in the tree yet: a Horse (Car.SPECS "horse"), a Biplane for the aircraft
-## ("plane"), a FireTruck
-## for the fire truck ("fittings"), else a Car.
+## ("plane"), a FireTruck for the fire truck ("fittings"), a PoliceCar for the police car ("police"), else a Car.
 static func new_vehicle(model: String) -> Car:
 	var spec: Dictionary = Car.SPECS[model]
 	var car: Car = Horse.new() if spec.get("horse", false) else Biplane.new() if spec.get("plane", false) \
-			else FireTruck.new() if spec.has("fittings") else Car.new()
+			else FireTruck.new() if spec.has("fittings") else PoliceCar.new() if spec.get("police", false) else Car.new()
 	car.setup(model)
 	return car
 
@@ -1279,6 +1280,8 @@ func _update_help() -> void:
 				"%s park a car here · %s vehicle menu · %s" % [k.call("park_car"), k.call("vehicle_menu"), common]
 	if driving is FireTruck:
 		_help.text += "\n%s (held) water cannon, aimed where you look · %s siren and beacons" % [k.call("fire"), k.call("bell")]
+	elif driving is PoliceCar:
+		_help.text += "\n%s siren and blue lights" % k.call("bell")
 	_help.text += "\n%s graphics: %s · %s %s · %s frame rate%s · F11 fullscreen" % [k.call("toggle_quality"),
 			"low" if low_quality else "high", k.call("night"), "day" if night and night.on else "night",
 			k.call("toggle_stats"), " and network" if net.active else ""]

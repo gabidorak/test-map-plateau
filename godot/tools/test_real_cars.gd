@@ -1,6 +1,6 @@
 extends SceneTree
-## Headless checks for the realistic cars (Car.SPECS "compact-hatchback" and "family-suv", built by
-## blender/vehicles/build_car.py): the vehicle menu parks each with its four wheels at its real size and mass, it rests
+## Headless checks for the realistic cars (Car.SPECS "compact-hatchback", "family-suv" and the police car
+## "police-hatchback", built by blender/vehicles/build_car.py; its siren and lights: tools/test_police_car.gd): the vehicle menu parks each with its four wheels at its real size and mass, it rests
 ## level; E gets in; V gives the cab view from the driver's eye, inside the cabin under the roof, the driver's body hidden
 ## and the hands on the steering wheel, which turns with the steering; W drives it and A turns it; the indicators, brake
 ## lamps and headlights are the model's own (its lamp meshes, its "headlight" and "taillight" surfaces lit, a beam); the
@@ -11,7 +11,8 @@ extends SceneTree
 
 const Car = preload("res://scripts/car.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
-const MODELS := {"compact-hatchback": [3.9, 4.2, 1180.0], "family-suv": [4.3, 4.6, 1500.0]}    # length range, mass
+const MODELS := {"compact-hatchback": [3.9, 4.2, 1180.0], "family-suv": [4.3, 4.6, 1500.0],    # length range, mass
+		"police-hatchback": [3.9, 4.2, 1180.0]}
 
 var _main: Node
 var _failures: PackedStringArray = []
@@ -205,19 +206,24 @@ func _passenger_seat(car: VehicleBody3D, tag: String, roof: float) -> void:
 			"Space gets out on the right (%.1f m off the side)" % (-out.x - car.half_extents.x))
 
 
-## Turns the parked car towards the direction with the most room ahead (rays at bumper height), so it can drive off.
+## Turns the parked car towards the direction with the most room ahead for its whole width (rays at bumper height from
+## its middle and along both its sides), so it can drive off.
 func _face_open_ground(car: VehicleBody3D) -> void:
 	var space := car.get_world_3d().direct_space_state
-	var from := car.global_position + Vector3.UP * 0.6
 	var best := [-1.0, 0.0]
 	for k in 24:
 		var yaw := TAU * k / 24.0
 		var dir := Vector3(sin(yaw), 0.0, cos(yaw))
-		var q := PhysicsRayQueryParameters3D.create(from, from + dir * 40.0, Layers.SOLID | Layers.PROPS | Layers.VEGETATION
-				| Layers.VEHICLES)
-		q.exclude = [car.get_rid()]
-		var hit := space.intersect_ray(q)
-		var room: float = 40.0 if hit.is_empty() else from.distance_to(hit["position"])
+		var side: Vector3 = Vector3(dir.z, 0.0, -dir.x) * (car.half_extents.x - 0.1)
+		var room := 40.0
+		for off: Vector3 in [Vector3.ZERO, side, -side]:
+			var from: Vector3 = car.global_position + Vector3.UP * 0.6 + off
+			var q := PhysicsRayQueryParameters3D.create(from, from + dir * 40.0, Layers.SOLID | Layers.PROPS
+					| Layers.VEGETATION | Layers.VEHICLES)
+			q.exclude = [car.get_rid()]
+			var hit := space.intersect_ray(q)
+			if not hit.is_empty():
+				room = minf(room, from.distance_to(hit["position"]))
 		if room > best[0]:
 			best = [room, yaw]
 	car.place(Transform3D(Basis(Vector3.UP, best[1]), car.global_position + Vector3.UP * 0.1))

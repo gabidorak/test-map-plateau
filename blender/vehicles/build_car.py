@@ -1,7 +1,11 @@
-"""Builds the realistic cars of the drivable vehicles: a compact five-door hatchback (proportions of a Renault Clio V) and
-a compact family SUV (proportions of a Peugeot 3008 II with its black "floating" roof). No brand badges on purpose.
+"""Builds the realistic cars of the drivable vehicles: a compact five-door hatchback (proportions of a Renault Clio V),
+a compact family SUV (proportions of a Peugeot 3008 II with its black "floating" roof), and the hatchback as a Police
+nationale patrol car (the grey livery of 2021 on: a blue band over the arch on the viewer's left of each side and a
+red one on the right, "POLICE NATIONALE" with a tricolour mark on the doors, bonnet and tailgate, a dotted reflective
+line under the windows, reflective squares across the rear bumper; a blue LED light bar on the roof and blue flashers
+in the grille). No brand badges on purpose.
 
-blender -b --factory-startup -P blender/vehicles/build_car.py -- [--car=compact_hatchback|family_suv]
+blender -b --factory-startup -P blender/vehicles/build_car.py -- [--car=compact_hatchback|family_suv|police_hatchback]
                                                                  [--out_dir=godot/assets/cars] [--preview=data/review/cars]
 
 Unlike the toy Kenney cars, these have real PBR materials and a fitted-out cabin seen through see-through glass, for
@@ -20,10 +24,14 @@ Blender space: metres, z up, front = -Y, left = +X, origin on the ground under t
 (wheel_front_left ... wheel_rear_right, origin at the wheel centre), "mirrors" (outside the body box, so they do not
 widen the collision box), the lamps car.gd switches (indicator_left/right, brake_lights) and "steering". The
 headlight and tail lamp surfaces use the materials "headlight" and "taillight", which car.gd lights at night.
+The police car's livery is draped on the body: flat outlines (bands, lettering from a font, marks), cut into small
+cells, each corner moved onto the shell along a ray and lifted 1.5 mm off it, cut at the door gaps. Its light bar is an
+object of its own ("lightbar", so it does not raise the collision box), its blue lenses and grille flashers too
+(beacon_left, beacon_right, beacon_grille_left, beacon_grille_right), which scripts/police_car.gd flashes.
 <car>.json (next to the .glb) names them and gives the cab (driver and passenger seat and eye, steering wheel, the size
 of the seated look-alikes and the cab camera's pitch) in glTF coordinates.
 --preview renders <prefix>_<car>_front.png, _rear.png, _side.png and _cab.png (the driver's view; Cycles, a few
-seconds each)."""
+seconds each), and the police car's right side too (_side_right.png)."""
 import json
 import math
 import sys
@@ -32,6 +40,8 @@ from pathlib import Path
 import bmesh
 import bpy
 from mathutils import Matrix, Vector
+from mathutils.bvhtree import BVHTree
+from mathutils.geometry import tessellate_polygon
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -40,6 +50,14 @@ MATERIALS = {
     "paint_red": ("#9E1018", 0.55, 0.28, 0.0),
     "paint_blue": ("#1E3550", 0.55, 0.3, 0.0),
     "paint_black": ("#0B0C0E", 0.3, 0.22, 0.0),
+    "paint_silver": ("#9A9FA6", 0.6, 0.3, 0.0),        # the Police nationale's grey
+    # police livery films and the light bar's lenses (scripts/police_car.gd swaps "beacon" for lit / unlit blue)
+    "livery_blue": ("#2B399E", 0.0, 0.38, 0.0),
+    "livery_red": ("#D93A2C", 0.0, 0.38, 0.0),
+    "livery_white": ("#EEF0F2", 0.0, 0.38, 0.0),
+    "livery_navy": ("#1B1F2E", 0.0, 0.42, 0.0),        # lettering
+    "reflector": ("#D3D7DC", 0.4, 0.25, 0.0),          # retroreflective dots
+    "beacon": ("#1C3CC8", 0.0, 0.12, 0.0),
     "trim_black": ("#08090A", 0.1, 0.12, 0.0),         # piano black
     "plastic_black": ("#1A1B1D", 0.0, 0.72, 0.0),      # textured bumper / cladding plastic
     "grille": ("#0C0D0F", 0.2, 0.35, 0.0),
@@ -150,6 +168,9 @@ def seams(y_lines, z0, z1, segs=("rocker", "side", "shoulder", "beltline"), w=0.
     return [feat("seam", y=(y, y + w), z=(z0, z1), segs=segs) for y in y_lines]
 
 
+HATCH_DOORS = (-0.842, 0.262, 0.985)        # door shut lines (y) of the hatchback
+SUV_DOORS = (-0.842, 0.282, 1.07)
+
 CARS = {
     "compact_hatchback": {
         "label": "compact hatchback",
@@ -249,11 +270,15 @@ CARS = {
             feat("seam", x=(0.62, 0.625), y=(1.86, None), z=(0.60, 1.0)),
             feat("seam", x=(-0.625, 0.625), y=(1.86, None), z=(0.598, 0.603), mirror=False,
                  box=((-0.7, 1.8, 0.5), (0.7, 2.3, 0.7))),
-            *seams((-0.842, 0.262, 0.985), 0.23, 0.98),
+            *seams(HATCH_DOORS, 0.23, 0.98),
             feat("underbody", segs=("bottom",), mirror=False),
         ],
+        "doors": HATCH_DOORS,
         "mirror": {"y": -0.80, "z": 0.93, "paint": True},
         "handles": [(-0.18, -0.06), (0.71, 0.83)],
+        "antenna": 0.95,            # shark fin this far from the tail
+        "spoiler": 1.36,            # y of the roof spoiler
+        "rear_wiper": True,
         "cab": {
             "floor": 0.30, "cowl": (-0.88, 0.935), "firewall": -1.02, "seat_x": 0.37, "seat_y": 0.06, "cushion": 0.50,
             "rear_y": 0.86, "rear_end": 1.86, "header": -0.14, "eye": (0.10, 1.20), "figure": 0.7, "eye_pitch": 0.18,
@@ -332,12 +357,15 @@ CARS = {
                  box=((-1, -2.2, 0.8), (1, -1.9, 1.1))),
             feat("seam", x=(0.72, 0.725), y=(-2.03, -0.88), segs=("top", "rail", "glass")),
             feat("seam", x=(0.64, 0.645), y=(1.98, None), z=(0.62, 1.14)),
-            *seams((-0.842, 0.282, 1.07), 0.44, 1.07),
+            *seams(SUV_DOORS, 0.44, 1.07),
             feat("underbody", segs=("bottom",), mirror=False),
         ],
         "flares": True,             # black wheel arch flares
+        "doors": SUV_DOORS,
         "mirror": {"y": -0.70, "z": 1.12, "paint": False},
         "handles": [(-0.20, -0.06), (0.77, 0.91)],
+        "antenna": 0.75,
+        "spoiler": 1.94,
         "rails": True,
         "cab": {
             "floor": 0.40, "cowl": (-0.87, 1.115), "firewall": -1.03, "seat_x": 0.38, "seat_y": 0.05, "cushion": 0.66,
@@ -345,6 +373,27 @@ CARS = {
             "steering": ((-0.435, 1.02), (0.0, 0.86, 0.51)),
             "shelf": (1.35, 2.02, 1.13),
         },
+    },
+}
+# the hatchback as a Police nationale patrol car (livery of 2021 on, after photos of its 5008, Scenic and Duster)
+CARS["police_hatchback"] = {
+    **CARS["compact_hatchback"],
+    "label": "police hatchback",
+    "paint": "paint_silver",
+    "police": {
+        # bands over the wheel arches: gap over the arch, width at its outer end, flat top (z), end of the arch part
+        # (degrees from the outer horizontal) and the pointed tip reaching this far towards the middle; lowest z at
+        # the front and at the rear (the black lower bumper)
+        "arch_gap": 0.03, "band": 0.15, "band_top": 0.80, "band_end": 125.0, "tip": 0.30, "band_bottom": (0.26, 0.44),
+        "band_clear": [((-1.66, 0.60), (-1.48, 0.80))],    # the front band stays under this (the headlight)
+        "side_text": (0.12, 0.665, 0.12),       # middle y of the lettering and mark, bottom z of POLICE, its height
+        "bonnet_text": (-1.45, 0.11),           # y of the bottom of POLICE, its height
+        "tail_text": (0.87, 0.06),              # z of the bottom of POLICE, its height
+        "tail_arrows": (0.31, 0.62, 0.745, 0.04),   # inner and outer |x|, bottom z, height
+        "tail_squares": (0.545, 0.03, 0.055),   # bottom z, size, spacing
+        "dots": (-0.78, 1.30, 0.032, 0.022, 0.045),  # y range, depth under the beltline, size, spacing
+        "bar": (0.03, 0.56, 0.22),              # light bar: middle y, half width, depth
+        "grille": (0.17, 0.61),                 # grille flashers: |x|, z
     },
 }
 
@@ -823,10 +872,14 @@ def push(bm, d: float) -> None:
         v.co += n * d
 
 
-def body_shell(c: dict, sh: Shell) -> None:
+def body_shell(c: dict, sh: Shell) -> tuple:
+    """The body shell (into "body"), its lamps, glazing and grilles. Returns the outer surface with its features
+    painted, before anything is set back or thickened, for draping the livery on: (BVH tree, material name per face)."""
     names = [n for n in MATERIALS]
     bm = build_shell(sh, names)
     owner = paint_features(bm, expanded_features(c["features"]), names)
+    bm.faces.index_update()
+    surface = (BVHTree.FromBMesh(bm), [names[f.material_index] for f in bm.faces])
     idx = {n: i for i, n in enumerate(names)}
     glass = [f for f in bm.faces if names[f.material_index].startswith("glass")]
     heads = [f for f in bm.faces if f.material_index == idx["headlight"]]
@@ -887,6 +940,7 @@ def body_shell(c: dict, sh: Shell) -> None:
     if not _parts["_shell"]:
         _parts.pop("_shell")
     _parts.setdefault("body", []).append(shell)
+    return surface
 
 
 def liners(c: dict, sh: Shell) -> None:
@@ -994,12 +1048,12 @@ def wipers(c: dict, sh: Shell) -> None:
 def roof_bits(c: dict, sh: Shell) -> None:
     """Shark-fin antenna at the back of the roof, a roof spoiler over the rear glass with the third brake lamp, the
     SUV's roof rails, rear wiper."""
-    y = sh.yr - 0.95 if c["label"] == "compact hatchback" else sh.yr - 0.75
+    y = sh.yr - c["antenna"]
     z = sh.f["z_top"](y)
     prism("body", [(y - 0.10, z - 0.01), (y + 0.10, z - 0.01), (y + 0.09, z + 0.03), (y + 0.02, z + 0.065)], -0.025, 0.025,
           "trim_black", 0.012, 3)
     # spoiler over the rear glass
-    ys = 1.36 if c["label"] == "compact hatchback" else 1.94
+    ys = c["spoiler"]
     zs = sh.f["z_top"](ys)
     wt = sh.f["w_top"](ys)
     prism("body", [(ys - 0.06, zs - 0.005), (ys + 0.07, zs - 0.03), (ys + 0.08, zs - 0.01), (ys - 0.03, zs + 0.012)],
@@ -1016,9 +1070,268 @@ def roof_bits(c: dict, sh: Shell) -> None:
                 box("body", (s * 0.56 - 0.02, yy - 0.04, sh.f["z_top"](yy) - 0.01),
                     (s * 0.56 + 0.02, yy + 0.04, sh.f["z_top"](yy) + 0.035), "trim_black", 0.01)
     # rear wiper on the rear glass
-    if c["label"] == "compact hatchback":
+    if c.get("rear_wiper"):
         tube("body", [(0.0, 1.74, sh.f["z_top"](1.74) + 0.012), (0.35, 1.56, sh.f["z_top"](1.56) + 0.012)], 0.007,
              "trim_black", 6)
+
+
+# ---------------------------------------------------------------- police livery and lights
+
+FONTS = {   # the first one found, else Blender's built-in font
+    "bold": ["/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+             "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"],
+    "regular": ["/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"],
+}
+LIVERY = ["livery_blue", "livery_red", "livery_white", "livery_navy", "reflector"]   # decal material indices
+DECAL_CELL = 0.02           # m: outlines are cut into cells this size, so that draped they follow the body's curves
+DECAL_LIFT = 0.0015         # m off the paint
+
+
+def flat(polys: list, m: str) -> bmesh.types.BMesh:
+    """Flat mesh (z = 0) of the outlines [[(a, b), ...], ...] (concave ones too: bmesh's triangulate puts triangles
+    across a concave arc), triangulated, livery material m."""
+    bm = bmesh.new()
+    for poly in polys:
+        vs = [bm.verts.new((a, b, 0.0)) for a, b in poly]
+        for tri in tessellate_polygon([[v.co for v in vs]]):
+            f = bm.faces.new([vs[i] for i in tri])
+            f.material_index = LIVERY.index(m)
+    return bm
+
+
+def add_flat(dst: bmesh.types.BMesh, src: bmesh.types.BMesh, xf=None) -> None:
+    """Copies the flat mesh `src` into `dst` (material indices kept), transformed by the 4x4 xf; frees src."""
+    if xf is not None:
+        bmesh.ops.transform(src, verts=src.verts[:], matrix=xf)
+    me = bpy.data.meshes.new("flat")
+    src.to_mesh(me)
+    src.free()
+    dst.from_mesh(me)
+    bpy.data.meshes.remove(me)
+
+
+def font(weight: str):
+    for path in FONTS[weight]:
+        if Path(path).exists():
+            return bpy.data.fonts.load(path, check_existing=True)
+    return None
+
+
+def lettering(text: str, weight: str, height: float, m: str, width: float = 0.0) -> tuple:
+    """`text` in capitals as a flat mesh reading along +x, the capitals `height` tall from y = 0 up, centred on x = 0,
+    letter-spaced out to `width` if given; livery material m. Returns it and its width."""
+    def make(spacing):
+        cu = bpy.data.curves.new("lettering", "FONT")
+        cu.body = text
+        f = font(weight)
+        if f:
+            cu.font = f
+        cu.space_character = spacing
+        cu.resolution_u = 4
+        ob = bpy.data.objects.new("lettering", cu)
+        bpy.context.scene.collection.objects.link(ob)
+        bpy.context.view_layer.update()
+        me = bpy.data.meshes.new_from_object(ob.evaluated_get(bpy.context.evaluated_depsgraph_get()))
+        bpy.data.objects.remove(ob)
+        bpy.data.curves.remove(cu)
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bpy.data.meshes.remove(me)
+        xs = [v.co.x for v in bm.verts]
+        ys = [v.co.y for v in bm.verts]
+        k = height / (max(ys) - min(ys))
+        bmesh.ops.transform(bm, verts=bm.verts[:], matrix=Matrix.Scale(k, 4)
+                            @ Matrix.Translation((-(min(xs) + max(xs)) / 2, -min(ys), 0.0)))
+        return bm, (max(xs) - min(xs)) * k
+    bm, w = make(1.0)
+    if width:
+        bm.free()
+        bm2, w2 = make(2.0)
+        bm2.free()
+        bm, w = make(1.0 + (width - w) / (w2 - w))
+    bmesh.ops.triangulate(bm, faces=bm.faces[:])
+    for f in bm.faces:
+        f.material_index = LIVERY.index(m)
+    return bm, w
+
+
+def badge(h: float) -> bmesh.types.BMesh:
+    """POLICE (bold, h tall, from y = 0 up) over a letter-spaced NATIONALE as wide, and after them the tricolour mark:
+    blue, white and red strokes leaning forwards, longer and longer down. Flat, reading along +x, centred on x = 0."""
+    bm = bmesh.new()
+    police, w = lettering("POLICE", "bold", h, "livery_navy")
+    add_flat(bm, police)
+    add_flat(bm, lettering("NATIONALE", "regular", 0.36 * h, "livery_navy", w)[0], Matrix.Translation((0.0, -0.62 * h, 0.0)))
+    x0 = w / 2 + 0.3 * h
+    tw = 0.22 * h                               # stroke width at the top
+    for k, (m, bottom) in enumerate((("livery_blue", -0.05), ("livery_white", -0.38), ("livery_red", -0.72))):
+        x = x0 + k * 0.27 * h
+        top = 1.06 * h
+        lean = 0.3 * (top - bottom * h)
+        add_flat(bm, flat([[(x, top), (x + tw, top), (x + 0.75 * tw - 0.55 * lean, (top + bottom * h) / 2),
+                            (x + 0.3 * tw - lean, bottom * h), (x - 0.5 * lean, (top + bottom * h) / 2)]], m))
+    right = x0 + 2 * 0.27 * h + tw
+    bmesh.ops.translate(bm, verts=bm.verts[:], vec=(-(right - w / 2) / 2, 0.0, 0.0))
+    return bm
+
+
+def swoosh(ya: float, za: float, m: int, arch: float, p: dict) -> list:
+    """Side-view outline [(y, z)] of the livery band over the wheel arch centred at (ya, za): along the arch from low
+    on its outer side up over it, its top flat (p["band_top"]), ending in a point towards the middle of the car (m: +1
+    the rear, -1 the front)."""
+    ri = arch + p["arch_gap"]
+    ro = ri + p["band"]
+    zt = p["band_top"]
+
+    def at(r, deg):
+        a = math.radians(deg)
+        return (ya - m * r * math.cos(a), za + r * math.sin(a))
+    a1 = math.degrees(math.asin((zt - za) / ro))
+    a0, a2 = -15.0, p["band_end"]
+    inner = [at(ri, a0 + (a2 - a0) * k / 28) for k in range(29)]
+    tip = (inner[-1][0] + m * p["tip"], zt)
+    outer = [at(ro, a1 + (a0 - a1) * k / 20) for k in range(21)]
+    return inner + [tip] + outer
+
+
+def clip(bm: bmesh.types.BMesh, p1, p2, keep) -> None:
+    """Keeps the part of the flat mesh on the side of the line through p1, p2 where `keep` is."""
+    n = Vector((p2[1] - p1[1], p1[0] - p2[0], 0.0))
+    if n.x * (keep[0] - p1[0]) + n.y * (keep[1] - p1[1]) > 0:
+        n = -n
+    bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], dist=1e-6, plane_co=(p1[0], p1[1], 0.0),
+                           plane_no=n, clear_outer=True)
+
+
+def cut_gaps(bm: bmesh.types.BMesh, lines, w=0.005) -> None:
+    """Cuts the strips a < x < a + w (the door gaps, x being the car's y) out of the flat mesh."""
+    for a in lines:
+        for x in (a, a + w):
+            bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], dist=1e-6, plane_co=(x, 0.0, 0.0),
+                                   plane_no=(1.0, 0.0, 0.0))
+        dead = [f for f in bm.faces if a < f.calc_center_median().x < a + w]
+        bmesh.ops.delete(bm, geom=dead, context="FACES")
+
+
+def cells(bm: bmesh.types.BMesh, cell=DECAL_CELL) -> None:
+    """Cuts the flat mesh into cells (and triangulates it), so that draped on the body it follows its curves."""
+    for axis in (0, 1):
+        vals = [v.co[axis] for v in bm.verts]
+        k = math.floor(min(vals) / cell) + 1
+        while k * cell < max(vals):
+            co, no = Vector((0.0, 0.0, 0.0)), Vector((0.0, 0.0, 0.0))
+            co[axis], no[axis] = k * cell, 1.0
+            bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], dist=1e-6, plane_co=co, plane_no=no)
+            k += 1
+    bmesh.ops.triangulate(bm, faces=bm.faces[:])
+
+
+def drape(bm: bmesh.types.BMesh, surf: tuple, origin, direction, paint: set, what: str) -> None:
+    """Moves each vertex (a, b) of the flat mesh onto the car: where the ray from origin(a, b) along `direction` first
+    meets the outer shell, lifted DECAL_LIFT off it. Faces with a corner off the shell or on another material than
+    `paint` (lamps, glass, plates) are dropped; the rest face the ray's origin."""
+    bvh, mats = surf
+    d = Vector(direction).normalized()
+    off = set()
+    for v in bm.verts:
+        hit, nrm, i, _ = bvh.ray_cast(Vector(origin(v.co.x, v.co.y)), d)
+        if hit is None or mats[i] not in paint:
+            off.add(v)
+            continue
+        v.co = hit - nrm * DECAL_LIFT if nrm.dot(d) > 0 else hit + nrm * DECAL_LIFT
+    dead = [f for f in bm.faces if any(v in off for v in f.verts)]
+    bmesh.ops.delete(bm, geom=dead, context="FACES")
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+    bm.normal_update()
+    bmesh.ops.reverse_faces(bm, faces=[f for f in bm.faces if f.normal.dot(d) > 0])
+    if dead:
+        print(f"livery {what}: {len(dead)} cells off the paint dropped")
+
+
+def police_livery(c: dict, sh: Shell, surf: tuple) -> None:
+    """The Police nationale livery on the grey paint (into "body"). Each side: a blue band over the wheel arch on the
+    viewer's left and a red one on the right (the front on the left side, the rear on the right), POLICE NATIONALE and
+    the tricolour mark over the B-pillar, a dotted reflective line under the windows. The bonnet: POLICE NATIONALE read
+    from the front. The tailgate: POLICE NATIONALE, a blue and a red arrow under the lamps, blue, white and red
+    squares across the bumper. All cut at the door gaps."""
+    p = c["police"]
+    wh = c["wheel"]
+    za = wh["r"] + 0.01                         # arch centre (that of the arch cutters)
+    paint = {c["paint"], "seam"}
+    yc, zt, h = p["side_text"]
+    y0, y1, depth, size, step = p["dots"]
+    for s, side in ((1, "left"), (-1, "right")):
+        bm = bmesh.new()
+        for ya, m, bottom in ((wh["axles"][0], 1, p["band_bottom"][0]), (wh["axles"][1], -1, p["band_bottom"][1])):
+            band = flat([swoosh(ya, za, m, wh["arch"], p)], "livery_blue" if (m == 1) == (s == 1) else "livery_red")
+            clip(band, (-9.0, bottom), (9.0, bottom), (0.0, 9.0))
+            for line in p["band_clear"] if m == 1 else ():
+                clip(band, line[0], line[1], (ya, za))
+            add_flat(bm, band)
+        # reading towards the viewer's right: the rear on the left side, the front on the right
+        add_flat(bm, badge(h), Matrix.Translation((yc, zt, 0.0)) @ Matrix.Scale(s, 4, (1.0, 0.0, 0.0)))
+        dots = []
+        for k in range(int((y1 - y0) / step) + 1):
+            y = y0 + k * step
+            if all(abs(y - d - 0.0025) > size / 2 + 0.006 for d in c["doors"]):
+                z = sh.f["z_belt"](y) - depth
+                dots.append([(y - size / 2, z - size / 2), (y + size / 2, z - size / 2), (y + size / 2, z + size / 2),
+                             (y - size / 2, z + size / 2)])
+        add_flat(bm, flat(dots, "reflector"))
+        cut_gaps(bm, c["doors"])
+        cells(bm)
+        drape(bm, surf, lambda a, b, s=s: (s * 3.0, a, b), (-s, 0.0, 0.0), paint, f"{side} side")
+        put("body", bm, LIVERY)
+    # bonnet, read from the front: the reading direction is the car's left (+X), up is towards the windscreen
+    yb, hb = p["bonnet_text"]
+    bm = badge(hb)
+    bmesh.ops.translate(bm, verts=bm.verts[:], vec=(0.0, yb, 0.0))
+    cells(bm)
+    drape(bm, surf, lambda a, b: (a, b, 3.0), (0.0, 0.0, -1.0), paint, "bonnet")
+    put("body", bm, LIVERY)
+    # tailgate, read from behind: reading towards the car's right (-X); (a, b) = (x, z)
+    zt, ht = p["tail_text"]
+    bm = badge(ht)
+    bmesh.ops.transform(bm, verts=bm.verts[:], matrix=Matrix.Translation((0.0, zt, 0.0)) @ Matrix.Scale(-1, 4, (1.0, 0.0, 0.0)))
+    xi, xo, zb, ha = p["tail_arrows"]
+    for s, m in ((1, "livery_blue"), (-1, "livery_red")):           # the viewer's left is the car's left
+        add_flat(bm, flat([[(s * xo, zb), (s * (xi + 0.8 * ha), zb), (s * xi, zb + ha), (s * xo, zb + ha)]], m))
+    zq, size, step = p["tail_squares"]
+    for k in range(12):
+        x = (5.5 - k) * step
+        add_flat(bm, flat([[(x - size / 2, zq), (x + size / 2, zq), (x + size / 2, zq + size), (x - size / 2, zq + size)]],
+                          ("livery_blue", "livery_white", "livery_red")[k // 4]))
+    cells(bm)
+    drape(bm, surf, lambda a, b: (a, 4.0, b), (0.0, -1.0, 0.0), paint, "tailgate")
+    put("body", bm, LIVERY)
+
+
+def light_bar(c: dict, sh: Shell, surf: tuple) -> None:
+    """Blue LED light bar across the front of the roof on two feet ("lightbar"; its lenses beacon_left and
+    beacon_right either side of a black middle) and two blue flashers in the grille (beacon_grille_left / _right)."""
+    p = c["police"]
+    yb, hw, depth = p["bar"]
+    y0, y1 = yb - depth / 2, yb + depth / 2
+    zb = max(sh.f["z_top"](y) for y in (y0, yb, y1)) + 0.032        # underside of the bar
+    zr = min(sh.f["z_top"](y) for y in (y0, y1)) - 0.03             # feet sunk into the roof
+    for s in (1, -1):
+        x = s * (hw - 0.14)
+        box("lightbar", (x - 0.025, y0 + 0.03, zr), (x + 0.025, y1 - 0.03, zb + 0.005), "plastic_black", 0.008)
+    box("lightbar", (-hw, y0, zb), (hw, y1, zb + 0.022), "plastic_black", 0.01)
+    box("lightbar", (-0.055, y0 + 0.008, zb + 0.015), (0.055, y1 - 0.008, zb + 0.068), "trim_black", 0.015)
+    for s, side in ((1, "left"), (-1, "right")):
+        lo, hi = (0.057, y0 + 0.006, zb + 0.016), (hw - 0.006, y1 - 0.006, zb + 0.072)
+        if s < 0:
+            lo, hi = (-hi[0], lo[1], lo[2]), (-lo[0], hi[1], hi[2])
+        box(f"beacon_{side}", lo, hi, "beacon", 0.022, 3)
+    gx, gz = p["grille"]
+    for s, side in ((1, "left"), (-1, "right")):
+        y = surf[0].ray_cast(Vector((s * gx, -4.0, gz)), Vector((0.0, 1.0, 0.0)))[0].y     # the grille's face
+        box(f"beacon_grille_{side}", (s * gx - 0.045, y + 0.004, gz - 0.012), (s * gx + 0.045, y + 0.014, gz + 0.012),
+            "beacon", 0.004)
 
 
 # ---------------------------------------------------------------- cabin
@@ -1363,11 +1676,15 @@ def preview(prefix: str, c: dict, cab: dict) -> None:
     scene.camera = cam
     eye = cab["eye"]
     L = c["length"]
-    for suffix, pos, look, lens in (("front", (4.6, -5.6, 1.5), (0.0, -0.3, 0.65), 40),
-                                    ("rear", (-4.4, 5.8, 1.9), (0.0, 0.4, 0.7), 40),
-                                    ("side", (7.5, 0.0, 1.0), (0.0, 0.0, 0.75), 40),
-                                    ("cab", tuple(eye), (eye.x - 0.25, eye.y - 4.0, eye.z - 0.55), 14),
-                                    ("inside", (-1.6, 0.35, eye.z + 0.05), (0.2, -0.1, eye.z - 0.35), 18)):
+    views = [("front", (4.6, -5.6, 1.5), (0.0, -0.3, 0.65), 40),
+             ("rear", (-4.4, 5.8, 1.9), (0.0, 0.4, 0.7), 40),
+             ("side", (7.5, 0.0, 1.0), (0.0, 0.0, 0.75), 40),
+             ("cab", tuple(eye), (eye.x - 0.25, eye.y - 4.0, eye.z - 0.55), 14),
+             ("inside", (-1.6, 0.35, eye.z + 0.05), (0.2, -0.1, eye.z - 0.35), 18)]
+    if c.get("police"):
+        views += [("side_right", (-7.5, 0.0, 1.0), (0.0, 0.0, 0.75), 40),
+                  ("bonnet", (0.0, -4.6, 2.6), (0.0, -1.3, 0.8), 40)]
+    for suffix, pos, look, lens in views:
         cam.location = pos
         cam_data.type = "PERSP"
         cam_data.lens = lens
@@ -1393,7 +1710,7 @@ def build(key: str, out_dir: Path, prev: str) -> None:
         bpy.data.objects.remove(o)
     _parts.clear()
     sh = Shell(c)
-    body_shell(c, sh)
+    surf = body_shell(c, sh)
     liners(c, sh)
     if c.get("flares"):
         flares(c, sh)
@@ -1404,7 +1721,12 @@ def build(key: str, out_dir: Path, prev: str) -> None:
     cab = interior(c, sh)
     steering_column(c)
     mirrors(c, sh)
-    objs = [finish(g) for g in ("body", "mirrors", "indicator_left", "indicator_right", "brake_lights")]
+    groups = ["body", "mirrors", "indicator_left", "indicator_right", "brake_lights"]
+    if c.get("police"):
+        police_livery(c, sh, surf)
+        light_bar(c, sh, surf)
+        groups += ["lightbar", "beacon_left", "beacon_right", "beacon_grille_left", "beacon_grille_right"]
+    objs = [finish(g) for g in groups]
     objs.append(steering_wheel(c))
     wheels = []
     wh = c["wheel"]
@@ -1434,6 +1756,8 @@ def build(key: str, out_dir: Path, prev: str) -> None:
             "eye_pitch": k["eye_pitch"],
         },
     }
+    if c.get("police"):
+        layout["beacons"] = {"left": ["beacon_left", "beacon_grille_left"], "right": ["beacon_right", "beacon_grille_right"]}
     out.with_suffix(".json").write_text(json.dumps(layout, indent=1) + "\n")
     bpy.context.view_layer.update()
     deps = bpy.context.evaluated_depsgraph_get()
