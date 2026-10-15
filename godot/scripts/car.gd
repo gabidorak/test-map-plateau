@@ -14,7 +14,8 @@ extends VehicleBody3D
 ## opens and closes with O, an interior that carries the player (carries()), a driver seat and a cab view (V, or
 ## the mouse wheel zoomed all the way in, like Roblox). The driver's arms reach to hands on the steering wheel, which
 ## turns with the steering (STEERING_RATIO); the hands follow it up to HAND_TURN, then let it slide.
-## A cab without a walkable interior (the fire truck: its fittings file's "cab", see _cab_layout) has the same driver
+## A cab without a walkable interior (the fire truck: its fittings file's "cab"; the realistic cars: their cab file, see
+## _cab_layout) has the same driver
 ## seat, steering wheel and cab view, and can have a passenger seat: the player sitting there (set_riding, game.gd)
 ## looks around with the car's cameras (the cab view from the passenger's eye); another player of a LAN game sitting
 ## there shows as a look-alike in their colour (show_passenger).
@@ -58,7 +59,8 @@ const KENNEY_WHEELS := ["wheel-front-left", "wheel-front-right", "wheel-back-lef
 ## layout (json next to the model), sound (vehicle_audio kind), traction_from (index of the first driven wheel; all drive by default), trailer_mass (kg,
 ## rear section of an articulated vehicle), label (name in the vehicle menu, see display_name), plane (built and flown
 ## by scripts/plane.gd, which extends this script, instead), guns (a plane's machine guns), turret (a two-seat plane's
-## belly turret, worked from the passenger seat), fittings (the fire truck's
+## belly turret, worked from the passenger seat), cab (a car with a fitted-out cabin and real materials, built by
+## blender/vehicles/build_car.py: json next to the model with its wheels, lamps and cab, see _cab_layout), fittings (the fire truck's
 ## lamps and water cannon, json next to the model: scripts/fire_truck.gd, which extends this script, drives it), horse
 ## (ridden instead: scripts/horse.gd, which extends this script). Missing
 ## keys take the Kenney Car Kit values (scale 1.5: ~2.8 m -> ~4.2 m); the wheels beyond the first four are a third axle.
@@ -77,6 +79,14 @@ const SPECS := {
 			"wheels": ["car_hatchback_wheel_front_left", "car_hatchback_wheel_front_right",
 				"car_hatchback_wheel_rear_left", "car_hatchback_wheel_rear_right"],
 			"credit": "Kay Lousberg (KayKit), CC0"},
+	"compact-hatchback": {"label": "Compact hatchback", "file": "compact_hatchback.glb", "scale": 1.0,
+			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
+			"mass": 1180.0, "power": 0.95, "max_speed": 50.0, "cab": "compact_hatchback.json",
+			"credit": "five-door city car, built by blender/vehicles/build_car.py"},
+	"family-suv": {"label": "Family SUV", "file": "family_suv.glb", "scale": 1.0,
+			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
+			"mass": 1500.0, "power": 1.0, "max_speed": 52.0, "cab": "family_suv.json",
+			"credit": "compact crossover with a black roof, built by blender/vehicles/build_car.py"},
 	"sedan": {}, "taxi": {}, "suv": {"label": "SUV"}, "police": {}, "hatchback-sports": {"label": "Sports hatchback"},
 	"van": {}, "sedan-sports": {"label": "Sports sedan"}, "suv-luxury": {"label": "Luxury SUV"}, "delivery": {"label": "Delivery van"},
 	"ambulance": {},
@@ -94,7 +104,7 @@ const SPECS := {
 	"horse": {"label": "Horse", "horse": true, "credit": "toy horse built by scripts/horse.gd"},
 }
 const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "taxi", "suv", "police", "hatchback-sports", "van",
-		"sedan-sports", "suv-luxury", "delivery", "ambulance", "fire-truck", "biplane", "biplane-armed", "biplane-gunner",
+		"sedan-sports", "suv-luxury", "delivery", "ambulance", "compact-hatchback", "family-suv", "fire-truck", "biplane", "biplane-armed", "biplane-gunner",
 		"horse"]
 const REST_LENGTH := 0.2
 const BLINK := 0.75                         # s, indicator period
@@ -173,6 +183,9 @@ var _arm: SpringArm3D
 var _cab_camera: Camera3D                   # driver's (or passenger's) eye view (V), only with a cab
 var _driver_eye := Vector3.ZERO             # car frame
 var _passenger_eye := Vector3.ZERO
+var _cab_pitch := 0.0                       # added to the cab view's pitch (a car's eye is low: it looks less down)
+var _figure := 1.0                          # size of the seated look-alikes (a car's seats are low under its roof)
+var _cab_file := {}                         # the spec's "cab" file: wheels, lamps and cab of a realistic car
 var _cam_zoom := 7.5                        # chase camera distance the arm eases to
 var _zoom_range := Vector2(3.0, 20.0)       # closest (zooming in past it: cab view) and furthest
 var _follow_yaw := 0.0
@@ -261,6 +274,8 @@ func setup(model: String) -> void:
 	var layout: Dictionary = {}
 	if spec.has("layout"):
 		layout = JSON.parse_string(FileAccess.get_file_as_string("res://assets/cars/" + spec["layout"]))
+	if spec.has("cab"):
+		_cab_file = JSON.parse_string(FileAccess.get_file_as_string("res://assets/cars/" + spec["cab"]))
 
 	var m: Node3D = load("res://assets/cars/" + spec.get("file", model + ".glb")).instantiate()
 	m.scale = Vector3.ONE * float(spec.get("scale", 1.5))
@@ -312,7 +327,9 @@ func setup(model: String) -> void:
 		_build_cab(m, cab)
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass = Vector3(0.0, wheel_y - com_drop, 0.0 if trailer else box.get_center().z)
-	_build_lamps(m, box, layout)
+	_build_lamps(m, box, layout if not layout.is_empty() else _cab_file)
+	if not _cab_file.is_empty():
+		_gloss_paint(m)
 
 	audio = VehicleAudio.new()
 	audio.position = Vector3(0.0, 1.0, box.end.z - 1.0 if spec.has("layout") else box.get_center().z)
@@ -505,9 +522,23 @@ func _build_layout(m: Node3D, layout: Dictionary) -> void:
 
 
 ## The model's cab (driver seat and eye, steering wheel, passenger seat and eye; see _build_cab): a walkable vehicle's
-## layout has them.
+## layout has them, a realistic car's cab file too.
 func _cab_layout(layout: Dictionary) -> Dictionary:
-	return layout
+	return layout if not layout.is_empty() else _cab_file.get("cab", {})
+
+
+static var _glossed := {}                   # paint materials already given their clear coat
+
+## Clear coat on the car paint of a realistic car's model (its "paint*" materials; glTF does not bring it into Godot).
+func _gloss_paint(m: Node3D) -> void:
+	for mi: MeshInstance3D in m.find_children("*", "MeshInstance3D", true, false):
+		for k in mi.mesh.get_surface_count():
+			var mat := mi.mesh.surface_get_material(k) as StandardMaterial3D
+			if mat and mat.resource_name.begins_with("paint") and not _glossed.has(mat):
+				_glossed[mat] = true
+				mat.clearcoat_enabled = true
+				mat.clearcoat = 1.0
+				mat.clearcoat_roughness = 0.05
 
 
 ## Driver seat and eye, steering wheel and passenger seat from `cab` (glTF frame, so shifted like the model `m`): the cab
@@ -520,6 +551,8 @@ func _build_cab(m: Node3D, cab: Dictionary) -> void:
 	if has_passenger_seat:
 		passenger_seat = v.call(cab["passenger_seat"])
 		_passenger_eye = v.call(cab["passenger_eye"])
+	_cab_pitch = float(cab.get("eye_pitch", 0.0))
+	_figure = float(cab.get("figure", 1.0))
 	_steering_wheel = m.find_child(cab.get("steering_wheel", ""), true, false) as Node3D
 	if _steering_wheel:
 		_steering_rest = _steering_wheel.transform
@@ -536,7 +569,7 @@ func _build_cab(m: Node3D, cab: Dictionary) -> void:
 	_cab_camera.near = 0.05
 	_cab_camera.far = 1500.0
 	_cab_camera.position = _driver_eye
-	_cab_camera.rotation = Vector3(-0.27, PI, 0.0)
+	_cab_camera.rotation = Vector3(-0.27 + _cab_pitch, PI, 0.0)
 	add_child(_cab_camera)
 	_build_driver()
 
@@ -689,13 +722,14 @@ func _build_driver() -> void:
 	skin.albedo_color = Color(1, 0.55, 0.2)
 	skin.roughness = 0.6
 	_skin = skin
+	var f := _figure
 	var capsule := CapsuleMesh.new()
-	capsule.radius = 0.3
-	capsule.height = 1.25
+	capsule.radius = 0.3 * f
+	capsule.height = 1.25 * f
 	capsule.material = skin
 	_driver_body = MeshInstance3D.new()
 	_driver_body.mesh = capsule
-	_driver_body.position = driver_seat + Vector3(0.0, 0.62, 0.0)
+	_driver_body.position = driver_seat + Vector3(0.0, 0.62 * f, 0.0)
 	_driver_dummy.add_child(_driver_body)
 	if has_passenger_seat:
 		_passenger_skin = skin.duplicate()
@@ -704,26 +738,26 @@ func _build_driver() -> void:
 		_passenger = MeshInstance3D.new()
 		_passenger.name = "Passenger"
 		_passenger.mesh = seated
-		_passenger.position = passenger_seat + Vector3(0.0, 0.62, 0.0)
+		_passenger.position = passenger_seat + Vector3(0.0, 0.62 * f, 0.0)
 		_passenger.visible = false
 		add_child(_passenger)
 	if _steering_wheel == null:
 		return
 	var arm := CylinderMesh.new()               # along +Y from the shoulder (bottom) to the hand (top)
-	arm.top_radius = 0.042
-	arm.bottom_radius = 0.055
+	arm.top_radius = 0.042 * f
+	arm.bottom_radius = 0.055 * f
 	arm.height = 1.0
 	arm.radial_segments = 12
 	arm.rings = 1
 	arm.material = skin
 	var hand := SphereMesh.new()
-	hand.radius = 0.05
-	hand.height = 0.09
+	hand.radius = 0.05 * f
+	hand.height = 0.09 * f
 	hand.radial_segments = 12
 	hand.rings = 6
 	hand.material = skin
 	for side: float in [1.0, -1.0]:             # left (+X), right
-		_shoulders.append(driver_seat + Vector3(side * 0.21, 0.72, -0.04))
+		_shoulders.append(driver_seat + Vector3(side * 0.21 * f, 0.72 * f, -0.04))
 		for k in 2:
 			var mi := MeshInstance3D.new()
 			mi.mesh = arm if k == 0 else hand
@@ -1586,4 +1620,4 @@ func _update_camera(delta: float) -> void:
 	_cam_pivot.global_position = to_global(Vector3(0.0, 0.0, extents_center.z)) + Vector3.UP * _cam_height
 	_cam_pivot.global_rotation = Vector3(_look_pitch, _follow_yaw + _look_yaw, 0.0)
 	if _cab_camera:
-		_cab_camera.rotation = Vector3(clampf(_look_pitch - 0.1, -1.0, 0.6), PI + _look_yaw, 0.0)
+		_cab_camera.rotation = Vector3(clampf(_look_pitch - 0.1 + _cab_pitch, -1.0, 0.6), PI + _look_yaw, 0.0)
