@@ -95,7 +95,7 @@ const SPECS := {
 			"credit": "the compact hatchback in the Police nationale livery, built by blender/vehicles/build_car.py"},
 	"renault-zoe": {"label": "Renault Zoe", "file": "renault_zoe.glb", "scale": 1.0,
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
-			"mass": 1470.0, "power": 0.85, "max_speed": 37.5, "cab": "renault_zoe.json",
+			"mass": 1470.0, "power": 0.85, "max_speed": 37.5, "cab": "renault_zoe.json", "sound": "electric",
 			"credit": "Renault Zoe (2013), a ready-made model converted by blender/vehicles/import_car.py"},
 	"sedan": {}, "taxi": {}, "suv": {"label": "SUV"}, "police": {}, "hatchback-sports": {"label": "Sports hatchback"},
 	"van": {}, "sedan-sports": {"label": "Sports sedan"}, "suv-luxury": {"label": "Luxury SUV"}, "delivery": {"label": "Delivery van"},
