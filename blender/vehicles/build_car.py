@@ -1774,4 +1774,5 @@ def main() -> None:
         build(key, Path(a["out_dir"]), a["preview"])
 
 
-main()
+if __name__ == "__main__":    # blender/vehicles/import_car.py imports the palette
+    main()

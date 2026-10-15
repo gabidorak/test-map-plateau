@@ -1,21 +1,24 @@
 extends SceneTree
 ## Headless checks for the realistic cars (Car.SPECS "compact-hatchback", "family-suv" and the police car
-## "police-hatchback", built by blender/vehicles/build_car.py; its siren and lights: tools/test_police_car.gd): the vehicle menu parks each with its four wheels at its real size and mass, it rests
+## "police-hatchback", built by blender/vehicles/build_car.py; its siren and lights: tools/test_police_car.gd; and
+## "renault-zoe", converted by blender/vehicles/import_car.py): the vehicle menu parks each with its four wheels at its real size and mass, it rests
 ## level; E gets in; V gives the cab view from the driver's eye, inside the cabin under the roof, the driver's body hidden
 ## and the hands on the steering wheel, which turns with the steering; W drives it and A turns it; the indicators, brake
 ## lamps and headlights are the model's own (its lamp meshes, its "headlight" and "taillight" surfaces lit, a beam); the
 ## paint has a clear coat; E from the right side sits the player in the passenger seat (the cab view from the
 ## passenger's eye, a look-alike that fits under the roof in the chase view), Space gets out on the right.
-## godot --headless --fixed-fps 60 --path godot --script res://tools/test_real_cars.gd
+## godot --headless --fixed-fps 60 --path godot --script res://tools/test_real_cars.gd [-- <model> ...]
 ## Without --headless (add --disable-vsync) it also saves shots to /tmp/real_car_<model>_*.png.
 
 const Car = preload("res://scripts/car.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
+const WorldQuery = preload("res://scripts/world_query.gd")
 const MODELS := {"compact-hatchback": [3.9, 4.2, 1180.0], "family-suv": [4.3, 4.6, 1500.0],    # length range, mass
-		"police-hatchback": [3.9, 4.2, 1180.0]}
+		"police-hatchback": [3.9, 4.2, 1180.0], "renault-zoe": [4.0, 4.2, 1470.0]}
 
 var _main: Node
 var _failures: PackedStringArray = []
+var _start: Vector3                         # the player's spawn: each car is parked from there
 
 
 func _initialize() -> void:
@@ -75,8 +78,11 @@ func _look(car: VehicleBody3D, eye: Vector3, at: Vector3, file: String) -> void:
 
 func _run() -> void:
 	await _frames(60)
+	_start = _main.player.global_position
+	var only := OS.get_cmdline_user_args()          # "-- renault-zoe": just those
 	for model: String in MODELS:
-		await _car(model)
+		if only.is_empty() or model in only:
+			await _car(model)
 	_finish()
 
 
@@ -84,6 +90,8 @@ func _car(model: String) -> void:
 	var player: CharacterBody3D = _main.player
 	var tag := model.replace("-", "_")
 	print("-- ", model)
+	player.teleport(_start)                 # not where the last car's checks left the player (a bank, maybe)
+	await _frames(10)
 	_check(Car.MODELS.has(model) and _main._menu_buttons.has_node(model), "the vehicle menu has the %s" % Car.display_name(model))
 	var car: VehicleBody3D = _main.spawn_car_near_player(model)
 	_check(car != null and car.find_children("*", "VehicleWheel3D", true, false).size() == 4, "it parks with four wheels")
@@ -96,7 +104,8 @@ func _car(model: String) -> void:
 	_face_open_ground(car)
 	await _frames(90)
 	_check(absf(car.global_basis.y.angle_to(Vector3.UP)) < 0.1 and car.linear_velocity.length() < 0.3,
-			"it rests level on its wheels")
+			"it rests level on its wheels (%.1f°, %.2f m/s)" % [rad_to_deg(car.global_basis.y.angle_to(Vector3.UP)),
+			car.linear_velocity.length()])
 	await _look(car, Vector3(3.2, 1.5, 4.6), Vector3(0.0, 0.6, 0.3), "real_car_%s_front.png" % tag)
 	await _look(car, Vector3(-3.0, 1.7, -4.8), Vector3(0.0, 0.7, -0.3), "real_car_%s_rear.png" % tag)
 	_check(car._lit_surfaces.size() >= 2 and car._beam != null and car._head_lamps.is_empty(),
@@ -206,24 +215,42 @@ func _passenger_seat(car: VehicleBody3D, tag: String, roof: float) -> void:
 			"Space gets out on the right (%.1f m off the side)" % (-out.x - car.half_extents.x))
 
 
-## Turns the parked car towards the direction with the most room ahead for its whole width (rays at bumper height from
-## its middle and along both its sides), so it can drive off.
+## Turns the parked car towards the direction with the most room ahead (a box cast of its footprint, a little wider,
+## from just above the ground: a thin pole between rays would be knocked over under the car, which flies off it) on
+## ground with no kerb, drop or bank on the way (a car flying off one cannot steer, as in tools/test_cars.gd), so it
+## can drive off; preferably level under its wheels where it stands.
 func _face_open_ground(car: VehicleBody3D) -> void:
 	var space := car.get_world_3d().direct_space_state
+	var box := BoxShape3D.new()
+	box.size = Vector3(car.half_extents.x * 2.0 + 0.6, 1.0, car.half_extents.z * 2.0)
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = box
+	q.collision_mask = Layers.BUILDINGS | Layers.BOUNDARY | Layers.VEGETATION | Layers.PROPS | Layers.BREAKABLE \
+			| Layers.VEHICLES
+	q.exclude = [car.get_rid()]
 	var best := [-1.0, 0.0]
 	for k in 24:
 		var yaw := TAU * k / 24.0
 		var dir := Vector3(sin(yaw), 0.0, cos(yaw))
-		var side: Vector3 = Vector3(dir.z, 0.0, -dir.x) * (car.half_extents.x - 0.1)
-		var room := 40.0
-		for off: Vector3 in [Vector3.ZERO, side, -side]:
-			var from: Vector3 = car.global_position + Vector3.UP * 0.6 + off
-			var q := PhysicsRayQueryParameters3D.create(from, from + dir * 40.0, Layers.SOLID | Layers.PROPS
-					| Layers.VEGETATION | Layers.VEHICLES)
-			q.exclude = [car.get_rid()]
-			var hit := space.intersect_ray(q)
-			if not hit.is_empty():
-				room = minf(room, from.distance_to(hit["position"]))
+		q.transform = Transform3D(Basis(Vector3.UP, yaw), car.global_position + Vector3.UP * 0.65)
+		q.motion = dir * 40.0
+		var room: float = space.cast_motion(q)[0] * 40.0
+		var start := car.global_position
+		var prev := WorldQuery.ground_y(car.get_world_3d(), start.x, start.z, Layers.TERRAIN, start.y + 3.0)
+		for m in range(1, int(room)):
+			var w := start + dir * float(m)
+			var g := WorldQuery.ground_y(car.get_world_3d(), w.x, w.z, Layers.TERRAIN, start.y + 30.0)
+			if is_nan(g) or absf(g - prev) > 0.1:   # a kerb is 0.12 m
+				room = float(m)
+				break
+			prev = g
+		# where it stands, turned: level under its four wheels (not across a kerb or a bank)
+		var corners: Array[float] = []
+		for c: Vector3 in [Vector3(1, 0, 1), Vector3(-1, 0, 1), Vector3(1, 0, -1), Vector3(-1, 0, -1)]:
+			var w: Vector3 = start + Basis(Vector3.UP, yaw) * (c * (car.half_extents - Vector3(0.2, 0.0, 0.7)))
+			corners.append(WorldQuery.ground_y(car.get_world_3d(), w.x, w.z, Layers.TERRAIN, start.y + 3.0))
+		if corners.max() - corners.min() > 0.1:
+			room *= 0.1
 		if room > best[0]:
 			best = [room, yaw]
 	car.place(Transform3D(Basis(Vector3.UP, best[1]), car.global_position + Vector3.UP * 0.1))

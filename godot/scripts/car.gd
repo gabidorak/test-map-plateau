@@ -60,8 +60,9 @@ const KENNEY_WHEELS := ["wheel-front-left", "wheel-front-right", "wheel-back-lef
 ## rear section of an articulated vehicle), label (name in the vehicle menu, see display_name), plane (built and flown
 ## by scripts/plane.gd, which extends this script, instead), guns (a plane's machine guns), turret (a two-seat plane's
 ## belly turret, worked from the passenger seat), cab (a car with a fitted-out cabin and real materials, built by
-## blender/vehicles/build_car.py: json next to the model with its wheels, lamps and cab, see _cab_layout), fittings (the fire truck's
-## lamps and water cannon, json next to the model: scripts/fire_truck.gd, which extends this script, drives it), police
+## blender/vehicles/build_car.py or converted from a ready-made model by import_car.py: json next to the model with
+## its wheels, lamps and cab, see _cab_layout), fittings (the fire truck's lamps and water cannon, json next to the
+## model: scripts/fire_truck.gd, which extends this script, drives it), police
 ## (a police car with a light bar and a siren, the "beacons" of its cab file: scripts/police_car.gd, which extends this
 ## script), horse (ridden instead: scripts/horse.gd, which extends this script). Missing
 ## keys take the Kenney Car Kit values (scale 1.5: ~2.8 m -> ~4.2 m); the wheels beyond the first four are a third axle.
@@ -92,6 +93,10 @@ const SPECS := {
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
 			"mass": 1180.0, "power": 0.95, "max_speed": 50.0, "cab": "police_hatchback.json", "police": true,
 			"credit": "the compact hatchback in the Police nationale livery, built by blender/vehicles/build_car.py"},
+	"renault-zoe": {"label": "Renault Zoe", "file": "renault_zoe.glb", "scale": 1.0,
+			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
+			"mass": 1470.0, "power": 0.85, "max_speed": 37.5, "cab": "renault_zoe.json",
+			"credit": "Renault Zoe (2013), a ready-made model converted by blender/vehicles/import_car.py"},
 	"sedan": {}, "taxi": {}, "suv": {"label": "SUV"}, "police": {}, "hatchback-sports": {"label": "Sports hatchback"},
 	"van": {}, "sedan-sports": {"label": "Sports sedan"}, "suv-luxury": {"label": "Luxury SUV"}, "delivery": {"label": "Delivery van"},
 	"ambulance": {},
@@ -109,7 +114,7 @@ const SPECS := {
 	"horse": {"label": "Horse", "horse": true, "credit": "toy horse built by scripts/horse.gd"},
 }
 const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "taxi", "suv", "police", "hatchback-sports", "van",
-		"sedan-sports", "suv-luxury", "delivery", "ambulance", "compact-hatchback", "family-suv", "police-hatchback", "fire-truck", "biplane", "biplane-armed", "biplane-gunner",
+		"sedan-sports", "suv-luxury", "delivery", "ambulance", "compact-hatchback", "family-suv", "police-hatchback", "renault-zoe", "fire-truck", "biplane", "biplane-armed", "biplane-gunner",
 		"horse"]
 const REST_LENGTH := 0.2
 const BLINK := 0.75                         # s, indicator period
