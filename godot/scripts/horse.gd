@@ -413,7 +413,7 @@ func _physics_process(delta: float) -> void:
 	var fwd_in := 0.0
 	var turn_in := 0.0
 	var fast := false
-	if driving and controls and not broken:
+	if driving and controls and not broken and not hold:
 		fwd_in = Input.get_axis("brake", "throttle")
 		turn_in = Input.get_axis("steer_right", "steer_left")
 		fast = Input.is_action_pressed("run")

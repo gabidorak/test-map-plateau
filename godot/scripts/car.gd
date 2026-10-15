@@ -177,6 +177,7 @@ var net_id := ""                            # LAN games: the vehicle's id on eve
 var remote := false                         # LAN games: simulated by another peer (set_remote)
 var bells := 0                              # bell strikes so far (LAN: its parity tells the peers to ring)
 var controls := true                        # false while a menu is open: the driver's keys do nothing
+var hold := false                           # held still at a race start (scripts/races.gd): brakes on, no throttle
 var health := HEALTH
 var max_health := HEALTH
 var broken := false                         # health 0: engine dead, black smoke
@@ -1468,6 +1469,9 @@ func _physics_process(delta: float) -> void:
 		engine_force *= 1.6                     # quicker start, like a low gear
 	if broken:
 		engine_force = 0.0                      # it still brakes
+	if hold:
+		engine_force = 0.0
+		brake = max_brake
 	engine_force *= _force_scale
 	brake *= _total_mass / 300.0 / _wheel_count     # per wheel: a 4-wheel car's share of its mass / 1200
 	# full lock at walking pace, fading with the speed
