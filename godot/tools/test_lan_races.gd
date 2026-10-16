@@ -12,7 +12,9 @@ extends SceneTree
 ## Exit code 1 on failure. No --fixed-fps: the states are stamped with the real clock.
 
 const GroundMap = preload("res://scripts/ground_map.gd")
-const READY_FILE := "/tmp/test_lan_races_ready"    # the host's solo lap is done: start the client
+## the host's solo lap is done: start the client (the temporary folder: /tmp, or the Windows one Git Bash calls /tmp,
+## where test_lan_races.sh looks)
+var _ready_file := OS.get_temp_dir().path_join("test_lan_races_ready")
 const SHIFT := 70.0                         # s the host's clock jumps on during each race
 
 var _main: Node
@@ -24,11 +26,12 @@ var _hosting := false
 func _initialize() -> void:
 	_hosting = "--host" in OS.get_cmdline_user_args()
 	if _hosting:
-		DirAccess.remove_absolute(READY_FILE)
-		for f: String in ["/tmp/test_lan_races/records.json", "/tmp/test_lan_races/records.json.tmp"]:
+		DirAccess.remove_absolute(_ready_file)
+		for f: String in [OS.get_temp_dir().path_join("test_lan_races/records.json"),
+				OS.get_temp_dir().path_join("test_lan_races/records.json.tmp")]:
 			DirAccess.remove_absolute(f)
-		DirAccess.make_dir_recursive_absolute("/tmp/test_lan_races")
-		OS.set_environment("PLATEAU_RECORDS", "/tmp/test_lan_races/records.json")
+		DirAccess.make_dir_recursive_absolute(OS.get_temp_dir().path_join("test_lan_races"))
+		OS.set_environment("PLATEAU_RECORDS", OS.get_temp_dir().path_join("test_lan_races/records.json"))
 	_main = load("res://scenes/main.tscn").instantiate()
 	_main.debug_cars = false
 	root.add_child(_main)
@@ -125,7 +128,7 @@ func _host(lap: Dictionary) -> void:
 	await _until(func() -> bool: return _races.state == _races.IDLE, 5.0)
 	var rows: Array = _races.boards.get("lap", [])
 	_check(went and rows.size() == 1 and rows[0][0] == "Host", "a lap alone before anyone joins: %s" % str(rows))
-	FileAccess.open(READY_FILE, FileAccess.WRITE).store_string("ready")
+	FileAccess.open(_ready_file, FileAccess.WRITE).store_string("ready")
 	var joined := await _until(func() -> bool: return _main.net.players.size() == 2, 30.0)
 	_check(joined, "the client joined")
 	if not joined:
@@ -141,7 +144,7 @@ func _host(lap: Dictionary) -> void:
 	_check(started and _races.racers.size() == 2, "the client joined the race: counting down with %d racers" %
 			_races.racers.size())
 	var go: float = _races.go_at
-	FileAccess.open(READY_FILE, FileAccess.WRITE).store_string("go %f" % go)
+	FileAccess.open(_ready_file, FileAccess.WRITE).store_string("go %f" % go)
 	went = await _until(func() -> bool: return _races.state == _races.RACING, 10.0)
 	_check(went, "GO")
 	_main.net.clock_shift += SHIFT
@@ -165,8 +168,8 @@ func _client(lap: Dictionary) -> void:
 	_races.race_key()
 	var started := await _until(func() -> bool: return _races.state == _races.COUNTDOWN, 10.0)
 	_check(started and _races.racers.size() == 2, "joined: counting down with %d racers" % _races.racers.size())
-	await _until(func() -> bool: return FileAccess.get_file_as_string(READY_FILE).begins_with("go"), 5.0)
-	var host_go := float(FileAccess.get_file_as_string(READY_FILE).get_slice(" ", 1))
+	await _until(func() -> bool: return FileAccess.get_file_as_string(_ready_file).begins_with("go"), 5.0)
+	var host_go := float(FileAccess.get_file_as_string(_ready_file).get_slice(" ", 1))
 	_check(absf(_races.go_at - host_go) < 0.001, "the same GO as the host's (%.3f, %.3f)" % [_races.go_at, host_go])
 	var went := await _until(func() -> bool: return _races.state == _races.RACING, 10.0)
 	_check(went, "GO")

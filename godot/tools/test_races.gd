@@ -10,12 +10,13 @@ extends SceneTree
 ##   OFF_TIME s it races on, for over that it is out; far off the road it is out at once;
 ## - a bot drives each route through every checkpoint to the finish (the 18 m bus the bus race, never off the road over
 ##   OFF_DIST m for long; a car the lap), and the times go on the boards.
-## The records go to a file in /tmp (PLATEAU_RECORDS), not the player's. The game's clock (net.gd clock(), real time:
-## races are timed on it) follows the simulation instead (SimClock), which runs much faster than real time here.
+## The records go to a file in the system's temporary folder (PLATEAU_RECORDS), not the player's. The game's clock
+## (net.gd clock(), real time: races are timed on it) follows the simulation instead (SimClock), which runs much faster
+## than real time here.
 ## godot --headless --fixed-fps 60 --path godot --script res://tools/test_races.gd
 ## PLATEAU_TEST_ONLY=lap,bus,bot_bus,bot_lap runs some of them.
 
-const RECORDS := "/tmp/plateau_test_races/records.json"
+var _records := OS.get_temp_dir().path_join("plateau_test_races/records.json")   # (no /tmp on Windows)
 const BusBot = preload("res://scripts/bus_bot.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 
@@ -41,10 +42,10 @@ class SimClock extends Node:
 
 
 func _initialize() -> void:
-	DirAccess.make_dir_recursive_absolute(RECORDS.get_base_dir())
-	for f: String in [RECORDS, RECORDS + ".tmp"]:
+	DirAccess.make_dir_recursive_absolute(_records.get_base_dir())
+	for f: String in [_records, _records + ".tmp"]:
 		DirAccess.remove_absolute(f)
-	OS.set_environment("PLATEAU_RECORDS", RECORDS)
+	OS.set_environment("PLATEAU_RECORDS", _records)
 	var only := OS.get_environment("PLATEAU_TEST_ONLY")
 	_only = only.split(",", false) if only != "" else PackedStringArray()
 	_main = load("res://scenes/main.tscn").instantiate()
@@ -127,7 +128,7 @@ func _run() -> void:
 			"races.json: the campus lap (%d checkpoints, %d m) and the bus race (%d checkpoints, %d m)" % [
 			lap.get("checkpoints", []).size(), lap.get("length", 0), bus.get("checkpoints", []).size(), bus.get("length", 0)])
 	_check(_races._boards3d.size() == 2 and _races._circles.size() == 2, "two start circles and two leaderboards")
-	_check(_races.records_path == RECORDS, "records go to %s" % _races.records_path)
+	_check(_races.records_path == _records, "records go to %s" % _races.records_path)
 	if _wants("lap"):
 		await _lap_checks(lap)
 	if _wants("bus"):
@@ -198,7 +199,7 @@ func _lap_checks(lap: Dictionary) -> void:
 	var said: String = lines[-1][2] if not lines.is_empty() else ""
 	_check("finished the Campus lap in %s" % _races.format_time(t1) in said and "New record" in said,
 			"the chat says it: '%s'" % said)
-	var file := FileAccess.get_file_as_string(RECORDS)
+	var file := FileAccess.get_file_as_string(_records)
 	_check(_races.format_time(t1) != "" and _main.nickname in file and "sedan" in file, "the records file has it")
 
 	# a slower lap keeps the best, a faster one replaces it
@@ -215,11 +216,11 @@ func _lap_checks(lap: Dictionary) -> void:
 	_races.start_hosting()
 	rows = _races.boards.get("lap", [])
 	_check(rows.size() == 1 and absf(rows[0][1] - t3) < 0.01, "the records read back from the file")
-	DirAccess.rename_absolute(RECORDS, RECORDS + ".tmp")
+	DirAccess.rename_absolute(_records, _records + ".tmp")
 	_races.start_hosting()
 	rows = _races.boards.get("lap", [])
 	_check(rows.size() == 1 and absf(rows[0][1] - t3) < 0.01, "...and from the temporary file")
-	DirAccess.rename_absolute(RECORDS + ".tmp", RECORDS)
+	DirAccess.rename_absolute(_records + ".tmp", _records)
 	var board: Node3D = _races._boards3d["lap"]
 	var left: String = (board.get_node("Left0") as Label3D).text
 	_check(_main.nickname in left, "the leaderboard shows it: '%s'" % left.replace("\n", " / "))
