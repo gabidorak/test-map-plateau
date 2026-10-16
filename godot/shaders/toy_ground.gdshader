@@ -157,10 +157,10 @@ vec3 tyre_tracks(vec3 c, vec2 p, float fw) {
 
 // crushed stone: angular grey pebbles of a few tones, packed, with dark gaps
 vec3 ballast(vec3 c, vec2 p, float fw, inout vec2 bump, inout float ao) {
-	vec4 d = dots(p * 16.0, 1.0);
+	vec4 d = dots(p * 22.0, 1.0);
 	float k = detail(0.06, fw);
 	float stone = 1.0 - smoothstep(0.28, 0.5, d.x);
-	vec3 col = c * (0.82 + 0.3 * d.y) * mix(1.0, 0.72 + 0.28 * stone, k);
+	vec3 col = c * (0.86 + 0.22 * d.y) * mix(1.0, 0.8 + 0.2 * stone, k);
 	col *= 0.93 + 0.12 * fbm(p * 0.7);
 	bump -= d.zw * stone * 2.5 * k;
 	ao *= mix(1.0, mix(0.7, 1.0, stone), k);
