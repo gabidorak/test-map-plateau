@@ -13,6 +13,7 @@ extends Node
 ##   on routes from the map edge to the map edge, picked at random (longer ones more often). Spread along their routes
 ##   at the start; one that vanished at the edge comes back on another route, mid-way where no player is within HIDDEN
 ##   m, else at its map edge.
+## The host can stop them (stop_bots: game.gd set_bot_traffic, the in-game menu) and start them again.
 ## Only the peer that hosts (or plays solo, or a dedicated server) runs the bots; the other peers get their vehicles as
 ## remote vehicles (net.gd), which they can ride in (buses) but not drive.
 
@@ -121,6 +122,30 @@ func start_bots() -> void:
 	var cars: Variant = _read(CAR_ROUTES)
 	if cars != null:
 		_start_cars(cars)
+
+
+## Stops the bots: returns their vehicles, for game.gd to take off the map (on every peer). start_bots starts afresh.
+func stop_bots() -> Array:
+	var out := []
+	for b: Object in bots:
+		if is_instance_valid(b.car):
+			out.append(b.car)
+	bots.clear()
+	lines = []
+	routes = {}
+	car_line = {}
+	departures.clear()
+	departed.clear()
+	time = 0.0
+	snap_cars.clear()
+	snap_pos.clear()
+	snap_vel.clear()
+	snap_fwd.clear()
+	snap_reach.clear()
+	_car_lengths.clear()
+	_car_models = []
+	_car_look = 0.0
+	return out
 
 
 static func _read(path: String) -> Variant:

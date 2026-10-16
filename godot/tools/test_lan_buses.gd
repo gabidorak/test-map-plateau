@@ -4,7 +4,9 @@ extends SceneTree
 ## The client gets the host's bot buses as remote vehicles that say a bot drives them (driver shown), cannot take the
 ## wheel (E refused here, a request refused by the host), runs the traffic lights on the host's clock, stops showing a
 ## bus the host stows, and rides a bot bus: it steps in at a stop while the doors are open and stays standing in it as
-## the bot drives on (the host's bot keeps the physics and does not vanish with them aboard).
+## the bot drives on (the host's bot keeps the physics and does not vanish with them aboard). Then the host switches
+## the bot traffic off (the bots leave the client's map too, the client's own car stays), clears every vehicle (the
+## client's car too) and switches the traffic back on (the bots are back on the client).
 ## Exit code 1 on failure. No --fixed-fps: the states are stamped with the real clock.
 
 const CLOCK_FILE := "/tmp/test_lan_buses_clock.txt"     # the host's game clock against the system clock
@@ -106,6 +108,18 @@ func _run_host() -> void:
 	# a stowed bus disappears there too
 	var other: Object = _main.traffic.bots[0]
 	other._stow()
+	# the host's options: once the client parked a car of its own
+	var theirs := func() -> bool: return net.owner_of.values().any(func(o: int) -> bool: return o != net.me())
+	_check(await _until(theirs, 60.0), "the client parked a car")
+	_main.set_bot_traffic(false)
+	_check(_main.traffic.bots.is_empty() and not _main.cars.any(func(c: Node) -> bool: return c.is_bot()) \
+			and theirs.call(), "bot traffic off: no bots left here, the client's car stays")
+	await _until(func() -> bool: return false, 3.0)
+	_main.clear_vehicles()
+	_check(_main.cars.is_empty() and net.cars.is_empty(), "every vehicle cleared here")
+	await _until(func() -> bool: return false, 3.0)
+	_main.set_bot_traffic(true)
+	_check(_main.traffic.bots.size() > 0, "bot traffic back on (%d bots)" % _main.traffic.bots.size())
 	_check(await _until(func() -> bool: return net.players.size() == 1, 60.0), "the client left")
 
 
@@ -161,5 +175,16 @@ func _run_client() -> void:
 	var gone := await _until(func() -> bool: return bots.any(func(c: Node) -> bool: return c.stowed and not c.visible), 20.0)
 	_check(gone, "a bus the host stows is hidden here")
 	player.teleport(bus.to_global(Vector3(bus.half_extents.x + 4.0, 0.5, 0.0)))
+	await _until(func() -> bool: return false, 1.0)
+	# the host's options
+	var mine: Node = _main.spawn_car_near_player("sedan")
+	_check(mine != null, "parked a car of our own")
+	var no_bots := func() -> bool: return not _main.cars.any(func(c: Node) -> bool: return c.is_bot())
+	_check(await _until(no_bots, 20.0) and is_instance_valid(mine) and mine in _main.cars,
+			"the host switched bot traffic off: no bots here, our car stays")
+	_check(await _until(func() -> bool: return _main.cars.is_empty(), 20.0) and net.cars.is_empty()
+			and not is_instance_valid(mine), "the host cleared every vehicle: ours too")
+	_check(await _until(func() -> bool: return _main.cars.filter(func(c: Node) -> bool: return c.is_bot()).size() >= 5, 30.0),
+			"the host switched bot traffic back on: its bots are here again")
 	await _until(func() -> bool: return false, 1.0)
 	net.leave()

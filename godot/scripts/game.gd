@@ -35,7 +35,9 @@ extends Node3D
 ## Vehicles bend thin trees and knock over sign poles, bollards and the like (scripts/breakables.gd).
 ## Bot buses and bot cars (scripts/traffic.gd, scripts/bus_bot.gd) drive their lines and routes when playing solo,
 ## hosting, or on a dedicated server: the player can ride the buses (in through the open doors at a stop) but drive
-## none of them. Instanced by the tools they stay off unless PLATEAU_BUSES=1. The traffic lights cycle on the game's shared clock (the same on every screen).
+## none of them. The host (or solo player) switches them off and on in the in-game menu (remembered, Settings "traffic";
+## --no-bots on the command line), and can clear the map of every vehicle there. Instanced by the tools they stay off
+## unless PLATEAU_BUSES=1. The traffic lights cycle on the game's shared clock (the same on every screen).
 ## Graphics: "low" (no SSIL/SSAO/glow, FXAA instead of MSAA) keeps 60 fps on an integrated GPU; it is
 ## the default there, "high" elsewhere. PLATEAU_QUALITY=low|high overrides, F2 switches, the settings page
 ## (scripts/settings_menu.gd, from either menu) sets it. Keys are the Settings actions (scripts/settings.gd): the
@@ -170,6 +172,8 @@ func _ready() -> void:
 	pause.resume.connect(set_pause_open.bind(false))
 	pause.leave.connect(back_to_menu.bind(""))
 	pause.quit.connect(get_tree().quit)
+	pause.traffic_toggled.connect(set_bot_traffic)
+	pause.clear_vehicles.connect(clear_vehicles)
 	var env: Environment = $WorldEnvironment.environment
 	_high = {"ssil": env.ssil_enabled, "ssao": env.ssao_enabled, "glow": env.glow_enabled,
 			"msaa": get_viewport().msaa_3d, "aa": get_viewport().screen_space_aa}
@@ -192,6 +196,8 @@ func _ready() -> void:
 	# the tools instance the scene themselves: no menu for them, no bot buses unless asked
 	if get_tree().current_scene != self:
 		bus_bots = OS.get_environment("PLATEAU_BUSES") == "1"
+	else:
+		bus_bots = Settings.values["traffic"] and not _args.has("no-bots")
 	var welcome := get_tree().current_scene == self and not (_args.has("solo") or _args.has("host") or _args.has("join") \
 			or _args.has("dedicated"))
 	fly_camera.active = false
@@ -581,6 +587,52 @@ func add_bot_bus(car: Car, xf: Transform3D, bot: Object) -> void:
 	net.car_parked(car)
 
 
+## Host (or solo): bot traffic on (the lines filled afresh) or off (every bot vehicle off the map, on every peer).
+func set_bot_traffic(on: bool) -> void:
+	if mode not in ["solo", "host", "server"] or on == bus_bots:
+		return
+	bus_bots = on
+	if get_tree().current_scene == self and mode != "server":
+		Settings.set_value("traffic", on)
+	if on:
+		traffic.start_bots()
+	else:
+		remove_vehicles(traffic.stop_bots())
+
+
+## Host (or solo): every vehicle off the map, on every peer (the bots come back at once when bot traffic is on).
+## Returns how many were cleared.
+func clear_vehicles() -> int:
+	if mode not in ["solo", "host", "server"]:
+		return 0
+	var n := cars.size()
+	traffic.stop_bots()
+	remove_vehicles(cars.duplicate())
+	if bus_bots:
+		traffic.start_bots()
+	_show_toast("Cleared %d vehicles" % n)
+	return n
+
+
+## Takes `gone` (Car) off the map here, the player out of them first; the host's net.gd takes them off the other
+## peers' too.
+func remove_vehicles(gone: Array) -> void:
+	for car: Car in gone:
+		if not is_instance_valid(car):
+			continue
+		if driving == car:
+			exit_car()
+		if riding == car:
+			leave_ride()
+		if is_instance_valid(player.carrier) and player.carrier in car.bodies():
+			player.set_carrier(null)
+		cars.erase(car)
+		car.queue_free()
+	net.cars_removed(gone)
+	_update_controls()
+	_update_help()
+
+
 ## How many players ride `car` (standing in it or in a seat), here and on the other peers.
 func riders(car: Car) -> int:
 	var n := 0
@@ -957,7 +1009,7 @@ func set_pause_open(on: bool) -> void:
 		if net.active:
 			for id: int in net.players:
 				players.append([net.player_name(id) + (" (you)" if id == net.me() else ""), net.player_color(id)])
-		pause.open(info, players, "Back to main menu")
+		pause.open(info, players, "Back to main menu", mode == "solo" or mode == "host", bus_bots)
 	else:
 		pause.close()
 		Input.mouse_mode = _pause_mouse
