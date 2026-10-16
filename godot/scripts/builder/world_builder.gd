@@ -1,6 +1,7 @@
 @tool
 extends RefCounted
-## Builds res://scenes/generated/neighborhood.tscn from the pipeline output in res://world/.
+## Builds res://scenes/generated/neighborhood.tscn from the pipeline output in res://world/ (and the railway,
+## world/rail.json: builder/rail_builder.gd).
 ## Run from the editor (Project > Tools > Rebuild Plateau world) or headless via tools/build_world.gd.
 
 const GroundBuilder = preload("res://scripts/builder/ground_builder.gd")
@@ -9,6 +10,7 @@ const CollisionBuilder = preload("res://scripts/builder/collision_builder.gd")
 const VegetationBuilder = preload("res://scripts/builder/vegetation_builder.gd")
 const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
 const FarBuilder = preload("res://scripts/builder/far_builder.gd")
+const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
 ## 3 adds ground[], kerbs[], markings[] (M3); 4 adds ground_mesh, palette, drops the ortho (M4);
 ## 5 adds trees[], hedges[], tree_archetypes (M5); 6 adds props[], fences[], prop_models, sign_faces (M6);
 ## 7 adds buildings[].toy, building_kit, building_modules[], building_signs[] (M7);
@@ -52,6 +54,10 @@ func build_and_save() -> Error:
 		root.free()
 		return err
 	err = PropPlacer.new().build(root, world, heights, MESH_DIR)
+	if err != OK:
+		root.free()
+		return err
+	err = RailBuilder.new().build(root, world, heights, MESH_DIR)
 	if err != OK:
 		root.free()
 		return err

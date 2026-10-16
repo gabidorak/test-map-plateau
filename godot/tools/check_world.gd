@@ -15,6 +15,10 @@ extends SceneTree
 ##     name and line badges.
 ##  6. Toy buildings (M7): every mass has its mesh with the facade data (UV2 + four custom channels) and the
 ##     one shared building material, a collision shape, and every kit module and name sign is drawn once.
+##  7. RER B (rail.json, tools/rail/): world.json carries the patch stamp of this rail.json; along both tracks, across
+##     the playable box, the ground is the railway's trackbed piece and the drawn mesh lies on the designed formation
+##     with no step; no tree, prop or building inside the kinematic gauge; each platform edge is 1.60-1.70 m from its
+##     track centre, the platform top 1.15 m above the rail and the ground drops in front of its wall.
 ## godot --headless --path godot --script res://tools/check_world.gd
 
 const GroundMap = preload("res://scripts/ground_map.gd")
@@ -22,16 +26,28 @@ const GroundBuilder = preload("res://scripts/builder/ground_builder.gd")
 const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
 const SCENE := "res://scenes/generated/neighborhood.tscn"
 const WORLD := "res://world/world.json"
+const RAIL := "res://world/rail.json"
+const GAUGE_HALF := 1.75                   # m from a track centre: GC kinematic gauge half-width (EN 15273-2, 1.645 m) + 0.1 m
+const EDGE_MIN := 1.60                     # m, platform edge from its track centre (RATP RER platforms: 1.65 m)...
+const EDGE_MAX := 1.70                     # ...within this range
+const PLATFORM_HEIGHT := 1.15              # m above the rail (RER B "quais hauts", rail.json platforms height)
+const FORMATION_TOL := 0.03                # m, drawn ground vs the designed formation at a track centre
+const RAIL_SPAN := 40.0                    # m either side of the line where ground triangles are kept for the checks
 const IMAGE_EXT := ["jpg", "jpeg", "png", "webp", "tif", "tiff", "bmp", "tga", "exr", "hdr", "svg", "ktx",
 		"dds", "ctex", "astc", "jp2"]
 
 var _failures: PackedStringArray = []
 var _seen := {}
+var _rail_box := Rect2()                   # map x, y around the line: ground triangles kept there for the railway checks
+var _rail_tris := {}                       # Vector2i 2 m cell -> PackedVector3Array of map-space triangles over it
 
 
 func _initialize() -> void:
 	var t0 := Time.get_ticks_msec()
 	var world = JSON.parse_string(FileAccess.get_file_as_string(WORLD))
+	var rail = JSON.parse_string(FileAccess.get_file_as_string(RAIL)) if FileAccess.file_exists(RAIL) else null
+	if rail is Dictionary:
+		_rail_box = _line_box(rail, world)
 	_check_files()
 	_check_json(world, "world.json")
 	var root: Node = load(SCENE).instantiate()
@@ -41,6 +57,8 @@ func _initialize() -> void:
 	_check_vegetation(root, world)
 	_check_props(root, world)
 	_check_buildings(root, world)
+	if rail is Dictionary:
+		_check_railway(world, rail)
 	root.free()
 	print("checked in %.1f s" % ((Time.get_ticks_msec() - t0) / 1000.0))
 	if _failures.is_empty():
@@ -158,6 +176,7 @@ func _check_ground(root: Node, world: Dictionary) -> void:
 		_fail("no Ground node in the generated scene")
 		return
 	var kerb_id := GroundBuilder.MATERIALS.find("kerb")
+	var paint_id := GroundBuilder.MATERIALS.find("paint")
 	var area := 0.0
 	var tris := 0
 	var open := {}              # edges seen once so far, across chunks
@@ -168,12 +187,14 @@ func _check_ground(root: Node, world: Dictionary) -> void:
 		var custom: PackedByteArray = arrays[Mesh.ARRAY_CUSTOM0]
 		var local := {}
 		for t in range(0, idx.size(), 3):
-			if custom[idx[t] * 4] >= kerb_id:
-				continue
+			if custom[idx[t] * 4] == kerb_id or custom[idx[t] * 4] == paint_id:
+				continue                # kerb stones, skirts and markings lie on the surface
 			var a := Vector2(v[idx[t]].x, v[idx[t]].z)
 			var b := Vector2(v[idx[t + 1]].x, v[idx[t + 1]].z)
 			var c := Vector2(v[idx[t + 2]].x, v[idx[t + 2]].z)
 			area += absf((b - a).cross(c - a)) / 2.0
+			if _rail_box.has_area() and _rail_box.has_point(Vector2(a.x, -a.y)):
+				_keep_triangle(v[idx[t]], v[idx[t + 1]], v[idx[t + 2]])
 			tris += 1
 			for e in [[a, b], [b, c], [c, a]]:
 				var key := _edge(e[0], e[1])
@@ -388,3 +409,186 @@ func _check_buildings(root: Node, world: Dictionary) -> void:
 		_fail("building signs: %d drawn, %d in world.json" % [signs, world["building_signs"].size()])
 	print("buildings: %d masses (%d triangles, one material), %d kit modules %s, %d name signs" % [
 			world["buildings"].size(), tris, world["building_modules"].size(), want, signs])
+
+
+# --- 7. RER B -------------------------------------------------------------------------------------
+
+func _check_railway(world: Dictionary, rail: Dictionary) -> void:
+	var stamp: Dictionary = world["meta"].get("rail", {})
+	if stamp.is_empty():
+		_fail("world.json has no rail stamp: run tools/rail/patch_world.py")
+	else:
+		var ctx := HashingContext.new()
+		ctx.start(HashingContext.HASH_SHA1)
+		ctx.update(FileAccess.get_file_as_bytes(RAIL))
+		if ctx.finish().hex_encode() != stamp.get("rail_json", ""):
+			_fail("world.json was patched from another rail.json: run tools/rail/patch_world.py")
+	var map := GroundMap.get_map()
+	var a: Dictionary = rail["alignment"]
+	var ew: Dictionary = rail["earthworks"]
+	var play: Array = rail["playable"]
+	var cf: float = ew["crossfall"]
+	var formation: Array = ew["formation"]
+	# 1. trackbed: the railway's piece, the drawn ground on the formation, no step
+	var samples := 0
+	var worst := 0.0
+	var off_bed := 0
+	var centres := PackedVector2Array()      # track centres every metre, for the gauge
+	for tr: Dictionary in rail["tracks"]:
+		var off: float = tr["offset"]
+		var last := NAN
+		for k in formation.size():
+			var s: float = float(ew["s0"]) + k * float(ew["step"])
+			var p := _along(a, s, off)
+			if p.x < play[0] or p.x > play[2] or p.y < play[1] or p.y > play[3]:
+				last = NAN
+				continue
+			centres.append(p)
+			samples += 1
+			var piece: int = map.piece_at(p.x, p.y)
+			if piece < 0 or map.pieces[piece][0] != "railway":
+				off_bed += 1
+				if off_bed <= 5:
+					_fail("track %s at s %.0f (%.1f, %.1f): ground piece %s, not the trackbed" % [tr["ref"], s, p.x, p.y,
+							map.pieces[piece][0] if piece >= 0 else "none"])
+			var z := _mesh_z(p)
+			if is_nan(z):
+				_fail("track %s at s %.0f: no ground triangle under (%.1f, %.1f)" % [tr["ref"], s, p.x, p.y])
+				last = NAN
+				continue
+			var want: float = float(formation[k]) - cf * absf(off)
+			worst = maxf(worst, absf(z - want))
+			if absf(z - want) > FORMATION_TOL:
+				_fail("track %s at s %.0f: ground %.3f, formation %.3f" % [tr["ref"], s, z, want])
+			if not is_nan(last) and absf(z - last) > FORMATION_TOL + absf(float(formation[k]) - float(formation[k - 1])):
+				_fail("track %s at s %.0f: the trackbed steps by %.3f m" % [tr["ref"], s, z - last])
+			last = z
+	# 2. nothing inside the kinematic gauge (plan view; trees by their crown)
+	var grid := {}
+	for p in centres:
+		var c := Vector2i(floori(p.x / 10.0), floori(p.y / 10.0))
+		if not grid.has(c):
+			grid[c] = PackedVector2Array()
+		grid[c].append(p)
+	var in_gauge := 0
+	for t: Dictionary in world["trees"]:
+		var d := _track_distance(grid, Vector2(t["x"], t["y"]))
+		if d - float(t["r"]) < GAUGE_HALF:
+			in_gauge += 1
+			_fail("tree %s: crown %.2f m from a track centre" % [t["id"], d - float(t["r"])])
+	for p: Dictionary in world["props"]:
+		var d := _track_distance(grid, Vector2(p["x"], p["y"]))
+		if d < GAUGE_HALF:
+			in_gauge += 1
+			_fail("prop %s %s: %.2f m from a track centre" % [p["id"], p["model"], d])
+	for b: Dictionary in world["buildings"]:
+		var ring: Array = b["rings"][0]
+		for i in ring.size():
+			var p0 := Vector2(ring[i][0], ring[i][1])
+			var p1 := Vector2(ring[(i + 1) % ring.size()][0], ring[(i + 1) % ring.size()][1])
+			var n := maxi(1, ceili(p0.distance_to(p1) / 0.5))
+			var hit := false
+			for j in n + 1:
+				if _track_distance(grid, p0.lerp(p1, float(j) / n)) < GAUGE_HALF:
+					hit = true
+					break
+			if hit:
+				in_gauge += 1
+				_fail("building %s reaches into the kinematic gauge" % b["id"])
+				break
+	# 3. platforms: edge distance, top height, the drop in front of the wall
+	var platform_samples := 0
+	for pf: Dictionary in rail["platforms"]:
+		var side: float = pf["side"]
+		var edge: float = pf["edge"]
+		var off := 0.0
+		for tr: Dictionary in rail["tracks"]:
+			if tr["ref"] == pf["track"]:
+				off = tr["offset"]
+		if edge - absf(off) < EDGE_MIN or edge - absf(off) > EDGE_MAX:
+			_fail("%s: edge %.3f m from the track centre" % [pf["id"], edge - absf(off)])
+		if absf(float(pf["height"]) - PLATFORM_HEIGHT) > 0.005:
+			_fail("%s: %.3f m above the rail" % [pf["id"], pf["height"]])
+		var top: Array = pf["top"]
+		for k in range(1, top.size() - 1):
+			var s: float = float(pf["s0"]) + k
+			var on := _mesh_z(_along(a, s, side * (edge + 0.5)))
+			var below := _mesh_z(_along(a, s, side * (edge - 0.2)))
+			var rail_z := _rail_level(a, s)
+			platform_samples += 1
+			if is_nan(on) or absf(on - float(top[k])) > 0.02 or absf(on - rail_z - PLATFORM_HEIGHT) > 0.1:
+				_fail("%s at s %.0f: platform top %.3f, %.3f wanted (rail %.3f)" % [pf["id"], s, on, top[k], rail_z])
+			elif is_nan(below) or on - below < PLATFORM_HEIGHT * 0.8:
+				_fail("%s at s %.0f: the ground in front of the wall is %.3f, the top %.3f" % [pf["id"], s, below, on])
+	print("railway: %d trackbed samples (%d off the trackbed, worst %.3f m from the formation), %d objects in the gauge, %d platform samples" % [
+			samples, off_bed, worst, in_gauge, platform_samples])
+
+
+## Map-space box around the line inside the world box, RAIL_SPAN wide either side.
+func _line_box(rail: Dictionary, world: Dictionary) -> Rect2:
+	var b: Array = world["meta"]["bounds"]
+	var r := Rect2()
+	for p: Array in rail["alignment"]["pts"]:
+		if p[0] < b[0] or p[0] > b[2]:
+			continue
+		var q := Rect2(p[0] - RAIL_SPAN, p[1] - RAIL_SPAN, 2.0 * RAIL_SPAN, 2.0 * RAIL_SPAN)
+		r = q if not r.has_area() else r.merge(q)
+	return r
+
+
+## Keeps a ground triangle (Godot vertices) for _mesh_z, in map space, under every 2 m cell its box touches.
+func _keep_triangle(ga: Vector3, gb: Vector3, gc: Vector3) -> void:
+	var a := Vector3(ga.x, -ga.z, ga.y)
+	var b := Vector3(gb.x, -gb.z, gb.y)
+	var c := Vector3(gc.x, -gc.z, gc.y)
+	for i in range(floori(minf(a.x, minf(b.x, c.x)) / 2.0), floori(maxf(a.x, maxf(b.x, c.x)) / 2.0) + 1):
+		for j in range(floori(minf(a.y, minf(b.y, c.y)) / 2.0), floori(maxf(a.y, maxf(b.y, c.y)) / 2.0) + 1):
+			var key := Vector2i(i, j)
+			if not _rail_tris.has(key):
+				_rail_tris[key] = PackedVector3Array()
+			_rail_tris[key].append_array([a, b, c])
+
+
+## Height of the drawn ground surface (kept triangles) at map p, NAN if none covers it.
+func _mesh_z(p: Vector2) -> float:
+	var tris: PackedVector3Array = _rail_tris.get(Vector2i(floori(p.x / 2.0), floori(p.y / 2.0)), PackedVector3Array())
+	for t in range(0, tris.size(), 3):
+		var a := tris[t]
+		var b := tris[t + 1]
+		var c := tris[t + 2]
+		var det := (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)
+		if absf(det) < 1e-9:
+			continue
+		var u := ((p.x - a.x) * (c.y - a.y) - (c.x - a.x) * (p.y - a.y)) / det
+		var v := ((b.x - a.x) * (p.y - a.y) - (p.x - a.x) * (b.y - a.y)) / det
+		if u >= -1e-6 and v >= -1e-6 and u + v <= 1.0 + 1e-6:
+			return a.z + u * (b.z - a.z) + v * (c.z - a.z)
+	return NAN
+
+
+## Map point at s along the rail.json centreline, u to its left.
+func _along(a: Dictionary, s: float, u: float) -> Vector2:
+	var pts: Array = a["pts"]
+	var f := clampf(s / float(a["step"]), 0.0, pts.size() - 1.000001)
+	var i := floori(f)
+	var p := Vector2(pts[i][0], pts[i][1]).lerp(Vector2(pts[i + 1][0], pts[i + 1][1]), f - i)
+	var th := lerpf(float(a["heading"][i]), float(a["heading"][i + 1]), f - i)
+	return p + Vector2(-sin(th), cos(th)) * u
+
+
+## Rail level (top of the inner rail) at s.
+func _rail_level(a: Dictionary, s: float) -> float:
+	var f := clampf(s / float(a["step"]), 0.0, a["pts"].size() - 1.000001)
+	var i := floori(f)
+	return lerpf(float(a["z"][i]), float(a["z"][i + 1]), f - i)
+
+
+## Distance from map p to the nearest track centre sample (1 m apart, so within 0.5 m of the true distance).
+func _track_distance(grid: Dictionary, p: Vector2) -> float:
+	var best := INF
+	var c := Vector2i(floori(p.x / 10.0), floori(p.y / 10.0))
+	for i in range(-1, 2):
+		for j in range(-1, 2):
+			for q: Vector2 in grid.get(c + Vector2i(i, j), PackedVector2Array()):
+				best = minf(best, p.distance_squared_to(q))
+	return sqrt(best)

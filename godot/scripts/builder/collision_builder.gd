@@ -14,7 +14,10 @@ const WALL_HEIGHT := 400.0
 
 
 ## One StaticBody3D with a HeightMapShape3D per tile, sampled every 1 m on the ground as the ground
-## mesh draws it (ground_heights.gd), so the player's feet stay on the visible ground.
+## mesh draws it (ground_heights.gd), so the player's feet stay on the visible ground. Where the ground steps (the
+## railway's walls, platform edges, stairwells and trench: tools/rail/patch_world.py) the height field cannot follow
+## it: world.json ground_mesh.holes lists those samples (heightmap row, column), left out as holes (NAN, which Jolt
+## takes as a hole), and the ground mesh's raised collision faces cover them exactly (ground_builder.gd).
 func terrain(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_dir: String) -> void:
 	var t: Dictionary = world["terrain"]
 	var w: int = t["w"]
@@ -26,6 +29,19 @@ func terrain(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_
 	var span := TILE * STEP                 # heightmap cells per tile side
 	var n := TILE + 1                       # samples per tile side
 	var ground := GroundHeights.new(heights, w, h, cell, ox, oy, world["ground_mesh"]["cell"])
+	var holes := {}                         # Vector2i(tile row, tile column) -> PackedInt32Array of sample rows, columns
+	for hs: Array in world["ground_mesh"].get("holes", {}).get("samples", []):
+		var r: int = hs[0]
+		var c: int = hs[1]
+		# a sample on a tile's edge belongs to both tiles sharing it
+		for tr in [r / span, (r - 1) / span]:
+			for tc in [c / span, (c - 1) / span]:
+				var key := Vector2i(tr, tc)
+				if r >= tr * span and r <= (tr + 1) * span and c >= tc * span and c <= (tc + 1) * span:
+					if not holes.has(key):
+						holes[key] = PackedInt32Array()
+					if not (holes[key] as PackedInt32Array).has(r * 65536 + c):
+						holes[key].append(r * 65536 + c)
 
 	var body := StaticBody3D.new()
 	body.name = "TerrainCollision"
@@ -41,6 +57,11 @@ func terrain(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_
 				var y := oy - (r0 + i * STEP) * cell
 				for j in n:
 					data[i * n + j] = ground.at(ox + (c0 + j * STEP) * cell, y)
+			for rc: int in holes.get(Vector2i(r0 / span, c0 / span), PackedInt32Array()):
+				var i := (rc / 65536 - r0) / STEP
+				var j := (rc % 65536 - c0) / STEP
+				if i >= 0 and i < n and j >= 0 and j < n:
+					data[i * n + j] = NAN
 			var shape := HeightMapShape3D.new()
 			shape.map_width = n
 			shape.map_depth = n

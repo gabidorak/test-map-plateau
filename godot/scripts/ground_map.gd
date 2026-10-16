@@ -19,6 +19,11 @@ var _cell := 0.5
 var _ox := 0.0
 var _oy := 0.0
 var heights: RefCounted              # GroundHeights: ground height as drawn
+var cliffs := {}                     # Vector2i 2 m cells where the drawn ground steps (the railway's walls, edges):
+									 # there the height is not the drawn one (index "cliffs", tools/rail/patch_world.py)
+var _mesh_cell := 2.0
+var _hox := 0.0
+var _hoy := 0.0
 
 
 ## Loaded once per index file and shared.
@@ -54,6 +59,11 @@ func _load(path: String) -> bool:
 	var hm: Dictionary = index["heights"]
 	var data := FileAccess.get_file_as_bytes(dir.path_join(hm["file"])).to_float32_array()
 	heights = GroundHeights.new(data, hm["w"], hm["h"], hm["cell"], hm["origin_xy"][0], hm["origin_xy"][1], hm["mesh_cell"])
+	_mesh_cell = hm["mesh_cell"]
+	_hox = hm["origin_xy"][0]
+	_hoy = hm["origin_xy"][1]
+	for c: Array in index.get("cliffs", {}).get("cells", []):
+		cliffs[Vector2i(int(c[0]), int(c[1]))] = true
 	return _ids.size() == _w * _h * 2
 
 
@@ -75,6 +85,13 @@ func material_at(x: float, y: float) -> int:
 ## Ground height (relative to the world origin) as drawn by the ground mesh.
 func height(x: float, y: float) -> float:
 	return heights.at(x, y)
+
+
+## True in a 2 m cell where the drawn ground steps (a wall, a platform edge): height() is not the drawn height there.
+func in_cliff(x: float, y: float) -> bool:
+	if cliffs.is_empty():
+		return false
+	return cliffs.has(Vector2i(floori((x - _hox) / _mesh_cell + 1.0), floori((_hoy - y) / _mesh_cell + 1.0)))
 
 
 ## Text for the picker.
