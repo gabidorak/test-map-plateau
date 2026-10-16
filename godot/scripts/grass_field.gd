@@ -2,7 +2,8 @@ extends Node3D
 ## Grass tufts (milestone M4): MultiMesh clumps scattered at runtime around the camera on the grass,
 ## tall-grass and forest-floor ground pieces (world/ground_index.json), so the scene stays small.
 ## Scatter is deterministic per 16 m chunk; chunks are built as the camera moves and dropped behind
-## it. Density, size and fade distance depend on the ground class.
+## it. Density, size and fade distance depend on the ground class. None where the ground steps (GroundMap.in_cliff:
+## the height there is not the drawn one).
 
 const GroundMap = preload("res://scripts/ground_map.gd")
 const SHADER := preload("res://shaders/toy_grass.gdshader")
@@ -110,7 +111,7 @@ func _build_chunk(key: Vector2i) -> Node3D:
 					continue
 				if _map.material_at(x, y) != id or _map.material_at(x + EDGE, y) != id \
 						or _map.material_at(x - EDGE, y) != id or _map.material_at(x, y + EDGE) != id \
-						or _map.material_at(x, y - EDGE) != id:
+						or _map.material_at(x, y - EDGE) != id or _map.in_cliff(x, y):
 					continue
 				var b := Basis(Vector3.UP, yaw).scaled(Vector3(s, s, s))
 				var z: float = _map.height(x, y) - 0.02

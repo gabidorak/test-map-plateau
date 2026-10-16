@@ -39,7 +39,9 @@ to the north; levels are absolute map z):
 - earthworks: step, s0, sides {left|right: {edge [u of the formation edge], level [formation edge z], kind [0 slope,
   1 wall, 2 platform, 3 none], reach [u where the design meets the ground]}}; walls [{id, side, pts [[x, y]], top [z],
   bottom [z], kind}].
-- platforms, footbridges, underpasses, road_tunnel, fences, station (entrances, furniture), signals, pk, catenary.
+- platforms: [{id, track, side, s0, s1 (first and last metre: top [z] and back [u] per metre), ends (the platform runs
+  half a metre beyond them, as the earthworks switch kind halfway between metres), edge, wall, coping, height}].
+- footbridges, underpasses, road_tunnel, fences, station (entrances, furniture), signals, pk, catenary.
 - services: [{id, track, direction, step, pts [[x, y, z]], heading, cant [rad], v [m/s per step for the front of the
   train], stops [{name, s (front, per train length), side}], signals [{id, s}], blocks, enter, exit, headway, phase}].
 - clearance: trees and props removed or moved, with the reason.
@@ -349,9 +351,9 @@ def fit_alignment(t1: np.ndarray, t2: np.ndarray) -> dict:
     rb = np.concatenate(inbox)
     stats = {"rms": float(np.sqrt(rb @ rb / len(rb))), "max": float(np.abs(rb).max()),
              "p95": float(np.percentile(np.abs(rb), 95)), "all_max": float(np.abs(r).max()),
-             "osm_spacing_median": float(np.median(spacing)), "seconds": round(time.time() - t0, 1)}
+             "osm_spacing_median": float(np.median(spacing))}
     log("alignment: %d curves, spacing %.3f m, OSM deviation in the map rms %.2f m, p95 %.2f m, max %.2f m (%.0f s)"
-        % (len(guess), p[3], stats["rms"], stats["p95"], stats["max"], stats["seconds"]))
+        % (len(guess), p[3], stats["rms"], stats["p95"], stats["max"], time.time() - t0))
     return {"fit": fit, "p": p, "stats": stats}
 
 
@@ -1611,7 +1613,16 @@ def furniture(platforms: list, A: rg.Alignment, world: dict, osm: dict, structur
 
 # ---------------------------------------------------------------- zones (what the patch reshapes)
 
-def zones(ew: dict, A: rg.Alignment, platforms: list, structures: dict, design: rg.Design) -> tuple:
+def _portal(a: np.ndarray, b: np.ndarray, half: float, z_open: float) -> dict:
+    """The segment across the end b of a trench or stairwell running a -> b (`half` either side), and the height of
+    the opening's top there: the patch's ground wall along it starts at z_open, not at the bottom."""
+    d = (np.asarray(b) - np.asarray(a))
+    d = d / max(np.linalg.norm(d), 1e-9)
+    n = np.array([-d[1], d[0]])
+    return {"a": np.asarray(b) + n * half, "b": np.asarray(b) - n * half, "z_open": z_open}
+
+
+def zones(ew: dict, A: rg.Alignment, platforms: list, structures: dict, design: rg.Design, sources: dict) -> tuple:
     """The ground the railway reshapes, as non-overlapping polygons with what they are: the trackbed (formation),
     platforms, slopes, wall landings, the platforms' blends, stairwells and the road's open trench. Stairwells and the
     trench carry their own heights (an axis); the others follow the earthworks. Returns (zones, union)."""
@@ -1623,29 +1634,52 @@ def zones(ew: dict, A: rg.Alignment, platforms: list, structures: dict, design: 
     raw = []
 
     def band(side, a, b, inner, outer):
+        """The side's band from metre a to b - 1, held on half a metre further at each end: where the section changes
+        kind the next band starts there (Design.side_values switches at the midpoint too), so no ground is left out."""
         sg = 1.0 if side == "left" else -1.0
         s_ = ss[a:b]
-        p_in = A.point(s_, sg * inner[a:b])
-        p_out = A.point(s_[::-1], sg * outer[a:b][::-1])
+        i_ = inner[a:b]
+        o_ = outer[a:b]
+        if a > 0:
+            s_, i_, o_ = np.r_[s_[0] - step / 2, s_], np.r_[i_[0], i_], np.r_[o_[0], o_]
+        if b < n:
+            s_, i_, o_ = np.r_[s_, s_[-1] + step / 2], np.r_[i_, i_[-1]], np.r_[o_, o_[-1]]
+        p_in = A.point(s_, sg * i_)
+        p_out = A.point(s_[::-1], sg * o_[::-1])
         pg = Polygon(np.concatenate([p_in, p_out])).buffer(0)
         return pg
 
-    le, re_ = np.asarray(ew["left"]["edge"], dtype=float), np.asarray(ew["right"]["edge"], dtype=float)
-    track = Polygon(np.concatenate([A.point(ss, le), A.point(ss[::-1], -re_[::-1])])).buffer(0)
-    raw.append(("trackbed", None, track, None))
+    def edge_line(side):
+        """The formation edge of a side, s and u: linear between the metres, a step halfway where the kind changes."""
+        sd = ew[side]
+        kind = np.asarray(sd["kind"])
+        edge = np.asarray(sd["edge"], dtype=float)
+        s_out, u_out = [ss[0]], [edge[0]]
+        for j in range(1, n):
+            if kind[j] != kind[j - 1]:
+                s_out += [ss[j] - step / 2, ss[j] - step / 2]
+                u_out += [edge[j - 1], edge[j]]
+            s_out.append(ss[j])
+            u_out.append(edge[j])
+        return np.asarray(s_out), np.asarray(u_out)
+
+    ls, le = edge_line("left")
+    rs, re_ = edge_line("right")
+    track = Polygon(np.concatenate([A.point(ls, le), A.point(rs[::-1], -re_[::-1])])).buffer(0)
+    raw.append(("trackbed", None, track, None, sources["track"]))
     for side in ("left", "right"):
         sd = ew[side]
         kind = np.asarray(sd["kind"])
         for k_, name in ((0, "slope"), (1, "landing"), (2, "platform")):
             for a, b in _runs(kind == k_):
-                if b - a < 2:
-                    continue
                 edge = np.asarray(sd["edge"], dtype=float)
                 reach = np.asarray(sd["reach"], dtype=float)
                 outer = np.maximum(reach, edge + 0.05)
-                raw.append((name, side, band(side, a, b, edge, outer), None))
+                src = sources["platform"].get(side, "") if k_ == 2 else ""
+                raw.append((name, side, band(side, a, b, edge, outer), None, src))
                 if k_ == 2:
-                    raw.append(("platform_blend", side, band(side, a, b, reach, reach + rg.Design.BLEND_RUN), None))
+                    raw.append(("platform_blend", side, band(side, a, b, reach, reach + rg.Design.BLEND_RUN), None,
+                                ""))
     prio = {"stairwell": 0, "road_trench": 0, "platform": 1, "trackbed": 2, "platform_blend": 3, "landing": 4,
             "slope": 5}
     for up in structures["underpasses"]:
@@ -1659,7 +1693,18 @@ def zones(ew: dict, A: rg.Alignment, platforms: list, structures: dict, design: 
                 p = np.concatenate([p, lp])
                 az = np.concatenate([az, np.full(len(lp), f["bottom"])])
             pg = LineString(p).buffer(f["width"] / 2 + 0.25, cap_style=2)
-            raw.append(("stairwell", None, pg, {"axis": p, "axis_z": az}))
+            # the stairwell's low end opens into the covered passage: the ground's wall there starts above it
+            portal = _portal(p[-2], p[-1], f["width"] / 2 + 0.25, f["bottom"] + up["headroom"])
+            raw.append(("stairwell", None, pg, {"axis": p, "axis_z": az, "portals": [portal]}, "osm:" + f["osm"]))
+        for f in up["stairs_up"]:
+            # stairs from the passage up through the platform's end: an opening in the platform
+            from shapely.geometry import LineString
+            p = np.asarray(f["pts"])
+            d = rg.cumlen(p)
+            az = f["bottom"] + (f["top"] - f["bottom"]) * d / max(d[-1], 1e-6)
+            pg = LineString(p).buffer(f["width"] / 2 + 0.25, cap_style=2)
+            portal = _portal(p[1], p[0], f["width"] / 2 + 0.25, f["bottom"] + up["headroom"])
+            raw.append(("stairwell", None, pg, {"axis": p, "axis_z": az, "portals": [portal]}, "osm:" + f["osm"]))
     rt = structures["road_tunnel"]
     if rt:
         from shapely.geometry import LineString
@@ -1668,25 +1713,36 @@ def zones(ew: dict, A: rg.Alignment, platforms: list, structures: dict, design: 
         for lo, hi in ((0.0, a), (b, float(t[-1]))):
             m = (t >= lo - 0.5) & (t <= hi + 0.5)
             if m.sum() >= 2:
-                pg = LineString(rt["pts"][m]).buffer(rt["width"] / 2 + 0.3, cap_style=2)
-                raw.append(("road_trench", None, pg, {"axis": rt["pts"][m], "axis_z": rt["z"][m]}))
+                pts = rt["pts"][m]
+                pg = LineString(pts).buffer(rt["width"] / 2 + 0.3, cap_style=2)
+                # the end towards the covered part is a tunnel portal: the ground's wall there starts above it
+                if lo == 0.0:
+                    portal = _portal(pts[-2], pts[-1], rt["width"] / 2 + 0.3, float(rt["z"][m][-1]) + rt["headroom"])
+                else:
+                    portal = _portal(pts[1], pts[0], rt["width"] / 2 + 0.3, float(rt["z"][m][0]) + rt["headroom"])
+                raw.append(("road_trench", None, pg, {"axis": pts, "axis_z": rt["z"][m], "portals": [portal]},
+                            "osm:" + rt["osm"][0]))
     raw.sort(key=lambda r: prio[r[0]])
     out = []
     taken = None
-    for kind, side, pg, axis in raw:
-        g = pg if taken is None else pg.difference(taken)
+    import shapely
+    for kind, side, pg, axis, src in raw:
+        # on a 1 mm grid: the zones' shared outlines come out identical, no hair-thin slivers between them
+        pg = shapely.set_precision(pg, 0.001)
+        g = pg if taken is None else shapely.set_precision(pg.difference(taken), 0.001)
         if g.is_empty or g.area < 0.05:
             continue
         taken = pg if taken is None else unary_union([taken, pg])
         polys = [x for x in getattr(g, "geoms", [g]) if x.geom_type == "Polygon" and x.area > 0.05]
         if not polys:
             continue
-        z = {"kind": kind, "side": side,
+        z = {"kind": kind, "side": side, "source": src,
              "polygons": [[np.asarray(p.exterior.coords)[:-1]] + [np.asarray(h.coords)[:-1] for h in p.interiors]
                           for p in polys]}
         if axis is not None:
             z["axis"] = axis["axis"]
             z["axis_z"] = axis["axis_z"]
+            z["portals"] = axis.get("portals", [])
         out.append(z)
     return out, taken
 
@@ -1825,7 +1881,10 @@ def main() -> None:
             structures["underpasses"].append(underpass(g, A, lambda s, u, p: design.z_or_ground(s, u, p), platforms))
         else:
             structures["road_tunnel"] = road_tunnel(g, osm, A, lambda s, u, p: design.z_or_ground(s, u, p), H)
-    zs, zunion = zones(ew_json, A, platforms, structures, design)
+    longest = [max(ids, key=lambda i: _way_len(way_pts(osm["ways"][i]))) for ids in (ids1, ids2)]
+    sources = {"track": "osm:w%d+w%d" % tuple(longest),
+               "platform": {("left" if p["side"] > 0 else "right"): "osm:" + p["osm"] for p in platforms}}
+    zs, zunion = zones(ew_json, A, platforms, structures, design, sources)
     from shapely.geometry import Polygon as _Pg
     hard = unary_union([_Pg(pg[0], pg[1:]) for z in zs if z["kind"] in ("trackbed", "platform", "stairwell",
                                                                          "road_trench") for pg in z["polygons"]])
@@ -1953,7 +2012,7 @@ def main() -> None:
                                             for i, w in enumerate(ew["walls"])]),
         "zones": [dict(z, id="zone:%d" % i) for i, z in enumerate(zs)],
         "platforms": [{"id": p["id"], "osm": p["osm"], "name": p["name"], "track": p["track"], "side": p["side"],
-                       "s0": p["s0"], "s1": p["s1"], "edge": p["edge"], "wall": p["wall"], "coping": PLATFORM_COPING,
+                       "s0": p["s0"], "s1": p["s1"], "ends": [p["s0"] - 0.5, p["s1"] + 0.5], "edge": p["edge"], "wall": p["wall"], "coping": PLATFORM_COPING,
                        "height": PLATFORM_HEIGHT, "back": p["back_u"],
                        "top": [p["top"](s) for s in p["ss"]], "tags": p["tags"]} for p in platforms],
         "footbridges": structures["footbridges"],

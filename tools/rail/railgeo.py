@@ -238,18 +238,24 @@ class Design:
     def covers(self, s: float) -> bool:
         return self.s0 <= s <= self.s0 + (self.n - 1) * self.step
 
-    def side_values(self, s: float, side: str) -> tuple:
-        """(kind, edge, level, reach, top, formation) at s, interpolated between the metres when their kind agrees."""
+    def side_values(self, s: float, side: str, want: int = -1) -> tuple:
+        """(kind, edge, level, reach, top, formation) at s, interpolated between the metres when their kind agrees;
+        where it changes, the nearer metre's, or the one of kind `want` (a zone's plane reaches a little past its
+        end: a platform's height stays the platform's there)."""
         f = (s - self.s0) / self.step
         j = int(np.clip(math.floor(f), 0, self.n - 2))
         t = float(np.clip(f - j, 0.0, 1.0))
         sd = self.sides[side]
         k0, k1 = int(sd["kind"][j]), int(sd["kind"][j + 1])
+        F = self.F[j] * (1 - t) + self.F[j + 1] * t
         if k0 != k1:
-            jj = j if t < 0.5 else j + 1
-            return (int(sd["kind"][jj]), sd["edge"][jj], sd["level"][jj], sd["reach"][jj], sd["top"][jj], self.F[jj])
+            if want in (k0, k1):
+                jj = j if k0 == want else j + 1
+            else:
+                jj = j if t < 0.5 else j + 1
+            return (int(sd["kind"][jj]), sd["edge"][jj], sd["level"][jj], sd["reach"][jj], sd["top"][jj], F)
         lerp = lambda a: a[j] * (1 - t) + a[j + 1] * t
-        return (k0, lerp(sd["edge"]), lerp(sd["level"]), lerp(sd["reach"]), lerp(sd["top"]), lerp(self.F))
+        return (k0, lerp(sd["edge"]), lerp(sd["level"]), lerp(sd["reach"]), lerp(sd["top"]), F)
 
     def z(self, s: float, u: float, p, zones=True):
         """Designed height at p (= alignment (s, u)), or None where the railway leaves the ground alone."""
@@ -285,6 +291,39 @@ class Design:
     def z_or_ground(self, s: float, u: float, p) -> float:
         v = self.z(s, u, p)
         return self.ground(p) if v is None else v
+
+    def zone_fn(self, zone: dict, s: float, u: float, p) -> float:
+        """Height zone `zone` (rail.json zones) gives point p (= (s, u)), also a little outside it (the patch draws
+        both sides of a cliff from their own zone); `None` zone: the existing ground."""
+        if zone is None:
+            return self.ground(p)
+        kind = zone["kind"]
+        if kind in ("stairwell", "road_trench"):
+            for k, z in enumerate(self.zones):
+                if z[5] is zone:
+                    return self.zone_z(k, p)
+            self.add_zone(zone)
+            return self.zone_z(len(self.zones) - 1, p)
+        s = min(max(s, self.s0), self.s0 + (self.n - 1) * self.step)
+        side = zone.get("side") or ("left" if u >= 0 else "right")
+        want = {"slope": 0, "landing": 1, "platform": 2, "platform_blend": 2}.get(kind, -1)
+        k_, edge, level, reach, top, F = self.side_values(s, side, want)
+        a = abs(u)
+        if kind == "trackbed":
+            return F - self.cf * a
+        if kind == "slope":
+            w = min(max((a - edge) / max(reach - edge, 1e-6), 0.0), 1.0)
+            return level + (top - level) * w
+        if kind in ("landing", "platform"):
+            return top
+        if kind == "platform_blend":
+            q = self.A.point(s, (1.0 if side == "left" else -1.0) * reach)
+            tb = self.ground(q)
+            if abs(tb - top) <= self.BLEND_STEP:
+                w = min(max((a - reach) / self.BLEND_RUN, 0.0), 1.0)
+                return top + (self.ground(p) - top) * w
+            return self.ground(p)
+        raise ValueError(kind)
 
 
 def godot(x, y, z) -> list:
