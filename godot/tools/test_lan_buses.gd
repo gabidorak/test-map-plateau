@@ -7,8 +7,10 @@ extends SceneTree
 ## the bot drives on (the host's bot keeps the physics and does not vanish with them aboard).
 ## Exit code 1 on failure. No --fixed-fps: the states are stamped with the real clock.
 
-const CLOCK_FILE := "/tmp/test_lan_buses_clock.txt"     # the host's game clock against the system clock
-const RIDE_FILE := "/tmp/test_lan_buses_ride.txt"       # the net id of the bus the client is to ride
+## the host's game clock against the system clock, the net id of the bus the client is to ride (the temporary
+## folder: /tmp, or the Windows one Git Bash calls /tmp)
+var _clock_file := OS.get_temp_dir().path_join("test_lan_buses_clock.txt")
+var _ride_file := OS.get_temp_dir().path_join("test_lan_buses_ride.txt")
 
 var _main: Node
 var _failures: PackedStringArray = []
@@ -58,7 +60,7 @@ func _run() -> void:
 
 
 func _run_host() -> void:
-	DirAccess.remove_absolute(RIDE_FILE)
+	DirAccess.remove_absolute(_ride_file)
 	var net: Node = _main.net
 	_check(await _until(func() -> bool: return _main.mode == "host" and _main.traffic.bots.size() > 0, 60.0),
 			"hosting with %d bot buses" % _main.traffic.bots.size())
@@ -66,7 +68,7 @@ func _run_host() -> void:
 	# the clock, for the client to compare with
 	var stop_clock := false
 	var write_clock := func() -> void:
-		var f := FileAccess.open(CLOCK_FILE, FileAccess.WRITE)
+		var f := FileAccess.open(_clock_file, FileAccess.WRITE)
 		f.store_string("%f %f" % [Time.get_unix_time_from_system(), net.clock()])
 		f.close()
 	# a bot the client rides: on its way into a stop, with the physics
@@ -83,7 +85,7 @@ func _run_host() -> void:
 			if at.is_empty() and float(st["s"]) > 60.0 and float(st["s"]) < float(rt["length"]) - 80.0:
 				at = [r, float(st["s"])]
 	bot.put(at[0], at[1] - bot.nose - 40.0)
-	var f := FileAccess.open(RIDE_FILE, FileAccess.WRITE)
+	var f := FileAccess.open(_ride_file, FileAccess.WRITE)
 	f.store_string(bot.car.net_id)
 	f.close()
 	var aboard := false
@@ -118,20 +120,20 @@ func _run_client() -> void:
 	_check(bots.all(func(c: Node) -> bool: return c.remote and c.freeze and (c._driver_dummy == null or c._driver_dummy.visible)),
 			"remote copies, the driver shown (in the vehicles that have one)")
 	# the shared clock
-	_check(await _until(func() -> bool: return FileAccess.file_exists(CLOCK_FILE), 30.0), "the host writes its clock")
+	_check(await _until(func() -> bool: return FileAccess.file_exists(_clock_file), 30.0), "the host writes its clock")
 	await _until(func() -> bool: return not is_nan(net._clock_offset), 10.0)
 	await _until(func() -> bool: return false, 4.0)     # a few clock messages past the loading
 	var worst := 0.0
 	for k in 20:
 		await physics_frame
-		var parts := FileAccess.get_file_as_string(CLOCK_FILE).split(" ")
+		var parts := FileAccess.get_file_as_string(_clock_file).split(" ")
 		if parts.size() == 2:
 			var host_now := float(parts[1]) + (Time.get_unix_time_from_system() - float(parts[0]))
 			worst = maxf(worst, absf(net.clock() - host_now))
 	_check(worst < 0.1, "the traffic lights run on the host's clock (off by %d ms at most)" % roundi(worst * 1000.0))
 	# the bus to ride
-	_check(await _until(func() -> bool: return FileAccess.file_exists(RIDE_FILE), 30.0), "the host picked a bus to ride")
-	var bus: Node = net.cars.get(FileAccess.get_file_as_string(RIDE_FILE))
+	_check(await _until(func() -> bool: return FileAccess.file_exists(_ride_file), 30.0), "the host picked a bus to ride")
+	var bus: Node = net.cars.get(FileAccess.get_file_as_string(_ride_file))
 	_check(bus != null and bus.is_bot(), "it is here")
 	# E beside it does nothing; asking the host anyway is refused
 	var player: CharacterBody3D = _main.player

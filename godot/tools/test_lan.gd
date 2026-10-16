@@ -29,7 +29,8 @@ const RemotePlayer = preload("res://scripts/remote_player.gd")
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const BUS_ROAD := Vector2(165.0, -215.0)    # the straight stretch of Nouvelle Voie test_cars.gd drives the bus on
 const BUS_ROAD_DIR := Vector2(120.0, -59.0)
-const JUMPS_FILE := "/tmp/test_lan_jumps.txt"    # the host's takeoff times, for the client
+## the host's takeoff times, for the client (the temporary folder: /tmp, or the Windows one Git Bash calls /tmp)
+var _jumps_file := OS.get_temp_dir().path_join("test_lan_jumps.txt")
 const JUMP_TIME := 12.0                     # s the host jumps for, every even second
 const RISE := 0.05                          # m up from the ground: a takeoff
 const MAX_JUMP_LAG := 0.08                  # s (~30 ms headless on a laptop; it was 120 with a fixed 100 ms delay)
@@ -344,11 +345,11 @@ func _check_run_into_player(car: Node) -> void:
 	dummy.queue_free()
 
 
-## Jumps at each even second of the wall clock for JUMP_TIME s, writing in JUMPS_FILE when each takeoff is drawn
+## Jumps at each even second of the wall clock for JUMP_TIME s, writing in _jumps_file when each takeoff is drawn
 ## here: the client measures how much later it draws it (_watch_host_jumps; both run on this machine).
 func _jump_for_client() -> void:
 	var player: CharacterBody3D = _main.player
-	var file := FileAccess.open(JUMPS_FILE, FileAccess.WRITE)
+	var file := FileAccess.open(_jumps_file, FileAccess.WRITE)
 	var state := [player.global_position.y, false]   # ground height, rising
 	var probe := LateProbe.new(func() -> void:
 		var up: bool = player.global_position.y > state[0] + RISE
@@ -393,7 +394,7 @@ func _watch_host_jumps() -> void:
 	await _until(func() -> bool: return false, JUMP_TIME - 3.0)
 	probe.queue_free()
 	var takeoffs: Array[float] = []
-	for line in FileAccess.get_file_as_string(JUMPS_FILE).split("\n", false):
+	for line in FileAccess.get_file_as_string(_jumps_file).split("\n", false):
 		takeoffs.append(line.to_float())
 	var lags: Array[float] = []
 	for r in rises:

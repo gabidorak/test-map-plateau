@@ -88,6 +88,12 @@ blender -b --factory-startup -P blender/vehicles/build_bus.py -- --model=artic -
 blender -b --factory-startup -P blender/vehicles/build_fire_truck.py -- --preview=data/review/fire_truck   # fire truck -> fire_truck.glb + .json (~10 s with the preview)
 blender -b --factory-startup -P blender/vehicles/build_car.py -- --preview=data/review/cars   # realistic cars -> compact_hatchback.glb, family_suv.glb, police_hatchback.glb + .json (~11 s, previews ~2 min a car on the CPU; --car=police_hatchback builds one)
 blender -b --factory-startup -P blender/building_kit/build_kit.py  # building kit -> godot/assets/building_kit/kit.glb (~1 s)
+blender -b --factory-startup -P blender/vehicles/build_train.py -- --preview=$PWD/data/review/mi79/mi79   # RER B MI 79 R cars -> mi79.glb + .json (~10 s, previews ~40 s; an absolute --preview path)
+
+# RER B (see "RER B" below): python venv with numpy, shapely and Pillow
+.venv/Scripts/python tools/rail/fetch_osm.py      # optional: refetch the OSM extract tools/rail/osm_rail.json (Overpass)
+.venv/Scripts/python tools/rail/build_rail.py     # OSM + LiDAR -> godot/world/rail.json, tools/rail/review/*.png (~35 s)
+.venv/Scripts/python tools/rail/patch_world.py    # godot/world/base/ + rail.json -> godot/world/ (~2-4 min), then build_world.gd
 
 cd godot
 godot --headless --path . --import
@@ -110,6 +116,9 @@ tools/test_lan_buses.sh   # LAN game with bot buses: the client gets them (no wh
 godot --headless --fixed-fps 60 --path . --script res://tools/test_races.gd  # races, solo: offered in the start circle (not to a plane, the bus race only to buses), countdown hold, checkpoints in order, finish, results, chat, leaderboard and records file; off the road in the bus race; a bot drives each route to the finish (PLATEAU_TEST_ONLY=lap,bus,bot_bus,bot_lap)
 tools/test_lan_races.sh   # races in a LAN game: the leaderboard for a newcomer, inviting the other driver in the circle, the same GO, results and chat on both
 tools/test_server_records.sh   # a dedicated server's race records outlive a restart (~1 min)
+godot --headless --fixed-fps 60 --path . --script res://tools/test_trains.gd  # RER B: departures, entering the map, the stop at Lozère (±1 m, doors on the platform side), door hold, a ride to the map edge, signals, a car on the track, LODs, tick cost (PLATEAU_TEST_ONLY=stop,hold,ride,signals,obstacle,...)
+tools/test_lan_trains.sh   # RER B in a LAN game: the client gets the host's trains, sees one stop at Lozère when the host does, rides it
+godot --path . --script res://tools/train_shots.gd -- --milestone=rerb_E [--night]   # trains standing at Lozère, from the station and on board -> data/review/shots/rerb_E/train_*.png
 godot --path . --script res://tools/screenshots_all.gd -- --milestone=M2  # viewpoints -> data/review/shots/M2/
 godot --path . --script res://tools/screenshot.gd -- --pos=-90,-130,70 --look=0,0,0 --out=/tmp/shot.png
 godot --path . --script res://tools/ground_swatches.gd            # every ground material -> data/review/<area>/ground_swatches.png
@@ -136,11 +145,12 @@ on a 4K screen; the first window fills 80 % of the screen.
 - Horse (vehicle menu): a toy chestnut horse with a black mane and tail, a white blaze and socks, saddle, stirrups and reins, built from primitive shapes by `scripts/horse.gd` and ridden by your look-alike in your colour. E gets on and off; W canters (27 km/h), W with Shift gallops (47 km/h), S stops then backs up slowly, A / D turn (on the spot too), G neighs, V or the mouse wheel zoomed all the way in gives the rider's view. Space jumps, the higher the faster it goes: from a canter it clears the map's 1.6 m bar fences and 2 m mesh fences (take off a few metres before), while the 3.5 m fences around pitches and high walls stop it. Its legs move in the gait of its speed (walk, trot, canter, gallop), step round on the spot as it turns, tuck over a jump and fold under it when it is down; the hooves clop on every footfall. It steps up kerbs and low steps, goes round street furniture instead of knocking it over, and in LAN games syncs like the other vehicles (everyone sees it jump). Shot by the armed biplane it lies down for a minute, or until the fire truck hoses it.
 - Races: drive into a race's start circle (the big parking by the lake: the campus lap; the stop ENSTA - Les Joncherettes towards Polytechnique, in a bus: the bus race) and press T to race alone, Y to race with the other drivers in the circle (campus lap; T joins an invitation, Y declines it). T twice gives up during a race.
 - Bot buses and cars (`scripts/traffic.gd`, `scripts/bus_bot.gd`): walk in through an open door at a stop and the bus carries you to the next stops; at the end of its route at the map edge it waits for you to get off. E next to one tells you a bot drives it. The tools leave them off unless `PLATEAU_BUSES=1`; `PLATEAU_CARS=n` sets the number of bot cars.
+- RER B trains (see "RER B" below): get on at Lozère while a train's doors are open (standing in a doorway keeps them open), walk through the four cars of a unit, and you are carried along; riding one off the map puts you down by the line at that end. E next to a train tells you a bot drives it. The tools leave them off unless `PLATEAU_TRAINS=1`; `PLATEAU_TRAIN_HEADWAY=s` sets the time between trains (120 s).
 - Like in Euro Truck Simulator 2, vehicles bend thin trees (trunk up to 10 cm, up to 8 m tall: ~1,500 of them) and knock over sign poles, bus stop poles, route markers, guideposts, bollards, bin poles, lamps, traffic lights, light barriers, bike racks, benches, picnic tables, wheelie bins, parking meters, post boxes, info boards and fire hydrants (`scripts/breakables.gd`; kiosks, shelters, concrete blocks and masts hold). A tree bends away from the bumper, stays flat while the vehicle is over it and springs back up behind it; a pole snaps off and flies on as debris, and comes back 20 s later once the camera is 60 m away. Faster than 7 km/h for props (0.5 m/s for trees); slower they hold like any other obstacle. The vehicle loses the momentum it gives them, and they make a sound (a metal clang, a swish of leaves). A knocked-over fire hydrant (or water tap) leaves a 10 m geyser of water (3 m for taps, `scripts/geyser.gd`) that roars and lifts whatever is parked over it; the pipe is repaired a minute later, in view or not, the water easing off over the last 3 s.
 - F1: fly camera (hold right mouse to look, WASD + Q/E, Shift faster, wheel for speed). F1 again drops the player below the camera.
 - F2: graphics low/high (also in Settings). Low (no SSIL, SSAO or glow, FXAA instead of MSAA) is the default ("Auto") on an integrated GPU, high elsewhere; `PLATEAU_QUALITY=low|high` overrides until the quality is changed in the game. With the low settings, "Auto" 3D resolution renders at most 1920 pixels wide (FSR upscaling), for 4K laptops on an integrated GPU.
 - N: night / day (also in Settings, kept between sessions; `PLATEAU_NIGHT=1|0` overrides until it is switched in the game). At night (`scripts/night.gd`) the sun becomes a pale blue moonlight that still casts shadows, the sky turns dark blue with stars and a moon (`shaders/night_sky.gdshader`) over a faint glow of the towns around, about 40 % of the buildings' rooms are lit, the street and path lamps glow and light the ground under them (not while knocked over), and the bot buses and cars drive with their headlights on. L switches the headlights of the vehicle you drive (the biplanes' landing lights): a beam that lights the road ahead (and casts shadows for your own vehicle), glowing lamps, dim red tail lamps and the buses' cabin lights; they switch on by themselves when you get in at night. Other players see your headlights; each player chooses day or night for themselves.
-- F: identify what is under the crosshair: a building (number, OSM id, name, kind, height and source), a tree, a prop (kind, model, source, OSM id, bus stop lines, sign codes), a fence or the ground (piece kind, material, OSM source). The text is copied to the clipboard. X closes it, H hides the help.
+- F: identify what is under the crosshair: a building (number, OSM id, name, kind, height and source), a tree, a prop (kind, model, source, OSM id, bus stop lines, sign codes), a fence, the ground (piece kind, material, OSM source), or the RER B: a track (number, direction, kilometre point, speed limit, cant), a platform, a signal (type, ref, aspects), a structure, the catenary. The text is copied to the clipboard. X closes it, H hides the help.
 
 Chunk streaming: `scripts/builder/far_builder.gd` splits the world into 192 m cells and gives each a cheap far version
 (ground on an 8 m grid with the ground shader, its buildings merged and simplified into one mesh, its trees as
@@ -342,6 +352,61 @@ floors = "blind"
 kit, the milestone plans a dedicated Blender script `blender/landmarks/<name>.py` whose model replaces the mass
 (not needed yet). The reference photos never reach the game.
 
+## RER B
+
+The RER B (Ligne de Sceaux, RATP, 1,500 V DC) crosses the south of the map where it really runs, with Gare de Lozère,
+and trains run on it both ways all the time. Since the map pipeline is not published, the railway is added after it by
+committed scripts that regenerate everything from data (commands above).
+
+- Data, `tools/rail/` (Python: numpy, shapely, Pillow in `.venv`): `fetch_osm.py` keeps the Overpass extract
+  (`osm_rail.json`: the two tracks named "Ligne de Sceaux", the platforms, signals, kilometre posts, and the roads,
+  buildings, barriers and bridges around them); `build_rail.py` writes `godot/world/rail.json` (its schema is the
+  script's docstring) and `tools/rail/review/` (`rail.png` over the toy ground map, `station.png`, `profile.png`: the
+  long section against the LiDAR, `sections.png`). The alignment is a least-squares fit of straights, clothoids and
+  arcs to both OSM tracks at once (one track spacing, 3.55 m; within 0.10 m rms and 0.33 m at worst of OSM in the map;
+  tightest radius 345 m), cant and speed per curve (line speed 90 km/h, OSM speed boards), a vertical profile through
+  robust LiDAR samples of the trackbed (grades up to 9 ‰, parabolic vertical curves), the earthworks each metre and side
+  (formation 0.70 m under the rail: UIC 60 rails, M450 sleepers, 0.30 m of ballast; a 3:2 slope to the ground, or a
+  retaining wall where it would reach a building or a road), the platforms (1.15 m above the rail: RATP's RER platforms;
+  edge 1.65 m from the track centre), the footbridges and pedestrian underpasses (OSM, their steps' heights), the
+  covered road (OSM `tunnel=yes` from Place de la Gare under the tracks to Rue Charles Péguy, 3.6 m headroom, open
+  trenches at its ends), the signals (with the track and direction they face), kilometre posts, the catenary (portals
+  by rule, contact wire 5.25 m above the rail), the station's furniture by rule from the OSM tags and entrances, the
+  services (per direction: the route every metre, the planned speed, the stop at Lozère per train length, the block
+  signals, the headway) and the trees and props the railway clears.
+- The map, `patch_world.py`: from the pipeline's files kept in `godot/world/base/` (never from patched ones: running
+  it twice gives the same bytes; `world.json` `meta.rail` holds the version and the inputs' SHA-1) it draws the
+  railway's ground into the heightmap and the ground mesh (cliff cells keep each side's plane, with skirts; the mesh
+  stays watertight), adds the ground pieces (trackbed, platforms, steps, the covered road), removes the 110 trees and
+  moves the 10 props in the way, adds the right-of-way fences and restyles the station building after the photos
+  (`tools/rail/review/patch.md` lists it all). The bus and car routes are unchanged; the bot cars do not use the
+  covered road (their routes cannot be regenerated without the pipeline), the players can drive through it.
+- Godot: `scripts/builder/rail_builder.gd` draws the track (ballast bed, rails, sleepers per 96 m chunk, streamed with
+  a far strip), the platforms (copings, edge slabs, tactile strip), the furniture (lamps lit at night, seats, bins,
+  "Lozère" boards, departure screens listing the next trains, Navigo validators, canopies), signals with their lamps,
+  posts, the catenary, the structures and the station roof; `scripts/rail_map.gd` answers where things are along the
+  line (the picker names tracks, platforms, signals). `tools/check_world.gd` checks the patch stamp, the trackbed along
+  both tracks, nothing in the kinematic gauge and the platforms' edge and height.
+- Trains: MI 79 R units (the renovated MI 79 of the B4 branch), two units of four cars, from
+  `blender/vehicles/build_train.py` (26.00 m cars, 2.80 m wide, floor 1.19 m above the rail, four double doors a side;
+  the MI 79 drawings, Wikipedia, photos for the livery and interior). `scripts/train.gd` locks them to the rails: the
+  state is the front's distance along its route, the speed, the doors and the lamps, and every car is posed from it
+  between its bogies on the rail curve, canted. `scripts/train_bot.gd` drives them (1.0 m/s² from rest, 0.7 m/s²
+  service braking, 1.1 when it must, 1.15 m/s² emergency: en.wikipedia "MI 79"), stops them on the 8-car mark at
+  Lozère, opens the platform-side doors for 40 s (longer while someone stands in a doorway), sounds the door warning,
+  obeys the block signals, and sounds the horn and brakes, at the emergency rate if it must, for people and vehicles
+  on the track (a train that cannot stop in time knocks a car aside and damages it). `scripts/train_traffic.gd` sends
+  a train each way every 120 s (`PLATEAU_TRAIN_HEADWAY`; the real B4 service is every 10-15 min), eastbound from rest
+  at Le Guichet just west of the map, westbound in at line speed from the east, fills the line at the start, sets the
+  signals' aspects and the departure screens, and puts a player riding off the map down by the line. Sounds are
+  synthesized (`vehicle_audio.gd`: traction whine, rail rumble, horn, door warning, brake squeal). In LAN games the
+  host runs the trains and sends their states on the shared clock; the others pose them from the same routes.
+- Known differences from the real station: the station building is a toy approximation of the real one (cream render
+  with brick under a slate gable, after the photos); the entrances have validator pillars (as in the photos) rather
+  than gates; the footbridges are open steel decks with bar railings; the south platform's long stone-clad wall
+  building is the pipeline's generic box; the covered road's trench walls follow the LiDAR's banks and look rough at
+  their ends; the trains do not change between MI 79 and MI 84.
+
 Milestones: see [MILESTONES.md](MILESTONES.md).
 
 In the editor the world can also be rebuilt from Project > Tools > Rebuild Plateau world.
@@ -350,4 +415,4 @@ Coordinates everywhere in the pipeline: metres, x east, y north, z up, origin at
 
 Data: © OpenStreetMap contributors (ODbL), IGN (Licence Ouverte 2.0), Île-de-France Mobilités
 (Licence Ouverte 2.0), Panoramax contributors (CC-BY-SA 4.0), Mapillary contributors (CC-BY-SA 4.0).
-The orthophoto and street photos were only used to derive the map; none of them is in the game. Car models: Kenney Car Kit (CC0, www.kenney.nl), KayKit by Kay Lousberg (CC0).
+The orthophoto and street photos were only used to derive the map, and the photos of Gare de Lozère and MI 79 trains (Wikimedia Commons) as references for the RER B; none of them is in the game. Car models: Kenney Car Kit (CC0, www.kenney.nl), KayKit by Kay Lousberg (CC0).
