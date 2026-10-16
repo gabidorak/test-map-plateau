@@ -49,7 +49,7 @@ signal registered(id: int)                  # host: player `id` was let in (it h
 const PORT := 7777                          # the host tries the next ones when it is taken
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
-const PROTOCOL := 9                         # bump when the messages change (build_id: other builds are refused anyway)
+const PROTOCOL := 10                        # bump when the messages change (build_id: other builds are refused anyway)
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const IDLE_SEND_EVERY := 0.5                # s, states of vehicles at rest
@@ -531,6 +531,41 @@ func _make_car(net_id: String, model: String, owner_id: int, driver_id: int, sta
 		_car_tracks[net_id] = Track.new(CAR_SEND_RATE)
 	car.apply_net_state(state, state, 0.0)
 	_show_driver(net_id)
+
+
+## Host: vehicles taken off the map here (game.gd remove_vehicles): off it on the other peers too.
+func cars_removed(removed: Array) -> void:
+	var ids := PackedStringArray()
+	for car: Car in removed:
+		if car.net_id != "":
+			ids.append(car.net_id)
+		forget_car(car)
+	if active and multiplayer.is_server() and not ids.is_empty():
+		_remove_cars.rpc(ids)
+
+
+## A vehicle that left the map: no longer tracked.
+func forget_car(car: Car) -> void:
+	var id := car.net_id
+	if id == "":
+		return
+	cars.erase(id)
+	owner_of.erase(id)
+	driver_of.erase(id)
+	_car_tracks.erase(id)
+	_sent.erase(id)
+	if _pending_drive == id:
+		_pending_drive = ""
+
+
+## (Named to sort after _refused and _register, like _vehicle_hit.)
+@rpc("authority", "call_remote", "reliable")
+func _remove_cars(ids: PackedStringArray) -> void:
+	var gone := []
+	for id in ids:
+		if cars.has(id):
+			gone.append(cars[id])
+	game.remove_vehicles(gone)
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered", 2)
