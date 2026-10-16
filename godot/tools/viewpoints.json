@@ -41,6 +41,8 @@
     {"name": "rerb_cutting", "label": "RER B in a cutting (x 200)", "eye": [190, -798, 3], "target": [260, -814, -1]},
     {"name": "rerb_embankment", "label": "RER B on its embankment (x 1350), from the south", "eye": [1340.6, -879.6, 1.7], "target": [1362, -860, 3]},
     {"name": "rerb_west_entry", "label": "RER B entering the map in the west (x -200)", "eye": [-170, -800, 4], "target": [-250, -813, 0]},
-    {"name": "rerb_east_entry", "label": "RER B leaving the map in the east (x 1760)", "eye": [1720, -860, 4], "target": [1810, -862, 0]}
+    {"name": "rerb_east_entry", "label": "RER B leaving the map in the east (x 1760)", "eye": [1720, -860, 4], "target": [1810, -862, 0]},
+    {"name": "rerb_track_close", "label": "RER B track close up (x 540): ballast, sleepers, rails", "eye": [531, -819.8, 1.6], "target": [556, -814.9, -0.3]},
+    {"name": "rerb_catenary", "label": "RER B catenary portal over both tracks, from the south platform", "eye": [946.8, -816.4, 1.7], "target": [965.7, -815.6, 6.5]}
   ]
 }

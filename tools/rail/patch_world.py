@@ -23,7 +23,8 @@ taken as the new base), never from patched ones, so running it twice gives the s
 - world.json: ground[] keeps its gap-free partition (the new pieces cut out of the old ones, triangulated again),
   the trees and props rail.json clears, the right-of-way fences, the ballast material and palette colour; wall-less
   station canopies standing on the trackbed or a platform (OSM's footbridge stair roof, a slab at knee height over
-  the track) are left to the railway's builder.
+  the track) are left to the railway's builder; the station building takes its real look (STATION_LOOK: the body up
+  to the eaves, rail_builder.gd adds the gabled roof).
 A report goes to tools/rail/review/patch.md.
 """
 import hashlib
@@ -42,10 +43,23 @@ from shapely.ops import polygonize, unary_union
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import railgeo as rg  # noqa: E402
 
-PATCH_VERSION = 1
+PATCH_VERSION = 2
 HARD = {"trackbed": ("railway", "ballast"), "platform": ("platform", "asphalt"), "stairwell": ("steps", "concrete"),
         "road_trench": ("road", "asphalt")}
-BALLAST_COLOUR = "#8f8a84"      # toy ballast: the grey of crushed granite, lightened like the rest of the palette
+BALLAST_COLOUR = "#8c8379"      # toy ballast: rust-stained crushed granite (photos of the station), lightened like the
+                                # rest of the palette
+# The station building as the photos show it (Wikimedia Commons, "Gare Lozère RER IdF Ligne B - Palaiseau (FR91) -
+# 2026-01-17"): a cream rendered pavilion, brick quoins and window surrounds, tall ground-floor windows, a slate
+# gabled roof; the pipeline's guess (a grey flat-roofed "campus" box from a photo colour of confidence 0.54) goes.
+# building_builder.gd has no gables: the body stops at the eaves and rail_builder.gd draws the roof (rail.json-free:
+# it reads this building's `rail_roof`).
+STATION_BUILDING = "osm:w71346991"
+STATION_LOOK = {"wall": "#ece2c6", "accent": "#b4683f", "roof": "#5b616b",
+                "eaves": 4.6,           # m above the base: a tall ground floor and attic windows (photos)
+                "rise": 2.8,            # m from the eaves to the ridge (~40°, a usual slate pitch)
+                "overhang": 0.35,       # m beyond the walls
+                "g": 3.2, "f": 2.6,     # ground floor and floor heights (photos: tall arched ground-floor windows)
+                "floors": 1, "ground": 0, "material": 0, "windows": 1, "top": 0}   # punched, plain, render, framed
 SKIRT_COLOUR = "#c9c4b8"        # cliff skirts (mostly behind the railway's walls): the palette's concrete
 CLIFF = 0.02                    # m: two zones meeting further apart than this make a cliff
 KERB, PAINT = 18, 19            # pipeline material ids (ground_builder.gd MATERIALS)
@@ -55,6 +69,29 @@ FLAG_RAISED, FLAG_SIDE = 1, 2
 
 def sha1(path: Path) -> str:
     return hashlib.sha1(path.read_bytes()).hexdigest()
+
+
+def restyle_station(b: dict) -> None:
+    """STATION_LOOK on the station building: its tiers end at the eaves without a parapet, punched framed windows in
+    cream render with brick accents; `rail_roof` tells rail_builder.gd the gabled roof to put on top."""
+    L = STATION_LOOK
+    top = b["base_z"] + L["eaves"]
+    b["height"] = L["eaves"]
+    b["heights"]["rail"] = L["eaves"] + L["rise"]
+    b["height_src"] = "rail"
+    b["roof"]["shape"] = "gabled"
+    b["roof"]["color"] = L["roof"]
+    b["facade"].update({"color": L["wall"], "accent": L["accent"], "color_src": "rail", "levels": 1.0})
+    st = b["toy"]["style"]
+    st.update({"group": "station", "floors": L["floors"], "ground": L["ground"], "material": L["material"],
+               "top": L["top"], "windows": L["windows"], "wall": L["wall"], "accent": L["accent"], "g": L["g"],
+               "f": L["f"], "levels": 1, "wall_src": "rail", "names": ["punched", "plain", "render", "plain"]})
+    for t in b["toy"]["tiers"]:
+        t["top"] = round(top, 3)
+        t["parapet"] = 0.0
+        t["roof"] = L["roof"]
+    b["rail_roof"] = {"eaves": round(top, 3), "rise": L["rise"], "overhang": L["overhang"], "slate": L["roof"],
+                      "wall": L["wall"], "accent": L["accent"]}
 
 
 def log(*a):
@@ -1142,10 +1179,14 @@ def main() -> None:
         nf += 1
     canopies = []
     keep_b = []
+    restyled = ""
     for b in world["buildings"]:
         if not b.get("walls", True) and Polygon(b["rings"][0]).intersects(zones.hard):
             canopies.append(b["id"])
             continue
+        if b["id"] == STATION_BUILDING:
+            restyle_station(b)
+            restyled = b["id"]
         keep_b.append(b)
     world["buildings"] = keep_b
     report += ["## Trees, props, fences, buildings", "",
@@ -1156,7 +1197,9 @@ def main() -> None:
                    sum(1 for p in clear["props"] if p["action"] == "moved"), dropped,
                    sum(1 for p in clear["props"] if p["action"] == "kept")),
                "- right-of-way fences added: %d" % nf,
-               "- wall-less canopies left to the railway's builder: %s" % (", ".join(canopies) or "none"), ""]
+               "- wall-less canopies left to the railway's builder: %s" % (", ".join(canopies) or "none"),
+               "- station building restyled from the photos (cream render, brick, slate gabled roof): %s"
+               % (restyled or "not found"), ""]
     for p in clear["props"]:
         report.append("  - %s %s: %s%s (%s)" % (p["id"], p["model"], p["action"],
                                                " to %s" % p["to"] if p.get("to") else "", p["reason"]))

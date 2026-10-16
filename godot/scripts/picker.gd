@@ -7,7 +7,12 @@ const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const WorldQuery = preload("res://scripts/world_query.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
+const RailMap = preload("res://scripts/rail_map.gd")
 const RANGE := 2000.0
+## RER B track directions (rail.json tracks[].direction) -> the branch's terminus that way (B4)
+const DESTINATIONS := {"westbound": "Saint-Rémy-lès-Chevreuse", "eastbound": "Paris, Massy-Palaiseau"}
+const SIGNAL_KINDS := {"FR:CARRE": "carré (absolute stop)", "FR:S": "sémaphore (block signal)",
+		"FR:A": "avertissement (distant signal)", "FR:TIV-D": "TIV (speed board)"}
 
 var world_root: Node3D                  # the generated Neighborhood scene
 var panel: PanelContainer
@@ -202,11 +207,75 @@ func describe(info: Dictionary) -> String:
 			var map := GroundMap.get_map()
 			lines.append(map.describe(h.x, -h.z) if map else "Ground")
 			lines.append("%s (%s)" % [info["id"], "raised surface" if info["type"] == "ground" else "LiDAR ground"])
+			_describe_track(lines, h, false)
+		"rail_track":
+			_describe_track(lines, h, true)
+		"rail_platform":
+			lines.append("Platform of track %s, Gare de %s (RER B)" % [info["track"], info["name"]])
+			lines.append("%.0f m long · %.2f m above the rail · edge %.2f m from the track centre · osm:%s" % [
+					info["length"], info["height"], info["edge"], info["osm"]])
+			var tags: PackedStringArray = []
+			for k: String in info.get("tags", {}):
+				tags.append("%s=%s" % [k, info["tags"][k]])
+			if tags:
+				lines.append(" · ".join(tags))
+		"rail_furniture":
+			lines.append("%s, Gare de %s (RER B)%s" % [String(info["kind"]).replace("_", " ").capitalize(), info["station"],
+					("  \"%s\"" % info["name"]) if info.get("name") else ""])
+			lines.append("%s%s" % [info["id"], (" · osm:" + info["osm"]) if info.get("osm") else ""])
+		"rail_signal":
+			var aspects: PackedStringArray = []
+			for st: String in info.get("states", []):
+				aspects.append(st.replace("FR:", ""))
+			lines.append("Signal %s  %s%s" % [info["ref"] if info["ref"] else "(no ref)", SIGNAL_KINDS.get(info["kind"], info["kind"]),
+					(" %s km/h" % info["speed"]) if info.get("speed") != null else ""])
+			lines.append("track %s · for trains going %s · aspects %s%s · osm:%s" % [info["track"],
+					"east" if float(info["facing"]) > 0.0 else "west", " ".join(aspects) if aspects else "-",
+					(" · plate " + String(info["plate"]).replace("FR:", "")) if info.get("plate") else "", info["osm"]])
+		"rail_pk":
+			lines.append("Kilometre post %d (RER B, km from Paris along the line) · osm:%s" % [int(info["km"]), info["osm"]])
+		"rail_catenary":
+			lines.append("RER B catenary support (1,500 V DC): contact wire %.2f m above the rail · %s" % [info["contact"], info["id"]])
+		"rail_structure":
+			var what := {"road_tunnel": "Covered road under the RER B", "footbridge": "Footbridge over the RER B",
+					"underpass": "Pedestrian underpass under the RER B", "retaining_wall": "Retaining wall of the RER B"}
+			lines.append("%s%s" % [what.get(info.get("kind", ""), "RER B structure"), ("  \"%s\"" % info["name"]) if info.get("name") else ""])
+			var extra: PackedStringArray = [String(info["id"])]
+			if info.has("headroom"):
+				extra.append("headroom %.1f m" % info["headroom"])
+			if info.get("maxheight"):
+				extra.append("maxheight %s m" % info["maxheight"])
+			if info.has("clearance"):
+				extra.append("%.1f m over the rails" % info["clearance"])
+			if info.has("osm"):
+				extra.append("osm:%s" % str(info["osm"]))
+			lines.append(" · ".join(extra))
+		"building_roof":
+			lines.append("Roof of %s (%s, drawn by the rail builder)" % [info["name"] if info["name"] else info["id"], info["shape"]])
 		_:
 			lines.append(str(info.get("id", "unknown object")))
 	lines.append("hit x %.1f  y %.1f  z %.1f (altitude %.1f m) · %.0f m away" % [
 			h.x, -h.z, h.y, h.y + z0, info["distance"]])
 	return "\n".join(lines)
+
+
+## The RER B track under hit point h (scripts/rail_map.gd): its number and direction, PK, speed limit, cant. `always`:
+## also when the point is not on a track (the ballast between them).
+func _describe_track(lines: PackedStringArray, h: Vector3, always: bool) -> void:
+	var rm = RailMap.get_map()
+	if rm == null:
+		return
+	var su: Vector2 = rm.project(Vector2(h.x, -h.z))
+	if is_nan(su.x) or absf(su.y) > 6.0:
+		return
+	var t: Dictionary = rm.track_at(su.y, 1.6)
+	if t.is_empty():
+		if always:
+			lines.append("RER B (Ligne de Sceaux) trackbed, between the tracks · PK %.3f" % rm.pk(su.x))
+		return
+	lines.append("RER B track %s, %s (towards %s) · PK %.3f · limit %d km/h · cant %d mm" % [t["ref"], t["direction"],
+			DESTINATIONS.get(t["direction"], "?"), rm.pk(su.x), roundi(rm.limit_kmh(su.x)), roundi(absf(rm.cant(su.x)) * 1000.0)])
+	lines.append("UIC 60 rails, 1,435 mm gauge, concrete sleepers on ballast; 1,500 V DC catenary")
 
 
 func _set_highlight(mi: MeshInstance3D) -> void:
