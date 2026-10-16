@@ -110,6 +110,8 @@ CANT_DEFICIENCY_MAX = 150.0     # mm; assumed (SNCF admits high cant deficiencie
 CANT_GRADIENT_MAX = 2.5         # mm/m along a transition; assumed (EN 13803 order of magnitude)
 TRAIN_LENGTHS = {"8": 208.32, "4": 104.16}   # MI 79: one unit of 4 cars is 104.16 m (en.wikipedia "MI 79")
 SERVICE_BRAKE = 0.7             # m/s², planned braking to a stop; assumed (comfortable, under the MI 79's 1.1 m/s²)
+MAX_SERVICE_BRAKE = 1.1         # m/s², en.wikipedia "MI 79" infobox: deceleration 1.1 m/s² and 1.15 m/s²; the lower one...
+EMERGENCY_BRAKE = 1.15          # ...for full service braking, the higher one for the emergency brake
 ACCEL = 1.0                     # m/s², MI 79 (en.wikipedia "MI 79": acceleration 1 m/s²)
 HEADWAY = 120.0                 # s per direction: the user's choice (real B4 service: every 10-15 min)
 DWELL = 40.0                    # s planned at Lozère (the bots use 30-60 s)
@@ -2027,7 +2029,7 @@ def main() -> None:
         "fences": [dict(f, id="fence:rail:%d" % (i + 1)) for i, f in enumerate(row_fences)],
         "clearance": clear,
         "train": {"model": "mi79", "cars": 8, "length": TRAIN_LENGTHS["8"], "accel": ACCEL,
-                  "service_brake": SERVICE_BRAKE, "max_service_brake": 1.1, "emergency_brake": 1.15},
+                  "service_brake": SERVICE_BRAKE, "max_service_brake": MAX_SERVICE_BRAKE, "emergency_brake": EMERGENCY_BRAKE},
     }
     text = json.dumps(r3(rail), ensure_ascii=False, separators=(",", ":"))
     rg.RAIL_JSON.write_text(text + "\n", encoding="utf-8")

@@ -29,6 +29,11 @@ extends Node
 ##   CLOCK_EVERY s, and each client keeps its offset from its own clock from the quickest arrival.
 ## - Bot buses (traffic.gd) are the host's vehicles; their states say a bot drives them, and the host lets nobody take
 ##   their wheel.
+## - RER B trains (scripts/train_traffic.gd): the host runs them and sends every train's compact state (train.gd
+##   net_state: front along its route, speed, doors, lamps) TRAIN_SEND_RATE times a second, stamped with its clock;
+##   the others make the train on first sight and pose it from the same route, carried on at its speed for the time
+##   the state took (the shared clock), so it reaches the platform at the same moment on every screen. A player
+##   standing in a train sends its position in that car's frame, like in a bus.
 ## - Chat: a message goes to the host, which sends it to everyone with who said it. The host also sends everyone each
 ##   player's ping to it every PING_EVERY s (the player list, game.gd Tab).
 ## - The host announces the game on the LAN (lan_discovery.gd) and sends newcomers the players, the vehicles, and the
@@ -49,9 +54,10 @@ signal registered(id: int)                  # host: player `id` was let in (it h
 const PORT := 7777                          # the host tries the next ones when it is taken
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
-const PROTOCOL := 9                         # bump when the messages change (build_id: other builds are refused anyway)
+const PROTOCOL := 10                        # bump when the messages change (build_id: other builds are refused anyway)
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
+const TRAIN_SEND_RATE := 10.0               # RER B train states per second (host)
 const IDLE_SEND_EVERY := 0.5                # s, states of vehicles at rest
 const FAR_SEND_EVERY := 3                   # vehicle sends between two of a bot gliding far from every player
 const MIN_DELAY := 0.02                     # s, bounds of the playback delay (Track.delay)
@@ -95,6 +101,7 @@ var _sent := {}                             # net id -> switches (flags, indicat
 var _next_car := 0
 var _send_t := 0.0                          # s since the last player state
 var _car_send_t := 0.0                      # s since the last vehicle states
+var _train_send_t := 0.0                    # s since the last train states (host)
 var _idle_t := 0.0
 var _pending_drive := ""                    # net id of the vehicle we asked to drive
 var _connect_t := -1.0                      # s since connecting, -1 when not waiting
@@ -426,6 +433,17 @@ func _pose_remote(id: int, a: Array, b: Array, w: float) -> void:
 	var yaw := lerp_angle(a[3], b[3], minf(w, 1.0))
 	var shown: bool = b[4] & 1 == 0
 	var car: Car = null
+	if String(b[0]).begins_with("train:"):          # standing in an RER B car: b[1] is the car
+		var tr: Node3D = null
+		for o: Node3D in game.traffic.trains.trains:
+			if o.net_id == b[0]:
+				tr = o
+		r.visible = shown and tr != null and not tr.stowed
+		r.sit_in(null)
+		if tr and int(b[1]) < tr.cars.size():
+			r.show_in(tr.cars[int(b[1])], pos, yaw)
+		r.update_collision(r.visible, null, game.cars)
+		return
 	if b[0] != "":
 		car = cars.get(b[0])
 		if car == null:
@@ -462,6 +480,16 @@ func _ping_list(pings: Dictionary) -> void:
 
 ## Client: the host's clock `t` when it sent this. The quickest arrival gives the offset (it creeps back slowly, so
 ## clock drift and a lucky outlier wear off). (Named to sort after _refused and _register, like _vehicle_hit.)
+## Client: the host's trains at time `t` on its clock.
+@rpc("authority", "call_remote", "unreliable_ordered", 3)
+func _trains_state(t: float, states: Array) -> void:
+	var late := clock() - t
+	for s: Array in states:
+		var tr: Node3D = game.traffic.trains.ensure(s[0], s[1])
+		if tr:
+			tr.apply_net_state(s[2], late)
+
+
 @rpc("authority", "call_remote", "unreliable")
 func _signal_clock(t: float) -> void:
 	var off := t - _now()
@@ -769,6 +797,15 @@ func _send(delta: float) -> void:
 		if not states.is_empty():
 			_cars_state.rpc(t, states)
 	_send_water(delta)
+	_train_send_t += delta
+	if multiplayer.is_server() and _train_send_t >= 1.0 / TRAIN_SEND_RATE - 0.001:
+		_train_send_t = 0.0
+		var tt: Node = game.traffic.trains
+		if tt.running and not tt.trains.is_empty():
+			var states := []
+			for tr: Node3D in tt.trains:
+				states.append([tr.net_id, tt.service_index(tr), tr.net_state()])
+			_trains_state.rpc(clock(), states)
 	var peer := multiplayer.multiplayer_peer as ENetMultiplayerPeer
 	if peer:
 		peer.host.flush()                   # else ENet sends them at the next poll, a frame later

@@ -6,7 +6,8 @@ extends Node3D
 ## biplane's gunshots and their pings on vehicles (scripts/plane_guns.gd), the boom of a vehicle breaking down, the
 ## two-tone sirens of the fire truck (scripts/fire_truck.gd) and the police car (scripts/police_car.gd), sounding as
 ## long as `siren` is on, the electric car's motor whine and pedestrian warning hum, and the horse's hoofbeats, neigh,
-## snort and landing thud (scripts/horse.gd).
+## snort and landing thud (scripts/horse.gd), and the RER B train's traction whine, rail rumble, horn, door warning
+## and brake squeal (scripts/train.gd).
 ## Each sound is generated once per kind and cached. scripts/car.gd adds one as a child and calls
 ## update() every physics frame and play() for one-shots.
 
@@ -43,6 +44,15 @@ const KINDS := {
 				# whine harmonics [order, gain]; reduction gear mesh [order, gain on, gain off]; air and bearing hiss
 				"orders": [[1.0, 1.0], [2.0, 0.3], [3.0, 0.22], [6.0, 0.1]], "gear": [2.72, 0.3, 0.4],
 				"hiss": [2600.0, 0.6]}},
+	# RER B train (scripts/train.gd, the MI 79 R): DC traction motors on a thyristor chopper, so no engine at rest and a
+	# whine held to the wheels' speed (the motor model, _motor_take: a hum moving off to ~900 Hz at line speed, the
+	# gear mesh above it), the rails' rumble deep and loud, a deep two-tone horn; the door warning and the brakes'
+	# squeal are one-shots ("train_doors", "train_brake")
+	"train": {"pitch_top": 16.0, "gears": [1.0], "unit_size": 16.0, "idle_db": 0.0,
+			"road_db": 2.0, "road_pitch": 0.5, "horn": [294, 370], "horn_harmonics": 14,
+			"engine": {"motor": true, "idle_hz": 55.0, "layers": 8, "off": 0.35,
+				"orders": [[1.0, 1.0], [2.0, 0.45], [3.0, 0.3], [5.0, 0.12]], "gear": [4.6, 0.35, 0.3],
+				"hiss": [1800.0, 0.5]}},
 	# fire truck (scripts/fire_truck.gd): big V8 diesel, burbling (uneven banks), deep air horn
 	"truck": {"pitch_top": 2.8, "gears": [0.08, 0.16, 0.26, 0.38, 0.52, 0.7, 1.0], "unit_size": 12.0, "idle_db": 0.0,
 			"road_db": -1.0, "road_pitch": 0.7, "horn": [185, 233], "horn_harmonics": 16,
@@ -708,6 +718,52 @@ static func one_shot(sound: String) -> AudioStreamWAV:
 		"air_brake":
 			buf = _silence(0.9)
 			_add_hiss(buf, 0.0, 0.85, 0.005, 1.0)
+		"train_doors":                                      # RER door warning before closing: a buzzer's beeps
+			buf = _silence(2.6)
+			for b in 6:
+				_add_tone(buf, 0.3 * b, 0.18, 880.0, 0.4)
+				_add_tone(buf, 0.3 * b, 0.18, 1320.0, 0.15)
+			_add_hiss(buf, 1.85, 0.5, 0.02, 0.6)
+			_add_thump(buf, 2.35, 1.0)
+		"train_open":                                       # the doors opening: air and the leaves' stop
+			buf = _silence(1.4)
+			_add_hiss(buf, 0.0, 0.9, 0.02, 0.8)
+			_add_thump(buf, 1.1, 0.7)
+		"train_flange":                                     # wheel flanges squealing on the rail through a tight curve
+			buf = _silence(3.0)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 23
+			for p: Vector2 in [Vector2(4200.0, 0.22), Vector2(5150.0, 0.14), Vector2(7400.0, 0.06)]:
+				var wob := rng.randf_range(2.0, 5.0)
+				for i in buf.size():
+					var t := float(i) / RATE
+					var env := minf(t / 0.4, 1.0) * minf((3.0 - t) / 0.6, 1.0) * (0.6 + 0.4 * sin(TAU * wob * t))
+					buf[i] += sin(TAU * p.x * t + 0.002 * sin(TAU * 7.0 * t) * p.x) * p.y * env
+		"train_compressor":                                 # the air compressor chugging while the train stands
+			buf = _silence(5.0)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 29
+			var lp := 0.0
+			for i in buf.size():
+				var t := float(i) / RATE
+				lp += (rng.randf_range(-1.0, 1.0) - lp) * 0.08
+				var beat := pow(0.5 + 0.5 * sin(TAU * 11.0 * t), 3.0)      # its pistons, 11 strokes a second
+				var env := minf(t / 0.5, 1.0) * minf((5.0 - t) / 0.8, 1.0)
+				buf[i] = (lp * 2.5 * beat + sin(TAU * 88.0 * t) * 0.25 * beat) * env
+		"train_joint":                                      # a bogie's wheels over a rail joint: two quick knocks
+			buf = _silence(0.4)
+			for c: float in [0.0, 0.11]:
+				_add_thump(buf, c, 0.9)
+				for j in int(0.05 * RATE):
+					var t := float(j) / RATE
+					buf[int(c * RATE) + j] += sin(TAU * 260.0 * t) * exp(-t * 60.0) * 0.5
+		"train_brake":                                      # the brake shoes' squeal as a train comes to a stop
+			buf = _silence(1.8)
+			for p: Vector2 in [Vector2(2950.0, 0.35), Vector2(3480.0, 0.2), Vector2(5900.0, 0.08)]:
+				for i in buf.size():
+					var t := float(i) / RATE
+					buf[i] += sin(TAU * p.x * t * (1.0 - 0.02 * t)) * p.y * minf(t / 0.15, 1.0) * exp(-t * 1.6)
+			_add_hiss(buf, 1.2, 0.5, 0.01, 0.5)
 		"clang":                                            # metal pole knocked over: thump, crack, ringing
 			buf = _silence(1.0)
 			_add_thump(buf, 0.0, 1.0)

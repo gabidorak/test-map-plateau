@@ -1,5 +1,6 @@
 extends Node
-## Traffic (game.gd makes it as Main/Traffic): the traffic lights' clock, the bot buses and the bot cars.
+## Traffic (game.gd makes it as Main/Traffic): the traffic lights' clock, the bot buses and the bot cars, and the RER B
+## trains (scripts/train_traffic.gd, its child Trains on every peer; game.gd starts them with the bots).
 ## - Lights: every car and pedestrian signal head runs the same CYCLE s cycle (shaders/toy_prop.gdshader) offset by its
 ##   phase (pipeline/plateau/props.py). The cycle runs on the game's shared clock (net.gd clock(): the host's in a LAN
 ##   game), handed to the shader as the global `signal_clock` each frame: the lights show the same colour on every
@@ -17,6 +18,7 @@ extends Node
 ## remote vehicles (net.gd), which they can ride in (buses) but not drive.
 
 const BusBot = preload("res://scripts/bus_bot.gd")
+const TrainTraffic = preload("res://scripts/train_traffic.gd")
 const ROUTES := "res://world/bus_routes.json"
 const CAR_ROUTES := "res://world/car_routes.json"
 const CYCLE := 30.0                         # s, toy_prop.gdshader `cycle`
@@ -34,6 +36,7 @@ const EDGE_SEEN := 60.0                     # m from every player it may come ba
 const CAR_LOOK := 0.5                       # s between looks for a way back in for the stowed cars
 
 var game: Node3D                            # game.gd
+var trains: TrainTraffic                    # the RER B (scripts/train_traffic.gd), on every peer
 var bots: Array = []                        # BusBot: the buses, then the cars
 var lines: Array = []                       # bus_routes.json "lines"
 var routes := {}                            # route id -> route (bus_routes.json, car_routes.json)
@@ -55,6 +58,13 @@ var _car_lengths := PackedFloat32Array()    # cumulative route lengths (picking 
 var _car_models: Array = []
 var _car_look := 0.0
 var _rng := RandomNumberGenerator.new()
+
+
+func _ready() -> void:
+	trains = TrainTraffic.new()
+	trains.name = "Trains"
+	trains.game = game
+	add_child(trains)
 
 
 func _process(_delta: float) -> void:

@@ -140,6 +140,8 @@ def mat(name: str) -> bpy.types.Material:
         p.inputs["Alpha"].default_value = ALPHA[name]
         m.surface_render_method = "BLENDED"
         m.use_backface_culling = False
+    else:
+        m.use_backface_culling = True       # single-sided in glTF: the shell's paint is not seen from inside
     m.diffuse_color = srgb(col)
     return m
 
@@ -511,6 +513,12 @@ class Car:
                     continue
                 parts.append(box("panel", (sx * (IN_HW + 0.02), (a + b) / 2, (FLOOR + Z_SILL) / 2), (0.04, b - a, Z_SILL - FLOOR), "panel"))
                 parts.append(box("panel_top", (sx * (IN_HW + 0.02), (a + b) / 2, (Z_WTOP + CEIL) / 2), (0.04, b - a, CEIL - Z_WTOP), "panel"))
+                # the piers between the windows, at window height
+                cuts = [a] + [y for yw, w in self.windows if a < yw < b for y in (yw - w / 2, yw + w / 2)] + [b]
+                for j in range(0, len(cuts) - 1, 2):
+                    if cuts[j + 1] - cuts[j] > 0.02:
+                        parts.append(box("pier", (sx * (IN_HW + 0.02), (cuts[j] + cuts[j + 1]) / 2, (Z_SILL + Z_WTOP) / 2),
+                                         (0.04, cuts[j + 1] - cuts[j], Z_WTOP - Z_SILL), "panel"))
                 self.collide((sx * IN_HW - (0.0 if sx > 0 else WALL_T), a, FLOOR), (sx * IN_HW + (WALL_T if sx > 0 else 0.0), b, CEIL))
         # door boxes, closed while the doors are: tagged with their door and side
         for i, (a, b) in enumerate(self.door_spans()):

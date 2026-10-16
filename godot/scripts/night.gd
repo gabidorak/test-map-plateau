@@ -10,6 +10,7 @@ extends Node
 ## share it.
 
 const Car = preload("res://scripts/car.gd")
+const Train = preload("res://scripts/train.gd")
 const MOON := Vector3(-30.0, 35.0, 0.0)     # moonlight rotation, degrees: from 30° up in the south-east
 const MOON_COLOR := Color(0.6, 0.7, 1.0)
 const MOON_ENERGY := 0.55
@@ -82,6 +83,7 @@ func set_night(n: bool) -> void:
 		sun.light_energy = _day["sun_energy"]
 	RenderingServer.global_shader_parameter_set("night", 1.0 if n else 0.0)
 	Car.night = n
+	Train.night = n
 	if game:
 		for car: Car in game.cars:
 			if is_instance_valid(car) and car.is_bot():
