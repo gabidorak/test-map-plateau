@@ -70,7 +70,7 @@ var _roll := PackedFloat32Array()           # cant angle, positive: the left rai
 var _step := 1.0
 var _gangways: Array = []                   # [StaticBody3D, car in front, car behind]
 var _beam: SpotLight3D
-var _posed := false
+var _posed_front := NAN                     # front when last posed: a standing train is not posed again
 var _squealed := false
 var _heading := PackedFloat32Array()        # route heading per point, unwrapped (curvature for the flange squeal)
 var _joints := PackedFloat32Array()         # route distances of the insulated rail joints (the block signals)
@@ -230,7 +230,7 @@ func pose() -> void:
 		var behind: TrainCar = g[2]
 		var d := front - car_length * (ahead.index + 1)
 		(g[0] as StaticBody3D).global_transform = span_frame(d - 0.5, d + 0.5)
-	_posed = true
+	_posed_front = front
 
 
 ## Moves the train to put its front at d.
@@ -294,6 +294,7 @@ func velocity() -> Vector3:
 func set_stowed(on: bool) -> void:
 	stowed = on
 	visible = not on
+	_posed_front = NAN
 	for car: TrainCar in cars:
 		car.set_solid(not on)
 	for g: Array in _gangways:
@@ -350,7 +351,8 @@ func _physics_process(delta: float) -> void:
 		door_t = move_toward(door_t, target, delta / DOOR_TIME)
 		for car: TrainCar in cars:
 			car.pose_doors(door_t, doors_side * (-1 if car.turned else 1))
-	pose()
+	if front != _posed_front:
+		pose()
 
 
 func _process(delta: float) -> void:

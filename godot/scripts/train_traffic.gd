@@ -214,12 +214,18 @@ func _physics_process(delta: float) -> void:
 				departures[k] += headway
 				_depart(k)
 		var doorway := _doorway_players()
+		var near_line = null                # only looked for when some train runs (not at a stop)
 		for tr: Node3D in trains:
 			if tr.stowed or not bots.has(tr):
 				continue
 			var bot: TrainBot = bots[tr]
 			var k := service_index(tr)
-			bot.drive(delta, _same_service(tr), _obstacles(tr, k), doorway)
+			var obstacles: Array = []
+			if bot.state == "run":
+				if near_line == null:
+					near_line = _near_line()
+				obstacles = _obstacles(tr, k, near_line)
+			bot.drive(delta, _same_service(tr), obstacles, doorway)
 			if bot.is_done():
 				_stow(tr)
 	_knock_things(delta)
@@ -244,7 +250,11 @@ func _same_service(tr: Node3D) -> Array:
 
 ## Route distance along service k and offset from its track centre of map point xy, or null when off its route.
 func route_distance(k: int, xy: Vector2) -> Variant:
-	var su: Vector2 = _rm.project(xy)
+	return _route_distance_su(k, _rm.project(xy))
+
+
+## Same from the point's (s, u) on the centreline (rail_map.gd project()).
+func _route_distance_su(k: int, su: Vector2) -> Variant:
 	if is_nan(su.x):
 		return null
 	var sc: PackedFloat32Array = _route_s[k]
@@ -266,31 +276,42 @@ func route_distance(k: int, xy: Vector2) -> Variant:
 	return Vector2(d, su.y - _track_u[k])
 
 
-## What is near the track ahead of `tr`: [route distance, offset from the track centre (vehicles: less their half
-## width), height above the rails].
-func _obstacles(tr: Node3D, k: int) -> Array:
+## The players on foot and the vehicles near the line this tick: [global position, (s, u) on the centreline, half
+## width]. Projected once per tick for every train; most vehicles are far from the line and cost one lookup.
+func _near_line() -> Array:
 	var out: Array = []
 	if game == null:
 		return out
-	var head: Vector3 = tr.route_point(tr.front)
 	for p: Vector3 in _people():
-		_add_obstacle(out, tr, k, head, p, 0.0)
+		_add_near(out, p, 0.0)
 	for car: Node3D in game.cars:
-		if car.stowed or not is_instance_valid(car):
-			continue
-		_add_obstacle(out, tr, k, head, car.global_position, 1.0)
+		if is_instance_valid(car) and not car.stowed:
+			_add_near(out, car.global_position, 1.0)
 	return out
 
 
-func _add_obstacle(out: Array, tr: Node3D, k: int, head: Vector3, p: Vector3, half: float) -> void:
-	if p.distance_squared_to(head) > NEAR * NEAR:
-		return
-	var rd: Variant = route_distance(k, Vector2(p.x, -p.z))
-	if rd == null:
-		return
-	var lateral: float = maxf(absf(rd.y) - half, 0.0)
-	var level: float = p.y - tr.route_point(rd.x).y
-	out.append([rd.x, lateral, level - 0.6 if level > 0.6 else level])
+func _add_near(out: Array, p: Vector3, half: float) -> void:
+	var su: Vector2 = _rm.project(Vector2(p.x, -p.z))
+	if not is_nan(su.x):
+		out.append([p, su, half])
+
+
+## What is near the track ahead of `tr`, from `near_line` (_near_line()): [route distance, offset from the track
+## centre (vehicles: less their half width), height above the rails].
+func _obstacles(tr: Node3D, k: int, near_line: Array) -> Array:
+	var out: Array = []
+	var head: Vector3 = tr.route_point(tr.front)
+	for n: Array in near_line:
+		var p: Vector3 = n[0]
+		if p.distance_squared_to(head) > NEAR * NEAR:
+			continue
+		var rd: Variant = _route_distance_su(k, n[1])
+		if rd == null:
+			continue
+		var lateral: float = maxf(absf(rd.y) - n[2], 0.0)
+		var level: float = p.y - tr.route_point(rd.x).y
+		out.append([rd.x, lateral, level - 0.6 if level > 0.6 else level])
+	return out
 
 
 ## Global positions of the players on foot: this peer's and the others'.

@@ -124,6 +124,7 @@ const STEERING_RATIO := 3.5                 # steering wheel turn per road wheel
 											# turn, so a still frame never reads as the opposite way
 const HAND_TURN := 1.6                      # rad: the driver's hands turn with the wheel this far, then slide on it
 const GRIPS := [150.0, 30.0]                # left and right hand on the rim, degrees from 3 o'clock (10 and 2 o'clock)
+const STEERING_SEEN := 60.0                 # m: farther from the camera, the steering wheel and hands are not turned
 const JOINT_YAW := 0.9                      # rad, articulation limit either way (~52°)
 const JOINT_PITCH := 0.12                   # rad, the sections fold this much over crests and dips
 const JOINT_DAMP := 3.0                     # torque per rad/s of relative yaw, per kg of rear section (calms the joint)
@@ -133,6 +134,7 @@ const DRIFT_BRAKE := 0.12                   # rear handbrake while drifting, fra
 const DRIFT_STEER := 0.45                   # steering lock kept while drifting, fraction of max_steer
 const DRIFT_RECOVER := 2.0                  # /s, the rear grip coming back once X is released
 const BELLOWS_SEGMENTS := 4                 # wall boxes along the bellows (walkable articulation)
+const BELLOWS_SEEN := 100.0                 # m: farther from the camera, the bellows is not bent
 const HEALTH := 100.0                       # a 1,200 kg car's; heavier vehicles have more (with the square root of the mass)
 const DAMAGED := 0.5                        # share of the health under which the engine smokes grey
 const REPAIR_AFTER := 60.0                  # s a broken vehicle smokes before it is repaired
@@ -210,9 +212,12 @@ var _blink_t := 0.0
 var _signal_armed := false                  # the wheel has turned the signalled way: cancel when back
 var _lamps := {1: [], -1: []}               # indicator meshes per side
 var _brake_lamps: Array[MeshInstance3D] = []
+var _brake_mat: Material                    # on the brake lamps now
 var _lamp_mats := {}                        # "indicator"/"brake" -> [off, on]
 var _steering_wheel: Node3D
 var _steering_rest := Transform3D.IDENTITY
+var _posed_turn := NAN                      # steering wheel turn when last posed (and whether the hands were)
+var _posed_hands := false
 var _doors: Array[Dictionary] = []          # {leaves, closed (positions), dirs (slide sign), slide, shape}
 var _door_t := 0.0                          # 0 closed .. 1 open
 var _driver_dummy: Node3D                   # driver body, arms and hands, in the car frame
@@ -371,6 +376,7 @@ func _build_chase_camera(length: float, height: float) -> void:
 	camera.fov = 70.0
 	camera.near = 0.1
 	camera.far = 1500.0
+	camera.position = Vector3(0.0, 0.0, length)  # where the arm puts it without a hit (it only runs in use)
 	_arm.add_child(camera)
 
 
@@ -694,7 +700,9 @@ func _bellows_frame(rel: Transform3D, t: float) -> Transform3D:
 ## Bends the bellows mesh and its walls to the current articulation (nothing to do while it holds still).
 func _update_bellows() -> void:
 	var rel := global_transform.affine_inverse() * trailer.global_transform
-	if rel.origin.distance_to(_bellows_rel.origin) + (rel.basis.z - _bellows_rel.basis.z).length() < 0.001:
+	# below the physics jitter (1 cm, 0.3°) or out of sight: kept as it is (each rebuild is a new GPU buffer)
+	if _bellows_rel.origin.is_finite() and (rel.origin.distance_to(_bellows_rel.origin) < 0.008 \
+			and (rel.basis.z - _bellows_rel.basis.z).length() < 0.005 or not _near_camera(BELLOWS_SEEN)):
 		return
 	_bellows_rel = rel
 	var per: int = _bellows_profiles[0][0].size()
@@ -955,6 +963,9 @@ func _set_brake_lamps(braking: bool) -> void:
 		return
 	var mat: Material = _lamp_mats["brake"][1] if braking \
 			else _lamp_mats.get("tail", _lamp_mats["brake"][0]) if headlights else _lamp_mats["brake"][0]
+	if mat == _brake_mat:
+		return
+	_brake_mat = mat
 	for lamp in _brake_lamps:
 		lamp.material_override = mat
 
@@ -981,6 +992,7 @@ func _in_car(n: Node3D) -> Transform3D:
 
 func _ready() -> void:
 	_arm.add_excluded_object(get_rid())
+	_arm.set_physics_process_internal(false)    # a shape cast per tick: only while its camera is in use (_process)
 	if trailer:
 		_arm.add_excluded_object(trailer.get_rid())
 		_build_joint()
@@ -1139,6 +1151,8 @@ func set_stowed(on: bool) -> void:
 		if hull:
 			hull.process_mode = Node.PROCESS_MODE_DISABLED if on else Node.PROCESS_MODE_INHERIT
 	audio.engine_on = not on and (is_bot() or driving or has_doors) and not broken
+	if on:
+		audio.hush()                            # it gets no audio.update() while stowed
 
 
 func set_driver_color(color: Color) -> void:
@@ -1552,8 +1566,13 @@ func _update_steering() -> void:
 	if _steering_wheel == null:
 		return
 	var turn := steering * STEERING_RATIO
+	var hands := _driver_dummy.visible and not _hands.is_empty()
+	if (turn == _posed_turn and hands == _posed_hands) or not _near_camera(STEERING_SEEN):
+		return
+	_posed_turn = turn
+	_posed_hands = hands
 	_steering_wheel.transform = _steering_rest * Transform3D(Basis(Vector3.UP, turn), Vector3.ZERO)
-	if not _driver_dummy.visible or _hands.is_empty():
+	if not hands:
 		return
 	var grip := Basis(_wheel_axis, clampf(turn, -HAND_TURN, HAND_TURN))
 	for k in 2:
@@ -1612,8 +1631,17 @@ func _update_doors(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
-	if driving or riding:
+	var in_use := driving or riding
+	if in_use != _arm.is_physics_processing_internal():
+		_arm.set_physics_process_internal(in_use)
+	if in_use:
 		_update_camera(delta)
+
+
+## True when the camera is within `d` m (or there is none: tools without one see everything).
+func _near_camera(d: float) -> bool:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	return cam == null or cam.global_position.distance_squared_to(global_position) < d * d
 
 
 ## Chase camera behind the car, or in front of it looking back while reversing: the flip waits for the speed to stay
