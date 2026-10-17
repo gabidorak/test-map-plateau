@@ -1,7 +1,7 @@
 extends SceneTree
 ## Renders the RER B trains for review into data/review/shots/<milestone>/train_<view>.png: one train each way standing
 ## at Lozère with its doors open (the bots stopped), seen from the station's viewpoints (tools/viewpoints.json) and from
-## cameras on the trains (inside a car, the cab front, along the side). --night renders at night.
+## cameras on the trains (inside a car, the cab front, the bogies, along the side). --night renders at night.
 ## godot --path godot --script res://tools/train_shots.gd -- --milestone=rerb_E [--night]
 ## Needs a window (not --headless): it uses the real renderer.
 
@@ -32,7 +32,7 @@ func _initialize() -> void:
 	for v: Dictionary in data["viewpoints"]:
 		if v["name"] in STATION_VIEWS:
 			_views.append(v)
-	for name in ["inside", "front", "doorway", "side"]:
+	for name in ["inside", "front", "doorway", "bogie", "side"]:
 		_views.append({"name": name})
 	_out_dir = ProjectSettings.globalize_path("res://").path_join("../data/review/shots").path_join(milestone).simplify_path()
 	DirAccess.make_dir_recursive_absolute(_out_dir)
@@ -99,6 +99,8 @@ func _place(v: Dictionary) -> void:
 	var east: Node3D = _trains.get(0)
 	if east == null:
 		return
+	for tr: Node3D in _trains.values():
+		tr.visible = v["name"] != "bogie" or tr == east
 	match v["name"]:
 		"inside":                           # in the second car, by a door, looking along it
 			var car: Node3D = east.cars[1]
@@ -109,6 +111,9 @@ func _place(v: Dictionary) -> void:
 		"doorway":                          # from the platform into an open doorway
 			var car: Node3D = east.cars[2]
 			cam.look_at_from_position(car.to_global(Vector3(4.2, 2.9, 4.5)), car.to_global(Vector3(0.0, 2.2, 2.0)))
+		"bogie":                            # from the other platform (the other train hidden), at the bogies of two cars
+			var car: Node3D = east.cars[1]
+			cam.look_at_from_position(car.to_global(Vector3(-6.5, 1.9, -4.0)), car.to_global(Vector3(0.0, 0.6, -12.0)))
 		"side":                             # from the other platform, across the tracks, along the train
 			var car: Node3D = east.cars[2]
 			cam.look_at_from_position(car.to_global(Vector3(-8.0, 2.95, -6.0)), car.to_global(Vector3(0.0, 2.2, 14.0)))

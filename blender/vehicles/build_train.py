@@ -10,7 +10,9 @@ wheelbase 2.40 m, floor 1.19 m above the rail, four double doors a side, the win
 "MI 79" (2.80 m wide, units of four cars 104.16 m long, all cars motored, renovated 2010-2016 as MI 79 R) and
 photos of MI 79 R trains (Wikimedia Commons: at Lozère, Bourg-la-Reine, Aulnay-sous-Bois, Denfert-Rochereau; the
 renovated interior). Livery: white body, anthracite window band and skirt, a magenta and a teal stripe beside each
-door, anthracite front with the amber LED destination display, RATP and SNCF badges. Interior: grey floor, white
+door; at the front a white surround round the black mask (two windscreen panes, the amber LED destination display,
+chrome-ringed head and tail lamps, the Île-de-France Mobilités, RATP and SNCF badges), dark anti-climbers and the
+automatic coupler under it. Bogies: outside side frames dropped at the bolster, air springs under the body. Interior: grey floor, white
 walls and ceiling, anise-green seat backs over navy patterned seats in facing bays of 2 + 2, steel grab poles, light
 strips; the cars of a unit are joined by gangways (end doors open), the units are not.
 
@@ -23,7 +25,7 @@ car: lit by train.gd per direction), "cabin_lights", "display" (cab car: the des
 "pantograph" (intermediate car). <out>.json gives train.gd each model's layout in glTF coordinates: length, bogies,
 floor, walkable colliders (the door boxes tagged with their door), doors, interior box, gangways, cab seat and eye,
 lamp and display frames.
---preview renders <prefix>_side.png, <prefix>_front.png and <prefix>_interior.png (Cycles)."""
+--preview renders <prefix>_front.png, _nose.png (the cab front), _bogie.png, _side.png and _interior.png (Cycles)."""
 import json
 import math
 import sys
@@ -63,6 +65,16 @@ SEAT_W = 0.47                       # per seat, 2 + 2 abreast
 PITCH = 1.70                        # facing bay: the two rows' backs this far apart
 AISLE_HW = 0.32                     # half the aisle
 STRIPE_W = 0.12                     # each of the magenta and teal stripes beside the doors (photos)
+# cab front (photos of MI 79 R fronts, scaled from the 2.80 m width): a white surround (corners, the band under the
+# mask, the top) round the black mask, two windscreen panes split by a pillar, the lamps and badges in the mask
+# under them, the headstock set back under the white band with the anti-climbers and the automatic coupler
+FW_BOT, FW_TOP = 2.18, 3.30         # windscreen
+MASK_BOT, MASK_TOP = FLOOR + 0.31, 3.42
+BAND_BOT = FLOOR + 0.11             # the white band under the mask
+LEAN = 0.10                         # the front leans back this far from the windscreen's bottom to the eave
+RECESS = 0.12                       # the headstock is set back this far under the white band
+LAMP_Z = FLOOR + 0.61
+WIN_X = ((-1.00, -0.40), (-0.28, 1.00))     # the panes (x; +X the driver's, the train's left)
 # per model: door centres (y, the front at -13), cab door, windows between the doors (drawings)
 MODELS = {
     "cab": {"cab": True, "doors": [-8.90, -3.23, 3.58, 10.32], "cab_door": -11.21, "pantograph": False},
@@ -82,16 +94,19 @@ MATERIALS = {
     "frame_dark": ("#2A2D32", 0.2, 0.5, 0.0),
     "rubber": ("#1B1D20", 0.0, 0.85, 0.0),
     "steel": ("#7D838A", 0.7, 0.4, 0.0),
-    "bogie": ("#2B2D30", 0.3, 0.7, 0.0),
+    "bogie": ("#34363A", 0.1, 0.75, 0.0),
     "wheel": ("#5A5E63", 0.8, 0.35, 0.0),
-    "buffer": ("#C9A23A", 0.2, 0.5, 0.0),               # the yellow anti-climber pads (photos)
+    "anticlimber": ("#3A3D41", 0.1, 0.7, 0.0),         # the dark rubber-faced anti-climbers (photos)
+    "chrome": ("#C8CDD2", 0.9, 0.2, 0.0),
+    "lens_off": ("#2E343B", 0.3, 0.12, 0.0),
     "headlight": ("#EEF3F6", 0.2, 0.15, 0.6),
     "taillight": ("#C81E1E", 0.0, 0.3, 0.6),
     "display": ("#0B0D10", 0.0, 0.4, 0.0),
     "display_amber": ("#FF8C1A", 0.0, 0.5, 3.0),
     "logo_white": ("#FFFFFF", 0.0, 0.4, 0.0),
     "logo_teal": ("#14A39A", 0.0, 0.4, 0.0),
-    "logo_red": ("#D7263D", 0.0, 0.4, 0.0),
+    "logo_red": ("#D7145A", 0.0, 0.4, 0.0),
+    "logo_blue": ("#1F6FD6", 0.0, 0.4, 0.0),
     "floor": ("#6F757C", 0.0, 0.85, 0.0),
     "floor_edge": ("#F2C200", 0.0, 0.6, 0.0),
     "panel": ("#E4E6E8", 0.0, 0.5, 0.0),
@@ -183,6 +198,29 @@ def box(name, centre, size, m, rot=None) -> bpy.types.Object:
     return new_obj(name, bm, [m], at=centre)
 
 
+def rbox(name, centre, size, r, m) -> bpy.types.Object:
+    """A box with its edges rounded by r."""
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0)
+    bmesh.ops.scale(bm, vec=size, verts=bm.verts)
+    bmesh.ops.bevel(bm, geom=list(bm.verts) + list(bm.edges), offset=r, segments=3, affect="EDGES", profile=0.5)
+    return new_obj(name, bm, [m], at=centre)
+
+
+def prism(name, profile, x0, x1, m) -> bpy.types.Object:
+    """A convex profile [(y, z)] extruded across x0..x1."""
+    bm = bmesh.new()
+    a = [bm.verts.new((x0, y, z)) for y, z in profile]
+    b = [bm.verts.new((x1, y, z)) for y, z in profile]
+    n = len(profile)
+    for i in range(n):
+        bm.faces.new((a[i], a[(i + 1) % n], b[(i + 1) % n], b[i]))
+    bm.faces.new(a)
+    bm.faces.new(list(reversed(b)))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return new_obj(name, bm, [m])
+
+
 def bar(name, p0, p1, w, h, m) -> bpy.types.Object:
     p0, p1 = Vector(p0), Vector(p1)
     d = p1 - p0
@@ -216,6 +254,7 @@ def text(s, size, m, depth=0.003) -> bpy.types.Object:
     if _font[0]:
         cu.font = _font[0]
     cu.size = size
+    cu.resolution_u = 3                 # small lettering: few segments per curve
     cu.extrude = depth / 2
     tmp = bpy.data.objects.new("txt", cu)
     bpy.context.scene.collection.objects.link(tmp)
@@ -253,12 +292,16 @@ def on_face(o, side: str, a: float, z: float, off: float = 0.004, end: float = 0
 
 # ---------------------------------------------------------------- shapes
 
-def outline(y0, y1, r0, r1, inset=0.0, splits=(), n=6, hw=HW) -> list:
-    """Counter-clockwise (from above) rounded rectangle, front = y0, with extra points on the sides at `splits`.
+def outline(y0, y1, r0, r1, inset=0.0, splits=(), n=6, hw=HW, fsplits=(), lean=0.0) -> list:
+    """Counter-clockwise (from above) rounded rectangle, front = y0, with extra points on the sides at `splits` and on
+    the front at `fsplits` (x, scaled with the front's flat part), the front set back by `lean`.
     Returns [(Vector2, tag)], tag of the segment starting there: front, fcorner, side, rcorner, rear."""
     splits = [s for s in splits if y0 + r0 < s < y1 - r1]          # the same points at every inset (lofts)
-    hw, y0, y1 = hw - inset, y0 + inset, y1 - inset
+    flat = hw - r0
+    fsplits = [x for x in fsplits if -flat < x < flat]
+    hw, y0, y1 = hw - inset, y0 + inset + lean, y1 - inset
     r0, r1 = max(r0 - inset, 0.01), max(r1 - inset, 0.01)
+    k = (hw - r0) / flat
     pts = []
 
     def arc(cx, cy, r, a0, tag):
@@ -268,6 +311,8 @@ def outline(y0, y1, r0, r1, inset=0.0, splits=(), n=6, hw=HW) -> list:
 
     arc(-hw + r0, y0 + r0, r0, 180, "fcorner")
     pts.append((Vector((-hw + r0, y0)), "front"))
+    for x in sorted(fsplits):
+        pts.append((Vector((x * k, y0)), "front"))
     arc(hw - r0, y0 + r0, r0, 270, "fcorner")
     pts.append((Vector((hw, y0 + r0)), "side"))
     for y in sorted(splits):
@@ -281,14 +326,23 @@ def outline(y0, y1, r0, r1, inset=0.0, splits=(), n=6, hw=HW) -> list:
     return pts
 
 
+def front_lean(z: float) -> float:
+    """How far the cab front is set back at height z: the headstock under the white band, the leaning windscreen."""
+    if z < BAND_BOT - 0.01:
+        return RECESS
+    if z <= FW_BOT:
+        return 0.0
+    return LEAN * min(1.0, (z - FW_BOT) / (Z_EAVE - FW_BOT))
+
+
 def loft(name, rows, ring, face_mat, mats, top, bottom) -> bpy.types.Object:
-    """Closed solid through outlines ring(inset) at heights rows = [(z, inset)]; face_mat(zc, tag, centre) names the
+    """Closed solid through outlines ring(inset, z) at heights rows = [(z, inset)]; face_mat(zc, tag, centre) names the
     material of each side face."""
     bm = bmesh.new()
     rings = []
     tags = None
     for z, inset in rows:
-        pts = ring(inset)
+        pts = ring(inset, z)
         tags = [t for _, t in pts]
         rings.append([bm.verts.new((p.x, p.y, z)) for p, _ in pts])
     n = len(rings[0])
@@ -340,8 +394,11 @@ class Car:
             s |= {self.y0 + 0.5, self.cab_door - 0.4}
         return sorted(s)
 
-    def ring(self, inset=0.0):
-        return outline(self.y0, self.y1, R_NOSE if self.cab else R_END, R_END, inset, self.splits())
+    def ring(self, inset=0.0, z=0.0):
+        if not self.cab:
+            return outline(self.y0, self.y1, R_END, R_END, inset, self.splits())
+        return outline(self.y0, self.y1, R_NOSE, R_END, inset, self.splits(), fsplits=[x for w in WIN_X for x in w],
+                       lean=front_lean(z))
 
     def collide(self, lo, hi, door=None):
         lo, hi = Vector(lo), Vector(hi)
@@ -363,11 +420,13 @@ class Car:
 
         def face_mat(zc, tag, c):
             if self.cab and tag in ("front", "fcorner"):
-                if zc < FLOOR + 0.25:
-                    return "paint_dark"
-                if FLOOR + 1.05 < zc < Z_WTOP + 0.15:
+                if zc < BAND_BOT:
+                    return "paint_dark"         # the headstock
+                if zc < MASK_BOT or zc > MASK_TOP or tag == "fcorner":
+                    return "paint_white"        # the surround
+                if FW_BOT < zc < FW_TOP and any(a < c.x < b for a, b in WIN_X):
                     return "windscreen"
-                return "paint_dark" if zc < Z_EAVE else "paint_grey"
+                return "paint_dark"             # the mask
             if zc > Z_EAVE:
                 return "paint_grey"
             if tag == "side":
@@ -384,10 +443,12 @@ class Car:
                 return "paint_dark"         # the window band
             return "paint_white"
 
-        rows = [(Z_SKIRT, 0.03), (Z_SKIRT + 0.04, 0.0), (Z_SKIRT + 0.22, 0.0), (FLOOR + 0.25, 0.0), (FLOOR + 1.05, 0.0),
-                (Z_SILL - 0.08, 0.0), (Z_SILL, 0.0), (Z_WTOP, 0.0), (Z_WTOP + 0.08, 0.0), (Z_WTOP + 0.15, 0.0),
-                (DOOR_TOP + 0.02, 0.0), (Z_EAVE, 0.0), (Z_EAVE + 0.2, 0.06), (Z_ROOF - 0.12, 0.28), (Z_ROOF, 0.55)]
-        rows.sort()                         # the windscreen's bottom is inside the window band
+        rows = [(Z_SKIRT, 0.03), (Z_SKIRT + 0.04, 0.0), (Z_SKIRT + 0.22, 0.0), (Z_SILL - 0.08, 0.0), (Z_SILL, 0.0),
+                (Z_WTOP, 0.0), (Z_WTOP + 0.08, 0.0), (DOOR_TOP + 0.02, 0.0), (Z_EAVE, 0.0), (Z_EAVE + 0.2, 0.06),
+                (Z_ROOF - 0.12, 0.28), (Z_ROOF, 0.55)]
+        if self.cab:                        # the front's bands
+            rows += [(BAND_BOT - 0.02, 0.0), (BAND_BOT, 0.0), (MASK_BOT, 0.0), (FW_BOT, 0.0), (FW_TOP, 0.0), (MASK_TOP, 0.0)]
+        rows.sort()
         mats = ["paint_white", "paint_dark", "paint_grey", "stripe_magenta", "stripe_teal", "glass", "windscreen"]
         shell = loft(self.kind + "_body", rows, self.ring, face_mat, mats, top="paint_grey", bottom="paint_dark")
         # door openings in both sides, the gangway openings in the ends (not the cab's)
@@ -434,40 +495,70 @@ class Car:
             t = text(number, 0.09, "paint_dark")
             t.location = (-text_width(t) / 2, 0.0, 0.0)
             parts.append(on_face(t, side, (self.y1 - 1.2) * sx if side == "left" else -(self.y1 - 1.2) * sx, Z_SKIRT + 0.35))
+            if self.cab:                    # the large number behind the cab front (photos)
+                t = text(number[2:], 0.17, "paint_dark")
+                t.location = (-text_width(t) / 2, 0.0, 0.0)
+                parts.append(on_face(t, side, self.y0 + 0.62, MASK_BOT + 0.04))
         if self.cab:
             parts += self.front()
         return named(parts, self.kind + "_body")
 
     def front(self) -> list:
-        """The cab front: anthracite mask with the windscreen (in the shell), destination display, lamps, badges,
-        the buffer beam with its yellow pads and the coupler."""
+        """The cab front, besides the shell's surround, mask and windscreen: the trim under the windscreen, the lamp
+        housings (chrome rings, dark lenses: the lit lamps are objects of their own), the badges (Île-de-France
+        Mobilités, RATP, SNCF), the wiper, the headstock with its anti-climbers and the automatic coupler."""
         y0 = self.y0
-        parts = []
-        parts.append(box("beam", (0, y0 - 0.05, FLOOR - 0.05), (2 * HW - 0.2, 0.12, 0.45), "paint_dark"))
+        flat = HW - R_NOSE
+        parts = [box("sill_trim", (0, y0 - 0.004, FW_BOT - 0.03), (2 * flat, 0.012, 0.025), "steel")]
         for sx in (-1, 1):
-            parts.append(box("pad", (sx * 0.95, y0 - 0.13, FLOOR - 0.05), (0.42, 0.06, 0.26), "buffer"))
-        parts.append(box("coupler_head", (0, y0 - 0.25, 0.92), (0.32, 0.3, 0.26), "steel"))
-        parts.append(box("frame", (0, y0 + 0.002, FLOOR + 0.62), (2 * HW - 0.35, 0.02, 0.04), "paint_white"))
-        # the badges between the lamps: RATP (teal disc) and SNCF (red plate)
-        parts.append(cylinder("ratp", (-0.18, y0 - 0.008, FLOOR + 0.42), (0, 1, 0), 0.08, 0.01, "logo_teal", 20))
-        parts.append(box("sncf", (0.18, y0 - 0.008, FLOOR + 0.42), (0.22, 0.01, 0.1), "logo_red"))
-        num = text("8265", 0.08, "logo_white")
-        num.location = (-text_width(num) / 2, 0.0, 0.0)
-        parts.append(on_face(num, "front", 1.05, FLOOR + 0.62, 0.012, y0))
-        # wiper
-        parts.append(bar("wiper", (0.75, y0 - 0.012, FLOOR + 1.12), (0.25, y0 - 0.012, FLOOR + 1.62), 0.025, 0.02, "frame_dark"))
+            for x, r in ((0.92, 0.10), (0.52, 0.075)):
+                parts.append(cylinder("lamp_ring", (sx * x, y0 - 0.008, LAMP_Z), (0, 1, 0), r + 0.03, 0.016, "chrome", 24))
+                parts.append(cylinder("lamp_lens", (sx * x, y0 - 0.018, LAMP_Z), (0, 1, 0), r, 0.008, "lens_off", 24))
+        # badges: Île-de-France Mobilités over the RATP disc and the SNCF plate
+        idf = text("îledeFrance", 0.07, "logo_white")
+        w = text_width(idf)
+        idf.location = (-w / 2 - 0.05, 0.0, 0.0)
+        parts.append(on_face(idf, "front", 0.0, LAMP_Z + 0.17, 0.01, y0))
+        parts.append(box("idfm_square", (w / 2 + 0.01, y0 - 0.01, LAMP_Z + 0.19), (0.08, 0.01, 0.08), "logo_blue"))
+        mob = text("mobilités", 0.04, "logo_white")
+        mob.location = (w / 2 - 0.05 - text_width(mob), 0.0, 0.0)
+        parts.append(on_face(mob, "front", 0.0, LAMP_Z + 0.12, 0.01, y0))
+        parts.append(cylinder("ratp_ring", (-0.15, y0 - 0.008, LAMP_Z - 0.06), (0, 1, 0), 0.085, 0.01, "logo_white", 24))
+        parts.append(cylinder("ratp", (-0.15, y0 - 0.014, LAMP_Z - 0.06), (0, 1, 0), 0.068, 0.01, "logo_teal", 24))
+        ratp = text("RATP", 0.04, "logo_white")
+        ratp.location = (-text_width(ratp) / 2, 0.0, 0.0)
+        parts.append(on_face(ratp, "front", -0.15, LAMP_Z + 0.05, 0.01, y0))
+        parts.append(box("sncf", (0.16, y0 - 0.008, LAMP_Z - 0.06), (0.26, 0.012, 0.13), "logo_red"))
+        sncf = text("SNCF", 0.075, "logo_white")
+        sncf.location = (-text_width(sncf) / 2, 0.0, 0.0)
+        parts.append(on_face(sncf, "front", 0.16, LAMP_Z - 0.09, 0.016, y0))
+        # the wiper on the driver's pane, parked
+        z0, z1 = FW_BOT + 0.05, FW_BOT + 0.70
+        parts.append(bar("wiper", (0.82, y0 + front_lean(z0) - 0.02, z0), (0.42, y0 + front_lean(z1) - 0.02, z1), 0.025, 0.02, "frame_dark"))
+        # the headstock under the white band, the anti-climbers, the coupler with its hoses (they stay within the
+        # 0.20 m to the coupling plane: two units' cabs meet nose to nose)
+        yb = y0 + RECESS
+        parts.append(box("headstock", (0, yb + 0.15, Z_SKIRT - 0.12), (2 * HW - 0.5, 0.3, 0.24), "paint_dark"))
+        for sx in (-1, 1):
+            parts.append(rbox("anticlimber", (sx * 0.92, (yb + y0 - 0.17) / 2, BAND_BOT - 0.26), (0.62, yb - y0 + 0.17, 0.40), 0.07, "anticlimber"))
+        parts.append(box("coupler_shaft", (0, y0 + 0.15, 0.86), (0.16, 0.5, 0.14), "steel"))
+        parts.append(box("coupler_head", (0, y0 - 0.12, 0.86), (0.34, 0.16, 0.30), "steel"))
+        parts.append(box("coupler_face", (0, y0 - 0.195, 0.86), (0.26, 0.01, 0.22), "frame_dark"))
+        for sx in (-1, 1):
+            parts.append(bar("hose", (sx * 0.12, y0 - 0.1, 0.74), (sx * 0.15, y0 + 0.1, 0.52), 0.045, 0.045, "rubber"))
         return parts
 
     def lamps(self) -> list:
-        """Head lamps (white, outer pair) and tail lamps (red, inner pair) at the cab front, objects of their own."""
+        """Head lamps (white, outer pair) and tail lamps (red, inner pair) in the mask, objects of their own (in front
+        of the housings' dark lenses)."""
         y0 = self.y0
-        head = [cylinder("head", (sx * 0.80, y0 - 0.012, FLOOR + 0.42), (0, 1, 0), 0.085, 0.02, "headlight", 20) for sx in (-1, 1)]
-        tail = [cylinder("tail", (sx * 0.55, y0 - 0.012, FLOOR + 0.42), (0, 1, 0), 0.06, 0.02, "taillight", 20) for sx in (-1, 1)]
+        head = [cylinder("head", (sx * 0.92, y0 - 0.026, LAMP_Z), (0, 1, 0), 0.10, 0.012, "headlight", 24) for sx in (-1, 1)]
+        tail = [cylinder("tail", (sx * 0.52, y0 - 0.026, LAMP_Z), (0, 1, 0), 0.075, 0.012, "taillight", 24) for sx in (-1, 1)]
         return [named(head, self.kind + "_head_lamps"), named(tail, self.kind + "_tail_lamps")]
 
     def display(self) -> bpy.types.Object:
         """The destination display behind the top of the windscreen (train.gd letters it)."""
-        o = box("display", (0.2, self.y0 + 0.06, Z_WTOP - 0.05), (1.5, 0.02, 0.2), "display")
+        o = box("display", (0.0, self.y0 + LEAN + 0.05, FW_TOP - 0.12), (1.6, 0.02, 0.2), "display")
         o.name = o.data.name = self.kind + "_display"
         return o
 
@@ -501,7 +592,8 @@ class Car:
         for a, b in self.door_spans():
             for sx in (-1, 1):
                 parts.append(box("nosing", (sx * (IN_HW - 0.05), (a + b) / 2, FLOOR + 0.002), (0.10, b - a, 0.006), "floor_edge"))
-        parts.append(box("ceiling", (0, 0, CEIL + 0.01), (2 * IN_HW, y1 - y0 - 0.1, 0.02), "ceiling"))
+        yc0 = y0 + 0.05 + (front_lean(CEIL) if self.cab else 0.0)       # behind the cab's leaning front
+        parts.append(box("ceiling", (0, (yc0 + y1 - 0.05) / 2, CEIL + 0.01), (2 * IN_HW, y1 - 0.05 - yc0, 0.02), "ceiling"))
         for sx in (-1, 1):
             parts.append(box("light", (sx * 0.55, (cab_end + y1) / 2, CEIL - 0.008), (0.14, y1 - cab_end - 0.6, 0.016), "lamp_white"))
         # wall panels between the doors (below the windows: the shell's glass is above)
@@ -600,15 +692,31 @@ class Car:
         return parts
 
     def bogie(self, name, y) -> bpy.types.Object:
-        """A bogie, origin on its pivot at the rail level: frame, four wheels, axle boxes, the traction motors' cases."""
-        parts = [box("frame", (0, 0, WHEEL_R + 0.1), (2.2, WHEELBASE + 0.9, 0.3), "bogie")]
-        for ay in (-WHEELBASE / 2, WHEELBASE / 2):
-            for sx in (-1, 1):
-                parts.append(cylinder("wheel", (sx * 0.72, ay, WHEEL_R), (1, 0, 0), WHEEL_R, 0.13, "wheel", 20))
-                parts.append(box("axlebox", (sx * 0.95, ay, WHEEL_R), (0.22, 0.3, 0.28), "bogie"))
-            parts.append(cylinder("motor", (0, ay * 0.55, WHEEL_R), (1, 0, 0), 0.28, 1.1, "bogie", 12))
+        """A bogie, origin on its pivot at the rail level: the side frames outside the wheels (raised over the axle
+        boxes, dropped at the bolster), the bolster, four wheels on their axles (on the rail heads, 0.75 m out), the
+        axle boxes and their springs, the air springs under the body, the traction motors and brake blocks."""
+        parts = []
+        hb, L = WHEELBASE / 2, WHEELBASE / 2 + 0.45
+        ends = [[(-L, 0.62), (-hb + 0.35, 0.62), (-hb + 0.45, 0.86), (-L, 0.86)],
+                [(-hb + 0.35, 0.62), (-0.45, 0.44), (-0.45, 0.74), (-hb + 0.45, 0.86)]]
+        quads = ends + [[(-0.45, 0.44), (0.45, 0.44), (0.45, 0.74), (-0.45, 0.74)]] + [[(-yy, z) for yy, z in reversed(q)] for q in ends]
         for sx in (-1, 1):
-            parts.append(cylinder("spring", (sx * 1.0, 0, WHEEL_R + 0.38), (0, 0, 1), 0.16, 0.3, "rubber", 12))
+            for q in quads:
+                parts.append(prism("side_frame", q, sx * 0.93, sx * 1.07, "bogie"))
+        parts.append(box("bolster", (0, 0, 0.62), (1.86, 0.55, 0.24), "bogie"))
+        for sx in (-1, 1):
+            parts.append(cylinder("air_spring", (sx * 1.0, 0, 0.85), (0, 0, 1), 0.19, 0.22, "rubber", 16))
+        for ay in (-hb, hb):
+            parts.append(cylinder("axle", (0, ay, WHEEL_R), (1, 0, 0), 0.08, 1.9, "steel", 10))
+            parts.append(cylinder("motor", (0, ay * 0.45, WHEEL_R + 0.02), (1, 0, 0), 0.24, 1.0, "bogie", 14))
+            for sx in (-1, 1):
+                parts.append(cylinder("wheel", (sx * 0.76, ay, WHEEL_R), (1, 0, 0), WHEEL_R, 0.13, "wheel", 24))
+                parts.append(cylinder("flange", (sx * 0.682, ay, WHEEL_R), (1, 0, 0), WHEEL_R + 0.03, 0.026, "wheel", 24))
+                parts.append(box("axlebox", (sx * 1.0, ay, WHEEL_R), (0.2, 0.32, 0.26), "bogie"))
+                for dy in (-0.25, 0.25):
+                    parts.append(cylinder("spring", (sx * 1.0, ay + dy, 0.50), (0, 0, 1), 0.07, 0.26, "steel", 10))
+                inward = -1 if ay > 0 else 1
+                parts.append(box("brake", (sx * 0.76, ay + inward * (WHEEL_R + 0.06), WHEEL_R + 0.05), (0.14, 0.1, 0.32), "frame_dark"))
         o = named(parts, name)
         o.location = (0, y, 0)
         return o
@@ -630,7 +738,11 @@ class Car:
         """A light shell for the distance: the livery's bands, windscreen, the doors as dark panels."""
         def face_mat(zc, tag, c):
             if self.cab and tag in ("front", "fcorner"):
-                return "windscreen" if FLOOR + 1.05 < zc < Z_WTOP + 0.15 else "paint_dark"
+                if zc < BAND_BOT:
+                    return "paint_dark"
+                if zc < MASK_BOT or zc > MASK_TOP or tag == "fcorner":
+                    return "paint_white"
+                return "windscreen" if FW_BOT < zc < FW_TOP else "paint_dark"
             if zc > Z_EAVE:
                 return "paint_grey"
             if zc < Z_SKIRT + 0.22 or Z_SILL - 0.08 < zc < Z_WTOP + 0.08:
@@ -638,12 +750,17 @@ class Car:
             return "paint_white"
         rows = [(Z_SKIRT, 0.0), (Z_SKIRT + 0.22, 0.0), (Z_SILL - 0.08, 0.0), (Z_WTOP + 0.08, 0.0), (Z_EAVE, 0.0),
                 (Z_ROOF, 0.4)]
+        if self.cab:
+            rows = sorted(rows + [(BAND_BOT - 0.02, 0.0), (BAND_BOT, 0.0), (MASK_BOT, 0.0), (FW_BOT, 0.0), (FW_TOP, 0.0),
+                                  (MASK_TOP, 0.0)])
         mats = ["paint_white", "paint_dark", "paint_grey", "windscreen"]
-        o = loft(self.kind + "_far", rows, lambda i: outline(self.y0, self.y1, R_NOSE if self.cab else R_END, R_END, i, n=2),
+        o = loft(self.kind + "_far", rows, lambda i, z: outline(self.y0, self.y1, R_NOSE if self.cab else R_END, R_END, i, n=2,
+                                                                lean=front_lean(z) if self.cab else 0.0),
                  face_mat, mats, top="paint_grey", bottom="paint_dark")
         parts = [o]
-        for y in (-BOGIE_Y, BOGIE_Y):
-            parts.append(box("bogie", (0, y, WHEEL_R), (2.0, WHEELBASE + 0.9, 2 * WHEEL_R), "bogie"))
+        for y in (-BOGIE_Y, BOGIE_Y):         # the wheels and side frames, daylight between
+            for sx in (-1, 1):
+                parts.append(box("bogie", (sx * 0.87, y, 0.48), (0.4, WHEELBASE + 0.9, 0.86), "bogie"))
         for d in self.doors:
             for sx in (-1, 1):
                 parts.append(box("door", (sx * (HW + 0.005), d, (FLOOR + DOOR_TOP) / 2), (0.01, DOOR_W, DOOR_TOP - FLOOR), "paint_dark"))
@@ -680,8 +797,8 @@ class Car:
         }
         if self.cab:
             out["cab"] = {"seat": gd((0.65, self.y0 + 1.45, FLOOR + 0.55)), "eye": gd((0.65, self.y0 + 1.40, FLOOR + 1.70)),
-                          "display": gd((0.2, self.y0 + 0.04, Z_WTOP - 0.05)),
-                          "head": [gd((sx * 0.80, self.y0 - 0.03, FLOOR + 0.42)) for sx in (-1, 1)]}
+                          "display": gd((0.0, self.y0 + LEAN + 0.04, FW_TOP - 0.12)),
+                          "head": [gd((sx * 0.92, self.y0 - 0.03, LAMP_Z)) for sx in (-1, 1)]}
         return out
 
 
@@ -713,7 +830,8 @@ def preview(prefix: str) -> None:
     cam = bpy.data.objects.new("cam", cam_data)
     scene.collection.objects.link(cam)
     scene.camera = cam
-    for suffix, pos, look in (("front", (9.0, -26.0, 3.0), (0, -12.0, 2.2)), ("side", (22.0, 2.0, 3.5), (0, 0, 2.2)),
+    for suffix, pos, look in (("front", (9.0, -26.0, 3.0), (0, -12.0, 2.2)), ("nose", (2.2, -19.0, 2.0), (0, -12.8, 1.9)),
+                              ("bogie", (4.0, -6.0, 0.9), (0, -BOGIE_Y, 0.55)), ("side", (22.0, 2.0, 3.5), (0, 0, 2.2)),
                               ("interior", (0.0, 9.0, FLOOR + 1.65), (0.0, -6.0, FLOOR + 1.0))):
         cam.location = pos
         cam.rotation_euler = (Vector(look) - Vector(pos)).to_track_quat("-Z", "Y").to_euler()
