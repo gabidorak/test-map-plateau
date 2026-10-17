@@ -30,7 +30,9 @@ extends VehicleBody3D
 ## rear section's frame is the car's shifted by rear_offset. The
 ## bellows mesh is rebuilt from the layout's profile whenever the joint bends, and boxes along it keep the player
 ## walking through it inside (over the turntable floor disc); each section carries the player standing in it
-## (carrier_at). Move the vehicle with place(), which puts the rear section straight behind.
+## (carrier_at). Move the vehicle with place(), which puts the rear section straight behind. A cab file can have a
+## "trailer" and "hitch" too (the truck's semi-trailer, at the fifth wheel): not walkable, no bellows, and towed (_towed:
+## its wheels only roll and brake; the truck's own driven wheels push in reverse too).
 ## LAN games (scripts/net.gd): a vehicle another peer simulates is `remote`, its bodies frozen kinematic and posed from
 ## that peer's states (apply_net_state); the wheels still turn and steer, and lamps, doors, horn and sound follow the
 ## states.
@@ -56,11 +58,13 @@ const KENNEY_WHEELS := ["wheel-front-left", "wheel-front-right", "wheel-back-lef
 ## Per model: file in assets/cars, scale, body mesh node, wheel nodes (front left, front right, back
 ## left, back right), credit, mass (kg; engine, brakes and suspension scale with it), power (engine
 ## factor), max_speed (m/s), max_steer (rad at walking pace), steer_fade_speed (m/s, the lock is halved there),
-## layout (json next to the model), sound (vehicle_audio kind), traction_from (index of the first driven wheel; all drive by default), trailer_mass (kg,
+## grip (the tyres' wheel_friction_slip), engine_at (where a damaged engine smokes: share of the length from the front,
+## 0.22 by default; a mid-engined car's is behind the seats), layout (json next to the model), sound (vehicle_audio kind), traction_from (index of the first driven wheel; all drive by default), trailer_mass (kg,
 ## rear section of an articulated vehicle), label (name in the vehicle menu, see display_name), plane (built and flown
 ## by scripts/plane.gd, which extends this script, instead), guns (a plane's machine guns), turret (a two-seat plane's
 ## belly turret, worked from the passenger seat), cab (a car with a fitted-out cabin and real materials, built by
-## blender/vehicles/build_car.py or converted from a ready-made model by import_car.py: json next to the model with
+## blender/vehicles/build_car.py or converted from a ready-made model by import_car.py, or import_textured.py when it
+## comes with its own textures: json next to the model with
 ## its wheels, lamps and cab, see _cab_layout), fittings (the fire truck's lamps and water cannon, json next to the
 ## model: scripts/fire_truck.gd, which extends this script, drives it), police
 ## (a police car with a light bar and a siren, the "beacons" of its cab file: scripts/police_car.gd, which extends this
@@ -97,6 +101,26 @@ const SPECS := {
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
 			"mass": 1470.0, "power": 0.85, "max_speed": 37.5, "cab": "renault_zoe.json", "sound": "electric",
 			"credit": "Renault Zoe (2013), a ready-made model converted by blender/vehicles/import_car.py"},
+	"audi-r8": {"label": "Audi R8", "file": "audi_r8.glb", "scale": 1.0,
+			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
+			"mass": 1600.0, "power": 1.3, "max_speed": 70.0, "steer_fade_speed": 10.0, "grip": 1.8,
+			"cab": "audi_r8.json", "sound": "v10", "engine_at": 0.7,
+			"credit": "Audi R8 V10 (2016), a ready-made model converted by blender/vehicles/import_car.py"},
+	"mercedes-1928": {"label": "Mercedes 1928", "file": "mercedes_1928/mercedes_1928.gltf", "scale": 1.0,
+			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
+			"mass": 1600.0, "power": 0.5, "max_speed": 27.8, "max_steer": 0.6, "grip": 1.25,
+			"cab": "mercedes_1928/mercedes_1928.json", "sound": "vintage",
+			"credit": "1928 Mercedes tourer, a ready-made textured model converted by blender/vehicles/import_textured.py"},
+	"bmw-m4": {"label": "BMW M4", "file": "bmw_m4.glb", "scale": 1.0,
+			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
+			"mass": 1570.0, "power": 1.25, "max_speed": 69.0, "steer_fade_speed": 10.0, "grip": 1.7,
+			"cab": "bmw_m4.json", "sound": "straight6",
+			"credit": "BMW M4 coupé (2015), a ready-made model converted by blender/vehicles/import_car.py"},
+	"audi-rs6": {"label": "Audi RS6 Avant", "file": "audi_rs6.glb", "scale": 1.0,
+			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
+			"mass": 2075.0, "power": 1.28, "max_speed": 69.4, "steer_fade_speed": 10.0, "grip": 1.7,
+			"cab": "audi_rs6.json", "sound": "v8",
+			"credit": "Audi RS6 Avant \"Starwars Hycade\" (2016), a ready-made model converted by blender/vehicles/import_car.py"},
 	"sedan": {}, "taxi": {}, "suv": {"label": "SUV"}, "police": {}, "hatchback-sports": {"label": "Sports hatchback"},
 	"van": {}, "sedan-sports": {"label": "Sports sedan"}, "suv-luxury": {"label": "Luxury SUV"}, "delivery": {"label": "Delivery van"},
 	"ambulance": {},
@@ -106,6 +130,18 @@ const SPECS := {
 			"mass": 16000.0, "power": 0.32, "max_speed": 28.0, "max_steer": 0.8, "steer_fade_speed": 11.0,
 			"fittings": "fire_truck.json",
 			"sound": "truck", "credit": "6x6 airport crash tender, built by blender/vehicles/build_fire_truck.py"},
+	# 4x2 tractor unit, unladen: rear-wheel drive, 750 hp, the EU limiter's 90 km/h, a truck's lock
+	"volvo-fh16": {"label": "Volvo FH16 truck", "file": "volvo_fh16.glb", "scale": 1.0,
+			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
+			"traction_from": 2, "mass": 8500.0, "power": 0.9, "max_speed": 25.0, "max_steer": 0.75,
+			"steer_fade_speed": 10.0, "cab": "volvo_fh16.json", "sound": "diesel6",
+			"credit": "Volvo FH16 750 tractor unit (Globetrotter cab), a ready-made model converted by blender/vehicles/import_truck.py"},
+	# the same with its three-axle curtain-sider semi-trailer, empty (the cab file's "trailer": towed, ~17.6 m long)
+	"volvo-fh16-trailer": {"label": "Volvo FH16 + trailer", "file": "volvo_fh16_trailer.glb", "scale": 1.0,
+			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
+			"traction_from": 2, "mass": 8500.0, "trailer_mass": 7000.0, "power": 0.75, "max_speed": 25.0,
+			"max_steer": 0.75, "steer_fade_speed": 10.0, "cab": "volvo_fh16_trailer.json", "sound": "diesel6",
+			"credit": "Volvo FH16 750 with a curtain-sider semi-trailer, a ready-made model converted by blender/vehicles/import_truck.py"},
 	"biplane": {"label": "Biplane", "plane": true, "credit": "toy biplane built by scripts/plane.gd"},
 	"biplane-armed": {"label": "Armed biplane", "plane": true, "guns": true,
 			"credit": "toy fighter biplane built by scripts/plane.gd"},
@@ -115,7 +151,7 @@ const SPECS := {
 }
 const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "taxi", "suv", "police", "hatchback-sports", "van",
 		"sedan-sports", "suv-luxury", "delivery", "ambulance", "compact-hatchback", "family-suv", "police-hatchback", "renault-zoe", "fire-truck", "biplane", "biplane-armed", "biplane-gunner",
-		"horse"]
+		"horse", "audi-r8", "mercedes-1928", "bmw-m4", "audi-rs6", "volvo-fh16", "volvo-fh16-trailer"]
 const REST_LENGTH := 0.2
 const BLINK := 0.75                         # s, indicator period
 const DOOR_TIME := 1.6                      # s to open or close
@@ -213,6 +249,9 @@ var _signal_armed := false                  # the wheel has turned the signalled
 var _lamps := {1: [], -1: []}               # indicator meshes per side
 var _brake_lamps: Array[MeshInstance3D] = []
 var _brake_mat: Material                    # on the brake lamps now
+var _reverse_lamps: Array[MeshInstance3D] = []   # a cab file's "reverse_lights", lit while backing up
+var _reversing := false
+var _net_pos := Vector3.ZERO                # LAN, remote: the last tick's position (which way it moves)
 var _lamp_mats := {}                        # "indicator"/"brake" -> [off, on]
 var _steering_wheel: Node3D
 var _steering_rest := Transform3D.IDENTITY
@@ -238,6 +277,7 @@ var _total_mass := 1200.0                   # both sections
 var _wheel_count := 4
 var _rear_model: Node3D                     # the rear section's part of the model (under the trailer)
 var _hitch := Vector3.ZERO                  # car frame
+var _towed := false                         # the rear section is a semi-trailer (from the cab file): it does not drive
 var _joint: Generic6DOFJoint3D
 var _bellows := {}                          # profile, in the car frame (layout "bellows")
 var _bellows_profiles := []                 # ridge and valley: [points, normals] (PackedVector2Array)
@@ -284,6 +324,7 @@ func setup(model: String) -> void:
 	mass = float(spec.get("mass", 1200.0))
 	max_speed = float(spec.get("max_speed", max_speed))
 	max_steer = float(spec.get("max_steer", max_steer))
+	grip = float(spec.get("grip", grip))
 	steer_fade_speed = float(spec.get("steer_fade_speed", steer_fade_speed))
 	_configure_body(self)
 	set_meta("plateau", {"type": "car", "id": "%s vehicle (%s)" % [model, spec.get("credit", "Kenney Car Kit, CC0")]})
@@ -292,6 +333,8 @@ func setup(model: String) -> void:
 		layout = JSON.parse_string(FileAccess.get_file_as_string("res://assets/cars/" + spec["layout"]))
 	if spec.has("cab"):
 		_cab_file = JSON.parse_string(FileAccess.get_file_as_string("res://assets/cars/" + spec["cab"]))
+	# an articulated vehicle's rear section and hitch: a walkable layout's, or a cab file's (a semi-trailer)
+	var art: Dictionary = layout if layout.has("trailer") else _cab_file
 
 	var m: Node3D = load("res://assets/cars/" + spec.get("file", model + ".glb")).instantiate()
 	m.scale = Vector3.ONE * float(spec.get("scale", 1.5))
@@ -299,23 +342,25 @@ func setup(model: String) -> void:
 	var body := m.find_child(spec.get("body", "body"), true, false) as MeshInstance3D
 	var wheels := _find_meshes(m, spec.get("wheels", KENNEY_WHEELS))
 	var rear_wheels: Array[MeshInstance3D] = []
-	if layout.has("trailer"):
-		rear_wheels = _find_meshes(m, layout["trailer"]["wheels"])
+	if art.has("trailer"):
+		rear_wheels = _find_meshes(m, art["trailer"]["wheels"])
 	# put the bottom of the wheels on y = 0
 	var ground := INF
 	for w in wheels + rear_wheels:
 		ground = minf(ground, (_in_car(w) * w.get_aabb()).position.y)
 	m.position.y -= ground
 	var rear_off := Vector3.ZERO
-	if layout.has("trailer"):
+	if art.has("trailer"):
 		# VehicleBody3D takes the body origin for the centre of mass in its tyre maths (contact velocity =
 		# linear_velocity + ω × (contact - origin)), so each section's origin goes on its centre of mass: else
 		# every turn makes the tyres fight a phantom sideways slip of ω × the offset. Front section: midway
 		# between its axles, so the middle axle carries its share. Rear section: a quarter of the way from its axle
 		# to the hitch, so the hitch presses on the middle axle too.
 		m.position.z -= _mean_z(wheels)
-		var hitch: Vector3 = Vector3(layout["hitch"][0], layout["hitch"][1], layout["hitch"][2]) * m.scale + m.position
+		var hitch: Vector3 = Vector3(art["hitch"][0], art["hitch"][1], art["hitch"][2]) * m.scale + m.position
 		rear_off = Vector3(0.0, 0.0, lerpf(_mean_z(rear_wheels), hitch.z, 0.25))
+		_hitch = hitch
+		_towed = not layout.has("trailer")      # a cab file's rear section: a semi-trailer, towed
 	var box: AABB = _in_car(body) * body.get_aabb()
 	var wheel_y := _add_wheels(self, wheels, 2, int(spec.get("traction_from", 0)))
 	half_extents = box.size * 0.5
@@ -324,8 +369,8 @@ func setup(model: String) -> void:
 			Vector3(box.size.x, box.end.y - wheel_y, box.size.z))
 	_total_mass = mass
 	_wheel_count = wheels.size()
-	if layout.has("trailer"):
-		var rear_box := _build_trailer(m, layout["trailer"], rear_wheels, float(spec.get("trailer_mass", mass * 0.6)), rear_off)
+	if art.has("trailer"):
+		var rear_box := _build_trailer(m, art["trailer"], rear_wheels, float(spec.get("trailer_mass", mass * 0.6)), rear_off)
 		rear_box.position += rear_off
 		# the whole vehicle, straight (spawning, getting in, chase camera)
 		var whole := box.merge(rear_box)
@@ -333,9 +378,11 @@ func setup(model: String) -> void:
 		extents_center = Vector3(whole.get_center().x, 0.0, whole.get_center().z)
 	_force_scale = _total_mass / 1200.0 * float(spec.get("power", 1.0))
 	_set_max_health()
-	# the engine: under the bonnet, at the back of a bus
+	# the engine: under the bonnet (or behind the seats: the spec's "engine_at", share of the length from the front), at
+	# the back of a bus
 	smoke_spot = Vector3(box.get_center().x, box.end.y - 0.3, box.position.z + 1.2) if spec.has("layout") \
-			else Vector3(box.get_center().x, box.position.y + box.size.y * 0.55, box.end.z - box.size.z * 0.22)
+			else Vector3(box.get_center().x, box.position.y + box.size.y * 0.55,
+				box.end.z - box.size.z * float(spec.get("engine_at", 0.22)))
 	if not layout.is_empty():
 		_build_layout(m, layout)
 	var cab := _cab_layout(layout)
@@ -699,6 +746,8 @@ func _bellows_frame(rel: Transform3D, t: float) -> Transform3D:
 
 ## Bends the bellows mesh and its walls to the current articulation (nothing to do while it holds still).
 func _update_bellows() -> void:
+	if _bellows.is_empty():
+		return                                  # a semi-trailer has none
 	var rel := global_transform.affine_inverse() * trailer.global_transform
 	# below the physics jitter (1 cm, 0.3°) or out of sight: kept as it is (each rebuild is a new GPU buffer)
 	if _bellows_rel.origin.is_finite() and (rel.origin.distance_to(_bellows_rel.origin) < 0.008 \
@@ -785,8 +834,8 @@ func _build_driver() -> void:
 			(_arms if k == 0 else _hands).append(mi)
 
 
-## Indicator and brake lamps: the model's named meshes when its layout lists them, else small boxes at the
-## corners of the body box.
+## Indicator and brake lamps: the model's named meshes when its layout lists them (and its reversing lamps, if it
+## lists any), else small boxes at the corners of the body box.
 func _build_lamps(m: Node3D, box: AABB, layout: Dictionary) -> void:
 	for k: String in ["indicator", "brake"]:
 		var off := StandardMaterial3D.new()
@@ -804,6 +853,15 @@ func _build_lamps(m: Node3D, box: AABB, layout: Dictionary) -> void:
 				_lamps[side].append(_find_node(m, n))
 		for n: String in layout["brake_lights"]:
 			_brake_lamps.append(_find_node(m, n))
+		for n: String in layout.get("reverse_lights", []):
+			_reverse_lamps.append(_find_node(m, n))
+		if not _reverse_lamps.is_empty():
+			var rev := StandardMaterial3D.new()
+			rev.albedo_color = Color(0.95, 0.95, 0.92)
+			rev.emission_enabled = true
+			rev.emission = Color(1.0, 0.97, 0.9)
+			rev.emission_energy_multiplier = 4.0
+			_lamp_mats["reverse"] = rev
 	else:
 		var y := box.position.y + box.size.y * 0.45
 		for side in [1, -1]:
@@ -968,6 +1026,15 @@ func _set_brake_lamps(braking: bool) -> void:
 	_brake_mat = mat
 	for lamp in _brake_lamps:
 		lamp.material_override = mat
+
+
+## The reversing lamps (white, the model's own material when off), on while backing up.
+func _set_reverse_lamps(on: bool) -> void:
+	if on == _reversing or _reverse_lamps.is_empty():
+		return
+	_reversing = on
+	for lamp in _reverse_lamps:
+		lamp.material_override = _lamp_mats["reverse"] if on else null
 
 
 func _lamp_box(p: Vector3, size: Vector3) -> MeshInstance3D:
@@ -1503,9 +1570,10 @@ func _physics_process(delta: float) -> void:
 	_throttle = throttle
 	if trailer:
 		# forward, the middle and the rear axle drive (the real Urbanway 18 is a pusher); in reverse only the
-		# rear one, with the force of both, which then pulls the front section. All wheels brake.
-		trailer.engine_force = engine_force * 2.0 if engine_force < 0.0 else engine_force
-		if engine_force < 0.0:
+		# rear one, with the force of both, which then pulls the front section. All wheels brake. A towed
+		# semi-trailer's wheels only roll.
+		trailer.engine_force = 0.0 if _towed else engine_force * 2.0 if engine_force < 0.0 else engine_force
+		if engine_force < 0.0 and not _towed:
 			engine_force = 0.0
 		trailer.brake = brake
 		_damp_joint()
@@ -1515,6 +1583,7 @@ func _physics_process(delta: float) -> void:
 	_update_indicator(delta)
 	_braking = (driving and throttle < 0.0) or (piloted and pedals[1] > 0.05)
 	_set_brake_lamps(_braking)
+	_set_reverse_lamps(driving and throttle < 0.0 and v <= 0.5)
 	_update_steering()
 	_update_doors(delta)
 	_update_damage(delta)
@@ -1542,6 +1611,9 @@ func _update_drift(drifting: bool, v: float, delta: float) -> void:
 func _remote_process(delta: float) -> void:
 	_update_indicator(delta)
 	_set_brake_lamps(_remote_braking)
+	var along := (global_position - _net_pos).dot(global_basis.z)     # the pedal back and not rolling forwards
+	_net_pos = global_position
+	_set_reverse_lamps(_throttle < 0.0 and along <= 0.0)
 	_update_steering()
 	_update_doors(delta)
 	audio.update(speed(), _throttle, max_speed, delta)

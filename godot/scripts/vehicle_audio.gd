@@ -35,6 +35,44 @@ const KINDS := {
 				"formants": [[110.0, 1.2, 3.0], [260.0, 2.0, 1.5], [540.0, 3.0, 0.6], [1300.0, 2.0, 0.2]],
 				"pipe": [0.0042, 0.45], "clatter_hz": 2900.0, "intake_hz": 750.0, "turbo": [0.0, 0.0],
 				"rough": 0.12, "prop": 0.0, "drive": 1.5}},
+	# supercar (the Audi R8): mid-mounted 5.2 V10, no turbo, ~960 rpm at idle to ~8,200 at the top of a gear, seven
+	# gears; even firing through a free-flowing exhaust (a deep burble at idle, a wail revved: the firing frequency
+	# climbs to ~680 Hz), the intake howling when pushed
+	"v10": {"pitch_top": 8.5, "gears": [0.12, 0.22, 0.33, 0.45, 0.6, 0.78, 1.0], "unit_size": 8.0, "idle_db": -4.0,
+			"road_db": -1.5, "road_pitch": 1.05, "horn": [415, 523], "horn_harmonics": 9,
+			"engine": {"cyl": 10, "idle_hz": 80.0, "layers": 7, "off": 0.3, "pulse": [1800.0, 800.0],
+				"burst": [0.08, 0.03], "clatter": [0.25, 0.25], "intake": [0.9, 0.08],
+				"formants": [[100.0, 0.9, 3.4], [260.0, 1.4, 2.2], [650.0, 2.0, 1.0], [1600.0, 2.0, 0.3]],
+				"pipe": [0.004, 0.5], "clatter_hz": 3000.0, "intake_hz": 900.0, "turbo": [0.0, 0.0],
+				"rough": 0.06, "prop": 0.0, "drive": 1.8}},
+	# vintage car (the 1928 Mercedes): big slow-revving straight six, ~500 rpm at idle to ~2,100 at the top of each of
+	# four long gears; uneven, soft firing through a short open exhaust (deep hollow boom, a pipe that rings), loud
+	# tappets, a carburettor's suck and a faint supercharger whine when pushed; a single buzzing electric horn
+	"vintage": {"pitch_top": 4.2, "gears": [0.22, 0.45, 0.72, 1.0], "unit_size": 8.0, "idle_db": -3.0,
+			"road_db": -2.0, "road_pitch": 0.85, "horn": [330], "horn_harmonics": 16,
+			"engine": {"cyl": 6, "idle_hz": 25.0, "layers": 5, "off": 0.4, "pulse": [1300.0, 600.0],
+				"burst": [0.2, 0.08], "clatter": [1.4, 1.5], "intake": [0.8, 0.1],
+				"formants": [[85.0, 0.9, 3.2], [210.0, 1.6, 1.6], [480.0, 2.2, 0.7], [1100.0, 2.0, 0.25]],
+				"pipe": [0.0075, 0.55], "clatter_hz": 2300.0, "intake_hz": 600.0, "turbo": [1500.0, 0.01],
+				"rough": 0.2, "prop": 0.0, "drive": 1.6}},
+	# sports coupé (the BMW M4): 3.0 twin-turbo straight six, ~800 rpm at idle to ~6,000 at the top of each of seven
+	# gears; smooth even firing (two triples), a deep sporty exhaust, a turbo whistle and intake roar when pushed
+	"straight6": {"pitch_top": 7.5, "gears": [0.12, 0.22, 0.33, 0.46, 0.6, 0.78, 1.0], "unit_size": 7.5,
+			"idle_db": -4.0, "road_db": -1.0, "road_pitch": 1.0, "horn": [415, 523], "horn_harmonics": 9,
+			"engine": {"cyl": 6, "idle_hz": 40.0, "layers": 7, "off": 0.35, "pulse": [2200.0, 900.0],
+				"burst": [0.15, 0.05], "clatter": [0.4, 0.4], "intake": [1.0, 0.1],
+				"formants": [[95.0, 1.2, 3.0], [240.0, 1.8, 1.6], [520.0, 2.6, 0.7], [1250.0, 2.0, 0.25]],
+				"pipe": [0.0038, 0.5], "clatter_hz": 3000.0, "intake_hz": 850.0, "turbo": [2000.0, 0.016],
+				"rough": 0.06, "prop": 0.0, "drive": 1.7}},
+	# fast estate (the Audi RS6): 4.0 twin-turbo V8 with a cross-plane crank, ~750 rpm at idle to ~6,000 at the top of
+	# each of eight gears; the banks fire unevenly (a deep burble at idle), a big sport exhaust, turbo whistle
+	"v8": {"pitch_top": 8.0, "gears": [0.1, 0.18, 0.27, 0.37, 0.49, 0.62, 0.8, 1.0], "unit_size": 7.5, "idle_db": -3.0,
+			"road_db": -1.0, "road_pitch": 1.0, "horn": [415, 523], "horn_harmonics": 9,
+			"engine": {"cyl": 8, "idle_hz": 50.0, "layers": 7, "off": 0.35, "pulse": [2300.0, 950.0],
+				"burst": [0.15, 0.06], "clatter": [0.4, 0.4], "intake": [1.0, 0.1],
+				"formants": [[90.0, 1.1, 3.2], [220.0, 1.7, 1.8], [480.0, 2.4, 0.8], [1150.0, 2.0, 0.3]],
+				"pipe": [0.0045, 0.5], "clatter_hz": 3000.0, "intake_hz": 800.0, "turbo": [2100.0, 0.02],
+				"rough": 0.13, "prop": 0.0, "drive": 1.8}},
 	# electric car (the Renault Zoe): single-speed, the motor's whine is held to the wheels' speed (_motor_take()), from
 	# a hum moving off to ~1.4 kHz at top speed, and a pedestrian warning hum ("avas": Hz at rest, fades out between
 	# the two speeds in km/h, _avas_loop()); silent when stopped
@@ -61,6 +99,17 @@ const KINDS := {
 				"formants": [[65.0, 1.0, 3.0], [160.0, 1.6, 1.6], [380.0, 2.5, 0.6], [850.0, 2.0, 0.25]],
 				"pipe": [0.008, 0.5], "clatter_hz": 1800.0, "intake_hz": 480.0, "turbo": [1900.0, 0.026],
 				"rough": 0.2, "prop": 0.0, "drive": 1.7}},
+	# road tractor (the Volvo FH16): 16-litre straight-six diesel, ~550 rpm at idle to ~1,900 at the top of each of
+	# twelve close gears (automated gearbox); smooth even firing, a long deep exhaust, injector clatter, a big turbo's
+	# whistle, a deep two-tone air horn
+	"diesel6": {"pitch_top": 3.4, "gears": [0.06, 0.09, 0.13, 0.18, 0.24, 0.31, 0.39, 0.48, 0.58, 0.7, 0.84, 1.0],
+			"unit_size": 12.0, "idle_db": 0.0, "road_db": -1.0, "road_pitch": 0.7, "horn": [156, 208],
+			"horn_harmonics": 16,
+			"engine": {"cyl": 6, "idle_hz": 27.5, "layers": 5, "off": 0.4, "pulse": [1400.0, 900.0],
+				"burst": [0.12, 0.1], "clatter": [2.8, 3.4], "intake": [0.7, 0.1],
+				"formants": [[58.0, 1.0, 3.2], [145.0, 1.6, 1.7], [340.0, 2.4, 0.7], [780.0, 2.0, 0.25]],
+				"pipe": [0.009, 0.5], "clatter_hz": 1900.0, "intake_hz": 420.0, "turbo": [1700.0, 0.03],
+				"rough": 0.06, "prop": 0.0, "drive": 1.6}},
 	# biplane (scripts/plane.gd): one "gear", the engine speed follows the throttle lever; 9-cylinder radial with short
 	# open stacks (popping, rough) and a two-blade propeller
 	"plane": {"pitch_top": 4.0, "gears": [1.0], "unit_size": 16.0, "idle_db": -3.0,
@@ -216,7 +265,7 @@ func update(speed: float, throttle: float, max_speed: float, delta: float) -> vo
 		else:
 			_siren.stop()
 	# buses and trucks sigh when they come to a stop
-	if kind in ["bus", "truck"]:
+	if kind in ["bus", "truck", "diesel6"]:
 		if _was_moving and v < 0.3:
 			play("air_brake")
 		_was_moving = v > 1.5 or (_was_moving and v >= 0.3)
