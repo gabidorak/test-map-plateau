@@ -77,6 +77,6 @@ Kerbs crossing the railway's ground: 12
 ## Ground mesh
 
 - chunks rebuilt: 36; cells cut again: 9586, of which cliffs: 1627 (9436 skirts)
-- raised pieces lifted with the ground: 27253 triangles (7685 in cliff cells)
+- raised pieces lifted with the ground: 27469 triangles (7685 in cliff cells)
 - collision holes: 9968 samples, covered by raised faces over 5441 cells
 
