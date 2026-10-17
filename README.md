@@ -271,6 +271,15 @@ signs over the main entrances are placed there too. `world.json` gets `buildings
 (UV, UV2 and four custom channels) and one shared material, `shaders/toy_building.gdshader` (windows with fake
 recesses, frames and sky-reflecting glass, doors, materials, roof membranes, soffits, louvres); the kit
 (`blender/building_kit/`, toy prop shader with the accent tint) is drawn with one MultiMesh per module and 96 m chunk.
+Houses (`plateau/houses.py`, rules in `buildings.toml [house]`): OSM `building=house|detached|semidetached_house|
+terrace|bungalow`, or an untyped building BD TOPO calls residential with 1-2 dwellings, small and low. The footprint
+is covered by up to 4 rectangles on the grid of its wall lines; each gets a gabled or hipped roof with a shared eave
+height and pitch, and wings reach into the main block so L and T roofs meet in valleys. Gable or hip, the ridge
+direction of square-ish blocks, the pitch and the eaves come from a fit of the LiDAR surface (over ±1 m shifts of the
+outline); a clearly flat LiDAR roof stays flat, and a house the LiDAR cannot explain (trees, built after the flight)
+gets a default roof (eaves from BD TOPO `hauteur`, which is about the gutter height). Walls stop at the eaves; the
+house style draws punched windows with shutters and one panelled front door (`tiers[].house` in world.json;
+`building_builder.gd` draws tiles, overhang soffits, fascias, gable walls and a chimney on ~60% of them).
 Review: `buildings_toy.png` (tiers, facade styles, doors, modules over the faded orthophoto),
 `buildings_closeups/<viewpoint>.png` (10 cm/px with the style of each building), `buildings_stats.md`.
 
