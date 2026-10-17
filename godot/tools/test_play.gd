@@ -13,7 +13,7 @@ extends SceneTree
 ##  7. Street furniture (M6): a ray down onto every prop and fence identifies it (or something above
 ##     it), and walking into poles, shelters and fences stops at them.
 ##  8. Toy buildings (M7): under every wall-less slab (canopies, covered passages) and through every
-##     building passage there is open space down to the ground.
+##     building passage there is open space down to the ground (a house's eaves may run under a canopy against it).
 ## godot --headless --fixed-fps 60 --path godot --script res://tools/test_play.gd
 ## (--fixed-fps makes the simulation run as fast as the machine allows.)
 
@@ -616,9 +616,26 @@ func _test_open_spaces() -> void:
 				continue
 			var hit := _ray(MeshUtils.to_godot(best.x, best.y, float(t["z0"]) - 0.1), MeshUtils.to_godot(best.x, best.y, g - 1.0))
 			var info := WorldQuery.hit_info(hit)
-			if info.get("type") == "building":
+			if info.get("type") == "building" and _under_house_eaves(String(info.get("id")), best):
+				stats["slabs beside house eaves"] = stats.get("slabs beside house eaves", 0) + 1
+			elif info.get("type") == "building":
 				_fail("%s under the %s of #%d %s at (%.1f, %.1f): hit %s" % ["no open space", t["kind"], b["num"], b["id"],
 						best.x, best.y, info.get("id")])
 			else:
 				stats["slabs open" if t["kind"] == "slab" else "passages open"] += 1
 	print("open spaces: ", stats)
+
+
+## A canopy or carport against a house: its eaves overhang the walls (plus the slack of its roof rectangles)
+## and may run under the slab, which is open otherwise.
+func _under_house_eaves(id: String, p: Vector2) -> bool:
+	for b: Dictionary in _world["buildings"]:
+		if b["id"] != id or not b.get("house", false) or not b["toy"]["tiers"][0].has("house"):
+			continue
+		var ring: Array = b["rings"][0]
+		for i in ring.size():
+			var a := Vector2(ring[i][0], ring[i][1])
+			var c := Vector2(ring[(i + 1) % ring.size()][0], ring[(i + 1) % ring.size()][1])
+			if p.distance_to(Geometry2D.get_closest_point_to_segment(p, a, c)) < 1.0:
+				return true
+	return false
