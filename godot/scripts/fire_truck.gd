@@ -38,6 +38,7 @@ var _beacons := {"left": [], "right": [], "amber": []}
 var _beacon_mats := {}                      # "blue" / "amber" -> [off, on]
 var _beacon_lights: Array[OmniLight3D] = [] # left, right
 var _flash_t := 0.0
+var _lit := [false, false, false]           # left blue, right blue, amber: as last written
 var _sight := Vector3.INF                   # where the jet as aimed lands (global), INF: nowhere in reach
 var _solved := Vector3.INF                  # target the barrel pitch was last solved for (car frame)
 var _aim_query := PhysicsRayQueryParameters3D.new()
@@ -242,13 +243,18 @@ func _update_beacons(delta: float) -> void:
 		var side := "left" if k == 0 else "right"
 		var t := phase * 2.0 - k                # 0..1 during this side's half
 		var lit := siren and t >= 0.0 and t < 1.0 and (t < 0.18 or (t > 0.3 and t < 0.48))
+		if lit == _lit[k]:
+			continue
+		_lit[k] = lit
 		for mi: MeshInstance3D in _beacons[side]:
 			mi.material_override = _beacon_mats["blue"][1 if lit else 0]
 		_beacon_lights[k].visible = lit
 		_beacon_lights[k].light_energy = 3.0 if lit else 0.0
 	var amber := siren and fmod(phase * 3.0, 1.0) < 0.35
-	for mi: MeshInstance3D in _beacons["amber"]:
-		mi.material_override = _beacon_mats["amber"][1 if amber else 0]
+	if amber != _lit[2]:
+		_lit[2] = amber
+		for mi: MeshInstance3D in _beacons["amber"]:
+			mi.material_override = _beacon_mats["amber"][1 if amber else 0]
 
 
 ## LAN games: the car's state with the spray and siren switches in the flags and the turret aim after it.

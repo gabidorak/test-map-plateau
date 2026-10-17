@@ -6,6 +6,7 @@ extends RefCounted
 
 const DEFAULT_PATH := "res://world/rail.json"
 const BUCKET := 20.0                    # m, grid of centreline points for project()
+const REACH := 3                        # buckets project() widens its search to
 const LINE_SPEED := 90.0                # km/h, OSM maxspeed of the line (rail.json tracks[].maxspeed)
 
 static var _cache := {}
@@ -20,6 +21,8 @@ var _heading := PackedFloat32Array()
 var _z := PackedFloat32Array()
 var _cant := PackedFloat32Array()       # m, signed: positive raises the north rails
 var _grid := {}                         # Vector2i -> PackedInt32Array of point indices
+var _reach := {}                        # Vector2i -> true: the buckets project() finds a centreline point from
+var _none := PackedInt32Array()
 var _pk_a := 0.0                        # PK (km) = a + b * s (rail.json pk, fitted on the OSM posts)
 var _pk_b := 0.0
 var _limits: Array = []                 # [s0, s1, km/h]: curves and speed signs
@@ -58,6 +61,10 @@ func _load(path: String) -> bool:
 		if not _grid.has(key):
 			_grid[key] = PackedInt32Array()
 		_grid[key].append(i)
+	for key: Vector2i in _grid:
+		for i in range(-REACH, REACH + 1):
+			for j in range(-REACH, REACH + 1):
+				_reach[key + Vector2i(i, j)] = true
 	_pk_a = d["pk"]["a"]
 	_pk_b = d["pk"]["b"]
 	for c: Dictionary in a["curves"]:
@@ -109,12 +116,14 @@ func rail_top(s: float, u: float, track_offset: float) -> float:
 ## (s, u) of map point p: distance along the centreline and offset to its left. s is clamped to the line.
 func project(p: Vector2) -> Vector2:
 	var key := Vector2i(floori(p.x / BUCKET), floori(p.y / BUCKET))
+	if not _reach.has(key):
+		return Vector2(NAN, NAN)        # far from the line (most vehicles): no search
 	var best := -1
 	var best_d := INF
-	for r in range(1, 4):               # widen until some centreline point is found
+	for r in range(1, REACH + 1):       # widen until some centreline point is found
 		for i in range(-r, r + 1):
 			for j in range(-r, r + 1):
-				for k: int in _grid.get(key + Vector2i(i, j), PackedInt32Array()):
+				for k: int in _grid.get(key + Vector2i(i, j), _none):
 					var d := p.distance_squared_to(_pts[k])
 					if d < best_d:
 						best_d = d

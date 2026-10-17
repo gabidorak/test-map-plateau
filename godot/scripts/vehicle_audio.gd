@@ -290,6 +290,19 @@ func _update_engine(k: Dictionary, heard: bool) -> void:
 			p.play()
 
 
+## Silences the engine, tyres, horn and hum at once (the vehicle vanished: stowed).
+func hush() -> void:
+	_gain = 0.0
+	_horn_gain = 0.0
+	_avas_gain = 0.0
+	horn = false
+	for p in _engines:
+		p.stop()
+	for p: AudioStreamPlayer3D in [_road, _horn, _avas, _siren]:
+		if p:
+			p.stop()
+
+
 func play(sound: String) -> void:
 	var p: Node = _cabin if sound in ["tick", "tock"] else _fx
 	p.stream = one_shot(sound)
