@@ -12,7 +12,8 @@ extends Node
 ## other drivers in the circle (they get an invitation: the race key joins, the invite key declines; the race starts
 ## once all have answered, after INVITE_TIME s, or when the one who invited presses the race key). A 3-2-1 countdown
 ## holds the vehicles still (car.gd `hold`), then the clock runs from the same GO on every screen (the game's shared
-## clock, net.gd clock()). The checkpoints show only to their racer (the next one bright, the one after dim, an arrow on
+## clock, net.gd clock()). A race only starts or takes a racer stopped in the circle (under START_SPEED), and a racer
+## out of it at GO (it rolled on while the others waited, or was let in fast) jumped the start: disqualified. The checkpoints show only to their racer (the next one bright, the one after dim, an arrow on
 ## the screen pointing to the next; the finish chequered). Getting out of the vehicle, or the race key twice, gives up.
 ## - The host (or the solo game, or the dedicated server) runs the races: it starts them, takes each racer's time
 ##   (timed on the racer's screen, at the tick its vehicle got into the finish circle with every checkpoint passed),
@@ -47,6 +48,7 @@ const OFF_TIME := 3.0                       # ...and further for this many secon
 const OFF_FAR := 12.0                       # m off it: out at once
 const OFF_EVERY := 0.1                      # s between road checks
 const OFF_RINGS := [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 15.0]   # m searched round a wheel
+const START_SPEED := 2.0                   # m/s: faster, a vehicle in the start circle may not start or join a race
 const GIVE_UP_TIME := 3.0                   # s to press the race key again to give up
 const MIN_TIME_SPEED := 60.0                # m/s: a time shorter than the route at this speed is refused
 const START_COLOURS := {"lap": Color(0.3, 0.9, 1.0), "bus": Color(0.4, 1.0, 0.5)}
@@ -320,11 +322,13 @@ func race_key() -> void:
 	match state:
 		IDLE:
 			var k := _circle_here()
-			if k >= 0:
+			if k >= 0 and _stopped():
 				_start(k, [])
 		INVITED:
 			if _circle_here() != race:
 				hud.flash("Drive into the start circle to join", 2.0)
+				return
+			if not _stopped():
 				return
 			state = LOBBY
 			_inviter = false
@@ -348,11 +352,19 @@ func invite_key() -> void:
 			var others := _drivers_in_circle(k)
 			if others.is_empty():
 				hud.flash("Nobody else is driving in the circle", 2.0)
-			else:
+			elif _stopped():
 				_start(k, others)
 	elif state == INVITED:
 		_to_host("_h_answer", [run, false, ""])
 		_reset()
+
+
+## True when the vehicle we drive is slow enough to start a race; else says to stop.
+func _stopped() -> bool:
+	if absf(game.driving.speed()) <= START_SPEED:
+		return true
+	hud.flash("Stop in the start circle first", 2.0)
+	return false
 
 
 func _start(k: int, invited: Array) -> void:
@@ -383,6 +395,9 @@ func _count_down() -> void:
 		hud.show_prompt("")
 		return
 	vehicle.hold = false
+	if not in_circle(vehicle, defs[race]["start"]):
+		_give_up("jumped the start", true)
+		return
 	state = RACING
 	hud.count("GO!", 1.2, Color(0.5, 1.0, 0.5))
 	_beep("go")
