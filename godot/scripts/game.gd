@@ -38,6 +38,9 @@ extends Node3D
 ## none of them. The host (or solo player) switches them off and on in the in-game menu (remembered, Settings "traffic";
 ## --no-bots on the command line), and can clear the map of every vehicle there. Instanced by the tools they stay off
 ## unless PLATEAU_BUSES=1. The traffic lights cycle on the game's shared clock (the same on every screen).
+## The RER B trains (scripts/train_traffic.gd, scripts/train.gd) run both ways through Lozère likewise (PLATEAU_TRAINS=1
+## for the tools): the player gets on at the station while the doors are open, walks through the cars of a unit and is
+## carried like in a bus; riding one off the map puts them down by the line at that end.
 ## Graphics: "low" (no SSIL/SSAO/glow, FXAA instead of MSAA) keeps 60 fps on an integrated GPU; it is
 ## the default there, "high" elsewhere. PLATEAU_QUALITY=low|high overrides, F2 switches, the settings page
 ## (scripts/settings_menu.gd, from either menu) sets it. Keys are the Settings actions (scripts/settings.gd): the
@@ -84,6 +87,7 @@ const UPDATE_WAIT := 1800.0                 # s a dedicated server waits for its
 @export var spawn_yaw_deg := 180.0
 @export var debug_cars := true              # park a few cars next to the player at start (solo and hosting)
 @export var bus_bots := true                # bot buses on their lines and bot cars (solo, hosting, dedicated server)
+@export var train_bots := true              # the RER B trains (scripts/train_traffic.gd), likewise
 ## Welcome menu flight: circles this point (pipeline x, y) at MENU_ORBIT radius and height above it.
 const MENU_ORBIT_CENTRE := Vector2(260.0, -120.0)
 const MENU_ORBIT := Vector2(330.0, 140.0)
@@ -196,6 +200,7 @@ func _ready() -> void:
 	# the tools instance the scene themselves: no menu for them, no bot buses unless asked
 	if get_tree().current_scene != self:
 		bus_bots = OS.get_environment("PLATEAU_BUSES") == "1"
+		train_bots = OS.get_environment("PLATEAU_TRAINS") == "1"
 	else:
 		bus_bots = Settings.values["traffic"] and not _args.has("no-bots")
 	var welcome := get_tree().current_scene == self and not (_args.has("solo") or _args.has("host") or _args.has("join") \
@@ -252,6 +257,8 @@ func start_solo() -> void:
 			spawn_car_near_player()
 	if bus_bots:
 		traffic.start_bots()
+	if train_bots:
+		traffic.trains.start()
 
 
 ## Starts a LAN game hosted here: the server first, so the cars parked at start get their network ids.
@@ -268,6 +275,8 @@ func start_host() -> void:
 			spawn_car_near_player()
 	if bus_bots:
 		traffic.start_bots()
+	if train_bots:
+		traffic.trains.start()
 
 
 ## A server without a player of its own (headless on a VPS): the player stays hidden at the spawn point, next to the
@@ -293,6 +302,8 @@ func start_dedicated() -> void:
 			spawn_car_near_player()
 	if bus_bots:
 		traffic.start_bots()
+	if train_bots:
+		traffic.trains.start()
 
 
 ## Dedicated server: quits when a newer build is out, once nobody plays or after UPDATE_WAIT; its container restarts it
@@ -382,6 +393,8 @@ func _physics_process(_delta: float) -> void:
 			c = car.carrier_at(p)
 			if c:
 				break
+	if c == null:
+		c = traffic.trains.carrier_at(p)    # an RER B car (scripts/train.gd)
 	player.set_carrier(c)
 
 
@@ -480,6 +493,10 @@ func net_player_state() -> Array:
 			seated.append_array((riding as Biplane).gunner_state())
 		return seated
 	var c: Node3D = player.carrier if is_instance_valid(player.carrier) else null
+	if c and not driving and c.get("train") != null:   # an RER B car (train.gd TrainCar): its train and its index
+		var tf: Transform3D = player.carrier_frame()
+		return [c.train.net_id, c.index, tf.affine_inverse() * player.global_position,
+				player.body_yaw() - tf.basis.get_euler().y, flags]
 	if c and not driving:
 		var car: Car = c as Car if c is Car else c.head as Car
 		var frame: Transform3D = player.carrier_frame()
@@ -1114,6 +1131,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if bot:
 			_show_toast("A bot drives this bus: get on at a stop, while its doors are open" if bot.has_doors \
 					else "A bot drives this car")
+		elif car == null and traffic.trains.train_near(player.global_position, ENTER_RANGE):
+			_show_toast("A bot drives this train: get on at Lozère while its doors are open")
 		if car and not riding and wants_passenger_seat(car):
 			ride_car(car)
 		elif car and net.active:

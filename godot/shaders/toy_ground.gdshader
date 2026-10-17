@@ -28,6 +28,7 @@ const int WOOD = 16;
 const int BUILDING = 17;
 const int KERB = 18;
 const int PAINT = 19;
+const int BALLAST = 20;     // the railway's trackbed (tools/rail/patch_world.py)
 
 uniform float bump_strength = 1.0;
 
@@ -154,6 +155,18 @@ vec3 tyre_tracks(vec3 c, vec2 p, float fw) {
 	return c * (1.0 - 0.2 * band * tread * here);
 }
 
+// crushed stone: angular grey pebbles of a few tones, packed, with dark gaps
+vec3 ballast(vec3 c, vec2 p, float fw, inout vec2 bump, inout float ao) {
+	vec4 d = dots(p * 22.0, 1.0);
+	float k = detail(0.06, fw);
+	float stone = 1.0 - smoothstep(0.28, 0.5, d.x);
+	vec3 col = c * (0.86 + 0.22 * d.y) * mix(1.0, 0.8 + 0.2 * stone, k);
+	col *= 0.93 + 0.12 * fbm(p * 0.7);
+	bump -= d.zw * stone * 2.5 * k;
+	ao *= mix(1.0, mix(0.7, 1.0, stone), k);
+	return col;
+}
+
 vec3 water(vec3 c, vec2 p, float fw, inout vec2 bump) {
 	vec2 flow = vec2(TIME * 0.06, TIME * 0.035);
 	float n = fbm(p * 0.5 + flow);
@@ -241,6 +254,9 @@ void fragment() {
 	} else if (mat == KERB) {
 		col = c * (1.0 + (vnoise(p * 14.0) - 0.5) * 0.1 * detail(0.07, fw));
 		rough = 0.8;
+	} else if (mat == BALLAST) {
+		col = ballast(c, p, fw, bump, ao);
+		rough = 0.95;
 	} else if (mat == PAINT) {
 		col = c * (0.93 + 0.07 * vnoise(p * 2.5));
 		rough = 0.6;

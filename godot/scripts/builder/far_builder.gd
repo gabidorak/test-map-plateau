@@ -4,7 +4,8 @@ extends RefCounted
 ## version, shown by scripts/world_streamer.gd instead of the full-detail nodes once the camera is far away.
 ## Far version of a cell: the ground on a coarse grid (same shader, one quad per FAR_STEP), its buildings
 ## merged into one simplified mesh (same material, one draw call) and its trees as low-poly crowns in one
-## MultiMesh. Far away the cost is the triangle count, not the shaders, so the far meshes are kept light.
+## MultiMesh, plus the railway's light ballast strip (Rail/Far, rail_builder.gd) in place of its track chunks.
+## Far away the cost is the triangle count, not the shaders, so the far meshes are kept light.
 ## Every detailed node belongs to the cell of its centre; the far meshes are built from exactly those nodes,
 ## so swapping a whole cell never leaves a hole or a double. Props, building kit and labels have no far
 ## version (they already fade out within ~250 m). Hedges and collision are never streamed.
@@ -32,7 +33,9 @@ func build(root: Node3D, world: Dictionary, mesh_dir: String) -> Error:
 			_add(mi, _mesh_box(mi)).buildings.append(mi.mesh)
 	for sign: Node3D in root.get_node("Buildings/Signs").get_children():
 		_add(sign, _point_box(sign.position))
-	for group in ["BuildingKit", "Props", "Vegetation/Trees"]:
+	for group in ["BuildingKit", "Props", "Vegetation/Trees", "Rail/Track"]:
+		if root.get_node_or_null(group) == null:
+			continue
 		for chunk: Node3D in root.get_node(group).get_children():
 			if chunk.name.begins_with("Chunk_"):
 				_add(chunk, _chunk_box(chunk))
@@ -66,6 +69,10 @@ func build(root: Node3D, world: Dictionary, mesh_dir: String) -> Error:
 			cell.add_child(_instance("Ground", MeshUtils.save(_far_ground(c.ground, map, ground_mat), mesh_dir + "far_ground_%s.res" % tag)))
 		if not c.buildings.is_empty():
 			cell.add_child(_instance("Buildings", MeshUtils.save(_merge(c.buildings, building_mat), mesh_dir + "far_buildings_%s.res" % tag)))
+		var rail_far := root.get_node_or_null("Rail/Far/Cell_%s" % tag)
+		if rail_far:                    # the railway's far ballast strip (rail_builder.gd), cut per cell
+			for child: Node in rail_far.get_children():
+				child.reparent(cell, false)
 		if trees.has(key):
 			var mm := MultiMesh.new()
 			mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -112,6 +119,9 @@ func _chunk_box(chunk: Node3D) -> AABB:
 	for child in chunk.get_children():
 		if child is MultiMeshInstance3D:
 			box = box.merge(chunk.transform * (child as MultiMeshInstance3D).custom_aabb)
+		elif child is MeshInstance3D and (child as MeshInstance3D).mesh:     # the railway's ballast and rails
+			var mi := child as MeshInstance3D
+			box = box.merge(chunk.transform * (mi.transform * mi.mesh.get_aabb()))
 	return box
 
 

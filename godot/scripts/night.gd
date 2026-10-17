@@ -4,12 +4,13 @@ extends Node
 ## (shaders/night_sky.gdshader: stars and the moon, where the moonlight comes from), with a dark blue ambient light and
 ## haze. About half the buildings' rooms are lit (global shader uniform `night`, shaders/toy_building.gdshader), the
 ## street lamp diffusers and ad panels glow, and each street and path lamp lights the ground under it (not while
-## knocked over, breakables.gd). Bot vehicles drive with their headlights on (car.gd `night`); game.gd switches the
+## knocked over, breakables.gd), as do the RER B platform lamps (the station's lights glow too). Bot vehicles drive with their headlights on (car.gd `night`); game.gd switches the
 ## player's on as they get in. Day puts the scene's own settings back, also when the scene goes (the environment and
 ## the prop materials are shared resources that a reloaded scene gets again). Each player's own: LAN games do not
 ## share it.
 
 const Car = preload("res://scripts/car.gd")
+const Train = preload("res://scripts/train.gd")
 const MOON := Vector3(-30.0, 35.0, 0.0)     # moonlight rotation, degrees: from 30° up in the south-east
 const MOON_COLOR := Color(0.6, 0.7, 1.0)
 const MOON_ENERGY := 0.55
@@ -23,6 +24,7 @@ const LAMP_COLOR := Color(1.0, 0.85, 0.62)
 const LAMP_FADE := 150.0                    # m from the camera beyond which the lamps' lights fade out (not their glow)
 ## lamp model -> [energy, range (m), spot angle (degrees; 0: an omni light)]
 const LAMPS := {"lamp_street": [5.0, 18.0, 70.0], "lamp_path": [1.6, 9.0, 0.0]}
+const RAIL_LAMP := [4.0, 14.0, 80.0]        # the RER B platform lamps (rail_builder.gd), as the street lamps
 const LAMP_CHECK := 0.3                     # s between looks for knocked-over lamps
 
 var on := false
@@ -81,6 +83,7 @@ func set_night(n: bool) -> void:
 		sun.light_energy = _day["sun_energy"]
 	RenderingServer.global_shader_parameter_set("night", 1.0 if n else 0.0)
 	Car.night = n
+	Train.night = n
 	if game:
 		for car: Car in game.cars:
 			if is_instance_valid(car) and car.is_bot():
@@ -98,6 +101,7 @@ func set_night(n: bool) -> void:
 ## glow material of their diffusers.
 func _build_lamps() -> void:
 	_lamps_built = true
+	_build_rail_lamps()
 	var props := world_root.get_node_or_null("Props") if world_root else null
 	if props == null:
 		return
@@ -134,6 +138,32 @@ func _build_lamps() -> void:
 			_lamps.append([light, mm, i])
 
 
+## The RER B station's platform lamps (rail_builder.gd: Rail/Station, their lights' positions in its "lamp_lights"
+## meta) light the platforms; their diffusers, the screens and the underpass and tunnel lights glow.
+func _build_rail_lamps() -> void:
+	var station := world_root.get_node_or_null("Rail/Station") if world_root else null
+	if station == null:
+		return
+	for mi: MeshInstance3D in world_root.get_node("Rail").find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh:
+			_glow_box(mi.mesh)
+	for p: Vector3 in station.get_meta("lamp_lights", PackedVector3Array()):
+		var spot := SpotLight3D.new()
+		spot.spot_range = RAIL_LAMP[1]
+		spot.spot_angle = RAIL_LAMP[2]
+		spot.spot_angle_attenuation = 0.5
+		spot.rotation = Vector3(-PI * 0.5, 0.0, 0.0)
+		spot.light_color = LAMP_COLOR
+		spot.light_energy = RAIL_LAMP[0]
+		spot.light_specular = 0.3
+		spot.distance_fade_enabled = true
+		spot.distance_fade_begin = LAMP_FADE
+		spot.distance_fade_length = 30.0
+		spot.position = p
+		station.add_child(spot)
+		_lamps.append([spot, null, 0])
+
+
 ## Box of `mesh`'s glowing surface (toy_prop.gdshader mode 2), in the mesh frame; its material goes into _glow.
 func _glow_box(mesh: Mesh) -> AABB:
 	for k in mesh.get_surface_count():
@@ -167,4 +197,5 @@ func _process(delta: float) -> void:
 		return
 	_check_t = 0.0
 	for l: Array in _lamps:
-		(l[0] as Light3D).visible = _instance(l[1], l[2]).basis.x.length_squared() > 1e-4
+		if l[1] != null:                    # the railway's lamps do not break
+			(l[0] as Light3D).visible = _instance(l[1], l[2]).basis.x.length_squared() > 1e-4

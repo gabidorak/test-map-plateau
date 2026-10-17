@@ -8,10 +8,11 @@ const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
 const SHADER := "res://shaders/toy_ground.gdshader"
-## Must match the material ids hard-coded in toy_ground.gdshader.
+## Must match the material ids hard-coded in toy_ground.gdshader. "ballast" (the railway's trackbed) is appended by
+## tools/rail/patch_world.py, after the pipeline's kerb and paint.
 const MATERIALS := ["asphalt", "concrete", "paving", "sett", "gravel", "dirt", "sand", "grass", "tall_grass",
 		"forest_floor", "construction", "water", "clay", "tartan", "artificial_turf", "court", "wood", "building",
-		"kerb", "paint"]
+		"kerb", "paint", "ballast"]
 
 
 func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String) -> Error:
