@@ -30,6 +30,19 @@
     {"name": "poincare_park", "label": "Parc Henri Poincaré by Rue du Moulin, the south edge at the foot of the Lozère hillside", "eye": [840, -1010, 1.7], "target": [900, -1060, 2]},
     {"name": "lozere_hillside", "label": "Lozère hillside from above the valley, looking up north to the plateau", "eye": [700, -1055, 60], "target": [700, -700, 40]},
     {"name": "overview_lozere", "label": "Whole map from above the south-west, with the Lozère hillside strip", "eye": [-200, -1055, 380], "target": [800, -200, 0]},
-    {"name": "overview", "label": "Whole strip from above Télécom Paris", "eye": [-120, -260, 160], "target": [700, -80, 0]}
+    {"name": "overview", "label": "Whole strip from above Télécom Paris", "eye": [-120, -260, 160], "target": [700, -80, 0]},
+    {"name": "rerb_station_forecourt", "label": "Gare de Lozère from Place de la Gare (RER B)", "eye": [868, -778, 1.7], "target": [900, -797, 3]},
+    {"name": "rerb_platform_north", "label": "Gare de Lozère, north platform (towards Massy), looking east", "eye": [845, -789.6, 1.7], "target": [997, -823.3, 1.5]},
+    {"name": "rerb_platform_south", "label": "Gare de Lozère, south platform (towards Saint-Rémy), looking west", "eye": [1032.2, -843.9, 1.7], "target": [869.4, -799.9, 1.5]},
+    {"name": "rerb_footbridge", "label": "Gare de Lozère from the footbridge, looking west", "eye": [935.6, -808, 10.0], "target": [860, -795, 2]},
+    {"name": "rerb_road_underpass_south", "label": "Covered road under the RER B, south portal (Rue Charles Péguy)", "eye": [1063, -880, 1.7], "target": [1068, -858, 1]},
+    {"name": "rerb_road_underpass_north", "label": "Covered road under the RER B, north portal (Place de la Gare)", "eye": [912, -782, 1.7], "target": [935, -795, 1]},
+    {"name": "rerb_underpass_359", "label": "Pedestrian underpass under the RER B at x 359", "eye": [345, -826, 3], "target": [359, -815, -1]},
+    {"name": "rerb_cutting", "label": "RER B in a cutting (x 200)", "eye": [190, -798, 3], "target": [260, -814, -1]},
+    {"name": "rerb_embankment", "label": "RER B on its embankment (x 1350), from the south", "eye": [1340.6, -879.6, 1.7], "target": [1362, -860, 3]},
+    {"name": "rerb_west_entry", "label": "RER B entering the map in the west (x -200)", "eye": [-170, -800, 4], "target": [-250, -813, 0]},
+    {"name": "rerb_east_entry", "label": "RER B leaving the map in the east (x 1760)", "eye": [1720, -860, 4], "target": [1810, -862, 0]},
+    {"name": "rerb_track_close", "label": "RER B track close up (x 540): ballast, sleepers, rails", "eye": [531, -819.8, 1.6], "target": [556, -814.9, -0.3]},
+    {"name": "rerb_catenary", "label": "RER B catenary portal over both tracks, from the south platform", "eye": [946.8, -816.4, 1.7], "target": [965.7, -815.6, 6.5]}
   ]
 }
