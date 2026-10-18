@@ -62,7 +62,8 @@ const KENNEY_WHEELS := ["wheel-front-left", "wheel-front-right", "wheel-back-lef
 ## 0.22 by default; a mid-engined car's is behind the seats), layout (json next to the model), sound (vehicle_audio kind), traction_from (index of the first driven wheel; all drive by default), trailer_mass (kg,
 ## rear section of an articulated vehicle), label (name in the vehicle menu, see display_name), plane (built and flown
 ## by scripts/plane.gd, which extends this script, instead), guns (a plane's machine guns), turret (a two-seat plane's
-## belly turret, worked from the passenger seat), cab (a car with a fitted-out cabin and real materials, built by
+## belly turret, worked from the passenger seat), roof_gun (an armoured car's machine gun on its roof hatch, worked from
+## the passenger seat: scripts/armored_car.gd, which extends this script, from the cab file's "turret"), cab (a car with a fitted-out cabin and real materials, built by
 ## blender/vehicles/build_car.py or converted from a ready-made model by import_car.py, or import_textured.py when it
 ## comes with its own textures: json next to the model with
 ## its wheels, lamps and cab, see _cab_layout), fittings (the fire truck's lamps and water cannon, json next to the
@@ -142,6 +143,13 @@ const SPECS := {
 			"traction_from": 2, "mass": 8500.0, "trailer_mass": 7000.0, "power": 0.75, "max_speed": 25.0,
 			"max_steer": 0.75, "steer_fade_speed": 10.0, "cab": "volvo_fh16/volvo_fh16_trailer.json", "sound": "diesel6",
 			"credit": "Volvo FH16 750 with a curtain-sider semi-trailer, a ready-made model converted by blender/vehicles/import_truck.py"},
+	# armoured 4x4 (GAZ-233115 "SPM-2", ~7.2 t, 215 hp turbo diesel, four-wheel drive), a machine gun on its roof hatch
+	# worked from the passenger seat (scripts/armored_car.gd)
+	"gaz-tiger": {"label": "GAZ Tiger (roof gun)", "file": "gaz_tiger.glb", "scale": 1.0,
+			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
+			"mass": 7200.0, "power": 0.7, "max_speed": 33.0, "max_steer": 0.65, "steer_fade_speed": 10.0,
+			"cab": "gaz_tiger.json", "sound": "diesel4", "roof_gun": true,
+			"credit": "GAZ Tiger-M armoured car with a PKM on its roof hatch, a ready-made model converted by blender/vehicles/import_car.py"},
 	"biplane": {"label": "Biplane", "plane": true, "credit": "toy biplane built by scripts/plane.gd"},
 	"biplane-armed": {"label": "Armed biplane", "plane": true, "guns": true,
 			"credit": "toy fighter biplane built by scripts/plane.gd"},
@@ -151,7 +159,7 @@ const SPECS := {
 }
 const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "taxi", "suv", "police", "hatchback-sports", "van",
 		"sedan-sports", "suv-luxury", "delivery", "ambulance", "compact-hatchback", "family-suv", "police-hatchback", "renault-zoe", "fire-truck", "biplane", "biplane-armed", "biplane-gunner",
-		"horse", "audi-r8", "mercedes-1928", "bmw-m4", "audi-rs6", "volvo-fh16", "volvo-fh16-trailer"]
+		"horse", "audi-r8", "mercedes-1928", "bmw-m4", "audi-rs6", "volvo-fh16", "volvo-fh16-trailer", "gaz-tiger"]
 const REST_LENGTH := 0.2
 const BLINK := 0.75                         # s, indicator period
 const DOOR_TIME := 1.6                      # s to open or close
