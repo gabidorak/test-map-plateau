@@ -27,7 +27,11 @@ Other cars differ by options of their CARS entry: "body" and "wheels" may list s
 names their own island rules (the BMW M4's: classify_m4; its lamps also give "reverse_lights", which car.gd lights
 while backing up), "wheel_ratio" their wheels' decimation, and their cab "seat" may be given. Loaded objects may be
 reworked before they are joined (prepare: dropped, wire meshes turned into sheets, decimated, cut apart, lined on the
-inside, a cabin fitted out with build_car.py's interior; the Audi RS6's, an OBJ without a cabin).
+inside, a cabin fitted out with build_car.py's interior; the Audi RS6's, an OBJ without a cabin; "detach": an FBX
+material's faces cut loose into pieces of their own). A car may keep some of the model's own textures where its marks
+are ("textures", see texture(): the BMW M4's roundels, tyre lettering and cabin prints), and "wheel_remat" gives its
+wheels' pieces other materials once the tyres are found (a textured tyre); printed wheels make the cab file say
+"unmirror_wheels" (scripts/car.gd).
 --preview renders the same views as build_car.py."""
 import contextlib
 import io
@@ -60,12 +64,22 @@ bc.MATERIALS.update({                                  # BMW M4
     "leather_light": ("#B3B0A9", 0.0, 0.6, 0.0),
     "headliner_dark": ("#3A3A3C", 0.0, 0.95, 0.0),
     "caliper_gold": ("#B08D3C", 0.6, 0.35, 0.0),       # carbon-ceramic brakes
+    "m_light": ("#6FBADD", 0.1, 0.2, 0.0),             # the M stripes (enamel), as the model's colours
+    "m_blue": ("#0C4994", 0.1, 0.2, 0.0),
+    "m_red": ("#B70B0B", 0.1, 0.2, 0.0),
+    # textured (CARS "textures"): the image gives the colour
+    "roundel": ("#FFFFFF", 0.2, 0.2, 0.0),             # the BMW roundels of the bonnet and boot lid
+    "roundel_cap": ("#FFFFFF", 0.5, 0.3, 0.0),         # the wheels' centre caps
+    "tyre_print": ("#FFFFFF", 0.0, 0.88, 0.0),         # the tyres, with their moulded sidewall lettering
+    "cabin_print": ("#FFFFFF", 0.0, 0.5, 0.0),         # switch and steering-wheel prints
+    "cabin_lit": ("#FFFFFF", 0.0, 0.3, 0.0),           # dials, screens, selector: backlit
 })
 bc.MATERIALS.update({                                  # Audi R8
     "paint_ara": ("#1D4F9E", 0.6, 0.26, 0.0),          # "Ara Blue Crystal", a launch colour of the 2016 R8
     "caliper_red": ("#A3161F", 0.3, 0.4, 0.0),
     "grille_mesh": ("#0B0C0D", 0.0, 0.8, 0.0),         # honeycomb, matte (decimated, it would glint)
     "lens_smoke": ("#3A1C20", 0.0, 0.04, 0.0),         # the tail lamps' dark lens
+    "badge_red": ("#D0101E", 0.0, 0.3, 0.0),           # the parallelogram of the R8 badges (enamel)
 })
 bc.ALPHA.update({"lens_smoke": 0.45})
 
@@ -106,15 +120,25 @@ CARS = {
             "MetalDark": "trim_black", "BlackPlain": "seal", "GlassTextured": "glass_side", "GlassWinds": "glass_side",
             "GlassLights": "lens", "GlassIOR": "taillight", "GlassLightsBump": "reflector", "GlassAngelEyes": "drl",
             "GlassRed": "taillight", "GlassOrange": "indicator", "LampIllum": "headlight",
-            # badges plain (no maker's marks; Logo*: the M stripes, see classify_m4), LogoDFS the plates too (blank)
-            "LogoLtBlue": "seat_accent", "LogoBlue": "seat_accent", "LogoRed": "needle", "LogoDFS": "plate",
+            # the M stripes of the badges (and the cluster's red needles, see classify_m4); LogoDFS: the roundels of
+            # the bonnet and boot lid (textured), and the number plates (blank)
+            "LogoLtBlue": "m_light", "LogoBlue": "m_blue", "LogoRed": "m_red", "LogoDFS": "roundel",
             "intPlasticDkPlain": "dash", "intPlasticDkBump": "trim", "intPlasticDkGlance": "trim_black",
             "intFabricGray": "headliner_dark", "intLeatherLt": "leather_light", "intCarpet": "carpet",
             "intCarbon": "trim_black", "intAlumuminum": "alu", "intPlasticSatelites": "grille",
-            "intButtonsDFS": "dash", "intTextureDFS": "screen",
+            "intButtonsDFS": "cabin_print", "intTextureDFS": "cabin_lit",
             "WheelTireBump": "tyre", "WheelAluminum": "rim", "WheelMetalDark": "rim_dark", "WheelBrakeDisk": "disc",
-            "WheelLogo": "hub", "WheelMetalCaliper": "caliper_gold",
+            "WheelLogo": "roundel_cap", "WheelMetalCaliper": "caliper_gold",
         },
+        "detach": ["WheelLogo"],                # the centre caps: out of the rims (decimated)
+        "wheel_remat": {"tyre": "tyre_print"},
+        # the model's own textures where its marks are: the roundels (the plates' part of that texture stays out), the
+        # tyres' sidewall lettering (grey on the rubber, as moulded), the cabin's dials, screens and switch prints
+        "textures": {"roundel": {"image": "ExteriorDFS.jpg", "size": 512},
+                     "roundel_cap": {"image": "WheelDFS.jpg", "size": 256},
+                     "tyre_print": {"image": "WheelDFS.jpg", "size": 1024, "levels": ("#141415", "#5A5A5D")},
+                     "cabin_print": {"image": "InteriorDFS.jpg", "size": 1024},
+                     "cabin_lit": {"image": "InteriorDFS.jpg", "size": 1024, "emit": 1.0}},
         "wheel_ratio": {"rim_dark": 0.25, "tyre": 1.0},
         # boxes in the car frame (the FBX's y - 0.15)
         "steering": ((0.14, -0.58, 0.60), (0.545, -0.40, 1.08)),        # rim, spokes, hub; not the stalks, paddles
@@ -126,7 +150,9 @@ CARS = {
         "cab": {"seat": (0.383, 0.0, 0.39), "eye": (0.12, 1.08), "figure": 0.66, "eye_pitch": 0.1},
     },
     # Audi R8 V10 (2016) of ref/AUDI_R8_2016 ("audi r8.zip", its OBJ: millimetres, Y up, front +Z): one object per
-    # part and a single placeholder material, so the "materials" map the objects (by_object). See classify_rules.
+    # part and a single placeholder material, so the "materials" map the objects (by_object). See classify_rules. Its
+    # marks: the four rings (front, rear, the wheels' centre caps), the R8 badges (rear, fuel flap), the V10 badges of
+    # the wings, and the tyres' sidewall lettering (the archive's Audi-R8-003.png on their UVs).
     "audi_r8": {
         "obj": "ref/AUDI_R8_2016/Audi-R8-2016-obj.obj", "scale": 0.001, "by_object": True,
         # wheels: the nuts, the discs (the callipers do not spin), the rims, the tyres
@@ -143,21 +169,35 @@ CARS = {
             (18, "grille_mesh"),                # honeycomb meshes
             (19, "lens"),                       # head and tail lamp lenses
             (20, "dash"),                       # the cabin: a tub with the seats and the steering wheel
-            (21, "chrome"),                     # the rings: dropped
+            (21, "chrome"),                     # the rings, front and rear
             (22, "mirror_glass"), (23, "plastic_black"), (24, "plate"), (25, "plastic_black"),
             (26, "plastic_black"),              # diffuser, exhausts, tail lamp surrounds
             (27, "trim_black"), (28, "trim_black"),    # tail lamp chambers and light guides
             (29, "rim_dark"), (30, "rim_dark"), (31, "rim_dark"), (32, "rim_dark"),
             (33, "plastic_black"),              # under the mirrors, with the repeater's LEDs
             (34, "tyre"), (35, "tyre"), (36, "tyre"), (37, "tyre"),
-            (38, "chrome"),                     # badges: dropped
+            (38, "chrome"),                     # badges: R8 (rear, fuel flap; their parallelograms red), V10 (wings)
             (39, "glass_side"), (40, "plastic_black"))},
         "wheel_ratio": {"tyre": 0.1, "rim_dark": 0.3, "disc": 0.15, "hub": 0.4},
-        "wheel_drop": 0.02,                     # the discs' bolts and the rings on the centre caps
+        "wheel_drop": 0.015,                    # the discs' bolts (1.2 cm; the caps' rings are 1.7)
         "wheel_min_tris": 300,                  # (the wheel nuts are decimated too)
+        # the rings on the centre caps (the rims' smallest pieces)
+        "wheel_rules": [{"src": [f"Audi_R8_{n:03d}" for n in range(29, 33)], "size": (0.0, 0.02), "remat": "chrome",
+                         "ratio": 1.0}],
+        # the tyres' sidewall lettering: the left ones are mirrored copies (it read backwards outside)
+        "uv_flip": ["Audi_R8_034", "Audi_R8_036"],
+        # the fuel flap's R8 badge is flat, the flap domed: part of it sank under the paint; 1.5 mm out (load_obj's
+        # frame, here the car's)
+        "nudge": [("Audi_R8_038", ((-0.75, 0.77, 0.93), (-0.70, 0.84, 0.975)), (-0.0012, 0.00015, 0.0009))],
+        "wheel_remat": {"tyre": "tyre_print"},
+        "textures": {"tyre_print": {"image": "Audi-R8-003.png", "size": 512, "levels": ("#141415", "#5A5A5D")}},
         # (first match wins; see classify_rules)
         "rules": [
-            {"src": ["Audi_R8_021", "Audi_R8_038"], "group": "hidden"},                  # the rings, badges
+            # the R8 badges' parallelograms (the letters, the rings and the V10 badges: chrome)
+            {"src": "Audi_R8_038", "box": ((0.30, 2.06, 0.72), (0.32, 2.10, 0.75)), "mirror": False,
+             "remat": "badge_red"},
+            {"src": "Audi_R8_038", "box": ((-0.735, 0.815, 0.94), (-0.715, 0.835, 0.965)), "mirror": False,
+             "remat": "badge_red"},
             {"src": "Audi_R8_020", "box": ((0.18, -0.62, 0.62), (0.52, -0.46, 0.96)), "mirror": False,
              "group": "steering", "remat": "leather"},
             {"src": "Audi_R8_020", "box": ((0.2, -0.2, 0.5), (0.5, 0.1, 0.8)), "remat": "seat"},
@@ -212,6 +252,8 @@ WHEEL_RATIO = {"tyre": 0.2, "rim": 0.4, "disc": 0.15, "hub": 0.4}
 bc.MATERIALS.update({                                  # Audi RS6
     "paint_glacier": ("#E2E5E8", 0.35, 0.24, 0.0),     # "Glacier White", with black accents (the Star Wars theme)
     "caliper_crimson": ("#B0141C", 0.3, 0.4, 0.0),
+    "plate_show": ("#FFFFFF", 0.0, 0.45, 0.0),         # the "Audi RS6" show plates (textured: the image's colours)
+    "tyre_michelin": ("#19191A", 0.0, 0.88, 0.0),      # the tyres, their sidewall lettering a normal map
 })
 RS6 = "Audi_RS6_Starwars_Hycade_{:03d}".format         # its OBJ's objects, by number
 # Audi RS6 Avant "Starwars Hycade" (the Hycade wide-body kit) of ref/audi_rs6 ("audi RS6.zip", its OBJ: millimetres,
@@ -219,11 +261,14 @@ RS6 = "Audi_RS6_Starwars_Hycade_{:03d}".format         # its OBJ's objects, by n
 # seats, no steering wheel. prepare() replaces the honeycomb grilles (1.45M triangles of tiny rings) by sheets, thins
 # the tyres and wheel nuts, cuts the outer tail lamp lens into its two bands, lines the single-skinned panels round
 # the cabin on the inside and fits out the cabin (build_car.py's, for the model's tub and seats); classify_rules does
-# the rest. The badges and the "Audi RS6" show plates are left out.
+# the rest. Its maker's marks: the four rings (front and back, chrome), the "Audi RS6" show plates and the tyres'
+# sidewall lettering (Michelin Pilot Sport 4, a normal map), these two with the archive's textures (its UV maps).
 CARS["audi_rs6"] = {
     "obj": "ref/audi_rs6/Audi-RS6-Starwars-Hycade-2016-obj.obj", "scale": 0.001, "by_object": True,
-    "drop": [RS6(n) for n in (53, 54, 64, 65)],         # rings badges, the tub and the seats
+    "drop": [RS6(n) for n in (64, 65)],                 # the tub and the seats
     "sheet": [RS6(66), RS6(67)],                       # the honeycomb of the grille and of the bumper intakes
+    "unmirror": {RS6(69): "x", RS6(73): "x"},          # the left tyres' sidewall lettering was mirrored
+    "fills": {RS6(53): 0.003},                         # the front rings are four discs: their faces black
     # tyres (103k triangles each), wheel nuts, the louvres behind the front wheels, exhaust tips, callipers, mirror
     # bases, rear wing
     "decimate": {**{RS6(n): 0.028 for n in (69, 73)}, **{RS6(n): 0.3 for n in (75, 77)}, RS6(80): 0.25,
@@ -231,7 +276,7 @@ CARS["audi_rs6"] = {
     "split_z": {RS6(55): (0.935, 0.15)},               # tail lamp lenses taller than 0.15 m: upper / lower band
     "lining": {**{RS6(n): "trim" for n in (3, 6, 11, 12, 13, 16, 39, 40)},
                RS6(2): "headliner", RS6(5): "headliner"},
-    "body": [RS6(n) for n in range(1, 81) if n not in (53, 54, 64, 65, 61, 74, 68, 71, 69, 73, 70, 72, 75, 77)]
+    "body": [RS6(n) for n in range(1, 81) if n not in (64, 65, 61, 74, 68, 71, 69, 73, 70, 72, 75, 77)]
             + ["fitted_cabin", "fitted_steering", "lining"],
     "wheels": [RS6(n) for n in (61, 74, 68, 71, 69, 73, 70, 72, 75, 77)],
     "classify": "classify_rules",
@@ -244,12 +289,16 @@ CARS["audi_rs6"] = {
               80), "trim_black"),                       # the kit: blades, splitter, skirts, diffuser, wing, louvres
             ((24, 38, 49, 52), "plastic_black"),        # mirror bases, wipers, scuttle
             ((23,), "mirror_glass"), ((36,), "glass_front"), ((41,), "glass_rear"), ((48, 50), "glass_side"),
-            ((30,), "chrome"), ((59, 78), "plate"), ((60,), "lens"), ((62, 76), "caliper_crimson"),
+            ((30, 53, 54), "chrome"), ((59, 78), "plate_show"), ((60,), "lens"), ((62, 76), "caliper_crimson"),
             ((63,), "underbody"), ((66, 67), "grille"), ((51, 55, 56, 57, 58), "trim_black"),     # lamps: rules
             ((61, 74, 68, 71), "rim_dark"), ((69, 73), "tyre"), ((70, 72), "disc"), ((75, 77), "chrome"))
            for n in ns},
+        RS6(53) + " fill": "trim_black",                # chrome rings on black
     },
     "wheel_ratio": {"tyre": 1.0, "rim_dark": 0.5, "disc": 1.0, "hub": 1.0},
+    "wheel_remat": {"tyre": "tyre_michelin"},
+    "textures": {"plate_show": {"image": "Audi-RS6-Starwars-Hycade-001.png", "size": 1024},     # plate, 2000 px
+                 "tyre_michelin": {"image": "Audi-RS6-Starwars-Hycade-004.png", "size": 1024, "normal": True}},
     "rules": [
         {"src": ["steering " + m for m in ("leather", "trim_black", "alu")], "group": "steering"},
         {"src": [RS6(22), RS6(23), RS6(24)], "group": "mirrors"},
@@ -285,6 +334,108 @@ CARS["audi_rs6"] = {
         "side": [RS6(n) for n in (3, 6, 8, 11, 12, 14, 48, 50, 55)], "roof": [RS6(2), RS6(5)],
     },
     "cab": {"seat": (0.40, -0.20, 0.60), "eye": (-0.16, 1.17), "figure": 0.7, "eye_pitch": 0.12},
+}
+
+bc.MATERIALS.update({                                  # GAZ Tiger
+    "army_green": ("#4E5A30", 0.0, 0.62, 0.0),         # matt protective green (no clear coat: not "paint")
+    "steel_dark": ("#232426", 0.5, 0.55, 0.0),         # bull bar, roof rails, frame: satin black steel
+    "steel_grey": ("#6B6E70", 0.4, 0.5, 0.0),
+    "olive_drab": ("#4B4B33", 0.0, 0.7, 0.0),          # ammunition box, mounts
+    "gunmetal": ("#2B2D2F", 0.7, 0.4, 0.0),
+    "gun_polymer": ("#1C1A17", 0.0, 0.6, 0.0),         # the PKM's stock, grip and handguard
+    "wood": ("#7A5230", 0.0, 0.7, 0.0),                # the axe's and the shovel's handles
+    "tiger_logo": ("#FFFFFF", 0.3, 0.4, 0.0),          # textured: the grille's tiger head
+})
+TIGER = {"Clearcoat": "army_green", "Camouflage2": "army_green", "Material #6190": "army_green",
+         "dark": "plastic_black", "dark grey2": "plastic_black", "dark_ncl1_2": "plastic_black",
+         "dark_ncl1_3": "plastic_black", "dark_ncl1_4": "plastic_black", "dark_ncl1_1": "steel_dark",
+         "black metal": "steel_dark", "black metal2 ": "steel_dark", "Material #2147462162": "steel_dark",
+         "grey": "steel_grey", "grey2_ncl1_1": "steel_grey", "dec1": "olive_drab",
+         "grey metal2 ": "gunmetal", "Steel Satin 2": "gunmetal", "old metal2 ": "gunmetal", "wood": "gun_polymer",
+         "Special Stainless Steel Satin 2": "alu", "wood_ncl1_1": "wood", "tire": "tyre", "mirror": "mirror_glass",
+         "Glass Thin Surface": "lens", "Glass Thin Surface_ncl1_1": "glass_side", "Front light": "lens",
+         "Front signal": "indicator", "turn signal": "indicator", "katafot": "reflector_red",
+         "Rear-light_1": "indicator", "Rear-light_2": "reverse", "Rear-light_3": "brake",
+         "Rear-light_3_ncl1_1": "taillight", "logo": "tiger_logo", "Material #102832": "dash",
+         "wheels/Clearcoat": "army_green", "wheels/dark_ncl1_1": "hub",
+         "lining/trim": "trim", "lining/trim_light": "trim_light"}
+# GAZ Tiger-M (GAZ-233115, the armoured "SPM-2" body) with a PKM machine gun on the roof hatch's ring mount, of
+# ref/gaz_tiger ("Gaz Tiger M 23115.rar", a zip: 3ds Max files and an FBX 6.1, which Blender cannot read; Godot's
+# reader turns it into a glb first: "fbx6", see load_glb). Metres, front -Y already; 26 objects, 623k triangles, the
+# V-Ray materials lost (all near black): every face takes a palette material from its object and FBX material
+# ("object/material", object_materials). Its armoured hull is single-skinned round the cabin (seen from inside, the
+# walls vanish): "lining_box" lines it. The roof gun is two more parts (see the rules): "turret", what turns with the
+# ring (the ring, the hatch lid standing behind the gunner, the pintle and its cradle), and "gun", what also pitches
+# about the trunnion (the PKM, its ammunition box and belt). The json's "turret" gives their pivots, the muzzle and
+# the gunner (standing in the hatch, the car's passenger seat). The tiger head on the grille keeps its texture.
+CARS["gaz_tiger"] = {
+    "glb": "ref/gaz_tiger/gaz_tiger.glb", "fbx6": "ref/gaz_tiger/fbx/fbx.fbx", "object_materials": True,
+    # the maker's tiger head on the grille, from the archive's texture
+    "textures": {"tiger_logo": {"image": "logo_tigr.jpg", "size": 256}}, "texture_dir": "ref/gaz_tiger/Max and maps",
+    "body": ["body", "Interior", "001", "Object295", "Object298", "front lights", "Kalashnikov machine gun", "cable",
+             "spare wheel", "spade saw axe4", "Luke", "rope and hook", "side lights", "mirrors", "bumper moun4",
+             "exhaust pipp", "filter", "floodlight002", "light bulbs", "handrails", "wipers", "front mudguards",
+             "frame and suspension", "headlights", "grill radiator", "lining"],
+    "wheels": "wheels",
+    # the radiator's mesh screens (thousands of wires; decimated, they speckle): sheets
+    "sheet": ["grill radiator", "Object298"],
+    # the dense ones, whole (the gun, the hatch and the cabin by their rules)
+    "decimate": {"floodlight002": 0.25, "frame and suspension": 0.2, "filter": 0.15, "cable": 0.12,
+                 "rope and hook": 0.15, "front lights": 0.35, "headlights": 0.35, "Object295": 0.3,
+                 "spare wheel": 0.3, "bumper moun4": 0.3, "wipers": 0.3, "001": 0.3, "spade saw axe4": 0.4, "side lights": 0.5, "handrails": 0.5, "exhaust pipp": 0.5},
+    # the steering column, cut from the wheel's hub (the wheel's axis leans 20° up towards the driver)
+    "cut": {"Interior": (((0.55, -0.8, 1.2), (0.93, -0.35, 1.8)), (0.737, -0.52, 1.555), (0.0, -0.94, -0.34))},
+    "lining_box": {"objects": ["body"], "box": ((-1.25, -0.98, 0.95), (1.25, 2.36, 2.26)), "centre": (0.0, 0.6, 1.5),
+                   "materials": ["Clearcoat", "Camouflage2"], "min_area": 0.004, "wall": "trim", "roof": "trim_light"},
+    "classify": "classify_rules", "materials": TIGER, "renormal": ["army_green"], "batch_rework": True,
+    "wheel_ratio": {"tyre": 0.22, "army_green": 0.5, "hub": 0.5, "rim": 1.0, "disc": 1.0},
+    "rules": [
+        {"src": "body/logo"},                  # (not decimated: textured)
+        {"obj": ["grill radiator", "Object298"], "remat": "grille"},
+        # the gun: the pintle and the cradle under the trunnion turn with the ring, the rest pitches too
+        {"obj": "Kalashnikov machine gun", "box": ((-0.06, 0.2, 2.3), (0.18, 0.46, 2.505)), "mirror": False,
+         "top": (0.0, 2.505), "group": "turret", "ratio": 0.6},
+        {"obj": "Kalashnikov machine gun", "group": "gun", "tris": (300, 10 ** 9), "ratio": 0.3},
+        {"obj": "Kalashnikov machine gun", "group": "gun", "tris": (60, 300), "ratio": 0.6},
+        {"obj": "Kalashnikov machine gun", "group": "gun"},
+        # the hatch: the ring and all on it turn, the base under it and the hatch's well stay
+        {"obj": "Luke", "box": ((-1.0, 0.0, 2.33), (1.0, 1.7, 3.0)), "mirror": False, "group": "turret",
+         "tris": (300, 10 ** 9), "ratio": 0.4},
+        {"obj": "Luke", "box": ((-1.0, 0.0, 2.33), (1.0, 1.7, 3.0)), "mirror": False, "group": "turret"},
+        {"obj": "Luke", "tris": (300, 10 ** 9), "ratio": 0.4},
+        # the cabin (one object, one material): steering wheel, seats, the floor
+        {"src": "Interior/Material #102832", "box": ((0.55, -0.56, 1.38), (0.93, -0.38, 1.76)), "mirror": False,
+         "group": "steering", "remat": "leather", "ratio": 0.5},
+        {"src": "Interior/Material #102832", "box": ((0.45, -0.45, 0.95), (1.1, 1.2, 1.9)), "size": (0.09, 1.0),
+         "tris": (900, 10 ** 9), "remat": "seat", "ratio": 0.15},
+        {"src": "Interior/Material #102832", "size": (0.0, 0.03), "tris": (100, 10 ** 9), "ratio": 0.06},  # switches
+        {"src": "Interior/Material #102832", "tris": (300, 10 ** 9), "ratio": 0.3},
+        # lamps: the head lamps light up, their amber halves blink; the side repeaters blink; at the back, four round
+        # lamps a side: the outer one blinks, then reversing, brake (two from the outside), tail (the inner one)
+        {"src": "headlights/Front light", "remat": "headlight"},
+        {"src": "headlights/Front signal", "group": "indicator"},
+        {"src": "side lights/turn signal", "group": "indicator"},
+        {"src": "front lights/Rear-light_1", "group": "indicator"},
+        {"src": "front lights/Rear-light_2", "group": "reverse_lights"},
+        {"src": "front lights/Rear-light_3", "box": ((0.85, 2.2, 0.6), (1.0, 2.5, 0.85)), "group": "brake_lights"},
+        {"src": "front lights/Rear-light_3", "remat": "taillight"},
+        {"obj": "mirrors", "group": "mirrors", "tris": (300, 10 ** 9), "ratio": 0.3},
+        {"obj": "mirrors", "group": "mirrors"},
+        # windscreen and rear door's windows
+        {"mat": "glass_side", "box": ((0.0, -1.2, 1.4), (1.3, -0.7, 2.3)), "remat": "glass_front"},
+        {"mat": "glass_side", "box": ((0.0, 2.0, 1.0), (1.3, 2.6, 2.3)), "remat": "glass_rear"},
+        # rivets and bolts of the hull (thousands; a few of 2,660 triangles), the floodlights' reflectors
+        {"obj": ["body", "floodlight002"], "size": (0.0, 0.03), "tris": (100, 10 ** 9), "ratio": 0.06},
+        {"obj": "body", "size": (0.0, 0.03), "tris": (24, 10 ** 9), "ratio": 0.25},
+        {"obj": "floodlight002", "tris": (1000, 10 ** 9), "ratio": 0.2},
+        {"tris": (300, 10 ** 9), "ratio": 0.4},
+    ],
+    "cab": {"seat": (0.762, -0.19, 1.105), "eye": (-0.05, 1.86), "figure": 0.8, "eye_pitch": 0.05,
+            "passenger": "gunner"},
+    # the roof gun: yaw pivot (the ring's centre, on its top), the gun's trunnion and muzzle (at rest: level, ahead),
+    # the gunner (standing in the hatch: the feet, and the eye behind the gun's sights)
+    "turret": {"pivot": (0.0, 0.858, 2.35), "trunnion": (0.042, 0.30, 2.55), "muzzle": (0.042, -0.71, 2.655),
+               "gunner": (0.0, 0.95, 1.05), "eye": (0.042, 0.98, 2.84)},
 }
 
 
@@ -336,10 +487,62 @@ def load_obj(path: Path, c: dict) -> None:
                 o.data.materials.clear()
                 o.data.materials.append(bpy.data.materials.new("fbx " + o.name))
                 o.data.polygons.foreach_set("material_index", [0] * len(o.data.polygons))
+            if o.name in c.get("uv_flip", ()):  # a mirrored copy: its texture reads backwards, so its U turns over
+                for d in o.data.uv_layers.active.data:
+                    d.uv.x = 1.0 - d.uv.x
+            for name, (lo, hi), by in c.get("nudge", ()):     # (object, box, offset): out of a curved panel
+                if o.name == name:
+                    for v in o.data.vertices:
+                        if all(lo[k] <= v.co[k] <= hi[k] for k in range(3)):
+                            v.co += Vector(by)
         o.parent = None
     for m in list(bpy.data.materials):          # (renaming re-sorts the collection)
         if not m.name.startswith("fbx "):
             m.name = "fbx " + m.name
+
+
+def load_glb(c: dict) -> None:
+    """Loads c["glb"] the way load_fbx does, made first from c["fbx6"] if missing: an FBX too old for Blender (6.1),
+    which Godot's FBX reader converts (godot/tools/fbx_to_glb.gd). With c["object_materials"], each object's
+    materials become its own, named "fbx <object>/<material>" (the car's "materials" may map them by object). Then it
+    moves everything into the car frame (the middle of the objects' box but the wheels', the wheels' bottom on the
+    ground), so that the boxes of prepare() are in the car frame too."""
+    import subprocess
+    path = ROOT / c["glb"]
+    if not path.exists():
+        subprocess.run(["godot", "--headless", "--path", str(ROOT / "godot"), "--script", "res://tools/fbx_to_glb.gd",
+                        "--", str(ROOT / c["fbx6"]), str(path)], check=True)
+    bpy.ops.import_scene.gltf(filepath=str(path))
+    bpy.context.view_layer.update()
+    for o in list(bpy.data.objects):
+        if o.type != "MESH":
+            continue
+        if o.data.users > 1:
+            o.data = o.data.copy()
+        o.data.transform(o.matrix_world)
+        o.matrix_world = Matrix.Identity(4)
+        o.parent = None
+        bm = bmesh.new()                        # (glTF splits the vertices at every seam: the pieces fall apart)
+        bm.from_mesh(o.data)
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+        bm.to_mesh(o.data)
+        bm.free()
+        if c.get("object_materials"):
+            for k, m in enumerate(o.data.materials):
+                copy = m.copy()
+                copy.name = f"{o.name}/{m.name}"
+                o.data.materials[k] = copy
+    for o in list(bpy.data.objects):
+        if o.type != "MESH":
+            bpy.data.objects.remove(o)
+    for m in list(bpy.data.materials):          # (renaming re-sorts the collection)
+        m.name = "fbx " + m.name
+    wheels = [c["wheels"]] if isinstance(c["wheels"], str) else c["wheels"]
+    lo, hi = bounds(v.co for o in bpy.data.objects if o.name not in wheels for v in o.data.vertices)
+    wlo, _ = bounds(v.co for n in wheels for v in bpy.data.objects[n].data.vertices)
+    shift = Matrix.Translation(Vector((-(lo.x + hi.x) / 2, -(lo.y + hi.y) / 2, -wlo.z)))
+    for o in bpy.data.objects:
+        o.data.transform(shift)
 
 
 def bounds(points) -> tuple:
@@ -484,13 +687,13 @@ def classify_m4(c: dict, isls: list) -> None:
     and the slats at the outer end blink. Tail lamp: an outer lens on the wing and an inner one on the boot lid, red
     "L" light guides behind them; the outer lens lights in three bands (indicator, brake, taillight from the bottom),
     the inner one is a taillight with the clear reversing lamp in it; what is behind the lenses goes. The carbon roof
-    and its shark-fin aerial (an object of its own) take the clear-coated carbon, the plates are blank, the badges
-    plain, the red cluster needles glow."""
+    and its shark-fin aerial (an object of its own) take the clear-coated carbon, the plates are blank; the badges are
+    the model's (textured roundels, M stripes), the red cluster needles glow."""
     st_lo, st_hi = c["steering"]
     for i in isls:
         if all(st_lo[k] <= i.lo[k] and i.hi[k] <= st_hi[k] for k in range(3)):
             i.group = "steering"
-            i.remat = {"dash": "leather", "screen": "trim_black"}.get(i.mat)
+            i.remat = {"dash": "leather", "cabin_lit": "cabin_print"}.get(i.mat)    # (the hub's roundel: not lit)
         elif inside(i.c, c["mirror"]):
             i.group = "mirrors"
             i.remat = "mirror_glass" if i.mat == "chrome" and i.tris < 100 else None
@@ -498,13 +701,12 @@ def classify_m4(c: dict, isls: list) -> None:
             i.remat = "paint_carbon"
             if i.size.x < 0.2 and i.size.y < 0.3:
                 i.group = "aerial"
-        elif i.mat == "plate" and max(i.size) < 0.3:
-            i.remat = "trim_black"              # a round badge
-        elif i.mat in ("needle", "seat_accent"):    # the M stripes, outside chrome; the red ones of the cluster glow
-            if not inside(i.c, c["cabin_box"], mirror=False):
-                i.remat = "chrome"
-            elif i.c.y > -0.6:
-                i.remat = "seat_accent"
+        elif i.mat == "roundel" and max(i.size) > 0.3:
+            i.remat = "plate"                   # a number plate: blank
+        elif i.mat == "m_red" and inside(i.c, c["cabin_box"], mirror=False) and i.c.y < -0.6:
+            i.remat = "needle"                  # the cluster's
+        elif i.mat == "m_blue" and i.c.y < -2.2 and i.c.z < 0.5:
+            i.remat = "alu"                     # the front plate's right-hand screws (their left twins are alu)
     for s in (1, -1):
         name = "left" if s > 0 else "right"
         on_side = [i for i in isls if i.c.x * s > 0 and i.group == "body"]
@@ -532,8 +734,10 @@ def classify_m4(c: dict, isls: list) -> None:
         outer.bands = [(lo, "indicator_" + name, "indicator"), (hi, "brake_lights", "brake"),
                        (math.inf, "body", "taillight")]
         rev[0].group, rev[0].remat = "reverse_lights", "reverse"
+        badge = [i for i in tail if i.mat.startswith("m_")]      # the boot lid's M4 badge, over the inner lens
         for i in tail:
-            if i in lenses or i is rev[0] or i.mat in ("paint_austin", "plastic_black", "trim_black"):
+            if i in lenses or i is rev[0] or i.mat in ("paint_austin", "plastic_black", "trim_black") \
+                    or any((i.c - b.c).length < 0.1 and abs(i.c.z - b.c.z) < 0.01 for b in badge):   # its letters
                 continue
             if any(all(L.lo[k] - 0.01 <= i.lo[k] and i.hi[k] <= L.hi[k] + 0.01 for k in range(3)) for L in lenses):
                 i.group = "hidden"
@@ -546,7 +750,7 @@ def classify_m4(c: dict, isls: list) -> None:
         if i.group == "body" and i.mat.startswith("paint"):
             i.renormal = True
         if i.group in ("steering", "hidden") or mat.startswith("paint") or mat.startswith("glass") \
-                or mat in ("lens", "taillight", "plate"):
+                or mat in ("lens", "taillight", "plate", "m_light", "m_blue", "m_red") or mat in c["textures"]:
             continue
         # decimated (the LOW FBX is ~220k triangles): bolts and buttons, the honeycomb grilles, the callipers behind
         # the rims (their bolts go), the cabin a little more than the rest, the other dense pieces
@@ -566,18 +770,23 @@ def classify_rules(c: dict, isls: list) -> None:
     """Group and material of each island of the body from the car's list of "rules" (the Audi R8's): each island takes
     the first rule it matches. A rule matches by "src" (its source material, or object with by_object; a name or a
     list), "box" (its centre in it; mirrored to the right side unless "mirror" is False), "mat" (palette material(s)
-    from "materials"), "size" (min, max of its largest dimension) and "tris" (min, max), each when given, and sets
+    from "materials"), "size" (min, max of its largest dimension), "tris" (min, max), "obj" (with object_materials:
+    the object(s) its source material belongs to) and "top" (min, max of its highest point), each when given, and sets
     "group" ("indicator" is the island's side's), "remat" and "ratio" (decimation; by default the small dense pieces
-    of the DETAIL materials are, as classify does). The paint panels are shaded anew."""
+    of the DETAIL materials are, as classify does). The paint panels (and the car's "renormal" materials) are shaded
+    anew."""
     def matches(r, i):
         names = r.get("src", i.src)
         mats = r.get("mat", i.mat)
+        objs = r.get("obj", i.src.partition("/")[0])
         lo, hi = r.get("size", (0.0, math.inf))
         t0, t1 = r.get("tris", (0, math.inf))
+        z0, z1 = r.get("top", (-math.inf, math.inf))
         return i.src in ([names] if isinstance(names, str) else names) \
             and i.mat in ([mats] if isinstance(mats, str) else mats) \
+            and i.src.partition("/")[0] in ([objs] if isinstance(objs, str) else objs) \
             and ("box" not in r or inside(i.c, r["box"], r.get("mirror", True))) \
-            and lo <= max(i.size) <= hi and t0 <= i.tris <= t1
+            and lo <= max(i.size) <= hi and t0 <= i.tris <= t1 and z0 <= i.hi.z <= z1
     for i in isls:
         r = next((r for r in c["rules"] if matches(r, i)), {})
         i.group = r.get("group", "body")
@@ -592,7 +801,7 @@ def classify_rules(c: dict, isls: list) -> None:
                 i.ratio = max(0.08, 96 / i.tris)
             elif i.tris > 800:
                 i.ratio = max(600, 0.1 * i.tris) / i.tris
-        i.renormal = i.group == "body" and mat.startswith("paint")
+        i.renormal = i.group == "body" and (mat.startswith("paint") or mat in c.get("renormal", ()))
 
 
 # ---------------------------------------------------------------- reworking the loaded objects (the Audi RS6's)
@@ -703,6 +912,44 @@ def lining(c: dict) -> None:
     bpy.context.scene.collection.objects.link(o)
 
 
+def lining_box(c: dict) -> None:
+    """The inside of a single-skinned hull (c["lining_box"]: "objects", the "box" round the cabin and its "centre", in
+    the car frame, the FBX "materials" of the skin, "min_area", the "wall" and "roof" palette materials; the GAZ
+    Tiger's): the faces of the skin inside the box that face away from the centre and are no smaller than min_area
+    (not the bolts), copied 4 mm in and facing the other way, those under the roof in "roof"; one object, "lining",
+    its materials "lining/<palette material>"."""
+    k = c["lining_box"]
+    lo, hi = (Vector(v) for v in k["box"])
+    mid = Vector(k["centre"])
+    bm = bmesh.new()
+    for name in k["objects"]:
+        o = bpy.data.objects[name]
+        skin = {j for j, m in enumerate(o.data.materials) if m and m.name.rpartition("/")[2] in k["materials"]}
+        src = bmesh.new()
+        src.from_mesh(o.data)
+        src.normal_update()
+        new = {}
+        for f in src.faces:
+            p = f.calc_center_median()
+            if f.material_index not in skin or f.calc_area() < k["min_area"] or f.normal.dot(p - mid) <= 0.0 \
+                    or not all(lo[a] <= p[a] <= hi[a] for a in range(3)):
+                continue
+            for v in f.verts:
+                if v.index not in new:
+                    new[v.index] = bm.verts.new(v.co - v.normal * 0.004)
+            g = bm.faces.new([new[v.index] for v in reversed(f.verts)])
+            g.material_index = 1 if f.normal.z > 0.6 else 0
+        src.free()
+    me = bpy.data.meshes.new("lining")
+    bm.to_mesh(me)
+    print(f"lining: {len(bm.faces)} faces")
+    bm.free()
+    for m in (k["wall"], k["roof"]):
+        me.materials.append(bpy.data.materials.new("fbx lining/" + m))
+    o = bpy.data.objects.new("lining", me)
+    bpy.context.scene.collection.objects.link(o)
+
+
 class ProxyShell:
     """What build_car.interior asks of a car's shell, measured on the imported panels: side_x(y, z) (the outermost |x|
     of the `side` objects' points in the 3 cm square round (y, z), or in the nearest square that has some) and
@@ -732,6 +979,36 @@ class ProxyShell:
         return float(near[:, 2].max() if len(near) else self.roof[np.argmin(d), 2])
 
 
+def canonical(me) -> None:
+    """Puts the faces of `me` in a fixed order (by their vertices, each face starting at its first vertex):
+    bmesh.ops.create_uvsphere (build_car.sphere: the gear knob) orders its faces differently from run to run, which
+    changes the weighted normals and the export's bytes; the vertices' order is stable. Keeps the faces' materials and
+    smoothing (the mesh has no UVs or custom normals yet)."""
+    import numpy as np
+    n = len(me.polygons)
+    start, total, mi = (np.empty(n, dtype=np.int64) for _ in range(3))
+    smooth = np.empty(n, dtype=bool)
+    me.polygons.foreach_get("loop_start", start)
+    me.polygons.foreach_get("loop_total", total)
+    me.polygons.foreach_get("material_index", mi)
+    me.polygons.foreach_get("use_smooth", smooth)
+    lv = np.empty(len(me.loops), dtype=np.int64)
+    me.loops.foreach_get("vertex_index", lv)
+    faces = []
+    for s, t in zip(start, total):
+        f = lv[s:s + t].tolist()
+        k = f.index(min(f))
+        faces.append(f[k:] + f[:k])
+    order = sorted(range(n), key=lambda i: (sorted(faces[i]), faces[i]))
+    co = np.empty(len(me.vertices) * 3)
+    me.vertices.foreach_get("co", co)
+    me.clear_geometry()
+    me.from_pydata(co.reshape(-1, 3).tolist(), [], [faces[i] for i in order])
+    me.polygons.foreach_set("material_index", mi[order])
+    me.polygons.foreach_set("use_smooth", smooth[order])
+    me.update()
+
+
 def fit_out(c: dict) -> None:
     """Fits out the cabin as build_car.py does (dashboard, cluster, console, door cards, seats, rear bench, parcel
     shelf, mirror, visors, pedals; steering column and wheel) after c["cabin"] (its "cab" keys and "wheel", in the
@@ -745,6 +1022,7 @@ def fit_out(c: dict) -> None:
     cabin = bc.finish("body")
     st = bc.steering_wheel(spec)
     for o, name in ((cabin, "fitted_cabin"), (st, "fitted_steering")):
+        canonical(o.data)
         bc.apply_modifiers(o)
         o.data.transform(o.matrix_world)
         o.matrix_world = Matrix.Identity(4)
@@ -755,18 +1033,68 @@ def fit_out(c: dict) -> None:
         st.data.materials[j] = copy
 
 
+def unmirror(o, k: int) -> None:
+    """The faces of `o` facing along axis `k` (a wheel's sidewalls: 0, x) whose UV map reads mirrored seen from
+    outside (the modeller mirrored the wheel for the other side) get their u mirrored about the middle of those faces'
+    UVs, so the texture's lettering reads the right way round on every wheel."""
+    me = o.data
+    uv = me.uv_layers[0].data
+    up = Vector((0.0, 0.0, 1.0))
+    flip = []
+    for p in me.polygons:
+        if abs(p.normal[k]) < 0.7:
+            continue
+        right = up.cross(p.normal)              # the viewer's right, looking at the face from outside
+        a, b, d = (me.loops[i] for i in p.loop_indices[:3])
+        p0, p1, p2 = (me.vertices[x.vertex_index].co for x in (a, b, d))
+        u0, u1, u2 = (uv[x.index].uv for x in (a, b, d))
+        screen = ((p1 - p0).dot(right) * (p2 - p0).dot(up) - (p2 - p0).dot(right) * (p1 - p0).dot(up))
+        texture = (u1 - u0).x * (u2 - u0).y - (u2 - u0).x * (u1 - u0).y
+        if screen * texture < 0.0:
+            flip.append(p)
+    if not flip:
+        return
+    us = [uv[i].uv.x for p in flip for i in p.loop_indices]
+    mid = (min(us) + max(us)) / 2
+    for p in flip:
+        for i in p.loop_indices:
+            uv[i].uv.x = 2 * mid - uv[i].uv.x
+    print(f"{o.name}: {len(flip)} faces unmirrored")
+
+
 def prepare(c: dict) -> None:
     """Reworks the loaded objects as the car asks, before they are joined: "drop" (objects left out), "sheet" (see
-    sheet), "decimate" (object -> ratio), "split_z" (object -> (z, height): its pieces taller than `height` cut apart
-    at z, so that the rules tell the two apart), "lining" (see lining) and "cabin" (see fit_out)."""
+    sheet), "unmirror" (object -> axis, see unmirror), "fills" (object -> m², below), "decimate" (object -> ratio), "cut" (object -> (box, point, normal): its faces in the box on the normal's
+    side of the plane through the point cut loose: the GAZ Tiger's steering column from its wheel), "split_z" (object
+    -> (z, height): its pieces taller than `height` cut apart at z, so that the rules tell the two apart), "lining" (see lining), "lining_box" (see lining_box) and "cabin"
+    (see fit_out)."""
     for n in c.get("drop", []):
         bpy.data.objects.remove(bpy.data.objects[n])
     for n in c.get("sheet", []):
         sheet(bpy.data.objects[n])
+    for n, k in c.get("unmirror", {}).items():
+        unmirror(bpy.data.objects[n], "xyz".index(k))
+    for n, area in c.get("fills", {}).items():
+        # a badge's flat faces over `area` m² (the fill between its raised rims) take a material of their own,
+        # "<object> fill" in the car's "materials"
+        me = bpy.data.objects[n].data
+        me.materials.append(bpy.data.materials.new(f"fbx {n} fill"))
+        mi = [len(me.materials) - 1 if p.area > area else p.material_index for p in me.polygons]
+        me.polygons.foreach_set("material_index", mi)
     for n, r in c.get("decimate", {}).items():
         o = bpy.data.objects[n]
         o.modifiers.new("decimate", "DECIMATE").ratio = r
         bc.apply_modifiers(o)
+    for n, (box, point, normal) in c.get("cut", {}).items():
+        o = bpy.data.objects[n]
+        bm = bmesh.new()
+        bm.from_mesh(o.data)
+        pt, nm = Vector(point), Vector(normal)
+        cut = [f for f in bm.faces if inside(f.calc_center_median(), box, mirror=False)
+               and (f.calc_center_median() - pt).dot(nm) > 0.0]
+        bmesh.ops.split(bm, geom=cut)
+        bm.to_mesh(o.data)
+        bm.free()
     for n, (z, tall) in c.get("split_z", {}).items():
         o = bpy.data.objects[n]
         bm = bmesh.new()
@@ -778,8 +1106,117 @@ def prepare(c: dict) -> None:
         bm.free()
     if "lining" in c:
         lining(c)
+    if "lining_box" in c:
+        lining_box(c)
     if "cabin" in c:
         fit_out(c)
+    if "detach" in c:
+        detach(c["detach"])
+
+
+def detach(names: list) -> None:
+    """Cuts the faces of the FBX materials `names` loose from the pieces they belong to: islands of their own (a badge
+    in a rim is then neither decimated with it nor goes where it goes)."""
+    names = {"fbx " + n for n in names}
+    for o in bpy.data.objects:
+        if o.type != "MESH" or not any(m and m.name in names for m in o.data.materials):
+            continue
+        mine = {k for k, m in enumerate(o.data.materials) if m and m.name in names}
+        bm = bmesh.new()
+        bm.from_mesh(o.data)
+        cut = [e for e in bm.edges if len({f.material_index in mine for f in e.link_faces}) > 1]
+        bmesh.ops.split_edges(bm, edges=cut)
+        bm.to_mesh(o.data)
+        bm.free()
+
+
+def texture(c: dict, objs: dict, folder: Path) -> None:
+    """The car's textured palette materials (CARS "textures": material -> {"image": file next to the FBX (or OBJ),
+    "size": px at most, "levels": (dark, light) to map its grey between those colours, e.g. a tyre's moulded lettering,
+    "emit": glow strength, "normal": true for a normal map, kept as a PNG, the colour staying the palette's}). Per image (and levels), the part used by those materials' faces is cropped from it, at most "size" px,
+    saved into `folder` (the glTF export embeds it) and wired into the materials; their UVs are remapped onto the crop.
+    The other faces get a single UV point, so they split no vertices; a part without textured faces loses its UVs."""
+    import numpy as np
+    tex = c["textures"]
+    src = ROOT / c["texture_dir"] if "texture_dir" in c \
+        else (ROOT / (c["fbx"] if "fbx" in c else c["obj"])).parent      # (next to the OBJ for an OBJ)
+    uses = {}                                   # (image, levels) -> [(object, loop mask)]
+    loops = {}                                  # object -> its UVs
+    for o in objs.values():
+        me = o.data
+        names = [m.name if m else "" for m in me.materials]
+        if not me.uv_layers or not any(n in tex for n in names):
+            while me.uv_layers:
+                me.uv_layers.remove(me.uv_layers[0])
+            continue
+        uv = np.zeros(len(me.loops) * 2)
+        me.uv_layers.active.data.foreach_get("uv", uv)
+        uv = uv.reshape(-1, 2)
+        mi, start, total = (np.zeros(len(me.polygons), int) for _ in range(3))
+        me.polygons.foreach_get("material_index", mi)
+        me.polygons.foreach_get("loop_start", start)
+        me.polygons.foreach_get("loop_total", total)
+        slot = np.zeros(len(me.loops), int)
+        for k in range(len(names)):
+            for s, t in zip(start[mi == k], total[mi == k]):
+                slot[s:s + t] = k
+        used = np.zeros(len(me.loops), bool)
+        for k, n in enumerate(names):
+            if n in tex:
+                mask = slot == k
+                used |= mask
+                uses.setdefault((tex[n]["image"], tex[n].get("levels")), []).append((o, mask))
+        uv[~used] = 0.0
+        loops[o] = uv
+    for (image, levels), parts in uses.items():
+        src_img = bpy.data.images.load(str(src / image))
+        w, h = src_img.size
+        px = np.zeros(w * h * 4, np.float32)
+        src_img.pixels.foreach_get(px)
+        px = px.reshape(h, w, 4)                # rows from the bottom, as v
+        lo = np.min([loops[o][m].min(axis=0) for o, m in parts], axis=0)
+        hi = np.max([loops[o][m].max(axis=0) for o, m in parts], axis=0)
+        x0, y0 = np.maximum(np.floor(lo * (w, h)).astype(int) - 2, 0)
+        x1, y1 = np.minimum(np.ceil(hi * (w, h)).astype(int) + 2, (w, h))
+        crop = px[y0:y1, x0:x1].copy()
+        if levels:
+            dark, light = (np.array([int(h_[i:i + 2], 16) / 255 for i in (1, 3, 5)]) for h_ in levels)  # sRGB, as px
+            grey = crop[..., :3] @ np.array([0.2126, 0.7152, 0.0722])
+            crop[..., :3] = dark + (light - dark) * grey[..., None]
+        size = max(t["size"] for t in tex.values() if t["image"] == image and t.get("levels") == levels)
+        k = min(1.0, size / max(x1 - x0, y1 - y0))
+        name = next(n for n, t in tex.items() if t["image"] == image and t.get("levels") == levels)    # its first user
+        img = bpy.data.images.new(name, x1 - x0, y1 - y0)
+        img.pixels.foreach_set(crop.ravel())
+        if k < 1.0:
+            img.scale(max(1, round((x1 - x0) * k)), max(1, round((y1 - y0) * k)))
+        normal = any(t.get("normal") for t in tex.values() if t["image"] == image)
+        big = max(img.size) > 256 and not normal          # (a normal map stays lossless)
+        img.filepath_raw = str(folder / f"{name}.{'jpg' if big else 'png'}")
+        img.file_format = "JPEG" if big else "PNG"
+        img.save(quality=90)
+        bpy.data.images.remove(src_img)
+        for o, m in parts:
+            loops[o][m] = (loops[o][m] * (w, h) - (x0, y0)) / (x1 - x0, y1 - y0)
+        for n, t in tex.items():
+            if t["image"] != image or t.get("levels") != levels or n not in bpy.data.materials:
+                continue
+            mat = bpy.data.materials[n]
+            node = mat.node_tree.nodes.new("ShaderNodeTexImage")
+            node.image = img
+            p = mat.node_tree.nodes["Principled BSDF"]
+            if t.get("normal"):                 # a tangent-space normal map (OpenGL), the colour the palette's
+                nm = mat.node_tree.nodes.new("ShaderNodeNormalMap")
+                mat.node_tree.links.new(node.outputs["Color"], nm.inputs["Color"])
+                mat.node_tree.links.new(nm.outputs["Normal"], p.inputs["Normal"])
+                continue
+            mat.node_tree.links.new(node.outputs["Color"], p.inputs["Base Color"])
+            if t.get("emit"):
+                mat.node_tree.links.new(node.outputs["Color"], p.inputs["Emission Color"])
+                p.inputs["Emission Strength"].default_value = t["emit"]
+        print(f"texture {name}: {image} crop {x1 - x0} x {y1 - y0} px -> {img.size[0]} x {img.size[1]}")
+    for o, uv in loops.items():
+        o.data.uv_layers.active.data.foreach_set("uv", uv.ravel())
 
 
 # ---------------------------------------------------------------- building the parts
@@ -860,16 +1297,21 @@ def drop_unused_materials(me) -> None:
     me.polygons.foreach_set("material_index", [remap[k] for k in mi])
 
 
-def rework(o, isls: list) -> None:
+def rework(o, isls: list, batch: bool = False) -> None:
     """Decimates the islands of `o` that have a ratio, and shades them and those to be renormalled anew (each on its
     own): smooth up to 40° (35° for the panels, whose normals then lean towards their larger faces). The model's own
-    normals shade the paint in facets in Godot."""
+    normals shade the paint in facets in Godot. With `batch` (the car's "batch_rework": the GAZ Tiger's tens of
+    thousands of islands), the islands of a same ratio and shading are reworked together."""
     vals = [0] * len(o.data.polygons)
     o.data.attributes["isl"].data.foreach_get("value", vals)
+    sets = {}
     for k in sorted(set(vals)):
         if isls[k].ratio >= 1.0 and not isls[k].renormal:
             continue
-        part = split(o, "isl", lambda v, k=k: v == k)
+        sets.setdefault((isls[k].ratio, isls[k].renormal) if batch else k, set()).add(k)
+    for ks in sets.values():
+        k = min(ks)
+        part = split(o, "isl", lambda v, ks=ks: v in ks)
         if part is None:
             continue
         select_only(part)
@@ -923,7 +1365,8 @@ def tris(o) -> int:
 
 
 GROUPS = ["body", "steering", "mirrors", "aerial", "indicator_left", "indicator_right", "brake_lights",
-          "wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right", "reverse_lights", "hidden"]
+          "wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right", "reverse_lights", "turret",
+          "gun", "hidden"]
 
 
 def build(key: str, out_dir: Path, prev: str) -> None:
@@ -932,6 +1375,8 @@ def build(key: str, out_dir: Path, prev: str) -> None:
         bpy.data.objects.remove(o)
     if "obj" in c:
         load_obj(ROOT / c["obj"], c)
+    elif "glb" in c:
+        load_glb(c)
     else:
         load_fbx(ROOT / c["fbx"])
     prepare(c)
@@ -943,8 +1388,11 @@ def build(key: str, out_dir: Path, prev: str) -> None:
     shift = Matrix.Translation(Vector((-(lo.x + hi.x) / 2, -(lo.y + hi.y) / 2, -wlo.z)))
     for o in (body, wheels):
         o.data.transform(shift)
+    print("into the car frame:", tuple(round(v, 4) for v in shift.to_translation()))
     fbx_names = {o: [m.name.removeprefix("fbx ") if m else "" for m in o.data.materials] for o in (body, wheels)}
-    pal = {o: [c["materials"].get(n, "plastic_black") for n in fbx_names[o]] for o in (body, wheels)}
+    # (with object_materials: "object/material", else by the material alone)
+    pal = {o: [c["materials"].get(n, c["materials"].get(n.rpartition("/")[2], "plastic_black")) for n in fbx_names[o]]
+           for o in (body, wheels)}
 
     # body pieces
     bm = bmesh.new()
@@ -974,7 +1422,7 @@ def build(key: str, out_dir: Path, prev: str) -> None:
     # wheels: each piece to the wheel of its quarter, the callipers (they do not spin) to the body
     bm = bmesh.new()
     bm.from_mesh(wheels.data)
-    wisl = islands(bm, pal[wheels])
+    wisl = islands(bm, pal[wheels], fbx_names[wheels])
     bm.free()
     tyres = [i for i in wisl if i.mat == "tyre" and i.size.z > 0.5]
     mid = sum((i.c for i in tyres), Vector()) / len(tyres)
@@ -994,6 +1442,13 @@ def build(key: str, out_dir: Path, prev: str) -> None:
             i.ratio = ratios["hub"] if i.tris > 800 else 1.0
     for i in tyres:
         hubs[i.group] = i.c.copy()
+    for i in wisl:                              # per car, once the tyres are found: e.g. textured ones
+        i.remat = c.get("wheel_remat", {}).get(i.remat or i.mat, i.remat)
+        for r in c.get("wheel_rules", ()):      # by source ("src") and largest dimension ("size"): e.g. a cap's badge
+            lo, hi = r.get("size", (0.0, math.inf))
+            if i.src in ([r["src"]] if isinstance(r["src"], str) else r["src"]) and lo <= max(i.size) <= hi:
+                i.remat, i.ratio = r.get("remat", i.remat), r.get("ratio", i.ratio)
+                break
     set_faces(wheels, wisl, lambda i, f: i.remat or pal[wheels][wheels.data.polygons[f].material_index])
 
     objs = {}
@@ -1002,7 +1457,7 @@ def build(key: str, out_dir: Path, prev: str) -> None:
             o = split(src, "grp", lambda v, g=g: v == GROUPS.index(g))
             if o is None:
                 continue
-            rework(o, parts)
+            rework(o, parts, c.get("batch_rework", False))
             if g in objs:
                 bc.join(objs[g], [objs[g], o])
             else:
@@ -1012,6 +1467,11 @@ def build(key: str, out_dir: Path, prev: str) -> None:
         o = objs[name]
         o.data.transform(Matrix.Translation(-p))
         o.location = p
+    if "turret" in c:                               # a roof gun: the ring turns about its pivot, the gun about its trunnion
+        for name, p in (("turret", c["turret"]["pivot"]), ("gun", c["turret"]["trunnion"])):
+            o = objs[name]
+            o.data.transform(Matrix.Translation(-Vector(p)))
+            o.location = p
     # steering wheel: hub on the axis of the rim (the normal of its plane, towards the driver), 12 o'clock up
     st = objs["steering"]
     pts = [v.co.copy() for v in st.data.vertices]
@@ -1062,11 +1522,14 @@ def build(key: str, out_dir: Path, prev: str) -> None:
 
     out = out_dir / f"{key}.glb"
     out.parent.mkdir(parents=True, exist_ok=True)
+    if "textures" in c:
+        import tempfile
+        texture(c, objs, Path(tempfile.mkdtemp()))
     for o in bpy.data.objects:
         o.select_set(True)
     bpy.ops.export_scene.gltf(filepath=str(out), export_format="GLB", use_selection=True, export_normals=True,
                               export_materials="EXPORT", export_yup=True, export_apply=True,
-                              export_texcoords=False)                 # untextured
+                              export_texcoords="textures" in c)       # untextured unless the car has "textures"
     wheel_names = [g for g in GROUPS if g.startswith("wheel_")]
     layout = {
         "wheels": wheel_names,
@@ -1084,6 +1547,15 @@ def build(key: str, out_dir: Path, prev: str) -> None:
     }
     if "reverse_lights" in objs:
         layout["reverse_lights"] = ["reverse_lights"]
+    if "textures" in c and any(n.startswith("wheel_") and o.data.uv_layers for n, o in objs.items()):
+        layout["unmirror_wheels"] = True        # printed wheels (car.gd mirrors them back: VehicleBody3D mirrors them)
+    if "turret" in c:
+        t = c["turret"]
+        layout["turret"] = {"ring": "turret", "gun": "gun", "pivot": bc.gd(t["pivot"]), "trunnion": bc.gd(t["trunnion"]),
+                            "muzzle": bc.gd(t["muzzle"]), "gunner": bc.gd(t["gunner"]), "gunner_eye": bc.gd(t["eye"])}
+        if k.get("passenger") == "gunner":      # the car's passenger seat is the gunner's place, standing in the hatch
+            layout["cab"]["passenger_seat"] = bc.gd(t["gunner"])
+            layout["cab"]["passenger_eye"] = bc.gd(t["eye"])
     out.with_suffix(".json").write_text(json.dumps(layout, indent=1) + "\n")
     total = sum(tris(o) for o in objs.values())
     print(f"{key}: {out} ({total} triangles: " + ", ".join(f"{n} {tris(o)}" for n, o in objs.items()) + ")")

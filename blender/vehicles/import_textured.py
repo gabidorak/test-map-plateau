@@ -16,8 +16,9 @@ the ground under the middle of the car) and split into the parts car.gd needs, b
 - the lamps, from the glass's flat lenses: the head lamps', the wing lamps' and the scuttle lamps' take the material
   "headlight" (car.gd lights them at night); the rear amber ones are indicator_left / indicator_right, the rear red
   ones light in two bands, brake_lights below and "taillight" above; the bulbs behind them go;
-- "body", the rest; the maker's emblems go (the bonnet mascot, the stars on the rear lamps, whose baked shadow is
-  painted out of the textures: CARS "patches") and the number plates are blank ("plate").
+- "body", the rest; the number plates are blank ("plate"). Small detailed pieces can keep every triangle (CARS
+  "keep": the maker's three-pointed stars, the bonnet mascot and the rear lamps' badges); CARS "drop" hides pieces,
+  "patches" paints discs out of a set's maps (car_textures.py).
 Each part keeps its set's textures, downscaled (CARS "sets": sizes) by car_textures.py in the pipeline's venv:
 base colour, normal map and the glTF occlusion-roughness-metallic map. The painted sets are named paint_* (car.gd gives
 them a clear coat); the glass is see-through. Each group is decimated (CARS "ratio"; the source has 570k triangles)
@@ -69,14 +70,12 @@ CARS = {
                   "Door": 0.3, "Fore_Suspension": 0.25, "Back_Suspension": 0.25, "Wire02": 0.25, "Body02": 0.5,
                   "Wheel_F_L": 0.2, "Wheel_F_R": 0.2, "Wheel_B_L": 0.2, "Wheel_B_R": 0.2,
                   "Wheel_01": 0.06, "Wheel_02": 0.06, "steering": 0.5},
-        # islands inside go (boxes not mirrored): the maker's emblems, the bonnet mascot (star and ring) and the
-        # star embossed on a disc in a ring between the lenses of each rear lamp
-        "drop": [("Body01", ((-0.08, -1.66, 1.24), (0.08, -1.60, 1.38))),
+        # islands inside keep every triangle (boxes not mirrored; decimated, small pieces lose their shape): the
+        # three-pointed stars, the bonnet mascot (star and ring) and the badge between the lenses of each rear lamp
+        # (a raised star, a ring and a disc with the star embossed)
+        "keep": [("Body01", ((-0.08, -1.66, 1.24), (0.08, -1.60, 1.38))),
                  ("Frame", ((0.65, 1.72, 0.66), (0.742, 1.733, 0.75))),
                  ("Frame", ((-0.742, 1.72, 0.66), (-0.65, 1.733, 0.75)))],
-        # discs painted out of a set's maps (UV centre, radius; car_textures.py): that star's shadow, baked into the
-        # lamp plates under it (the ring around it stays)
-        "patches": {"Frame": [(0.9543, 0.8829, 0.0116), (0.7552, 0.9001, 0.0116)]},
         "steering": ("Salon", ((0.08, 0.15, 0.95), (0.48, 0.45, 1.40))),     # rim, spokes, hub (not mirrored)
         # lenses: the glass's islands under 3 cm deep along y and 5 to 30 cm across, by box
         "lenses": {"headlight": [((0.30, -2.05, 0.80), (0.80, -1.70, 1.25)),     # head lamps, wing lamps
@@ -225,13 +224,19 @@ def lens_kind(c: dict, i) -> str | None:
 
 
 def classify(c: dict, objs: dict, listing: list) -> dict:
-    """Per group: the islands (or the whole group) with their part ("group") and material ("remat", None: the set's)."""
+    """Per group: the islands (or the whole group) with their part ("group"), material ("remat", None: the set's) and
+    whether they keep every triangle ("keep": CARS "keep" boxes; CARS "drop" boxes hide them instead)."""
     per = {}
     st_src, (st_lo, st_hi) = c["steering"]
-    drops = {}
-    for g, box in c["drop"]:
+    drops, keeps = {}, {}
+    for g, box in c.get("drop", []):
         drops.setdefault(g, []).append(box)
-    special = {"Glass", st_src} | set(drops) | set(listing)
+    for g, box in c.get("keep", []):
+        keeps.setdefault(g, []).append(box)
+    special = {"Glass", st_src} | set(drops) | set(keeps) | set(listing)
+
+    def within(i, boxes):
+        return any(all(lo[k] <= i.lo[k] and i.hi[k] <= hi[k] for k in range(3)) for lo, hi in boxes)
     for g, o in objs.items():
         if g not in special:
             per[g] = [Whole(o, c["wheels"].get(g, "body"))]
@@ -242,9 +247,10 @@ def classify(c: dict, objs: dict, listing: list) -> dict:
         bm.free()
         for i in isls:
             i.group, i.remat = c["wheels"].get(g, "body"), None
+            i.keep = within(i, keeps.get(g, []))
             if g == st_src and all(st_lo[k] <= i.lo[k] and i.hi[k] <= st_hi[k] for k in range(3)):
                 i.group = "steering"
-            elif any(all(lo[k] <= i.lo[k] and i.hi[k] <= hi[k] for k in range(3)) for lo, hi in drops.get(g, [])):
+            elif within(i, drops.get(g, [])):
                 i.group = "hidden"
         if g == "Glass":
             lenses = [(i, lens_kind(c, i)) for i in isls]
@@ -262,7 +268,8 @@ def classify(c: dict, objs: dict, listing: list) -> dict:
         if g in listing:
             print(f"== {g}: {len(isls)} islands")
             for i in sorted(isls, key=lambda i: (round(i.c.y, 1), i.c.x)):
-                print(f"  {i.group:16s} {i.remat or '':10s} tris {i.tris:6d} c ({i.c.x:6.3f}, {i.c.y:6.3f}, "
+                tag = i.remat or ("keep" if i.keep else "")
+                print(f"  {i.group:16s} {tag:10s} tris {i.tris:6d} c ({i.c.x:6.3f}, {i.c.y:6.3f}, "
                       f"{i.c.z:6.3f}) size ({i.size.x:5.3f}, {i.size.y:5.3f}, {i.size.z:5.3f})")
         per[g] = isls
     return per
@@ -336,6 +343,14 @@ def build(key: str, out_dir: Path, prev: str, listing: list) -> None:
                 bpy.data.objects.remove(piece)
                 continue
             ratio = c["ratio"].get(part if part == "steering" else g, 1.0)
+            kept = {k for k, i in enumerate(per[g]) if getattr(i, "keep", False)}
+            whole = ic.split(piece, "isl", lambda v, kept=kept: v in kept) if kept else None
+            if whole is not None:                   # those islands whole, the rest decimated
+                shade(whole, 1.0)
+                parts.setdefault(part, []).append(whole)
+                print(f"  {g} -> {part}: {ic.tris(whole)} triangles kept whole")
+                if whole is piece:
+                    continue
             before = ic.tris(piece)
             shade(piece, 1.0 if part.startswith(("indicator", "brake")) else ratio)
             print(f"  {g} -> {part}: {before} -> {ic.tris(piece)} triangles")

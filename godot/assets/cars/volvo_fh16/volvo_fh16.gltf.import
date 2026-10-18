@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://ssej5242tgu4"
-path="res://.godot/imported/volvo_fh16.glb-01c59bfd085acd2df69de9ed947fdf35.scn"
+uid="uid://40twyh4fu5gu"
+path="res://.godot/imported/volvo_fh16.gltf-8f100cd35b9ead514a3a20b988d6dbd1.scn"
 
 [deps]
 
-source_file="res://assets/cars/volvo_fh16.glb"
-dest_files=["res://.godot/imported/volvo_fh16.glb-01c59bfd085acd2df69de9ed947fdf35.scn"]
+source_file="res://assets/cars/volvo_fh16/volvo_fh16.gltf"
+dest_files=["res://.godot/imported/volvo_fh16.gltf-8f100cd35b9ead514a3a20b988d6dbd1.scn"]
 
 [params]
 
