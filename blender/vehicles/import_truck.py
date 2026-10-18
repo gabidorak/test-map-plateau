@@ -1,17 +1,17 @@
 """Turns a ready-made truck model (FBX from a 3D model store; the files stay in ref/, not published) into a drivable
 truck with the parts and cab file of the cars of import_car.py, so scripts/car.gd drives it and shows its cab view:
-the Volvo FH16 tractor unit (Globetrotter cab, 4x2) of ref/volvo_fh16 ("VOLVO FH16.zip"), alone (<truck>.glb) and
-with its curtain-sider semi-trailer as the rear section of an articulated vehicle (<truck>_trailer.glb).
+the Volvo FH16 tractor unit (Globetrotter cab, 4x2) of ref/volvo_fh16 ("VOLVO FH16.zip"), alone (<truck>.gltf) and
+with its curtain-sider semi-trailer as the rear section of an articulated vehicle (<truck>_trailer.gltf).
 
 blender -b --factory-startup -P blender/vehicles/import_truck.py -- [--truck=volvo_fh16] [--out_dir=godot/assets/cars]
-                                                                    [--preview=data/review/cars]
+                                                                    [--preview=data/review/cars/volvo_fh16]
 
 The FBX is a tractor and a three-axle semi-trailer, 256 objects (3.1 million triangles) under a scaled group, at about
 1:9.45 with the front along -X. Each object is moved into the frame of build_car.py (metres, z up, front = -Y, left =
 +X, origin on the ground under the middle of the tractor's body box) and goes, face by face, to one of the parts car.gd
 needs, picked by object name (lists per truck in TRUCKS) and, for objects that hold both sides, by the side of the face:
 - "body", from which car.gd takes the collision box, so the outside mirrors and the roof aerials are objects of their
-  own ("mirrors", "aerial");
+  own ("mirrors", "aerial"); the body's textured faces too ("prints": only they need UVs);
 - "steering" (the steering wheel; its origin at the hub, local Z up the column to the driver, +Y at 12 o'clock);
 - the lamps car.gd switches: indicator_left / indicator_right (the top segment of each headlamp's "V", the side
   repeaters on the cab corners and the amber band of the rear lamps), brake_lights and reverse_lights (the red and
@@ -19,25 +19,35 @@ needs, picked by object name (lists per truck in TRUCKS) and, for objects that h
   is the taillight). The headlamp projectors take the material "headlight", which car.gd lights at night, the "V"
   light guide "drl" (always lit);
 - wheel_front_left ... wheel_rear_right (origin at the wheel centre; the rear ones are the twin tyres of a side);
-- with the trailer, its parts are "trailer_body", trailer_wheel_1_left ... trailer_wheel_3_right (front to back, twin
-  tyres) and its own trailer_indicator_left/right, trailer_brake_lights and trailer_reverse_lights (its rear lamps are
-  textured like the tractor's); the json lists them as the rear section ("trailer") hinged at the fifth wheel
-  ("hitch").
+- with the trailer, its parts are "trailer_body" (its curtains "trailer_prints"), trailer_wheel_1_left ...
+  trailer_wheel_3_right (front to back, twin tyres) and its own trailer_indicator_left/right, trailer_brake_lights and
+  trailer_reverse_lights (its rear lamps are textured like the tractor's); the json lists them as the rear section
+  ("trailer") hinged at the fifth wheel ("hitch").
 The V-Ray materials do not come through FBX, so every face takes one of build_car.py's materials (a few more are added
 below) from its FBX material name, some objects a different one. The dense objects (tyres with their tread, the
 grille, lettering, coiled air lines, seats) are decimated, so the tractor stays near the size of the other vehicles;
-everything is shaded anew (smooth up to 35-40°, the paint's normals weighted by face area). The number plate texture
-is a real-looking stock plate, the sun visor's "GLOBETROTTER" lettering and the curtains' hexagon print are textures:
-all are left out (plain plates, plain black visor, plain curtains). So are the maker's name and mark (the front
-emblem's lettering and ring, the lettering on the cab's back); the "FH" and "750" model badges stay, as plain chrome.
-<truck>.json (next to the .glb) names the wheels, lamps and cab (driver and passenger seat and eye, steering wheel,
-the size of the seated look-alikes and the cab camera's pitch) in glTF coordinates, like import_car.py's.
+everything is shaded anew (smooth up to 35-40°, the paint's normals weighted by face area). The maker's marks are
+kept: the iron mark across the grille (chrome ring and arrow, dark VOLVO lettering), the VOLVO lettering on the cab's
+back, the "FH" and "750" badges (geometry, in plain materials), and the textured ones, from the archive's maps
+("prints", made by truck_textures.py in the pipeline's venv): the sun visor's GLOBETROTTER lettering, the Michelin
+lettering on the tyres' sidewalls (a normal map and a lighter grey from its height map, so it reads in the arches'
+shade; its UVs flipped where it would read mirrored, see fix_uvs) and the curtains' hexagon print. A print that uses
+only part of its map gets that part, its faces' UVs remapped onto it. The number plate texture is a real-looking
+registration: the plates are blank.
+Writes <out_dir>/<truck>/ (as import_textured.py: glTF with separate files; Blender exports the materials plain, then
+the prints' textures go into the .gltf): <truck>.gltf + .bin, <truck>_trailer.gltf + .bin, the prints' textures with
+their Godot .import settings, and <truck>.json / <truck>_trailer.json, which name the wheels, lamps and cab (driver
+and passenger seat and eye, steering wheel, the size of the seated look-alikes and the cab camera's pitch) in glTF
+coordinates, like import_car.py's.
 --preview renders front, rear, side and cab views (Cycles) to check the conversion."""
 import contextlib
+import hashlib
 import io
 import json
 import math
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import bmesh
@@ -49,6 +59,8 @@ import build_car as bc      # noqa: E402  (palette, mat(), join, apply_modifiers
 import import_car as ic     # noqa: E402  (split by a face attribute, bounds)
 
 ROOT = bc.ROOT
+PYTHON = next((p for p in (ROOT / ".venv" / "bin" / "python", ROOT / ".venv" / "Scripts" / "python.exe") if p.exists()),
+              Path("python3"))                  # the pipeline's venv, with Pillow and numpy (truck_textures.py)
 
 bc.MATERIALS.update({       # Volvo FH16
     "paint_volvo": ("#C8CBCE", 0.6, 0.3, 0.0),         # silver-white metallic, as the model's renders
@@ -59,14 +71,18 @@ bc.MATERIALS.update({       # Volvo FH16
     "upholstery": ("#8A8072", 0.0, 0.85, 0.0),         # the bunk and the soft trims
     "accent_red": ("#A51E18", 0.0, 0.5, 0.0),
     "trailer_box": ("#BFC3C7", 0.3, 0.45, 0.0),         # the semi-trailer's frame, roof and rear doors
-    "curtain": ("#AEB2B6", 0.0, 0.8, 0.0),              # its side curtains (PVC), plain
     "reflector_yellow": ("#E3B21C", 0.2, 0.3, 0.0),     # rear marker plates
+    # textured (their maps: TRUCKS "prints"; white here, the texture gives the colour)
+    "visor_print": ("#FFFFFF", 0.0, 0.15, 0.0),         # GLOBETROTTER on the black glass over the windscreen
+    "tyre_print": ("#FFFFFF", 0.0, 0.8, 0.0),           # the tyres' sidewalls, Michelin lettering
+    "curtain_print": ("#FFFFFF", 0.0, 0.8, 0.0),        # the curtains' hexagon print
 })
 
 # per truck: the FBX, its scale and turn into the car frame, then object names (the FBX's) per part or material
 TRUCKS = {
     "volvo_fh16": {
         "fbx": "ref/volvo_fh16/export/VOLVO FH16.FBX",
+        "maps": "ref/volvo_fh16/maps",
         "scale": 9.45,              # its front tyres are then 1.03 m (315/70 R22.5), the cab 2.5 m wide
         "turn": 90.0,               # degrees about z: its front is along -X
         "tractor_end": -2.3,        # car-frame y before centring: objects reaching behind it are the trailer's
@@ -78,8 +94,8 @@ TRUCKS = {
             "Material #2242445": "hub", "Material #2242446": "chrome", "Material #2242448": "chrome",
             "Material #2242447": "plate", "Material #2242449": "plastic_black", "Material #2242450": "underbody",
             "Material #2242483": "headlight", "Material #2242400": "hose_yellow", "Material #2241344": "dash",
-            "Material #2234307": "dash", "METAL": "chrome", "Tyre": "tyre_wall", "Tyre1": "tyre",
-            "Tyre.001": "tyre_wall", "head light black": "trim_black", "head light bump": "chrome",
+            "Material #2234307": "dash", "METAL": "chrome", "Tyre": "tyre_print", "Tyre1": "tyre",
+            "Tyre.001": "tyre_print", "head light black": "trim_black", "head light bump": "chrome",
             "head light white lightS": "drl", "glass head light": "lens", "glass head": "glass_rear",
             "glass_front_black": "glass_front", "color black MAT": "plastic_black", "color black gl": "trim_black",
             "13 - DefaultBB": "grille", "helix": "hose_red", "helix1": "hose_blue", "PLASTIC": "dash",
@@ -94,7 +110,7 @@ TRUCKS = {
         },
         # objects (all their faces) taking another material than their FBX material's
         "object_materials": {
-            "Shape059": "grille", "Object670": "trim_black", "Object669": "trim_black", "Box179.001": None,
+            "Shape059": "grille", "Object670": "trim_black", "Object669": "visor_print", "Box179.001": None,
             "Object655": "rim", "Object654": "hub", "Cylinder229": "hub", "Object683": "headlight",
             "Shape059.001": "glass_side", "Box142.001": "glass_side", "Shape065": "trim_black",
             "Shape068": "trim_black", "Object618": "trim", "Box143": "headliner", "Object688": "headliner",
@@ -103,6 +119,9 @@ TRUCKS = {
             "Object694": "plastic_black", "Object631": "plastic_black", "Object693": "plastic_black",
             "Box178": "grille", "Cylinder243": "chassis", "Object664": "screen", "Line054": "carpet",
             "Object573": "carpet",
+            # the iron mark: its ring and arrow chrome (Tube001), the VOLVO lettering and the ring's back dark; the
+            # lettering on the cab's back satin metal on the paint
+            "Text001": "trim_black", "Tube002": "trim_black", "Text010": "alu",
         },
         "wheels": {"front": ["Object576", "Tube055", "Cylinder222", "Cylinder229", "Cylinder228"],
                    "rear": ["Object657", "Object656", "Tube053", "Tube054", "Object655", "Object654"]},
@@ -111,9 +130,7 @@ TRUCKS = {
         "mirrors": ["Box179.001"],
         "aerial": ["Line052.001", "Cylinder227"],
         "indicators": ["Object685", "Object679"],   # each holds both sides
-        # the engine block in the dark behind the grille; the maker's name and mark (the front emblem's lettering and
-        # ring, the lettering on the cab's back: the diagonal chrome bar across the grille stays)
-        "drop": ["Box166", "Text001", "Tube001", "Tube002", "Text010"],
+        "drop": ["Box166"],                          # the engine block in the dark behind the grille
         # the rear lamps: one textured lens per side, its bands along u from the outer end: amber, red, white, red
         "rear_lamps": {"object": "Box186", "material": "truck_light",
                        "bands": [(0.278, "indicator", "indicator"), (0.556, "brake_lights", "brake"),
@@ -121,11 +138,23 @@ TRUCKS = {
         # decimation: ratio per object; the others by size (see ratio())
         "ratios": {"Object576": 0.025, "Object656": 0.025, "Object657": 0.025, "Cylinder222": 0.08,
                    "Object655": 0.2, "Shape059": 0.1, "Helix005": 0.06, "Helix006": 0.06,
-                   "Text009": 0.08, "Box178": 0.1, "Object680": 0.5, "Box141": 0.12},
+                   "Text009": 0.08, "Box178": 0.1, "Object680": 0.5, "Box141": 0.12, "Text001": 0.15,
+                   "Text010": 0.15, "Tube001": 0.5, "Tube002": 0.5, "Object669": 1.0, "Tube053": 0.2,
+                   "Tube054": 0.2, "Tube055": 0.2},
+        # textured marks: palette material -> the archive's map, how it is made (truck_textures.py), the part of it
+        # its faces use (UV, v up), size (px), colours, and glTF factors
+        "prints": {
+            "visor_print": {"map": "gl.jpg", "kind": "lettering", "crop": (0.21, 0.43, 0.755, 0.535),
+                            "size": (1024, 256), "colours": ("#0B0C0E", "#EEEEEE"), "roughness": 0.15,
+                            "file": "visor_print.png"},
+            "tyre_print": {"map": "tire_bump.jpg", "kind": "relief", "crop": None, "size": (512, 512),
+                           "colours": ("#1E1E20", "#5C5C60"), "roughness": 0.8, "strength": 2.0,
+                           "file": "tyre_print.jpg", "normal": "tyre_print_normal.png"},
+        },
         "cab": {"seat": (0.72, -7.55, 1.92), "eye": (-7.45, 2.70), "figure": 0.8, "eye_pitch": 0.1},
-        # the semi-trailer (<truck>_trailer.glb): its own materials and objects, over the tractor's
+        # the semi-trailer (<truck>_trailer.gltf): its own materials and objects, over the tractor's
         "trailer": {
-            "materials": {"truck_silver_dirt continer": "trailer_box", "CONTINER": "curtain",
+            "materials": {"truck_silver_dirt continer": "trailer_box", "CONTINER": "curtain_print",
                           "truck_black_metal1": "chassis", "Material #2242404": "trailer_box", "truck": "chassis",
                           "truck_white_light": "lens", "truck_tagg": "reflector_yellow",
                           "truck_tagg_red": "reflector_red", "truck_orange_light": "taillight", "number": "plate",
@@ -143,14 +172,20 @@ TRUCKS = {
             "ratios": {"Object402": 0.025, "Object403": 0.025, "Object406": 0.025, "Object407": 0.025,
                        "Object410": 0.025, "Object411": 0.025, "Object405": 0.2, "Object409": 0.2,
                        "Object413": 0.2, "Cylinder223": 0.15, "Box152": 0.15, "Box040": 0.25, "Box188": 0.15,
-                       "Plane224": 1.0},
+                       "Plane224": 1.0, "Tube044": 0.2, "Tube047": 0.2, "Tube048": 0.2, "Tube050": 0.2,
+                       "Tube051": 0.2, "Tube052": 0.2},
+            "prints": {
+                "curtain_print": {"map": "DDF.jpg", "kind": "mask", "crop": (0.2, 0.43, 0.78, 0.56),
+                                  "size": (1024, 256), "colours": ("#9EA2A7", "#BDC1C5"), "roughness": 0.8,
+                                  "file": "curtain_print.jpg"},
+            },
         },
     },
 }
-WHEEL_PARTS = ("tyre", "tyre_wall", "rim", "hub")
-GROUPS = ["body", "steering", "mirrors", "aerial", "indicator_left", "indicator_right", "brake_lights",
+WHEEL_PARTS = ("tyre", "tyre_wall", "tyre_print", "rim", "hub")
+GROUPS = ["body", "prints", "steering", "mirrors", "aerial", "indicator_left", "indicator_right", "brake_lights",
           "reverse_lights", "wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right",
-          "trailer_body", "trailer_indicator_left", "trailer_indicator_right", "trailer_brake_lights",
+          "trailer_body", "trailer_prints", "trailer_indicator_left", "trailer_indicator_right", "trailer_brake_lights",
           "trailer_reverse_lights"] + [f"trailer_wheel_{k}_{s}" for k in (1, 2, 3) for s in ("left", "right")] + \
          ["hidden"]
 LAMPS = ("indicator", "brake", "reverse")      # (the rear lamps' bands are kept whole: small, cut along their texture)
@@ -231,6 +266,7 @@ def faces(o, c: dict, axles=None) -> list:
         y = sum(v.co.y for v in me.vertices) / len(me.vertices)
         axle = 1 + min(range(len(axles)), key=lambda k: abs(axles[k] - y))
     pre = "trailer_" if t else ""
+    printed = set(c["prints"]) | set(c["trailer"]["prints"])
     for p in me.polygons:
         m = mats[p.material_index]
         x = p.center.x
@@ -260,6 +296,8 @@ def faces(o, c: dict, axles=None) -> list:
             u = sum(uv[k].uv[0] for k in p.loop_indices) / p.loop_total
             g, m = next((g, m) for top, g, m in lamp["bands"] if u < top)
             g = pre + g + ("_" + side if g == "indicator" else "")
+        if g == pre + "body" and m in printed:
+            g = pre + "prints"                  # (an object of their own: only it needs UVs, not the whole body)
         out.append((g, m))
     return out
 
@@ -312,6 +350,134 @@ def rework(o, r: float, paint: bool) -> None:
         bc.apply_modifiers(o)
 
 
+# ---------------------------------------------------------------- prints: the textured marks
+
+def prints(c: dict, semi: bool) -> dict:
+    """The truck's prints, and its trailer's with `semi`: palette material -> its entry in TRUCKS."""
+    return c["prints"] | (c["trailer"]["prints"] if semi else {})
+
+
+def make_prints(c: dict, folder: Path) -> None:
+    """The prints' textures into `folder` (truck_textures.py in the pipeline's venv), with their Godot settings."""
+    jobs = []
+    for e in prints(c, True).values():
+        j = {"kind": e["kind"], "src": str(ROOT / c["maps"] / e["map"]), "out": str(folder / e["file"]),
+             "size": list(e["size"]), "crop": list(e["crop"]) if e["crop"] else None, "colours": list(e["colours"])}
+        if "normal" in e:
+            j |= {"normal_out": str(folder / e["normal"]), "strength": e["strength"]}
+        jobs.append(j)
+    folder.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as t:
+        json.dump(jobs, t)
+    subprocess.run([str(PYTHON), "-I", str(Path(__file__).with_name("truck_textures.py")), t.name], check=True)
+    Path(t.name).unlink()
+    for e in prints(c, True).values():
+        import_settings(folder / e["file"], normal=False, lossless=e["kind"] == "lettering")
+        if "normal" in e:
+            import_settings(folder / e["normal"], normal=True)
+
+
+def import_settings(path: Path, normal: bool, lossless: bool = False) -> None:
+    """Godot's import settings of a texture (as import_textured.py's): VRAM compressed with mipmaps, a normal map as
+    such; lettering lossless, so its edges stay sharp. Godot completes the file on import; an existing one is kept."""
+    imp = path.with_name(path.name + ".import")
+    if imp.exists():
+        return
+    imp.write_text('[remap]\n\nimporter="texture"\ntype="CompressedTexture2D"\n\n[params]\n\n'
+                   f"compress/mode={0 if lossless else 2}\ncompress/normal_map={1 if normal else 2}\n"
+                   "mipmaps/generate=true\n")
+
+
+def print_materials(pr: dict, folder: Path) -> None:
+    """The prints' Blender materials, textured (for the previews: the glTF export leaves textures out)."""
+    for name, e in pr.items():
+        m = bc.mat(name)
+        nt = m.node_tree
+        bsdf = nt.nodes["Principled BSDF"]
+        img = nt.nodes.new("ShaderNodeTexImage")
+        img.image = bpy.data.images.load(str(folder / e["file"]))
+        img.extension = "EXTEND"
+        nt.links.new(img.outputs["Color"], bsdf.inputs["Base Color"])
+        if "normal" in e:
+            nimg = nt.nodes.new("ShaderNodeTexImage")
+            nimg.image = bpy.data.images.load(str(folder / e["normal"]))
+            nimg.image.colorspace_settings.name = "Non-Color"
+            nm = nt.nodes.new("ShaderNodeNormalMap")
+            nt.links.new(nimg.outputs["Color"], nm.inputs["Color"])
+            nt.links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
+
+
+def mirrored(me, p, uv) -> bool:
+    """True when face `p`'s texture reads mirrored from its front (its UV frame is left-handed about its normal)."""
+    ks = list(p.loop_indices)[:3]
+    v = [me.vertices[me.loops[k].vertex_index].co for k in ks]
+    t = [uv[k].uv for k in ks]
+    e1, e2 = v[1] - v[0], v[2] - v[0]
+    d1, d2 = t[1] - t[0], t[2] - t[0]
+    det = d1.x * d2.y - d1.y * d2.x
+    if abs(det) < 1e-12:
+        return False
+    tangent = (e1 * d2.y - e2 * d1.y) / det
+    bitangent = (e2 * d1.x - e1 * d2.x) / det
+    return tangent.cross(bitangent).dot(p.normal) < 0.0
+
+
+def fix_uvs(o, per: list, pr: dict) -> None:
+    """One UV layer ("UVMap") on every object, so joined parts share it; the faces of a print with a crop remapped onto
+    its texture, and those whose lettering would read mirrored flipped across u: the sidewalls of one side of the
+    truck are a mirrored copy, and in Godot every wheel is mirrored front to back (VehicleWheel3D's basis is the axle,
+    up and up x axle: left-handed), so a wheel's lettering is stored mirrored to read right in the game (mirrored in
+    Blender's previews)."""
+    me = o.data
+    if not me.uv_layers:
+        me.uv_layers.new(name="UVMap")
+    keep = me.uv_layers.active
+    for layer in [x for x in me.uv_layers if x != keep]:
+        me.uv_layers.remove(layer)
+    me.uv_layers[0].name = "UVMap"
+    uv = me.uv_layers[0].data
+    for p, (g, m) in zip(me.polygons, per):
+        e = pr.get(m)
+        if e is None:
+            continue
+        if e["crop"]:
+            u0, v0, u1, v1 = e["crop"]
+            for k in p.loop_indices:
+                u, v = uv[k].uv
+                uv[k].uv = ((u - u0) / (u1 - u0), (v - v0) / (v1 - v0))
+        if e["kind"] != "mask" and mirrored(me, p, uv) != ("wheel_" in g):
+            for k in p.loop_indices:
+                uv[k].uv = (1.0 - uv[k].uv[0], uv[k].uv[1])
+
+
+def add_prints(gltf: Path, pr: dict) -> None:
+    """The prints' textures into the exported .gltf (Blender's exporter would re-encode them): base colour, and the
+    normal map of a relief. Also stamps the hash of its .bin into it: Godot re-imports a .gltf only when its own text
+    changes, and a change to the geometry alone leaves that text as it was."""
+    g = json.loads(gltf.read_text())
+    bins = [gltf.with_name(b["uri"]).read_bytes() for b in g.get("buffers", []) if "uri" in b]
+    g["asset"]["extras"] = {"bin_sha1": hashlib.sha1(b"".join(bins)).hexdigest()}
+    g["samplers"] = [{"magFilter": 9729, "minFilter": 9987, "wrapS": 33071, "wrapT": 33071}]   # trilinear, clamped
+    g["images"], g["textures"] = [], []
+    index = {}
+
+    def tex(f):
+        if f not in index:
+            index[f] = len(g["textures"])
+            g["images"].append({"uri": f, "mimeType": "image/png" if f.endswith(".png") else "image/jpeg"})
+            g["textures"].append({"sampler": 0, "source": len(g["images"]) - 1})
+        return {"index": index[f]}
+    for m in g.get("materials", []):
+        e = pr.get(m["name"])
+        if e is None:
+            continue
+        m["pbrMetallicRoughness"] = {"baseColorTexture": tex(e["file"]), "baseColorFactor": [1, 1, 1, 1],
+                                     "metallicFactor": 0.0, "roughnessFactor": e["roughness"]}
+        if "normal" in e:
+            m["normalTexture"] = tex(e["normal"])
+    gltf.write_text(json.dumps(g, indent=1))
+
+
 # ---------------------------------------------------------------- the steering wheel and the cab
 
 def steering_frame(rim) -> Matrix:
@@ -342,10 +508,13 @@ def steering_frame(rim) -> Matrix:
 # ---------------------------------------------------------------- build
 
 def build(key: str, out_dir: Path, prev: str, semi: bool) -> None:
-    """<key>.glb and .json: the tractor alone, or with its semi-trailer (`semi`: <key>_trailer.glb)."""
+    """<out_dir>/<key>/<key>.gltf and .json: the tractor alone, or with its semi-trailer (`semi`: <key>_trailer)."""
     c = TRUCKS[key]
     name = key + ("_trailer" if semi else "")
+    folder = out_dir / key
+    pr = prints(c, semi)
     objs = load(c)
+    print_materials(pr, folder)
     tractor = [o for o in objs.values() if is_tractor(o, c)]
     trailer = [o for o in objs.values() if o not in tractor] if semi else []
     for o in objs.values():
@@ -368,6 +537,7 @@ def build(key: str, out_dir: Path, prev: str, semi: bool) -> None:
         r = ratio(o, c)
         src = o.name
         per = faces(o, c, axles if o in trailer else None)
+        fix_uvs(o, per, pr)
         assign(o, per)
         for g in sorted({g for g, _ in per}, key=GROUPS.index):
             part = ic.split(o, "grp", lambda v, g=g: v == GROUPS.index(g))
@@ -420,13 +590,16 @@ def build(key: str, out_dir: Path, prev: str, semi: bool) -> None:
     eye = shift @ Vector((k["seat"][0], k["eye"][0], k["eye"][1]))
     print(f"driver seat {tuple(round(v, 3) for v in seat)}, eye {tuple(round(v, 3) for v in eye)}")
 
-    out = out_dir / f"{name}.glb"
-    out.parent.mkdir(parents=True, exist_ok=True)
+    out = folder / f"{name}.gltf"
     for o in bpy.data.objects:
         o.select_set(o in out_objs.values())
-    bpy.ops.export_scene.gltf(filepath=str(out), export_format="GLB", use_selection=True, export_normals=True,
-                              export_materials="EXPORT", export_yup=True, export_apply=True,
-                              export_texcoords=False)                 # untextured
+        if o in out_objs.values() and not any(m and m.name in pr for m in o.data.materials):
+            while o.data.uv_layers:                 # UVs only where a print needs them
+                o.data.uv_layers.remove(o.data.uv_layers[0])
+    bpy.ops.export_scene.gltf(filepath=str(out), export_format="GLTF_SEPARATE", use_selection=True,
+                              export_normals=True, export_texcoords=True, export_materials="EXPORT",
+                              export_image_format="NONE", export_yup=True, export_apply=True)
+    add_prints(out, pr)
     have = [g for g in GROUPS if g in out_objs]
     layout = {
         "wheels": [g for g in have if g.startswith("wheel_")],
@@ -510,6 +683,7 @@ def preview(prefix: str, lo: Vector, hi: Vector, eye: Vector, cab: bool = True) 
 def main() -> None:
     a = bc.args()
     for key in ([a["truck"]] if a.get("truck") else list(TRUCKS)):
+        make_prints(TRUCKS[key], Path(a["out_dir"]) / key)
         build(key, Path(a["out_dir"]), a["preview"], semi=False)
         if "trailer" in TRUCKS[key]:
             build(key, Path(a["out_dir"]), a["preview"], semi=True)

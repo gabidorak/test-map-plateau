@@ -51,6 +51,7 @@
  "trailer": {
   "nodes": [
    "trailer_body",
+   "trailer_prints",
    "trailer_indicator_left",
    "trailer_indicator_right",
    "trailer_brake_lights",

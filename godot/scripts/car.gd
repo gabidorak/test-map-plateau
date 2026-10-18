@@ -131,16 +131,16 @@ const SPECS := {
 			"fittings": "fire_truck.json",
 			"sound": "truck", "credit": "6x6 airport crash tender, built by blender/vehicles/build_fire_truck.py"},
 	# 4x2 tractor unit, unladen: rear-wheel drive, 750 hp, the EU limiter's 90 km/h, a truck's lock
-	"volvo-fh16": {"label": "Volvo FH16 truck", "file": "volvo_fh16.glb", "scale": 1.0,
+	"volvo-fh16": {"label": "Volvo FH16 truck", "file": "volvo_fh16/volvo_fh16.gltf", "scale": 1.0,
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
 			"traction_from": 2, "mass": 8500.0, "power": 0.9, "max_speed": 25.0, "max_steer": 0.75,
-			"steer_fade_speed": 10.0, "cab": "volvo_fh16.json", "sound": "diesel6",
+			"steer_fade_speed": 10.0, "cab": "volvo_fh16/volvo_fh16.json", "sound": "diesel6",
 			"credit": "Volvo FH16 750 tractor unit (Globetrotter cab), a ready-made model converted by blender/vehicles/import_truck.py"},
 	# the same with its three-axle curtain-sider semi-trailer, empty (the cab file's "trailer": towed, ~17.6 m long)
-	"volvo-fh16-trailer": {"label": "Volvo FH16 + trailer", "file": "volvo_fh16_trailer.glb", "scale": 1.0,
+	"volvo-fh16-trailer": {"label": "Volvo FH16 + trailer", "file": "volvo_fh16/volvo_fh16_trailer.gltf", "scale": 1.0,
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
 			"traction_from": 2, "mass": 8500.0, "trailer_mass": 7000.0, "power": 0.75, "max_speed": 25.0,
-			"max_steer": 0.75, "steer_fade_speed": 10.0, "cab": "volvo_fh16_trailer.json", "sound": "diesel6",
+			"max_steer": 0.75, "steer_fade_speed": 10.0, "cab": "volvo_fh16/volvo_fh16_trailer.json", "sound": "diesel6",
 			"credit": "Volvo FH16 750 with a curtain-sider semi-trailer, a ready-made model converted by blender/vehicles/import_truck.py"},
 	"biplane": {"label": "Biplane", "plane": true, "credit": "toy biplane built by scripts/plane.gd"},
 	"biplane-armed": {"label": "Armed biplane", "plane": true, "guns": true,
@@ -505,6 +505,11 @@ func _add_wheels(body: VehicleBody3D, wheels: Array[MeshInstance3D], steer: int,
 		w.reparent(vw, false)
 		# the wheel node sits at the wheel centre (it spins and steers about it)
 		w.transform = Transform3D(Basis.IDENTITY, -centre) * t
+		if _cab_file.get("unmirror_wheels", false):
+			# VehicleBody3D poses its wheels with a mirrored basis (right, up, up × right: their Z flipped) from the first
+			# physics tick on, so a print on a wheel (a centre cap's badge, tyre lettering) would read backwards: the
+			# mesh is mirrored back
+			w.transform = Transform3D(Basis.from_scale(Vector3(1.0, 1.0, -1.0)), Vector3.ZERO) * w.transform
 	return wheel_y
 
 
