@@ -5,7 +5,7 @@ blender -b --factory-startup -P blender/props/build_props.py -- [--out godot/ass
 
 Reads pipeline/props_catalog.toml for the models and sign faces the pipeline can place and fails if one has no
 recipe. Builds them with toylib (bevelled parts, weighted normals, baked vertex AO) and exports one .glb per
-recipe module (furniture, bins, equipment, barriers, signs) holding one mesh object per model, plus props.json:
+recipe module (furniture, bins, equipment, barriers, camp, signs) holding one mesh object per model, plus props.json:
 size, bounds, colliders, anchors, view range and material slots of every model (the Godot builder reads it)."""
 import json
 import math
@@ -22,12 +22,14 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 import barriers  # noqa: E402
 import bins  # noqa: E402
+import camp  # noqa: E402
 import equipment  # noqa: E402
 import furniture  # noqa: E402
 import signs  # noqa: E402
 import toylib  # noqa: E402
 
-MODULES = {"furniture": furniture.MODELS, "bins": bins.MODELS, "equipment": equipment.MODELS, "barriers": barriers.MODELS}
+MODULES = {"furniture": furniture.MODELS, "bins": bins.MODELS, "equipment": equipment.MODELS, "barriers": barriers.MODELS,
+           "camp": camp.MODELS}
 FIXED = {"bus_shelter", "bus_pole", "bench_back", "bin_vigipirate", "traffic_light_car", "traffic_light_ped", "sign_pole"}
 
 
