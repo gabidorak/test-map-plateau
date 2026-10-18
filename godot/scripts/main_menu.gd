@@ -172,6 +172,8 @@ func _show_update() -> void:
 			_update_label.text = mine + "  ·  up to date"
 		Updater.State.DOWNLOADING:
 			_update_label.text = "%s  ·  downloading %s… %d %%" % [mine, theirs, roundi(100.0 * u.progress())]
+		Updater.State.INSTALLING:
+			_update_label.text = "%s  ·  installing %s…" % [mine, theirs]
 		Updater.State.READY:
 			_update_label.text = "%s  ·  %s is downloaded (installed at the next start)" % [mine, theirs]
 			_update_button.text = "Restart now"
