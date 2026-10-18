@@ -18,10 +18,11 @@ const MATERIALS := ["asphalt", "concrete", "paving", "sett", "gravel", "dirt", "
 
 func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String) -> Error:
 	var gm: Dictionary = world["ground_mesh"]
-	if gm["materials"] != MATERIALS:
+	# the railway patch (tools/rail/patch_world.py) appends "ballast": a world without it builds too
+	if gm["materials"] != MATERIALS and gm["materials"] != MATERIALS.slice(0, MATERIALS.size() - 1):
 		push_error("ground materials changed in the pipeline: update toy_ground.gdshader and ground_builder.gd")
 		return ERR_INVALID_DATA
-	var bytes := FileAccess.get_file_as_bytes(world_dir.path_join(gm["file"]))
+	var files := {}                     # ground.bin and its parts ground.1.bin... (a chunk's "file") once read
 	var mat := ShaderMaterial.new()
 	mat.shader = load(SHADER)
 	MeshUtils.save(mat, mesh_dir + "ground_material.tres")
@@ -39,6 +40,10 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 	var water: Variant = root.get_node_or_null("Water")
 	var water_id := MATERIALS.find("water")
 	for c: Dictionary in gm["chunks"]:
+		var file: String = c.get("file", gm["file"])
+		if not files.has(file):
+			files[file] = FileAccess.get_file_as_bytes(world_dir.path_join(file))
+		var bytes: PackedByteArray = files[file]
 		var raw := bytes.slice(c["offset"], c["offset"] + c["size"]).decompress(c["raw"], FileAccess.COMPRESSION_DEFLATE)
 		if raw.size() != int(c["raw"]):
 			push_error("ground chunk %s is corrupt" % c["name"])

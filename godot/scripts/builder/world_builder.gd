@@ -11,6 +11,7 @@ const VegetationBuilder = preload("res://scripts/builder/vegetation_builder.gd")
 const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
 const FarBuilder = preload("res://scripts/builder/far_builder.gd")
 const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
+const BridgeBuilder = preload("res://scripts/builder/bridge_builder.gd")
 const InteriorBuilder = preload("res://scripts/builder/interior_builder.gd")
 const Water = preload("res://scripts/water.gd")
 const GroundHeights = preload("res://scripts/ground_heights.gd")
@@ -38,7 +39,7 @@ func build_and_save() -> Error:
 	for f in DirAccess.get_files_at(MESH_DIR):  # drop meshes from a previous, possibly larger build
 		DirAccess.remove_absolute(MESH_DIR.path_join(f))
 
-	var heights := FileAccess.get_file_as_bytes(WORLD_PATH.get_base_dir().path_join(world["terrain"]["file"])).to_float32_array()
+	var heights := GroundHeights.read_heightmap(WORLD_PATH.get_base_dir(), world["terrain"])
 	if heights.size() != int(world["terrain"]["w"]) * int(world["terrain"]["h"]):
 		push_error("heightmap size mismatch")
 		return ERR_INVALID_DATA
@@ -68,6 +69,7 @@ func build_and_save() -> Error:
 	if err != OK:
 		root.free()
 		return err
+	BridgeBuilder.new().build(root, world, heights, MESH_DIR)
 	err = RailBuilder.new().build(root, world, heights, MESH_DIR)
 	if err != OK:
 		root.free()

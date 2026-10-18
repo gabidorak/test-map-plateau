@@ -12,6 +12,7 @@ extends SceneTree
 
 const GENERATED := "res://scenes/generated"
 const GROUND_INDEX := "res://world/ground_index.json"
+const GroundHeights = preload("res://scripts/ground_heights.gd")
 
 
 func _initialize() -> void:
@@ -68,7 +69,7 @@ func _thin_heightmap() -> bool:
 	var step := roundi(hm["mesh_cell"] / hm["cell"])
 	if step <= 1:
 		return true
-	var heights := FileAccess.get_file_as_bytes(path).to_float32_array()
+	var heights := GroundHeights.read_heightmap(GROUND_INDEX.get_base_dir(), hm)
 	if heights.size() != w * h:
 		printerr("heightmap size mismatch")
 		return false
@@ -81,6 +82,9 @@ func _thin_heightmap() -> bool:
 		for c in cols:
 			out[k] = heights[r * w + c]
 			k += 1
+	for part: String in hm.get("parts", []):  # the thinned heightmap is small: one file again
+		DirAccess.remove_absolute(GROUND_INDEX.get_base_dir().path_join(part))
+	hm.erase("parts")
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	f.store_buffer(out.to_byte_array())
 	f.close()
