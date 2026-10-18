@@ -110,6 +110,16 @@ const KINDS := {
 				"formants": [[58.0, 1.0, 3.2], [145.0, 1.6, 1.7], [340.0, 2.4, 0.7], [780.0, 2.0, 0.25]],
 				"pipe": [0.009, 0.5], "clatter_hz": 1900.0, "intake_hz": 420.0, "turbo": [1700.0, 0.03],
 				"rough": 0.06, "prop": 0.0, "drive": 1.6}},
+	# armoured 4x4 (the GAZ Tiger-M): 4.4-litre four-cylinder turbo diesel (YaMZ-534), ~700 rpm at idle to ~2,500 at the
+	# top of each of five gears; a coarse, knocking firing (two pulses a turn), loud injector clatter, a short exhaust
+	# under the body, the turbo's whistle; a military truck's two-tone horn
+	"diesel4": {"pitch_top": 3.6, "gears": [0.14, 0.28, 0.46, 0.7, 1.0], "unit_size": 10.0, "idle_db": -1.0,
+			"road_db": -0.5, "road_pitch": 0.75, "horn": [233, 294], "horn_harmonics": 14,
+			"engine": {"cyl": 4, "idle_hz": 23.5, "layers": 5, "off": 0.4, "pulse": [1300.0, 850.0],
+				"burst": [0.14, 0.11], "clatter": [3.2, 3.8], "intake": [0.7, 0.1],
+				"formants": [[70.0, 1.0, 3.0], [175.0, 1.6, 1.6], [400.0, 2.4, 0.7], [900.0, 2.0, 0.25]],
+				"pipe": [0.0055, 0.45], "clatter_hz": 2000.0, "intake_hz": 500.0, "turbo": [1900.0, 0.03],
+				"rough": 0.12, "prop": 0.0, "drive": 1.7}},
 	# biplane (scripts/plane.gd): one "gear", the engine speed follows the throttle lever; 9-cylinder radial with short
 	# open stacks (popping, rough) and a two-blade propeller
 	"plane": {"pitch_top": 4.0, "gears": [1.0], "unit_size": 16.0, "idle_db": -3.0,

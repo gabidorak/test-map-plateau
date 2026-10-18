@@ -5,7 +5,8 @@ extends Node
 ##   driving or not). A player standing in a vehicle sends its position in that vehicle's frame, so on every screen it
 ##   stays inside it however that vehicle's motion is smoothed there; one in a vehicle's passenger seat (the fire
 ##   truck's) sends flag 2, and that vehicle shows them seated; in the gunner's seat of the two-seat biplane, also its
-##   turret (plane.gd gunner_state), whose hits count on the gunner's peer. Others show it as a remote_player.gd, which the
+##   turret (plane.gd gunner_state; the GAZ Tiger's roof gun likewise, armored_car.gd), whose hits count on the gunner's
+##   peer. Others show it as a remote_player.gd, which the
 ##   vehicles they simulate collide with.
 ## - Vehicles: each one is simulated by a single peer, its owner: the one who parked it, then whoever drives it (the
 ##   host takes over the vehicles of a player who leaves). The other peers pose a frozen copy from the owner's states

@@ -31,7 +31,8 @@ extends Node3D
 ## wheel if nobody has it, Space gets out on the right.
 ## The two-seat biplane's passenger seat is its gunner's (same E rule): the mouse aims its belly turret, which fires
 ## forward only (up to 45° off the nose) with the left mouse button; V or the mouse wheel goes to the turret view, and a
-## ring shows where the barrel points.
+## ring shows where the barrel points. So is the GAZ Tiger's (scripts/armored_car.gd): the gunner stands in its roof
+## hatch and the mouse turns the machine gun on the hatch's ring all the way round.
 ## Vehicles bend thin trees and knock over sign poles, bollards and the like (scripts/breakables.gd).
 ## Bot buses and bot cars (scripts/traffic.gd, scripts/bus_bot.gd) drive their lines and routes when playing solo,
 ## hosting, or on a dedicated server: the player can ride the buses (in through the open doors at a stop) but drive
@@ -62,6 +63,7 @@ const Biplane = preload("res://scripts/plane.gd")
 const Horse = preload("res://scripts/horse.gd")
 const PlaneGuns = preload("res://scripts/plane_guns.gd")
 const FireTruck = preload("res://scripts/fire_truck.gd")
+const ArmoredCar = preload("res://scripts/armored_car.gd")
 const PoliceCar = preload("res://scripts/police_car.gd")
 const WaterCannon = preload("res://scripts/water_cannon.gd")
 const Breakables = preload("res://scripts/breakables.gd")
@@ -425,12 +427,14 @@ func _process(delta: float) -> void:
 	if _toast_t > 0.0:
 		_toast_t -= delta
 		_toast.modulate.a = clampf(_toast_t, 0.0, 1.0)
-	_dash.visible = driving != null or riding is Biplane
+	_dash.visible = driving != null or riding is Biplane or riding is ArmoredCar
 	_update_gunsight()
 	if driving is Biplane:
 		_dash.text = (driving as Biplane).dash_text()
 	elif riding is Biplane:
 		_dash.text = (riding as Biplane).dash_text()
+	elif riding is ArmoredCar:
+		_dash.text = (riding as ArmoredCar).gunner_dash()
 	elif driving is Horse:
 		_dash.text = (driving as Horse).dash_text()
 	elif driving:
@@ -450,13 +454,14 @@ func _process(delta: float) -> void:
 
 
 ## The armed plane's gunsight: a ring where its guns' rounds converge, on the screen; for the gunner of the two-seater,
-## where its turret's are aimed.
+## where its turret's are aimed, and for the armoured car's, its roof gun's.
 func _update_gunsight() -> void:
 	var plane := driving as Biplane
 	var gunner := riding as Biplane
 	var cam := get_viewport().get_camera_3d()
 	var aim: Variant = plane.aim_point() if plane and plane.armed \
-			else gunner.turret_aim_point() if gunner and gunner.turret else null
+			else gunner.turret_aim_point() if gunner and gunner.turret \
+			else (riding as ArmoredCar).turret_aim_point() if riding is ArmoredCar else null
 	_gunsight.visible = aim != null and cam != null and not cam.is_position_behind(aim)
 	if _gunsight.visible:
 		_gunsight.position = cam.unproject_position(aim) - _gunsight.size * 0.5
@@ -491,6 +496,8 @@ func net_player_state() -> Array:
 		var seated := [riding.net_id, 0, riding.passenger_seat, 0.0, flags | 2]
 		if riding is Biplane and (riding as Biplane).turret:
 			seated.append_array((riding as Biplane).gunner_state())
+		elif riding is ArmoredCar:
+			seated.append_array((riding as ArmoredCar).gunner_state())
 		return seated
 	var c: Node3D = player.carrier if is_instance_valid(player.carrier) else null
 	if c and not driving and c.get("train") != null:   # an RER B car (train.gd TrainCar): its train and its index
@@ -693,11 +700,13 @@ func add_net_car(model: String, xf: Transform3D) -> Car:
 
 
 ## A vehicle of `model`, set up but not in the tree yet: a Horse (Car.SPECS "horse"), a Biplane for the aircraft
-## ("plane"), a FireTruck for the fire truck ("fittings"), a PoliceCar for the police car ("police"), else a Car.
+## ("plane"), a FireTruck for the fire truck ("fittings"), a PoliceCar for the police car ("police"), an ArmoredCar for
+## the GAZ Tiger ("roof_gun"), else a Car.
 static func new_vehicle(model: String) -> Car:
 	var spec: Dictionary = Car.SPECS[model]
 	var car: Car = Horse.new() if spec.get("horse", false) else Biplane.new() if spec.get("plane", false) \
-			else FireTruck.new() if spec.has("fittings") else PoliceCar.new() if spec.get("police", false) else Car.new()
+			else FireTruck.new() if spec.has("fittings") else PoliceCar.new() if spec.get("police", false) \
+			else ArmoredCar.new() if spec.get("roof_gun", false) else Car.new()
 	car.setup(model)
 	return car
 
@@ -710,6 +719,8 @@ func _add_car(car: Car) -> void:
 		(car as Biplane).guns.hit.connect(_on_round_hit)
 	if car is Biplane and (car as Biplane).turret_guns:
 		(car as Biplane).turret_guns.hit.connect(_on_round_hit)
+	if car is ArmoredCar:
+		(car as ArmoredCar).turret_guns.hit.connect(_on_round_hit)
 	if car is FireTruck:
 		(car as FireTruck).cannon.hit.connect(_on_water_hit)
 	cars.append(car)
@@ -1357,6 +1368,10 @@ func _update_help() -> void:
 		_help.text = ("GUNNER · mouse aims the belly turret (forward only, up to 45° off the nose) · %s (held) fire · " % \
 				k.call("fire")) + "wheel zoom (all the way in: turret view) · %s turret view\n" % k.call("toggle_view") + \
 				"%s take the controls (if nobody flies) · %s get out\n%s" % [k.call("interact"), k.call("exit_vehicle"), common]
+	elif riding is ArmoredCar:
+		_help.text = ("GUNNER · mouse aims the roof gun (all round, from %d° down to %d° up) · %s (held) fire · " % [
+				roundi(rad_to_deg(ArmoredCar.PITCH_DOWN)), roundi(rad_to_deg(ArmoredCar.PITCH_UP)), k.call("fire")]) + "wheel zoom (all the way in: turret view) · %s turret view\n" % k.call("toggle_view") + \
+				"%s take the wheel (if nobody drives) · %s get out\n%s" % [k.call("interact"), k.call("exit_vehicle"), common]
 	elif riding:
 		_help.text = "PASSENGER · mouse look · wheel zoom (all the way in: cab view) · %s cab view · " % \
 				k.call("toggle_view") + "%s take the wheel (if nobody drives) · %s get out\n%s" % [k.call("interact"),
@@ -1366,12 +1381,15 @@ func _update_help() -> void:
 				k.call("jump")] + \
 				"wheel zoom (all the way in: first person) · %s first/third person · %s get in the nearest car " % [
 				k.call("toggle_view"), k.call("interact")] + "(in the bus: near the driver seat; fire truck: " + \
-				"from its right side, the passenger seat; biplane with gunner: from its right side, the turret)\n" + \
+				"from its right side, the passenger seat; biplane with gunner: from its right side, the turret; " + \
+				"GAZ Tiger: from its right side, the roof gun)\n" + \
 				"%s park a car here · %s vehicle menu · %s" % [k.call("park_car"), k.call("vehicle_menu"), common]
 	if driving is FireTruck:
 		_help.text += "\n%s (held) water cannon, aimed where you look · %s siren and beacons" % [k.call("fire"), k.call("bell")]
 	elif driving is PoliceCar:
 		_help.text += "\n%s siren and blue lights" % k.call("bell")
+	elif driving is ArmoredCar:
+		_help.text += "\nyour gunner boards from the right side and works the roof gun"
 	_help.text += "\n%s graphics: %s · %s %s · %s frame rate%s · F11 fullscreen" % [k.call("toggle_quality"),
 			"low" if low_quality else "high", k.call("night"), "day" if night and night.on else "night",
 			k.call("toggle_stats"), " and network" if net.active else ""]

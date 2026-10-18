@@ -11,6 +11,8 @@ extends SceneTree
 ## electric: silent at rest, its pedestrian warning hum moving off, its motor's whine pitched up with the speed, "gear D".
 ## A car with reversing lamps ("bmw-m4") backs up on S held with them lit, off on release. The Volvo FH16 tractor
 ## ("volvo-fh16", blender/vehicles/import_truck.py) is checked the same way; with its semi-trailer: tools/test_truck_trailer.gd.
+## So is the GAZ Tiger's driver ("gaz-tiger", a roof gun: matt paint, and its passenger seat is the gunner's, checked by
+## tools/test_tiger.gd).
 ## godot --headless --fixed-fps 60 --path godot --script res://tools/test_real_cars.gd [-- <model> ...]
 ## Without --headless (add --disable-vsync) it also saves shots to /tmp/real_car_<model>_*.png.
 
@@ -23,7 +25,8 @@ const MODELS := {"compact-hatchback": [3.9, 4.2, 1180.0], "family-suv": [4.3, 4.
 		"mercedes-1928": [4.7, 4.9, 1600.0, 0.8],   # (and how far the driver's eye may be from the middle: 0.6 m)
 		"bmw-m4": [4.55, 4.75, 1570.0],
 		"audi-rs6": [4.95, 5.2, 2075.0, 0.6, 2.1],  # (and how wide it may be: 2 m; this one has a wide-body kit)
-		"volvo-fh16": [6.0, 6.4, 8500.0, 2.0, 2.6]}     # truck: the cab is over the front axle, 2.5 m wide
+		"volvo-fh16": [6.0, 6.4, 8500.0, 2.0, 2.6],     # truck: the cab is over the front axle, 2.5 m wide
+		"gaz-tiger": [5.6, 6.0, 7200.0, 0.6, 2.6]}      # armoured car, 2.5 m wide (its gunner: tools/test_tiger.gd)
 
 var _main: Node
 var _failures: PackedStringArray = []
@@ -137,7 +140,8 @@ func _car(model: String) -> void:
 		for k in mi.mesh.get_surface_count():
 			var mat := mi.mesh.surface_get_material(k) as StandardMaterial3D
 			glossed = glossed or (mat != null and mat.resource_name.begins_with("paint") and mat.clearcoat_enabled)
-	_check(glossed, "the paint has a clear coat")
+	if not Car.SPECS[model].get("roof_gun", false):     # (the armoured car's paint is matt)
+		_check(glossed, "the paint has a clear coat")
 
 	player.teleport(car.to_global(Vector3(car.half_extents.x + 1.0, 0.3, 0.0)))
 	await _frames(5)
@@ -227,7 +231,8 @@ func _car(model: String) -> void:
 	if car.global_basis.y.angle_to(Vector3.UP) > 0.15:     # stopped on a bank: back where it was parked, level
 		car.place(parked)
 		await _frames(60)
-	await _passenger_seat(car, tag, roof)
+	if not Car.SPECS[model].get("roof_gun", false):     # (its passenger is the gunner: tools/test_tiger.gd)
+		await _passenger_seat(car, tag, roof)
 	_main.cars.erase(car)
 	car.queue_free()
 	await _frames(5)
