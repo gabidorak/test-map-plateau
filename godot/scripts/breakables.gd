@@ -41,7 +41,8 @@ const BREAKABLE_PROPS := {"sign_pole": 15.0, "bus_pole": 25.0, "route_marker": 5
 		"bike_rack": 25.0, "bike_loops": 15.0, "bike_repair": 40.0,
 		"bench_back": 60.0, "bench_flat": 45.0, "picnic_table": 80.0, "waste_container": 60.0, "grit_bin": 30.0,
 		"parking_meter": 40.0, "post_box": 40.0, "info_board": 50.0, "defibrillator": 30.0, "cctv_pole": 60.0,
-		"flagpole": 60.0, "flagpole_fr": 60.0}
+		"flagpole": 60.0, "flagpole_fr": 60.0,
+		"camp_table": 15.0, "washing_line": 10.0, "camp_bbq": 15.0, "gas_bottles": 30.0, "generator": 50.0}
 ## model -> height (m) of the water column out of its broken pipe (fire hydrants, taps)
 const GEYSERS := {"fire_hydrant": 10.0, "water_tap": 3.0, "drinking_fountain": 3.0}
 const REPAIR_AFTER := 60.0                  # s, a broken water pipe is repaired (the prop back, the water off)...
