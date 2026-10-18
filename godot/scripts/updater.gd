@@ -1,30 +1,41 @@
 extends Node
 ## Auto-updater (autoload "AutoUpdater") for the builds published by .github/workflows/build.yml: every GitHub release
-## (build-N for each push to main, vX for pushed tags) carries one file per platform, and the workflow stamps the
-## release tag and commit into application/config/version and application/config/commit before exporting. Editor
-## runs and local exports have no version: no check.
-## At start the updater asks GitHub for the latest release; when it is another build, it downloads this platform's file
-## next to the game (a hidden ".update" file, ".part" while downloading) in the foreground: a full-screen progress bar
-## over the game, which restarts on the new build once it is downloaded. Esc skips: the download goes on in the
-## background, and the swap happens on "Restart now" in the welcome menu (scripts/main_menu.gd) or at the next start.
-## The packed builds' boot scene (scripts/boot.gd) waits for the foreground update before unpacking the game. The game reads its embedded pack by
-## path while it runs, so the files are swapped only right before the process ends: the new build is launched and
-## this one killed at once. Windows and Linux rename the running executable aside (".old", deleted at the next start),
-## macOS unzips the new .app with ditto and swaps the bundles. Where the game's folder is not writable, or when anything
-## fails, the menu offers the release page instead.
+## (build-N for each push to main, vX for pushed tags) carries one full download per platform, update.json and the
+## launcher deltas; the "store" release keeps the data patches (scripts/delta.gd says how the game's data and launcher
+## are told apart). This build's tag and commit come from its data (Delta.installed()); editor runs and local exports
+## have none: no check. The tag and commit are also set as application/config/version and /commit for the game.
+## At start the updater asks GitHub for the latest release; when it is another build, in the foreground (a full-screen
+## progress bar over the game):
+## - same launcher: downloads the data patches from this build's data to the latest, merges them into a new pack and
+##   restarts on it;
+## - another launcher (Windows, Linux): also rebuilds the executable from launcher-<platform>.bin, swaps it, restarts;
+## - otherwise (macOS launcher, no patch path, patches heavier than most of the full download, any failure): downloads
+##   this platform's full file next to the game (a hidden ".update" file, ".part" while downloading) and restarts on it.
+## Esc skips: the downloads go on in the background, and the update installs on "Restart now" in the welcome menu
+## (scripts/main_menu.gd) or at the next start (patches are merged at a start, before the game loads anything). The
+## packed builds' boot scene (scripts/boot.gd) waits for the foreground update. The game reads its packs by path while
+## it runs, so the executable is swapped only right before the process ends: the new build is launched and this one
+## killed at once. Windows and Linux rename the running executable aside (".old", deleted at the next start), macOS
+## unzips the new .app with ditto and swaps the bundles. Where the game's folder is not writable, the menu offers the
+## release page instead.
 
 signal changed
 
+const Delta = preload("res://scripts/delta.gd")
 const REPO := "gabidorak/test-map-plateau"
 const API := "https://api.github.com/repos/" + REPO + "/releases/latest"
+const STORE := "https://github.com/" + REPO + "/releases/download/store/"
 const ASSETS := {"Windows": "plateau-map-windows.exe", "Linux": "plateau-map-linux.x86_64",
 		"macOS": "plateau-map-macos.zip"}
-const STATE_FILE := "user://update.cfg"     # tag and commit of the downloaded update
+const LAUNCHER_ASSETS := {"Windows": "launcher-windows.bin", "Linux": "launcher-linux.bin"}
+const UPDATE_INFO := "update.json"
+const MAX_PATCH_SHARE := 0.6                # patches heavier than this share of the full download: the full one
+const STATE_FILE := "user://update.cfg"     # [update] tag and commit of the downloaded executable, [data] patches
 const USER_AGENT := "User-Agent: plateau-map-updater"
 const UiStyle = preload("res://scripts/ui_style.gd")
 const SHOW_CHECK_AFTER := 0.4               # s: a quick check does not flash the screen
 
-enum State { OFF, CHECKING, UP_TO_DATE, DOWNLOADING, READY, MANUAL, FAILED }
+enum State { OFF, CHECKING, UP_TO_DATE, DOWNLOADING, INSTALLING, READY, MANUAL, FAILED }
 
 var state := State.OFF
 var version := ""                           # this build's release tag, "" when not a published build
@@ -32,11 +43,23 @@ var latest := ""                            # tag of the newest release
 var release_page := ""
 var error := ""                             # why the update failed (State.FAILED)
 
+var _api := API
+var _store := STORE
+var _installed: Dictionary                  # Delta.installed()
 var _commit := ""
 var _target := ""                           # the executable (Windows, Linux) or the .app bundle (macOS)
 var _http: HTTPRequest
-var _size := 0
 var _latest_commit := ""
+var _latest_run := 0
+var _assets := {}                           # name -> [url, size] of the latest release's files
+var _info := {}                             # its update.json
+var _queue := []                            # downloads left: [url, file, size]
+var _size := 0                              # bytes of all the downloads
+var _done := 0                              # bytes of the finished ones
+var _full := false                          # downloading the full file (else patches and launcher delta)
+var _patches := []                          # the data patches being downloaded, oldest first (chain.json entries)
+var _step := 0.0                            # State.INSTALLING fraction
+var _mounted := false                       # patches mounted over the data: no skipping to this game any more
 var _skipped := false                       # Esc: the update goes on behind the game
 var _check_t := 0.0                         # s since the check started
 var _rate := 0.0                            # download speed, bytes/s
@@ -51,11 +74,19 @@ var _bar: ProgressBar
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_process(false)
-	version = str(ProjectSettings.get_setting("application/config/version", ""))
-	_commit = str(ProjectSettings.get_setting("application/config/commit", ""))
-	if version == "" or not OS.has_feature("template") or not ASSETS.has(OS.get_name()) \
+	_installed = Delta.installed()
+	version = _installed["tag"]
+	_commit = _installed["commit"]
+	if version != "":
+		ProjectSettings.set_setting("application/config/version", version)
+		ProjectSettings.set_setting("application/config/commit", _commit)
+	if _installed["launcher"] == "" or not OS.has_feature("template") or not ASSETS.has(OS.get_name()) \
 			or DisplayServer.get_name() == "headless":
 		return
+	var local := OS.get_environment("PLATEAU_UPDATE_URL")     # tests: a copy of the latest release's API answer and store
+	if local != "":
+		_api = local.path_join("latest.json")
+		_store = local.path_join("store") + "/"
 	_target = OS.get_executable_path()
 	if OS.get_name() == "macOS":
 		_target = _target.get_base_dir().get_base_dir().get_base_dir()   # .app/Contents/MacOS/<exe>
@@ -65,6 +96,11 @@ func _ready() -> void:
 	_remove(_part())
 	var cfg := ConfigFile.new()
 	cfg.load(STATE_FILE)
+	if cfg.has_section("data"):
+		if cfg.get_value("data", "base", "-") == _installed["id"]:
+			_install_data(cfg)                  # patches downloaded behind the game last time
+			return
+		_drop_patches(cfg)
 	if FileAccess.file_exists(_pending()) and cfg.get_value("update", "tag", version) != version \
 			and cfg.get_value("update", "commit", _commit) != _commit:
 		var err := _install()
@@ -82,7 +118,7 @@ func check() -> void:
 	set_process(true)
 	_set_state(State.CHECKING)
 	_new_request(10.0).request_completed.connect(_on_release, CONNECT_ONE_SHOT)
-	if _http.request(API, [USER_AGENT, "Accept: application/vnd.github+json"]) != OK:
+	if _http.request(_api, [USER_AGENT, "Accept: application/vnd.github+json"]) != OK:
 		_set_state(State.OFF)
 
 
@@ -107,22 +143,28 @@ func outdated() -> bool:
 	return version != "" and latest != "" and latest != version and _latest_commit != _commit
 
 
-## True while the update screen is up, or about to be: checking, downloading, restarting (not skipped).
+## True while the update screen is up, or about to be: checking, downloading, installing, restarting (not skipped).
 func foreground() -> bool:
-	return not _skipped and state in [State.CHECKING, State.DOWNLOADING, State.READY]
+	return state == State.INSTALLING or not _skipped and state in [State.CHECKING, State.DOWNLOADING, State.READY]
 
 
-## Downloaded fraction (State.DOWNLOADING).
+## Downloaded fraction (State.DOWNLOADING), merged fraction (State.INSTALLING).
 func progress() -> float:
-	return clampf(_http.get_downloaded_bytes() / float(maxi(_size, 1)), 0.0, 1.0) if _http else 0.0
+	if state == State.INSTALLING:
+		return _step
+	return clampf(_got() / float(maxi(_size, 1)), 0.0, 1.0)
 
 
-## Installs the downloaded update and starts it (State.READY); on failure the state goes to FAILED.
+## Installs the downloaded update and starts it (State.READY); on failure the state goes to FAILED. Downloaded patches
+## are merged by the next start (this game has its data mounted): the executable, if any, is swapped after that.
 func restart_now() -> void:
-	var err := _install()
-	if err != "":
-		_fail(err)
-		return
+	var cfg := ConfigFile.new()
+	cfg.load(STATE_FILE)
+	if not cfg.has_section("data") and FileAccess.file_exists(_pending()):
+		var err := _install()
+		if err != "":
+			_fail(err)
+			return
 	_relaunch()
 
 
@@ -141,50 +183,277 @@ func _on_release(result: int, code: int, _headers: PackedStringArray, body: Pack
 	latest = str(rel.get("tag_name", ""))
 	_latest_commit = str(rel.get("target_commitish", ""))
 	release_page = str(rel.get("html_url", "https://github.com/%s/releases/latest" % REPO))
-	# a pushed tag and the push to main of the same commit make two releases of one build
-	if latest == "" or latest == version or _latest_commit == _commit:
+	# a pushed tag and the push to main of the same commit make two releases of one build; a launcher without data
+	# always takes the full download
+	if latest == "" or (latest == version or _latest_commit == _commit) and _installed["id"] != "":
 		_set_state(State.UP_TO_DATE)
 		return
-	var url := ""
+	_assets.clear()
 	for asset: Dictionary in rel.get("assets", []):
-		if asset.get("name") == ASSETS[OS.get_name()]:
-			url = str(asset.get("browser_download_url", ""))
-			_size = int(asset.get("size", 0))
+		_assets[str(asset.get("name"))] = [str(asset.get("browser_download_url", "")), int(asset.get("size", 0))]
+	if _installed["id"] == "" or not _assets.has(UPDATE_INFO):
+		_download_full()
+		return
+	_get_json(_assets[UPDATE_INFO][0], _on_info)
+
+
+## update.json: {tag, run, commit, launcher (id), data: {id}}.
+func _on_info(info: Dictionary) -> void:
+	_info = info
+	_latest_run = int(info.get("run", 0))
+	var launcher_changes: bool = str(info.get("launcher", "")) != _installed["launcher"]
+	if launcher_changes and not _assets.has(LAUNCHER_ASSETS.get(OS.get_name(), "-")):
+		_download_full()
+		return
+	if str(info.get("data", {}).get("id", "")) == _installed["id"]:
+		if not launcher_changes:
+			_set_state(State.UP_TO_DATE)
+			return
+		_patches = []
+		_start_delta()
+		return
+	_get_json(_store + "chain.json", _on_chain)
+
+
+## chain.json: {patches: [{from, to, run, tag, file, size, raw, sha256}]}: the patches from the latest data back to this
+## build's, each the newest one reaching the data the previous one starts from.
+func _on_chain(chain: Dictionary) -> void:
+	var path := []
+	var total := 0
+	var cur := str(_info["data"]["id"])
+	while cur != _installed["id"]:
+		var best: Variant = null
+		for p: Dictionary in chain.get("patches", []):
+			if p["to"] == cur and (best == null or p["run"] > best["run"]):
+				best = p
+		if best == null or path.size() > 500:
+			_download_full()                    # this build's data is older than the kept patches
+			return
+		path.push_front(best)
+		total += int(best["size"])
+		cur = best["from"]
+	if total > MAX_PATCH_SHARE * int(_assets.get(ASSETS[OS.get_name()], [0, 1 << 40])[1]):
+		_download_full()
+		return
+	_patches = path
+	_start_delta()
+
+
+func _start_delta() -> void:
+	_full = false
+	_queue.clear()
+	DirAccess.make_dir_recursive_absolute(Delta.patch_dir())
+	for p: Dictionary in _patches:
+		_queue.append([_store + str(p["file"]), Delta.patch_dir().path_join(p["file"]), int(p["size"])])
+	if str(_info.get("launcher", "")) != _installed["launcher"]:
+		var asset: Array = _assets[LAUNCHER_ASSETS[OS.get_name()]]
+		_queue.append([asset[0], _hidden(".launcher"), asset[1]])
+	_start_downloads()
+
+
+func _download_full() -> void:
+	var asset: Variant = _assets.get(ASSETS[OS.get_name()])
 	var probe := FileAccess.open(_part(), FileAccess.WRITE)
-	if url == "" or probe == null:
+	if asset == null or probe == null:
 		_set_state(State.MANUAL)
 		return
 	probe.close()
-	_new_request(0.0).request_completed.connect(_on_downloaded, CONNECT_ONE_SHOT)
-	_http.download_file = _part()
-	_http.download_chunk_size = 1 << 18
-	if _http.request(url, [USER_AGENT]) != OK:
-		_fail("can't start the download")
-		return
+	_full = true
+	_queue = [[asset[0], _part(), asset[1]]]
+	_start_downloads()
+
+
+func _start_downloads() -> void:
+	_size = 0
+	_done = 0
+	for d: Array in _queue:
+		_size += d[2]
 	_set_state(State.DOWNLOADING)
+	_next_download()
+
+
+func _next_download() -> void:
+	if _queue.is_empty():
+		_downloaded()
+		return
+	var d: Array = _queue[0]
+	_new_request(0.0).request_completed.connect(_on_downloaded, CONNECT_ONE_SHOT)
+	_http.download_file = d[1]
+	_http.download_chunk_size = 1 << 18
+	if _http.request(d[0], [USER_AGENT]) != OK:
+		_download_failed("can't start the download")
 
 
 func _on_downloaded(result: int, code: int, _headers: PackedStringArray, _body: PackedByteArray) -> void:
-	var got := FileAccess.get_size(_part()) if FileAccess.file_exists(_part()) else -1
-	if result != HTTPRequest.RESULT_SUCCESS or code != 200 or (_size > 0 and got != _size):
-		_remove(_part())
-		_fail("download failed (result %d, HTTP %d, %d of %d bytes)" % [result, code, got, _size])
+	var d: Array = _queue[0]
+	var got := FileAccess.get_size(d[1]) if FileAccess.file_exists(d[1]) else -1
+	if result != HTTPRequest.RESULT_SUCCESS or code != 200 or (d[2] > 0 and got != d[2]):
+		_remove(d[1])
+		_download_failed("download failed (result %d, HTTP %d, %d of %d bytes)" % [result, code, got, d[2]])
 		return
-	_remove(_pending())
-	if DirAccess.rename_absolute(_part(), _pending()) != OK:
-		_remove(_part())
-		_fail("can't write next to the game")
+	_done += d[2]
+	_queue.pop_front()
+	_next_download()
+
+
+## A patch or the launcher delta failed: the full download instead; the full download failed: nothing left.
+func _download_failed(why: String) -> void:
+	push_warning("Updater: " + why)
+	if _full:
+		_fail(why)
 		return
+	_clear_patch_files()
+	_remove(_hidden(".launcher"))
+	_download_full()
+
+
+func _downloaded() -> void:
 	var cfg := ConfigFile.new()
+	cfg.load(STATE_FILE)
+	if _full:
+		_remove(_pending())
+		if DirAccess.rename_absolute(_part(), _pending()) != OK:
+			_remove(_part())
+			_fail("can't write next to the game")
+			return
+		_drop_patches(cfg)
+	else:
+		if FileAccess.file_exists(_hidden(".launcher")):
+			_remove(_pending())
+			var err := Delta.launcher(OS.get_executable_path(), _hidden(".launcher"), _pending())
+			_remove(_hidden(".launcher"))
+			if err != "":
+				_download_failed(err)
+				return
+		cfg.set_value("data", "base", _installed["id"])
+		cfg.set_value("data", "target", str(_info["data"]["id"]))
+		cfg.set_value("data", "launcher", str(_info["launcher"]))
+		cfg.set_value("data", "tag", latest)
+		cfg.set_value("data", "run", _latest_run)
+		cfg.set_value("data", "commit", _latest_commit)
+		cfg.set_value("data", "patches", _patches)
 	cfg.set_value("update", "tag", latest)
 	cfg.set_value("update", "commit", _latest_commit)
 	cfg.save(STATE_FILE)
+	if not _full and not _skipped:
+		_install_data(cfg)
+		return
 	_set_state(State.READY)
 	if not _skipped:
 		_show_screen()                      # "Restarting…" drawn before the swap
 		await get_tree().process_frame
 		await get_tree().process_frame
 		restart_now()
+
+
+## Merges the downloaded patches into a new pack (State.INSTALLING, in the foreground, before the game loads anything:
+## the patches get mounted), points the new launcher at it, swaps the rebuilt executable if any and restarts. On
+## failure: the full download.
+func _install_data(cfg: ConfigFile) -> void:
+	_set_state(State.INSTALLING)
+	set_process(true)
+	_step = 0.0
+	await get_tree().process_frame
+	var target_id := str(cfg.get_value("data", "target"))
+	var launcher := str(cfg.get_value("data", "launcher"))
+	var base: String = _installed["path"]
+	var err := ""
+	if _installed["embedded"] and not Delta.has_file(base, int(_installed["size"])):
+		err = await _run(func() -> String: return Delta.unpack(base, func(f: float) -> void: _step = 0.3 * f))
+	var target := base
+	var patches: Array = cfg.get_value("data", "patches", [])
+	if err == "" and not patches.is_empty():
+		var files: Array[String] = []
+		for p: Dictionary in patches:
+			files.append(Delta.patch_dir().path_join(str(p["file"]).trim_suffix(".zst")))
+		err = await _run(_unpack_patches.bind(patches))
+		var mounted: Variant = Delta.mount(base, files) if err == "" else err
+		_mounted = err == ""
+		if mounted is String:
+			err = mounted
+		else:
+			target = Delta.data_dir().path_join("game-%s.pck" % target_id)
+			err = await _run(func() -> String:
+				var e := Delta.merge(target, mounted, func(f: float) -> void: _step = 0.4 + 0.5 * f)
+				if e == "" and Delta.content_id(target) != target_id:
+					DirAccess.remove_absolute(target)
+					e = "merged data does not match"
+				return e)
+	if err == "" and not Delta.write_pointer(launcher, target, target_id, str(cfg.get_value("data", "tag")),
+			int(cfg.get_value("data", "run")), str(cfg.get_value("data", "commit"))):
+		err = "can't write " + Delta.pointer(launcher)
+	_drop_patches(cfg)
+	if err != "":
+		push_warning("Updater: " + err)
+		_remove(_pending())
+		_skipped = false
+		if _assets.is_empty():
+			check()                             # a start: ask GitHub again, the patches' failure leads to the full file
+		else:
+			_download_full()
+		return
+	_step = 1.0
+	if FileAccess.file_exists(_pending()) and cfg.get_value("update", "tag", "") == cfg.get_value("data", "tag", "-"):
+		err = _install()                        # also deletes STATE_FILE
+		if err != "":
+			_fail(err)
+			return
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(STATE_FILE))
+	_relaunch()
+
+
+## On a thread: the downloaded patches (zstd) checked and decompressed next to them.
+func _unpack_patches(patches: Array) -> String:
+	for i in patches.size():
+		var p: Dictionary = patches[i]
+		var zst := Delta.patch_dir().path_join(p["file"])
+		if FileAccess.get_sha256(zst) != p["sha256"]:
+			return "damaged patch " + str(p["file"])
+		var raw := FileAccess.get_file_as_bytes(zst).decompress(int(p["raw"]), FileAccess.COMPRESSION_ZSTD)
+		var f := FileAccess.open(zst.trim_suffix(".zst"), FileAccess.WRITE)
+		if raw.size() != int(p["raw"]) or f == null or not f.store_buffer(raw):
+			return "can't unpack patch " + str(p["file"])
+		f.close()
+		_step = 0.3 + 0.1 * (i + 1) / patches.size()
+	return ""
+
+
+## Runs `job` on a thread, waiting frames meanwhile (the update screen keeps drawing); its result.
+func _run(job: Callable) -> Variant:
+	var t := Thread.new()
+	t.start(job)
+	while t.is_alive():
+		await get_tree().process_frame
+	return t.wait_to_finish()
+
+
+func _drop_patches(cfg: ConfigFile) -> void:
+	_clear_patch_files()
+	if cfg.has_section("data"):
+		cfg.erase_section("data")
+		cfg.save(STATE_FILE)
+
+
+func _clear_patch_files() -> void:
+	for name in DirAccess.get_files_at(Delta.patch_dir()):
+		DirAccess.remove_absolute(Delta.patch_dir().path_join(name))
+
+
+## Fetches a small JSON file and passes it to `done`; anything else than a JSON object: the full download.
+func _get_json(url: String, done: Callable) -> void:
+	_new_request(15.0).request_completed.connect(
+			func(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+				var v: Variant = JSON.parse_string(body.get_string_from_utf8()) \
+						if result == HTTPRequest.RESULT_SUCCESS and code == 200 else null
+				if v is Dictionary:
+					done.call(v)
+				else:
+					push_warning("Updater: can't read %s (result %d, HTTP %d)" % [url.get_file(), result, code])
+					_download_full(),
+			CONNECT_ONE_SHOT)
+	if _http.request(url, [USER_AGENT]) != OK:
+		_download_full()
 
 
 ## Puts the downloaded build in place of this one; "" when done, else why not (this one is then left as it was).
@@ -252,12 +521,18 @@ func _set_state(s: State) -> void:
 	changed.emit()
 
 
+## Bytes downloaded so far, over all the downloads.
+func _got() -> int:
+	return _done + (_http.get_downloaded_bytes() if _http and state == State.DOWNLOADING and not _queue.is_empty() \
+			else 0)
+
+
 func _process(delta: float) -> void:
 	_check_t += delta
 	if state == State.DOWNLOADING:
 		_rate_t += delta
 		if _rate_t >= 0.5:
-			var got := _http.get_downloaded_bytes()
+			var got := _got()
 			_rate = lerpf(float(got - _rate_bytes) / _rate_t, _rate, 0.5 if _rate > 0.0 else 0.0)
 			_rate_bytes = got
 			_rate_t = 0.0
@@ -285,9 +560,13 @@ func _show_screen() -> void:
 			_title.text = "Updating to %s" % pretty(latest)
 			_bar.indeterminate = false
 			_bar.value = progress()
-			var got := _http.get_downloaded_bytes() / 1048576.0
-			_detail.text = "%.0f of %.0f MB" % [got, _size / 1048576.0] + \
+			_detail.text = "%.1f of %.1f MB" % [_got() / 1048576.0, _size / 1048576.0] + \
 					("  ·  %.1f MB/s" % (_rate / 1048576.0) if _rate > 0.0 else "")
+		State.INSTALLING:
+			_title.text = "Installing the update…"
+			_bar.indeterminate = false
+			_bar.value = progress()
+			_detail.text = ""
 		State.READY:
 			_title.text = "Restarting on %s…" % pretty(latest)
 			_bar.indeterminate = false
@@ -335,14 +614,15 @@ func _build_screen() -> void:
 
 
 ## While the update screen is up the game behind it gets no keys or clicks; Esc skips the update (F11 still switches
-## fullscreen: Settings).
+## fullscreen: Settings), except while it installs, once patches are mounted over this game's data, or without data.
 func _input(event: InputEvent) -> void:
 	if _screen == null or not _screen.visible or not (event is InputEventKey or event is InputEventMouseButton):
 		return
 	if event is InputEventKey and event.physical_keycode == KEY_F11:
 		return
 	get_viewport().set_input_as_handled()
-	if event is InputEventKey and event.pressed and event.physical_keycode == KEY_ESCAPE and state != State.READY:
+	if event is InputEventKey and event.pressed and event.physical_keycode == KEY_ESCAPE \
+			and state in [State.CHECKING, State.DOWNLOADING] and not _mounted and _installed["id"] != "":
 		_skipped = true
 		_show_screen()
 		changed.emit()
