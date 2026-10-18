@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 ## Builds res://scenes/generated/neighborhood.tscn from the pipeline output in res://world/ (and the railway,
-## world/rail.json: builder/rail_builder.gd).
+## world/rail.json: builder/rail_builder.gd; the building interiors, world/interiors.json: builder/interior_builder.gd).
 ## Run from the editor (Project > Tools > Rebuild Plateau world) or headless via tools/build_world.gd.
 
 const GroundBuilder = preload("res://scripts/builder/ground_builder.gd")
@@ -11,6 +11,9 @@ const VegetationBuilder = preload("res://scripts/builder/vegetation_builder.gd")
 const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
 const FarBuilder = preload("res://scripts/builder/far_builder.gd")
 const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
+const InteriorBuilder = preload("res://scripts/builder/interior_builder.gd")
+const Water = preload("res://scripts/water.gd")
+const GroundHeights = preload("res://scripts/ground_heights.gd")
 ## 3 adds ground[], kerbs[], markings[] (M3); 4 adds ground_mesh, palette, drops the ortho (M4);
 ## 5 adds trees[], hedges[], tree_archetypes (M5); 6 adds props[], fences[], prop_models, sign_faces (M6);
 ## 7 adds buildings[].toy, building_kit, building_modules[], building_signs[] (M7);
@@ -44,11 +47,19 @@ func build_and_save() -> Error:
 	root.name = "Neighborhood"
 	var m: Dictionary = world["meta"]
 	root.set_meta("world", {"area": m["area"], "origin": m["origin"], "playable": m["playable"], "built_at": m["built_at"]})
+	# the lakes and ponds first: the ground, its collision and the far ground are dug out under them (scripts/water.gd)
+	var t: Dictionary = world["terrain"]
+	var water := Water.new()
+	water.name = "Water"
+	water.setup(world, GroundHeights.new(heights, t["w"], t["h"], t["cell"], t["origin_xy"][0], t["origin_xy"][1],
+			world["ground_mesh"]["cell"]))
+	root.add_child(water)
 	var err := GroundBuilder.new().build(root, world, WORLD_PATH.get_base_dir(), MESH_DIR)
 	if err != OK:
 		root.free()
 		return err
 	BuildingBuilder.new().build(root, world, MESH_DIR)
+	InteriorBuilder.new().build(root, world, heights, MESH_DIR)
 	err = VegetationBuilder.new().build(root, world, heights, MESH_DIR)
 	if err != OK:
 		root.free()
@@ -70,14 +81,15 @@ func build_and_save() -> Error:
 		return err
 	_own(root, root)
 
+	var waters: int = water.bodies.size()
 	var packed := PackedScene.new()
 	err = packed.pack(root)
 	if err == OK:
 		err = ResourceSaver.save(packed, SCENE_PATH)
 	root.free()
-	print("built %s: %d buildings, %d ground chunks, %d trees, %d hedges, %d props, %d fences (%s)" % [SCENE_PATH,
-			world["buildings"].size(), world["ground_mesh"]["chunks"].size(), world["trees"].size(),
-			world["hedges"].size(), world["props"].size(), world["fences"].size(), error_string(err)])
+	print("built %s: %d buildings, %d ground chunks, %d trees, %d hedges, %d props, %d fences, %d bodies of water (%s)" % [
+			SCENE_PATH, world["buildings"].size(), world["ground_mesh"]["chunks"].size(), world["trees"].size(),
+			world["hedges"].size(), world["props"].size(), world["fences"].size(), waters, error_string(err)])
 	return err
 
 

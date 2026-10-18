@@ -29,6 +29,7 @@ func terrain(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_
 	var span := TILE * STEP                 # heightmap cells per tile side
 	var n := TILE + 1                       # samples per tile side
 	var ground := GroundHeights.new(heights, w, h, cell, ox, oy, world["ground_mesh"]["cell"])
+	var water: Variant = root.get_node_or_null("Water")     # lake beds dug out (scripts/water.gd)
 	var holes := {}                         # Vector2i(tile row, tile column) -> PackedInt32Array of sample rows, columns
 	for hs: Array in world["ground_mesh"].get("holes", {}).get("samples", []):
 		var r: int = hs[0]
@@ -53,10 +54,13 @@ func terrain(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_
 		for c0 in range(0, w - 1, span):
 			var data := PackedFloat32Array()
 			data.resize(n * n)
+			var wet: bool = water != null and water.touches(AABB(Vector3(ox + c0 * cell, -1e4, -(oy - r0 * cell)),
+					Vector3(span * cell, 2e4, span * cell)))
 			for i in n:
 				var y := oy - (r0 + i * STEP) * cell
 				for j in n:
-					data[i * n + j] = ground.at(ox + (c0 + j * STEP) * cell, y)
+					var x := ox + (c0 + j * STEP) * cell
+					data[i * n + j] = water.carve(x, y, ground.at(x, y)) if wet else ground.at(x, y)
 			for rc: int in holes.get(Vector2i(r0 / span, c0 / span), PackedInt32Array()):
 				var i := (rc / 65536 - r0) / STEP
 				var j := (rc % 65536 - c0) / STEP

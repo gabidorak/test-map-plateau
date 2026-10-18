@@ -14,7 +14,8 @@ extends SceneTree
 ##     panels and posts, every prop whose model has colliders has collision shapes, bus stops have their
 ##     name and line badges.
 ##  6. Toy buildings (M7): every mass has its mesh with the facade data (UV2 + four custom channels) and the
-##     one shared building material, a collision shape, and every kit module and name sign is drawn once.
+##     one shared building material, a collision shape, and every kit module and name sign is drawn once, but those an
+##     interior building loses (world/interiors.json, builder/interior_builder.gd).
 ##  7. RER B (rail.json, tools/rail/): world.json carries the patch stamp of this rail.json; along both tracks, across
 ##     the playable box, the ground is the railway's trackbed piece and the drawn mesh lies on the designed formation
 ##     with no step; no tree, prop or building inside the kinematic gauge; each platform edge is 1.60-1.70 m from its
@@ -24,6 +25,7 @@ extends SceneTree
 const GroundMap = preload("res://scripts/ground_map.gd")
 const GroundBuilder = preload("res://scripts/builder/ground_builder.gd")
 const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
+const InteriorBuilder = preload("res://scripts/builder/interior_builder.gd")
 const SCENE := "res://scenes/generated/neighborhood.tscn"
 const WORLD := "res://world/world.json"
 const RAIL := "res://world/rail.json"
@@ -399,14 +401,18 @@ func _check_buildings(root: Node, world: Dictionary) -> void:
 		for mmi: MultiMeshInstance3D in chunk.get_children():
 			drawn[mmi.name] = drawn.get(mmi.name, 0) + mmi.multimesh.instance_count
 	var want := {}
+	var interiors := InteriorBuilder.load_specs()
+	var dropped := InteriorBuilder.dropped_modules(world, interiors)
 	for md: Dictionary in world["building_modules"]:
-		want[md["m"]] = want.get(md["m"], 0) + 1
+		if not dropped.call(md):
+			want[md["m"]] = want.get(md["m"], 0) + 1
 	for m: String in want:
 		if drawn.get(m, 0) != want[m]:
 			_fail("building kit %s: %d drawn, %d in world.json" % [m, drawn.get(m, 0), want[m]])
 	var signs := root.get_node("Buildings/Signs").get_child_count()
-	if signs != world["building_signs"].size():
-		_fail("building signs: %d drawn, %d in world.json" % [signs, world["building_signs"].size()])
+	var want_signs: int = world["building_signs"].filter(func(s: Dictionary) -> bool: return not interiors.has("osm:" + String(s["building"]))).size()
+	if signs != want_signs:
+		_fail("building signs: %d drawn, %d in world.json" % [signs, want_signs])
 	print("buildings: %d masses (%d triangles, one material), %d kit modules %s, %d name signs" % [
 			world["buildings"].size(), tris, world["building_modules"].size(), want, signs])
 

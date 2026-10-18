@@ -17,8 +17,13 @@ extends RefCounted
 ## ground_wall colours the ground floor band, toy.columns are round columns (kit pilotis + collision boxes).
 ## Houses (pipeline/plateau/houses.py): a body tier with `house` carries gabled or hipped roof rectangles that
 ## interpenetrate (L and T houses), drawn with tiles, an overhang (soffit + fascia), gable walls and a chimney.
+## Interiors (world/interiors.json, builder/interior_builder.gd): such a building is reshaped (reshape): its tiers start
+## at the interior's ceiling, floating over a glass ground floor the interior builder draws, in the interior's style,
+## and its name sign is left out (the interior has its own); the kit modules on its facade below the ceiling or listed in
+## its `drop_modules` go too.
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
+const InteriorBuilder = preload("res://scripts/builder/interior_builder.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const SHADER := "res://shaders/toy_building.gdshader"
 const PROP_SHADER := "res://shaders/toy_prop.gdshader"
@@ -41,6 +46,7 @@ var _kit_scene: Node
 var _kit_mats := {}
 var _groups := {}
 var _mesh_dir := ""
+var _interiors := {}                    # building id -> interior spec (world/interiors.json)
 
 
 ## Packed vertex buffers of one mesh (non-indexed triangles).
@@ -119,6 +125,7 @@ func build(root: Node3D, world: Dictionary, mesh_dir: String) -> Error:
 		push_error("no building kit: run blender/building_kit/build_kit.py")
 		return ERR_FILE_NOT_FOUND
 	_kit = manifest["models"]
+	_interiors = InteriorBuilder.load_specs()
 	for name: String in world["building_kit"]:
 		if not _kit.has(name):
 			push_error("building kit module %s missing from kit.json: run blender/building_kit/build_kit.py" % name)
@@ -141,12 +148,16 @@ func build(root: Node3D, world: Dictionary, mesh_dir: String) -> Error:
 	for b: Dictionary in world["buildings"]:
 		var buf := Buf.new()
 		var faces := PackedVector3Array()
-		var toy: Dictionary = b["toy"]
+		var interior: Dictionary = _interiors.get(b["id"], {})
+		var toy: Dictionary = b["toy"] if interior.is_empty() else InteriorBuilder.reshape(b["toy"], interior)
 		for t: Dictionary in toy["tiers"]:
 			_add_tier(buf, faces, b, toy, t)
 		_add_pillars(faces, b, toy)
 		_add_columns(faces, toy)
 		var info := info_of(b)
+		if not interior.is_empty():
+			info["name"] = interior["name"]
+			info["interior"] = interior["kind"]
 		var node_name := String(b["id"]).replace(":", "_")
 		var mi := MeshInstance3D.new()
 		mi.name = node_name
@@ -570,7 +581,10 @@ func _modules(root: Node3D, world: Dictionary) -> Error:
 		push_error("missing %skit.glb: run blender/building_kit/build_kit.py, then godot --headless --import" % KIT_DIR)
 		return ERR_FILE_NOT_FOUND
 	_kit_scene = load(KIT_DIR + "kit.glb").instantiate()
+	var dropped := InteriorBuilder.dropped_modules(world, _interiors)
 	for md: Dictionary in world["building_modules"]:
+		if dropped.call(md):
+			continue
 		var s: Array = md.get("s", [1.0, 1.0, 1.0])
 		var theta := deg_to_rad(float(md["yaw"])) + PI / 2.0
 		var xf := Transform3D(Basis(Vector3.UP, theta) * Basis.from_scale(Vector3(s[0], s[2], s[1])),
@@ -657,6 +671,8 @@ func _signs(node: Node3D, world: Dictionary) -> void:
 	node.add_child(parent)
 	var mats := {}
 	for s: Dictionary in world["building_signs"]:
+		if _interiors.has("osm:" + String(s["building"])):
+			continue
 		var w: float = s["w"]
 		var holder := Node3D.new()
 		holder.name = String(s["building"]).replace(":", "_")
