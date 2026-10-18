@@ -8,9 +8,13 @@ extends CharacterBody3D
 ## one, then walks; leaving it keeps the vehicle's velocity. In there it collides with the walkable hulls only: what
 ## the vehicle drives through (a tree it bends, a kerb, a pole another peer's copy of it has not knocked down yet)
 ## would shove it about in the vehicle.
+## In the lakes and ponds (scripts/water.gd) the player wades slower the deeper it gets, then swims with the head and
+## shoulders out (float_depth): slower, Shift a little faster, Space kicks up to climb out over a bank; falling in
+## splashes.
 
 const Layers = preload("res://scripts/physics_layers.gd")
 const Prefs = preload("res://scripts/settings.gd")
+const Water = preload("res://scripts/water.gd")
 
 @export var walk_speed := 4.5
 @export var run_speed := 9.0
@@ -26,6 +30,12 @@ const Prefs = preload("res://scripts/settings.gd")
 @export var eye_height := 1.6
 @export var kill_depth := -80.0             # below this (Godot y) the player is put back
 @export var step_height := 0.42
+@export var swim_speed := 1.8               # m/s swimming, Shift: swim_fast
+@export var swim_fast := 3.2
+@export var float_depth := 1.1              # m: the feet this deep under the surface, the player swims
+@export var wade_depth := 0.4               # m: deeper than this, walking slows down (half speed at float_depth)
+@export var swim_kick := 4.0                # m/s up, Space while swimming (once per SWIM_KICK_EVERY)
+const SWIM_KICK_EVERY := 0.8
 
 var first_person := false
 var active := true                          # false while the fly camera is in use
@@ -36,6 +46,8 @@ var scripted_jump := false
 var rescues := 0                            # times the player fell out of the world
 var wait_jump_release := false              # set on getting out of a car with Space: no jump until released
 var carrier: Node3D                         # the vehicle the player stands in (car.gd), or null
+var swimming := false
+var water_depth := NAN                      # m of water over the feet (NAN out of the water)
 
 var _yaw := 0.0
 var _pitch := -0.12
@@ -45,6 +57,8 @@ var _carrier_last := Transform3D.IDENTITY   # carrier transform when last follow
 var _world_mask := 0                        # collision mask outside the vehicles
 var _step_offset := 0.0                     # camera/body lag after a step up, eased to 0
 var _zoom := 4.5                            # third-person camera distance the arm eases to
+var _kick_t := 0.0                          # s since the last swim kick
+var _swim_t := 0.0                          # bobbing clock
 
 @onready var _pivot: Node3D = $Pivot
 @onready var _arm: SpringArm3D = $Pivot/SpringArm3D
@@ -207,15 +221,34 @@ func _physics_process(delta: float) -> void:
 	wait_jump_release = wait_jump_release and space_down
 	var jumping := scripted_jump if scripted else (active and space_down and not wait_jump_release)
 
+	var water_y := NAN if is_instance_valid(carrier) else Water.surface_at(global_position)
+	var was_wet := water_depth > 0.0
+	water_depth = water_y - global_position.y
+	if not was_wet and water_depth > 0.0 and velocity.y < -Water.SPLASH_MIN and Water.current:
+		Water.current.splash(global_position, -velocity.y, 0.8)
+	swimming = water_depth > float_depth - (0.15 if swimming else 0.0)
+	var wade := clampf((water_depth - wade_depth) / (float_depth - wade_depth), 0.0, 1.0) if water_depth > 0.0 else 0.0
+	_kick_t += delta
+
 	var dir := Basis(Vector3.UP, _yaw) * Vector3(input.x, 0.0, -input.y)
-	var target := dir * (run_speed if running else walk_speed)
-	var rate := accel * (1.0 if is_on_floor() else air_control) * delta
+	var target := dir * (run_speed if running else walk_speed) * (1.0 - 0.5 * wade)
+	if swimming:
+		target = dir * (swim_fast if running else swim_speed)
+	var rate := accel * (0.4 if swimming else 1.0 if is_on_floor() else air_control) * delta
 	var h := Vector2(velocity.x, velocity.z).lerp(Vector2(target.x, target.z), minf(rate, 1.0))
 	velocity.x = h.x
 	velocity.z = h.y
-	if is_on_floor():
+	if swimming and (not is_on_floor() or water_depth > float_depth + 0.1):
+		# float with the head out, bobbing a little; a kick up out over a bank
+		_swim_t += delta
+		var rise := (water_y - float_depth + 0.04 * sin(_swim_t * 2.2)) - global_position.y
+		velocity.y = move_toward(velocity.y, clampf(rise * 2.5, -2.5, 1.5), (30.0 if velocity.y < -2.5 else 12.0) * delta)
+		if jumping and _kick_t > SWIM_KICK_EVERY:
+			velocity.y = swim_kick
+			_kick_t = 0.0
+	elif is_on_floor():
 		if jumping:
-			velocity.y = jump_speed
+			velocity.y = jump_speed * (1.0 - 0.4 * wade)
 	else:
 		velocity.y -= _gravity * delta
 	var was_on_floor := is_on_floor()

@@ -167,15 +167,18 @@ vec3 ballast(vec3 c, vec2 p, float fw, inout vec2 bump, inout float ao) {
 	return col;
 }
 
-vec3 water(vec3 c, vec2 p, float fw, inout vec2 bump) {
-	vec2 flow = vec2(TIME * 0.06, TIME * 0.035);
-	float n = fbm(p * 0.5 + flow);
-	float e = 0.15;
-	float nx = fbm((p + vec2(e, 0.0)) * 0.5 + flow);
-	float nz = fbm((p + vec2(0.0, e)) * 0.5 + flow);
-	bump += vec2(nx - n, nz - n) / e * 0.25;
-	float glint = smoothstep(0.72, 0.8, fbm(p * 1.3 - flow * 2.0)) * detail(0.6, fw);
-	return c * (0.88 + 0.2 * n) + vec3(0.12) * glint;
+// the bed of the lakes and ponds, under the water surface (scripts/water.gd, shaders/water.gdshader): silt with
+// pebbles, waterweed patches and the sun's caustics dancing over it (the palette's water colour only tints it)
+vec3 lake_bed(vec3 c, vec2 p, float fw, inout vec2 bump) {
+	vec3 silt = mix(vec3(0.46, 0.42, 0.3), c, 0.12) * (0.85 + 0.25 * fbm(p * 0.3));
+	vec3 col = pebbles(silt, p, 4.0, 0.2, 0.35, fw, bump);
+	float weed = smoothstep(0.55, 0.7, fbm(p * 0.12 + 11.0));
+	col = mix(col, vec3(0.2, 0.34, 0.16), weed * 0.7);
+	vec2 q = p * 0.9 + vec2(TIME * 0.11, TIME * 0.07);
+	vec4 cell = dots(q + vec2(fbm(p * 0.4 + TIME * 0.05)) * 1.5, 1.0);
+	vec4 cell2 = dots(q * 1.37 - vec2(TIME * 0.09, 0.0), 1.0);
+	float caustic = pow(smoothstep(0.25, 0.55, cell.x), 3.0) * pow(smoothstep(0.25, 0.55, cell2.x), 2.0);
+	return col + vec3(0.32, 0.36, 0.28) * caustic * detail(0.8, fw);
 }
 
 vec3 wood(vec3 c, vec2 p, float fw, inout vec2 bump, inout float ao) {
@@ -235,9 +238,9 @@ void fragment() {
 	} else if (mat == CONSTRUCTION) {
 		col = tyre_tracks(dirt(c, p, fw, bump), p, fw);
 	} else if (mat == WATER) {
-		col = water(c, p, fw, bump);
-		rough = 0.08;
-		spec = 0.6;
+		col = lake_bed(c, p, fw, bump);
+		rough = 0.85;
+		spec = 0.3;
 	} else if (mat == CLAY) {
 		col = c * (1.0 + (vnoise(p * 20.0) - 0.5) * 0.1 * detail(0.05, fw));
 	} else if (mat == TARTAN) {

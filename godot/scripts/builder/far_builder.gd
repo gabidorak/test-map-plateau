@@ -66,7 +66,7 @@ func build(root: Node3D, world: Dictionary, mesh_dir: String) -> Error:
 		far.add_child(cell)
 		var tag := "%d_%d" % [key.x, key.y]
 		if not c.ground.is_empty():
-			cell.add_child(_instance("Ground", MeshUtils.save(_far_ground(c.ground, map, ground_mat), mesh_dir + "far_ground_%s.res" % tag)))
+			cell.add_child(_instance("Ground", MeshUtils.save(_far_ground(c.ground, map, ground_mat, root.get_node_or_null("Water")), mesh_dir + "far_ground_%s.res" % tag)))
 		if not c.buildings.is_empty():
 			cell.add_child(_instance("Buildings", MeshUtils.save(_merge(c.buildings, building_mat), mesh_dir + "far_buildings_%s.res" % tag)))
 		var rail_far := root.get_node_or_null("Rail/Far/Cell_%s" % tag)
@@ -139,7 +139,8 @@ func _instance(name: String, mesh: Mesh) -> MeshInstance3D:
 
 ## Ground of the given chunk footprints (Godot AABBs) on a FAR_STEP grid, one flat-coloured quad per
 ## step with the material under its centre, heights as the detailed mesh draws them, and skirts.
-func _far_ground(boxes: Array, map: RefCounted, mat: Material) -> ArrayMesh:
+## `water` (scripts/water.gd, or null) digs out the lake beds as the detailed ground does.
+func _far_ground(boxes: Array, map: RefCounted, mat: Material, water: Variant) -> ArrayMesh:
 	var v := PackedVector3Array()
 	var n := PackedVector3Array()
 	var col := PackedColorArray()
@@ -158,7 +159,8 @@ func _far_ground(boxes: Array, map: RefCounted, mat: Material) -> ArrayMesh:
 		var pt := func(i: int, j: int) -> Vector3:
 			var x := x0 + i * dx
 			var y := y1 - j * dy
-			return Vector3(x, map.height(x, y), -y)
+			var h: float = map.height(x, y)
+			return Vector3(x, water.carve(x, y, h) if water else h, -y)
 		for j in ny:
 			for i in nx:
 				var a: Vector3 = pt.call(i, j)

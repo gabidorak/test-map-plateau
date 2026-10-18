@@ -6,7 +6,7 @@ extends Node3D
 ## biplane's gunshots and their pings on vehicles (scripts/plane_guns.gd), the boom of a vehicle breaking down, the
 ## two-tone sirens of the fire truck (scripts/fire_truck.gd) and the police car (scripts/police_car.gd), sounding as
 ## long as `siren` is on, the electric car's motor whine and pedestrian warning hum, and the horse's hoofbeats, neigh,
-## snort and landing thud (scripts/horse.gd), and the RER B train's traction whine, rail rumble, horn, door warning
+## snort and landing thud (scripts/horse.gd), the jet-ski's supercharged triple (scripts/jet_ski.gd), and the RER B train's traction whine, rail rumble, horn, door warning
 ## and brake squeal (scripts/train.gd).
 ## Each sound is generated once per kind and cached. scripts/car.gd adds one as a child and calls
 ## update() every physics frame and play() for one-shots.
@@ -120,6 +120,16 @@ const KINDS := {
 				"formants": [[70.0, 1.0, 3.0], [175.0, 1.6, 1.6], [400.0, 2.4, 0.7], [900.0, 2.0, 0.25]],
 				"pipe": [0.0055, 0.45], "clatter_hz": 2000.0, "intake_hz": 500.0, "turbo": [1900.0, 0.03],
 				"rough": 0.12, "prop": 0.0, "drive": 1.7}},
+	# jet-ski (scripts/jet_ski.gd): one "gear", the impeller revs with the throttle; supercharged 1.6-litre triple,
+	# ~1,500 rpm at idle to ~8,000, uneven three-pulse firing through a water-cooled (muffled, wet) exhaust, the
+	# supercharger's whine; the hull's rush through the water in place of tyre roar; a small two-tone horn
+	"jetski": {"pitch_top": 5.3, "gears": [1.0], "unit_size": 9.0, "idle_db": -3.0,
+			"road_db": -4.0, "road_pitch": 1.5, "horn": [440, 554], "horn_harmonics": 8,
+			"engine": {"cyl": 3, "idle_hz": 37.5, "layers": 6, "off": 0.35, "pulse": [2000.0, 800.0],
+				"burst": [0.16, 0.06], "clatter": [0.5, 0.5], "intake": [0.9, 0.1],
+				"formants": [[120.0, 1.2, 3.0], [300.0, 1.8, 1.6], [650.0, 2.5, 0.7], [1500.0, 2.0, 0.3]],
+				"pipe": [0.003, 0.4], "clatter_hz": 2800.0, "intake_hz": 800.0, "turbo": [2600.0, 0.02],
+				"rough": 0.1, "prop": 0.0, "drive": 1.6}},
 	# biplane (scripts/plane.gd): one "gear", the engine speed follows the throttle lever; 9-cylinder radial with short
 	# open stacks (popping, rough) and a two-blade propeller
 	"plane": {"pitch_top": 4.0, "gears": [1.0], "unit_size": 16.0, "idle_db": -3.0,

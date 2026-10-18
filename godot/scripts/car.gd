@@ -48,11 +48,15 @@ extends VehicleBody3D
 ## Headlights (set_headlights; L for the driver, game.gd): a spot light for the beam (casting shadows from the vehicle
 ## the player drives), glowing lamps, the tail lamps dimly lit and a walkable vehicle's cabin lights. Bots drive with
 ## them on at night (`night`, scripts/night.gd).
+## Water (scripts/water.gd, _water_physics): a vehicle driven or fallen into a lake splashes, floats nose down a moment
+## (its hull's buoyancy is more than its weight while dry), fills over FLOOD_TIME and settles on the bed; the water drags
+## on it, and its engine drowns (no drive) once the water is half way up its body. It drains again on land.
 
 const Layers = preload("res://scripts/physics_layers.gd")
 const VehicleAudio = preload("res://scripts/vehicle_audio.gd")
 const Trailer = preload("res://scripts/car_trailer.gd")
 const WreckSmoke = preload("res://scripts/wreck_smoke.gd")
+const Water = preload("res://scripts/water.gd")
 const Prefs = preload("res://scripts/settings.gd")
 const KENNEY_WHEELS := ["wheel-front-left", "wheel-front-right", "wheel-back-left", "wheel-back-right"]
 ## Per model: file in assets/cars, scale, body mesh node, wheel nodes (front left, front right, back
@@ -69,7 +73,8 @@ const KENNEY_WHEELS := ["wheel-front-left", "wheel-front-right", "wheel-back-lef
 ## its wheels, lamps and cab, see _cab_layout), fittings (the fire truck's lamps and water cannon, json next to the
 ## model: scripts/fire_truck.gd, which extends this script, drives it), police
 ## (a police car with a light bar and a siren, the "beacons" of its cab file: scripts/police_car.gd, which extends this
-## script), horse (ridden instead: scripts/horse.gd, which extends this script). Missing
+## script), horse (ridden instead: scripts/horse.gd, which extends this script), jet_ski (on the lakes: scripts/jet_ski.gd,
+## which extends this script). Missing
 ## keys take the Kenney Car Kit values (scale 1.5: ~2.8 m -> ~4.2 m); the wheels beyond the first four are a third axle.
 const SPECS := {
 	"bus-idfm": {"label": "IDFM bus (12 m)", "file": "bus_idfm.glb", "scale": 1.0,
@@ -156,10 +161,11 @@ const SPECS := {
 	"biplane-gunner": {"label": "Biplane with gunner", "plane": true, "turret": true,
 			"credit": "toy two-seat biplane built by scripts/plane.gd"},
 	"horse": {"label": "Horse", "horse": true, "credit": "toy horse built by scripts/horse.gd"},
+	"jet-ski": {"label": "Jet-ski", "jet_ski": true, "credit": "toy jet-ski built by scripts/jet_ski.gd"},
 }
 const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "taxi", "suv", "police", "hatchback-sports", "van",
 		"sedan-sports", "suv-luxury", "delivery", "ambulance", "compact-hatchback", "family-suv", "police-hatchback", "renault-zoe", "fire-truck", "biplane", "biplane-armed", "biplane-gunner",
-		"horse", "audi-r8", "mercedes-1928", "bmw-m4", "audi-rs6", "volvo-fh16", "volvo-fh16-trailer", "gaz-tiger"]
+		"horse", "audi-r8", "mercedes-1928", "bmw-m4", "audi-rs6", "volvo-fh16", "volvo-fh16-trailer", "gaz-tiger", "jet-ski"]
 const REST_LENGTH := 0.2
 const BLINK := 0.75                         # s, indicator period
 const DOOR_TIME := 1.6                      # s to open or close
@@ -190,6 +196,12 @@ const BEAM_TILT := 0.04                     # rad down
 const BEAM_ENERGY := 14.0
 const BEAM_FADE := 140.0                    # m from the camera beyond which the beams fade out
 const CABIN_LIGHT := Color(0.88, 0.93, 1.0)      # a bus's cabin lights, cool white
+const FLOAT_BUOYANCY := 1.6                 # a dry hull's buoyancy fully under water, times its weight...
+const SUNK_BUOYANCY := 0.3                  # ...and once full of water
+const FLOOD_TIME := 12.0                    # s in the water to fill up
+const DRAIN_TIME := 30.0                    # s on land to drain again
+const WATER_DRAG := 1.2                     # /s of the velocity, fully under water
+const DROWN_DEPTH := 0.45                   # share of the body's height under water that stops the engine
 
 @export var engine_per_wheel := 2800.0      # N on each of the four driven wheels, more when starting
 @export var max_brake := 80.0
@@ -306,6 +318,8 @@ var _net_seen := false                      # LAN, remote vehicle: a state came 
 var pilot: Object                           # bot driver (scripts/bus_bot.gd) on the peer simulating it, or null
 var bot_driven := false                     # LAN, remote vehicle: a bot drives it (its states say so)
 var stowed := false                         # hidden and out of the physics (a bot bus off the map, set_stowed)
+var flooded := 0.0                          # 0 dry .. 1 full of water (_water_physics)
+var in_water := 0.0                         # share of the body's height under water now
 var _braking := false                       # brake lamps on (the driver's or the pilot's pedal)
 var _stowed_layers := Vector2i.ZERO         # collision layer and mask of the bodies before stowing
 var headlights := false
@@ -1540,6 +1554,7 @@ func _physics_process(delta: float) -> void:
 		pedals = [clampf(c[0], 0.0, 1.0), clampf(c[1], 0.0, 1.0)]
 		steer_in = clampf(c[2], -1.0, 1.0)
 		throttle = pedals[0] - pedals[1]
+	var drowned := _water_physics(delta)
 	var drifting := driving and controls and Input.is_action_pressed("drift")
 	audio.horn = (driving and controls and Input.is_action_pressed("horn")) or (piloted and pilot.horn)
 	var v := speed()
@@ -1566,7 +1581,7 @@ func _physics_process(delta: float) -> void:
 		brake = 1.5                             # rolling resistance
 	if engine_force != 0.0 and absf(v) < 5.0:
 		engine_force *= 1.6                     # quicker start, like a low gear
-	if broken:
+	if broken or drowned:
 		engine_force = 0.0                      # it still brakes
 	if hold:
 		engine_force = 0.0
@@ -1601,6 +1616,37 @@ func _physics_process(delta: float) -> void:
 	_update_doors(delta)
 	_update_damage(delta)
 	audio.update(v, throttle, max_speed, delta)
+
+
+## Buoyancy, drag and flooding in a lake (scripts/water.gd) for each section; true when the engine is drowned. Nothing
+## to do (one grid lookup) out of the water.
+func _water_physics(delta: float) -> bool:
+	var deepest := 0.0
+	for b in bodies():
+		var lvl := Water.surface_at(b.global_position)
+		if is_nan(lvl):
+			continue
+		var height := maxf(half_extents.y * 2.0, 0.5)
+		var sub := clampf((lvl - b.global_position.y) / height, 0.0, 1.0)
+		if sub <= 0.0:
+			continue
+		if b == self and in_water == 0.0 and Water.current:
+			Water.current.splash(global_position, maxf(-linear_velocity.y, Vector2(linear_velocity.x, linear_velocity.z).length()),
+					half_extents.x * 2.0)
+		deepest = maxf(deepest, sub)
+		var g: float = b.get_gravity().length()
+		var lift := sub * b.mass * g * lerpf(FLOAT_BUOYANCY, SUNK_BUOYANCY, flooded)
+		# lifting behind the centre of mass: the heavy engine end goes down first
+		var at := b.global_basis * (b.center_of_mass + Vector3(0.0, 0.0, -0.25 * half_extents.z))
+		b.apply_force(Vector3.UP * lift, at)
+		b.apply_central_force(-b.linear_velocity * b.mass * WATER_DRAG * sub)
+		b.apply_torque(-b.angular_velocity * b.mass * half_extents.length_squared() * 0.3 * sub)
+	in_water = deepest
+	if deepest > 0.15:
+		flooded = minf(flooded + delta / FLOOD_TIME, 1.0)
+	elif deepest == 0.0 and flooded > 0.0:
+		flooded = maxf(flooded - delta / DRAIN_TIME, 0.0)
+	return deepest > DROWN_DEPTH
 
 
 ## Steering lock (rad) at speed `v` (m/s): full at walking pace, fading with the speed.

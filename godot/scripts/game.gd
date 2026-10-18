@@ -18,6 +18,9 @@ extends Node3D
 ## first person and the cab view carry over when taking and leaving the driver seat. The articulated bus carries the
 ## player in whichever of its two sections they stand (Car.carrier_at).
 ## The horse (scripts/horse.gd, in the vehicle menu) is got on and off with E: Space jumps, over fences too.
+## The lakes and ponds are water (scripts/water.gd): the player swims, vehicles float a moment then sink, the horse swims.
+## The jet-ski (scripts/jet_ski.gd, in the vehicle menu) is parked on the nearest lake or pond (JET_SKI_REACH; on land
+## beside the player when there is none), got on with E and off with Space, into the water.
 ## The biplane (scripts/plane.gd, in the vehicle menu) is got in and out of like a car, and flies. The armed one fires
 ## its machine guns with the left mouse button (scripts/plane_guns.gd; a ring on the screen shows where the rounds
 ## converge): a vehicle hit takes damage (net.gd hit_vehicle, car.gd damage) and smokes black once broken, a breakable
@@ -52,6 +55,10 @@ extends Node3D
 ## Races (scripts/races.gd): a driver stopped in a glowing start circle (the campus lap in the big parking by the lake,
 ## the bus race at the stop ENSTA - Les Joncherettes) is offered to race with T (alone) or Y (with the other drivers in
 ## the circle); the leaderboards stand beside the circles, the host keeps the records.
+## Showrooms (scripts/dealership.gd: the Institut d'Optique is now a luxury car dealership, world/interiors.json): the
+## host (or solo player, or dedicated server) parks their drivable display cars at start and again after clearing the
+## map; their salesman (scripts/salesman.gd) follows the player around. Instanced by the tools, the display cars stay
+## off unless PLATEAU_SHOWROOM=1.
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
@@ -61,6 +68,8 @@ const GroundMap = preload("res://scripts/ground_map.gd")
 const Car = preload("res://scripts/car.gd")
 const Biplane = preload("res://scripts/plane.gd")
 const Horse = preload("res://scripts/horse.gd")
+const JetSki = preload("res://scripts/jet_ski.gd")
+const Water = preload("res://scripts/water.gd")
 const PlaneGuns = preload("res://scripts/plane_guns.gd")
 const FireTruck = preload("res://scripts/fire_truck.gd")
 const ArmoredCar = preload("res://scripts/armored_car.gd")
@@ -79,6 +88,9 @@ const Night = preload("res://scripts/night.gd")
 const Races = preload("res://scripts/races.gd")
 const WATER_SHOVE := 0.7                    # m/s a full-power water packet shoves a player along the jet
 const ENTER_RANGE := 3.0                    # metres from the car body
+const JET_SKI_REACH := 200.0                # m: the jet-ski is parked on water this near the player...
+const JET_SKI_ROOM := 4.0                   # ...with this much water round it...
+const JET_SKI_LAKE := 300.0                 # ...in a body of water this big (m²): no fountain basins
 const SEAT_RANGE := 1.6                     # metres from the driver seat, from inside a walkable vehicle
 const UPDATE_POLL := 300.0                  # s between release checks (dedicated server)
 const UPDATE_WAIT := 1800.0                 # s a dedicated server waits for its players to leave before updating
@@ -90,6 +102,7 @@ const UPDATE_WAIT := 1800.0                 # s a dedicated server waits for its
 @export var debug_cars := true              # park a few cars next to the player at start (solo and hosting)
 @export var bus_bots := true                # bot buses on their lines and bot cars (solo, hosting, dedicated server)
 @export var train_bots := true              # the RER B trains (scripts/train_traffic.gd), likewise
+@export var showroom_cars := true           # the showrooms' display cars (scripts/dealership.gd), likewise
 ## Welcome menu flight: circles this point (pipeline x, y) at MENU_ORBIT radius and height above it.
 const MENU_ORBIT_CENTRE := Vector2(260.0, -120.0)
 const MENU_ORBIT := Vector2(330.0, 140.0)
@@ -203,8 +216,11 @@ func _ready() -> void:
 	if get_tree().current_scene != self:
 		bus_bots = OS.get_environment("PLATEAU_BUSES") == "1"
 		train_bots = OS.get_environment("PLATEAU_TRAINS") == "1"
+		showroom_cars = OS.get_environment("PLATEAU_SHOWROOM") == "1"
 	else:
 		bus_bots = Settings.values["traffic"] and not _args.has("no-bots")
+	for s in get_tree().get_nodes_in_group("showroom"):
+		s.game = self
 	var welcome := get_tree().current_scene == self and not (_args.has("solo") or _args.has("host") or _args.has("join") \
 			or _args.has("dedicated"))
 	fly_camera.active = false
@@ -257,6 +273,7 @@ func start_solo() -> void:
 	if debug_cars:
 		for i in 4:
 			spawn_car_near_player()
+	_stock_showrooms()
 	if bus_bots:
 		traffic.start_bots()
 	if train_bots:
@@ -275,6 +292,7 @@ func start_host() -> void:
 	if debug_cars:
 		for i in 4:
 			spawn_car_near_player()
+	_stock_showrooms()
 	if bus_bots:
 		traffic.start_bots()
 	if train_bots:
@@ -302,6 +320,7 @@ func start_dedicated() -> void:
 	if debug_cars:
 		for i in 4:
 			spawn_car_near_player()
+	_stock_showrooms()
 	if bus_bots:
 		traffic.start_bots()
 	if train_bots:
@@ -437,6 +456,8 @@ func _process(delta: float) -> void:
 		_dash.text = (riding as ArmoredCar).gunner_dash()
 	elif driving is Horse:
 		_dash.text = (driving as Horse).dash_text()
+	elif driving is JetSki:
+		_dash.text = (driving as JetSki).dash_text()
 	elif driving:
 		var arrows := ["  ", "  "]
 		if driving.indicator != 0 and fmod(Time.get_ticks_msec() / 1000.0, Car.BLINK) < Car.BLINK * 0.5:
@@ -586,6 +607,15 @@ func spawn_car_near_player(model := "") -> Car:
 		_next_model += 1
 	var car := new_vehicle(model)
 	var yaw: float = player.camera.global_rotation.y
+	if car is JetSki and Water.current:
+		var on_water: Variant = Water.current.spot_near(player.global_position, JET_SKI_REACH, JET_SKI_ROOM, JET_SKI_LAKE)
+		if on_water != null:
+			add_child(car)
+			car.place(on_water)
+			_add_car(car)
+			net.car_parked(car)
+			return car
+		_show_toast("No lake within %d m: the jet-ski is parked on land (it only crawls there)" % roundi(JET_SKI_REACH))
 	var spot: Variant = _find_car_spot(yaw, car.half_extents, true)
 	if spot == null:
 		spot = _find_car_spot(yaw, car.half_extents, false)
@@ -597,6 +627,24 @@ func spawn_car_near_player(model := "") -> Car:
 		return null
 	add_child(car)
 	car.place(spot)
+	_add_car(car)
+	net.car_parked(car)
+	return car
+
+
+## Host (or solo): the showrooms' display cars missing from their podiums (scripts/dealership.gd).
+func _stock_showrooms() -> void:
+	if not showroom_cars:
+		return
+	for s in get_tree().get_nodes_in_group("showroom"):
+		s.stock(self)
+
+
+## `model` parked at `xf` (+Z forward, on the ground: a showroom podium), the footprint centred there.
+func park_vehicle(model: String, xf: Transform3D) -> Car:
+	var car := new_vehicle(model)
+	add_child(car)
+	car.place(xf.translated_local(-car.extents_center).translated(Vector3.UP * 0.3))
 	_add_car(car)
 	net.car_parked(car)
 	return car
@@ -624,7 +672,8 @@ func set_bot_traffic(on: bool) -> void:
 		remove_vehicles(traffic.stop_bots())
 
 
-## Host (or solo): every vehicle off the map, on every peer (the bots come back at once when bot traffic is on).
+## Host (or solo): every vehicle off the map, on every peer (the bots come back at once when bot traffic is on, the
+## showroom display cars too).
 ## Returns how many were cleared.
 func clear_vehicles() -> int:
 	if mode not in ["solo", "host", "server"]:
@@ -632,6 +681,7 @@ func clear_vehicles() -> int:
 	var n := cars.size()
 	traffic.stop_bots()
 	remove_vehicles(cars.duplicate())
+	_stock_showrooms()
 	if bus_bots:
 		traffic.start_bots()
 	_show_toast("Cleared %d vehicles" % n)
@@ -699,12 +749,13 @@ func add_net_car(model: String, xf: Transform3D) -> Car:
 	return car
 
 
-## A vehicle of `model`, set up but not in the tree yet: a Horse (Car.SPECS "horse"), a Biplane for the aircraft
+## A vehicle of `model`, set up but not in the tree yet: a Horse (Car.SPECS "horse"), a JetSki ("jet_ski"), a Biplane for the aircraft
 ## ("plane"), a FireTruck for the fire truck ("fittings"), a PoliceCar for the police car ("police"), an ArmoredCar for
 ## the GAZ Tiger ("roof_gun"), else a Car.
 static func new_vehicle(model: String) -> Car:
 	var spec: Dictionary = Car.SPECS[model]
-	var car: Car = Horse.new() if spec.get("horse", false) else Biplane.new() if spec.get("plane", false) \
+	var car: Car = Horse.new() if spec.get("horse", false) else JetSki.new() if spec.get("jet_ski", false) \
+			else Biplane.new() if spec.get("plane", false) \
 			else FireTruck.new() if spec.has("fittings") else PoliceCar.new() if spec.get("police", false) \
 			else ArmoredCar.new() if spec.get("roof_gun", false) else Car.new()
 	car.setup(model)
@@ -802,7 +853,7 @@ func _find_car_spot(yaw: float, half: Vector3, on_road: bool) -> Variant:
 	for o in offsets:
 		var p := origin + Basis(Vector3.UP, yaw) * Vector3(o.x, 0.0, o.y)
 		var g := WorldQuery.ground_y(get_world_3d(), p.x, p.z, Layers.SOLID, origin.y + 3.0)
-		if is_nan(g) or absf(g - origin.y) > 2.0 or _near_a_car(p, half.z + 0.5):
+		if is_nan(g) or absf(g - origin.y) > 2.0 or _near_a_car(p, half.z + 0.5) or Water.depth_at(Vector3(p.x, g, p.z)) > 0.3:
 			continue
 		for turn: float in turns:
 			# the model faces +Z: yaw + PI points it where the player looks (-Z of the camera)
@@ -969,6 +1020,7 @@ func _put_beside(car: Car, side: float) -> void:
 		var g := WorldQuery.ground_y(get_world_3d(), p.x, p.z, Layers.SOLID, car.global_position.y + 2.5)
 		if is_nan(g):
 			continue
+		g = maxf(g, Water.surface_at(p) - player.float_depth) if not is_nan(Water.surface_at(p)) else g   # swimming
 		q.transform = Transform3D(Basis(), Vector3(p.x, g + 1.05, p.z))
 		if not space.intersect_shape(q, 1):
 			target = Vector3(p.x, g + 0.1, p.z)
@@ -1353,6 +1405,12 @@ func _update_help() -> void:
 				"%s jump (the faster, the higher: fences!) · %s neigh\n" % [k.call("jump"), k.call("horn")] + \
 				("mouse look · wheel zoom (all the way in: rider's view) · %s rider's view · %s back on its feet · " % [
 				k.call("toggle_view"), k.call("reset_vehicle")]) + "%s get off · %s" % [k.call("interact"), common]
+	elif driving is JetSki:
+		_help.text = ("JET-SKI · %s throttle · %s slow down, then reverse · %s/%s steer (with the throttle) · %s horn\n" % [
+				k.call("throttle"), k.call("brake"), k.call("steer_left"), k.call("steer_right"), k.call("horn")]) + \
+				("mouse look · wheel zoom (all the way in: rider's view) · %s rider's view · %s right it · " % [
+				k.call("toggle_view"), k.call("reset_vehicle")]) + "%s get off (into the water: swim) · %s" % [
+				k.call("exit_vehicle"), common]
 	elif driving:
 		_help.text = ("DRIVE · %s throttle, %s brake then reverse, %s/%s steer · %s/%s turn signals · %s horn · " % [
 				k.call("throttle"), k.call("brake"), k.call("steer_left"), k.call("steer_right"), k.call("signal_left"),
