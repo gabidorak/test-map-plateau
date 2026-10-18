@@ -22,6 +22,38 @@ BASE = WORLD / "base"
 TOOLS = ROOT / "tools" / "rail"
 RAIL_JSON = WORLD / "rail.json"
 BASE_FILES = ["world.json", "heightmap.f32", "ground.bin", "ground_ids.bin", "ground_index.json"]
+PART_BYTES = 48_000_000     # large heightmaps and ground meshes are split in files under this (GitHub: 100 MB a file)
+
+
+def world_files(world: dict) -> list:
+    """The files of a world: world.json, its heightmap (one file or its bands, terrain "parts"), the ground mesh (its
+    chunks' files: ground.bin, ground.1.bin...), ground_ids.bin and ground_index.json."""
+    t = world["terrain"]
+    gm = world["ground_mesh"]
+    ground = sorted({gm["file"]} | {c["file"] for c in gm["chunks"] if "file" in c})
+    return ["world.json", *(t.get("parts") or [t["file"]]), *ground, "ground_ids.bin", "ground_index.json"]
+
+
+def read_heightmap(world_dir: Path, terrain: dict) -> np.ndarray:
+    """The heightmap of world.json `terrain` in world_dir, (h, w) float32 (its bands joined when split)."""
+    names = terrain.get("parts") or [terrain["file"]]
+    a = np.concatenate([np.fromfile(Path(world_dir) / n, dtype="<f4") for n in names])
+    return a.reshape(int(terrain["h"]), int(terrain["w"]))
+
+
+def write_heightmap(world_dir: Path, terrain: dict, z: np.ndarray) -> None:
+    """z (h, w) into world_dir as `terrain` names its files (the same bands of rows as the base)."""
+    names = terrain.get("parts") or [terrain["file"]]
+    a = np.asarray(z, dtype="<f4")
+    if len(names) == 1:
+        a.tofile(Path(world_dir) / names[0])
+        return
+    sizes = [(Path(BASE) / n).stat().st_size // (4 * a.shape[1]) for n in names]
+    r0 = 0
+    for n, rows in zip(names, sizes):
+        a[r0:r0 + rows].tofile(Path(world_dir) / n)
+        r0 += rows
+    assert r0 == a.shape[0], "heightmap bands do not add up"
 
 
 def load_json(path: Path):
@@ -31,15 +63,21 @@ def load_json(path: Path):
 def ensure_base() -> None:
     """godot/world/base/ holds the pipeline's files before the rail patch. When world.json carries no rail stamp, the
     files in godot/world/ are fresh pipeline outputs: they become the base (a rerun of the pipeline replaces it)."""
-    meta = load_json(WORLD / "world.json")["meta"]
+    world = load_json(WORLD / "world.json")
+    meta = world["meta"]
     if "rail" in meta:
-        missing = [f for f in BASE_FILES if not (BASE / f).exists()]
+        missing = [f for f in world_files(load_json(BASE / "world.json")) if not (BASE / f).exists()] \
+            if (BASE / "world.json").exists() else ["world.json"]
         if missing:
             raise SystemExit("godot/world/ is patched (world.json meta.rail) but godot/world/base/ lacks %s" % missing)
         return
     BASE.mkdir(parents=True, exist_ok=True)
     (BASE / ".gdignore").write_text("")
-    for f in BASE_FILES:
+    files = world_files(world)
+    for old in BASE.iterdir():              # a previous base's files (one heightmap file then bands, or the reverse)
+        if old.name not in files and old.name != ".gdignore":
+            old.unlink()
+    for f in files:
         shutil.copyfile(WORLD / f, BASE / f)
     print("godot/world/base/: the pipeline's files copied before patching")
 
@@ -50,12 +88,14 @@ class Heights:
     raw 0.5 m samples (sample) for the LiDAR statistics."""
 
     def __init__(self, path: Path, terrain: dict, mesh_cell: float):
+        """`path`: the world's folder (or a file in it: the heightmap is read as `terrain` names it)."""
         self.w, self.h = int(terrain["w"]), int(terrain["h"])
         self.cell = float(terrain["cell"])
         self.ox, self.oy = float(terrain["origin_xy"][0]), float(terrain["origin_xy"][1])
         self.mesh_cell = float(mesh_cell)
         self.step = int(round(self.mesh_cell / self.cell))
-        self.data = np.fromfile(path, dtype="<f4").reshape(self.h, self.w).astype(np.float64)
+        path = Path(path)
+        self.data = read_heightmap(path if path.is_dir() else path.parent, terrain).astype(np.float64)
 
     def nodes(self, data=None) -> np.ndarray:
         """The node grid ground_heights.gd builds: (nh, nw), node (j, i) at x = ox + (i - 1) * mesh_cell,

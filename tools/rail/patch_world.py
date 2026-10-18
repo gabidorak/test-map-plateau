@@ -197,8 +197,10 @@ def zone_heights(design: rg.Design, zone: dict, s: np.ndarray, u: np.ndarray, x:
 
 # ---------------------------------------------------------------- ground.bin
 
-def read_chunk(raw_all: bytes, c: dict) -> dict:
-    raw = zlib.decompress(raw_all[c["offset"]:c["offset"] + c["size"]])
+def read_chunk(raw_all, c: dict) -> dict:
+    """A chunk of ground.bin; raw_all: the file's bytes, or {id(chunk): its file's bytes} for a split ground mesh."""
+    data = raw_all[id(c)] if isinstance(raw_all, dict) else raw_all
+    raw = zlib.decompress(data[c["offset"]:c["offset"] + c["size"]])
     nv, ni, nc = c["nv"], c["ni"], c["nc"]
     o = 0
     out = {}
@@ -886,7 +888,7 @@ def main() -> None:
     world = rg.load_json(rg.BASE / "world.json")
     index = rg.load_json(rg.BASE / "ground_index.json")
     gm = world["ground_mesh"]
-    H_old = rg.Heights(rg.BASE / "heightmap.f32", world["terrain"], gm["cell"])
+    H_old = rg.Heights(rg.BASE, world["terrain"], gm["cell"])
     A = rg.Alignment(rail["alignment"])
     design = rg.Design(rail["earthworks"], A, H_old, [z for z in rail["zones"] if "axis" in z])
     zones = Zones(rail)
@@ -915,7 +917,7 @@ def main() -> None:
         zz = zone_heights(design, z, s, u, x, y)
         new[rr[m], cc[m]] = zz
         changed += int(m.sum())
-    H_new = rg.Heights(rg.BASE / "heightmap.f32", world["terrain"], gm["cell"])
+    H_new = rg.Heights(rg.BASE, world["terrain"], gm["cell"])
     H_new.data = new
     log("heightmap: %d samples in the railway's zones" % changed)
     report += ["## Heightmap", "", "%d samples (0.5 m) set to the designed ground in %d zones." % (changed,
@@ -954,7 +956,12 @@ def main() -> None:
     skirt_attr = (srgb_col(SKIRT_COLOUR), np.array([KERB, FLAG_SIDE, 0, 0], dtype=np.uint8))
 
     # --- ground mesh
-    raw_all = (rg.BASE / gm["file"]).read_bytes()
+    files = {}                                  # ground.bin and its parts (a chunk's "file"), as read
+    for c in gm["chunks"]:
+        f = c.get("file", gm["file"])
+        if f not in files:
+            files[f] = (rg.BASE / f).read_bytes()
+    raw_all = {id(c): files[c.get("file", gm["file"])] for c in gm["chunks"]}
     orig_xy = set()
     ctx = {"grid": grid, "zones": zones, "design": design, "A": A, "H_new": H_new, "H_old": H_old,
            "nodes_new": H_new.nodes(), "nodes_old": H_old.nodes(), "snapper": Snapper(zones, grid),
@@ -1036,8 +1043,10 @@ def main() -> None:
                 if 0 <= r < H_old.h and 0 <= c_ < H_old.w and r % 2 == 0 and c_ % 2 == 0:
                     holes.add((r, c_))
     log("collision: %d cliff cells, %d hole samples, %d cover cells" % (len(all_cliffs), len(holes), len(cover)))
-    # write ground.bin
+    # write ground.bin (and ground.1.bin... past PART_BYTES, as the pipeline splits it)
     blob = bytearray()
+    blobs = []
+    total_bytes = 0
     chunk_meta = []
     tri_total = 0
     vert_total = 0
@@ -1052,19 +1061,31 @@ def main() -> None:
                     float(np.ptp(P[:, 0])), float(np.ptp(P[:, 1])), float(np.ptp(P[:, 2]))] if len(P) else c["aabb"]
             nv, ni, nc = len(nd["pos"]), len(nd["idx"]), len(nd["colf"])
         else:
-            comp = raw_all[c["offset"]:c["offset"] + c["size"]]
+            comp = raw_all[id(c)][c["offset"]:c["offset"] + c["size"]]
             raw = None
             aabb, nv, ni, nc = c["aabb"], c["nv"], c["ni"], c["nc"]
+        if len(blob) and len(blob) + len(comp) > rg.PART_BYTES:
+            blobs.append(blob)
+            blob = bytearray()
         m = dict(c)
+        m.pop("file", None)
         m.update({"offset": len(blob), "size": len(comp), "nv": nv, "ni": ni, "nc": nc,
                   "raw": len(raw) if raw is not None else c["raw"],
                   "aabb": [round(v, 3) for v in aabb] if raw is not None else c["aabb"]})
+        if blobs:
+            m["file"] = "%s.%d.bin" % (Path(gm["file"]).stem, len(blobs))
         blob += comp
+        total_bytes += len(comp)
         chunk_meta.append(m)
         tri_total += ni // 3
         vert_total += nv
         col_total += nc // 3
-    (rg.WORLD / gm["file"]).write_bytes(bytes(blob))
+    blobs.append(blob)
+    stem = Path(gm["file"]).stem
+    for old in rg.WORLD.glob(stem + ".*.bin"):
+        old.unlink()
+    for k, b in enumerate(blobs):
+        (rg.WORLD / (gm["file"] if k == 0 else "%s.%d.bin" % (stem, k))).write_bytes(bytes(b))
 
     # --- ground ids
     ids_info = index["ids"]
@@ -1074,7 +1095,7 @@ def main() -> None:
         m = lab == k
         ids[rr[m], cc[m]] = pi + 1
     (rg.WORLD / ids_info["file"]).write_bytes(zlib.compress(ids.astype("<u2").tobytes(), 9))
-    new.astype("<f4").tofile(rg.WORLD / world["terrain"]["file"])
+    rg.write_heightmap(rg.WORLD, world["terrain"], new)
 
     # --- world.json ground partition
     hard_by_piece = {}
@@ -1219,14 +1240,14 @@ def main() -> None:
                              "the ground steps there (tools/rail/patch_world.py), raised collision faces cover them",
                     "samples": sorted([list(h) for h in holes])}
     st = dict(gm.get("stats", {}))
-    st.update({"triangles": tri_total, "vertices": vert_total, "collision_triangles": col_total, "bytes": len(blob)})
+    st.update({"triangles": tri_total, "vertices": vert_total, "collision_triangles": col_total, "bytes": total_bytes})
     gm2["stats"] = st
     world["ground_mesh"] = gm2
     world["ground_materials"] = [m for m in mats if m not in ("kerb", "paint")]
     world["palette"]["ground"] = palette
     # No date in the stamp: the same inputs give the same bytes.
     world["meta"]["rail"] = {"version": PATCH_VERSION, "rail_json": sha1(rg.RAIL_JSON),
-                             "base": {f: sha1(rg.BASE / f) for f in rg.BASE_FILES},
+                             "base": {f: sha1(rg.BASE / f) for f in rg.world_files(rg.load_json(rg.BASE / "world.json"))},
                              "tool": "tools/rail/patch_world.py"}
     index["pieces"] = final_pieces
     index["materials"] = mats

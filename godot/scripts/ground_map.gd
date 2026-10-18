@@ -57,7 +57,7 @@ func _load(path: String) -> bool:
 	_oy = ids["origin_xy"][1]
 
 	var hm: Dictionary = index["heights"]
-	var data := FileAccess.get_file_as_bytes(dir.path_join(hm["file"])).to_float32_array()
+	var data := GroundHeights.read_heightmap(dir, hm)
 	heights = GroundHeights.new(data, hm["w"], hm["h"], hm["cell"], hm["origin_xy"][0], hm["origin_xy"][1], hm["mesh_cell"])
 	_mesh_cell = hm["mesh_cell"]
 	_hox = hm["origin_xy"][0]

@@ -109,6 +109,8 @@ CANT_PRACTICAL = 0.7            # SNCF practice: cant ~7/10 of the theoretical (
 CANT_DEFICIENCY_MAX = 150.0     # mm; assumed (SNCF admits high cant deficiencies on conventional lines)
 CANT_GRADIENT_MAX = 2.5         # mm/m along a transition; assumed (EN 13803 order of magnitude)
 TRAIN_LENGTHS = {"8": 208.32, "4": 104.16}   # MI 79: one unit of 4 cars is 104.16 m (en.wikipedia "MI 79")
+EXTEND_END = 320.0              # m the line runs on straight beyond the OSM data at its north-east end (a westbound
+                                # train starts there, hidden, front and back)
 SERVICE_BRAKE = 0.7             # m/s², planned braking to a stop; assumed (comfortable, under the MI 79's 1.1 m/s²)
 MAX_SERVICE_BRAKE = 1.1         # m/s², en.wikipedia "MI 79" infobox: deceleration 1.1 m/s² and 1.15 m/s²; the lower one...
 EMERGENCY_BRAKE = 1.15          # ...for full service braking, the higher one for the emergency brake
@@ -119,8 +121,14 @@ TRANSITION_MIN = 20.0           # m, shortest transition curve the fit may use
 CURVE_THRESHOLD = 1 / 2500.0    # 1/m: OSM stretches curving more than this become curves
 # extent
 X_WEST = -615.0                 # the alignment follows OSM from here (past Le Guichet, where the westbound trains end)...
-X_EAST = 2180.0                 # ...to here (the tracks part beyond, east of the map); then straight on:
-EXTEND_EAST = 560.0             # m of straight beyond (a westbound train starts there, hidden, front and back)
+X_EAST = 4030.0                 # ...to here, where the tracks start parting for Massy-Palaiseau's four platform tracks;
+                                # from there on the station yard (yard.py terms: each track its own line) takes over
+# the stations on the alignment (Lozère's platforms are OSM's outlines; the others have only nodes: side platforms by
+# rule, see rule_platforms) and the yard's (Massy-Palaiseau: OSM's island outlines)
+STATIONS = ["Lozère", "Palaiseau - Villebon", "Palaiseau", "Massy-Palaiseau"]
+RULE_PLATFORM_WIDTH = 3.5       # m from the platform edge to its back where OSM draws no outline; assumed (LiDAR: the
+                                # raised ground runs ~2-6 m out from the track centre at both stations)
+RULE_PLATFORM_MARGIN = 5.0      # m beyond the trains' ends (both directions' 8-car trains stand on it)
 REVIEW = rg.TOOLS / "review"
 
 
@@ -131,10 +139,20 @@ def log(*a):
 # ---------------------------------------------------------------- 1. OSM
 
 def load_osm() -> dict:
+    """osm_rail.json, and under it osm_rail_massy.json (the line on to Massy-Palaiseau) when there: the first file's
+    elements win, so the first stretch is built from exactly what it was."""
     d = rg.load_json(rg.TOOLS / "osm_rail.json")
-    ways = {e["id"]: e for e in d["elements"] if e["type"] == "way"}
-    nodes = {e["id"]: e for e in d["elements"] if e["type"] == "node"}
-    return {"ways": ways, "nodes": nodes, "timestamp": d.get("osm3s", {}).get("timestamp_osm_base", "")}
+    elements = {(e["type"], e["id"]): e for e in d["elements"]}
+    stamps = [d.get("osm3s", {}).get("timestamp_osm_base", "")]
+    if (rg.TOOLS / "osm_rail_massy.json").exists():
+        m = rg.load_json(rg.TOOLS / "osm_rail_massy.json")
+        for e in m["elements"]:
+            elements.setdefault((e["type"], e["id"]), e)
+        stamps.append(m.get("osm3s", {}).get("timestamp_osm_base", ""))
+    ways = {i: e for (t, i), e in elements.items() if t == "way"}
+    nodes = {i: e for (t, i), e in elements.items() if t == "node"}
+    rels = {i: e for (t, i), e in elements.items() if t == "relation"}
+    return {"ways": ways, "nodes": nodes, "relations": rels, "timestamp": " + ".join(x for x in stamps if x)}
 
 
 def way_pts(w: dict) -> np.ndarray:
