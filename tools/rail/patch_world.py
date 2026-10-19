@@ -827,9 +827,9 @@ def drop_overlapping_slivers(nd: dict) -> int:
     return dropped
 
 
-def fill_tiny_holes(chunks: dict, bounds: list) -> int:
-    """Three unshared edges closing on themselves round under 1e-3 m² are a sliver's place left empty: a triangle
-    fills it, with the attributes and heights of its neighbours. Returns how many."""
+def fill_tiny_holes(chunks: dict, bounds: list, max_area: float = 1e-3) -> int:
+    """Three unshared edges closing on themselves round under `max_area` m² are a sliver's place left empty: a
+    triangle fills it, with the attributes and heights of its neighbours. Returns how many."""
     owner = {}
     for k, nd in chunks.items():
         P = nd["pos"]
@@ -862,7 +862,7 @@ def fill_tiny_holes(chunks: dict, bounds: list) -> int:
             if key in done:
                 continue
             area = abs((q[0] - p[0]) * (r[1] - p[1]) - (r[0] - p[0]) * (q[1] - p[1])) / 2
-            if area > 1e-3:
+            if area > max_area:
                 continue
             done.add(key)
             nd = chunks[k]
@@ -893,6 +893,211 @@ def fill_tiny_holes(chunks: dict, bounds: list) -> int:
             nd["idx"] = np.concatenate([nd["idx"], np.array(tri3, dtype=np.int32)])
             filled += 1
     return filled
+
+
+CRACK_SNAP = 1e-3               # m: an open edge's end this close to another open edge is a T-junction on it
+CRACK_WELD = 5e-3               # m: open edges' ends this close are one point (a bowtie of near-collinear slivers)
+CRACK_HOLE = 0.05               # m²: the largest three-edge hole filled at the end
+
+
+def open_edges(chunks: dict, outline, owners=None) -> tuple:
+    """The tiling edges used once, off the map's outline, in the `owners` chunks (the rest only close theirs):
+    [(chunk, triangle, a, b, (x, y) of a, (x, y) of b)], and their ends {(x, y): height}."""
+    rows = []
+    for k, nd in chunks.items():
+        T = nd["idx"].reshape(-1, 3)
+        til = np.nonzero(~np.isin(nd["cus"][T[:, 0], 0], list(OVERLAY)))[0]
+        if not len(til):
+            continue
+        P = nd["pos"].astype(np.float64)
+        for e0, e1 in ((0, 1), (1, 2), (2, 0)):
+            a, b = T[til, e0], T[til, e1]
+            rows.append(np.column_stack([np.full(len(til), k), til, a, b, P[a, 0], -P[a, 2], P[b, 0], -P[b, 2]]))
+    if not rows:
+        return [], {}
+    E = np.concatenate(rows)
+    sw = (E[:, 4] > E[:, 6]) | ((E[:, 4] == E[:, 6]) & (E[:, 5] > E[:, 7]))
+    key = np.where(sw[:, None], E[:, [6, 7, 4, 5]], E[:, [4, 5, 6, 7]])
+    _, inv, n = np.unique(key, axis=0, return_inverse=True, return_counts=True)
+    E = E[n[inv.ravel()] == 1]
+    if owners is not None:
+        E = E[np.isin(E[:, 0], list(owners))]
+    on_outline = (shapely.distance(outline, shapely.points(E[:, 4:6])) < 0.01) & \
+                 (shapely.distance(outline, shapely.points(E[:, 6:8])) < 0.01)
+    edges, ends = [], {}
+    for r in E[~on_outline]:
+        k, t, a, b = int(r[0]), int(r[1]), int(r[2]), int(r[3])
+        pa, pb = (float(r[4]), float(r[5])), (float(r[6]), float(r[7]))
+        edges.append((k, t, a, b, pa, pb))
+        P = chunks[k]["pos"]
+        ends[pa], ends[pb] = float(P[a, 1]), float(P[b, 1])
+    return edges, ends
+
+
+def split_open_t_junctions(chunks: dict, edges: list, ends: dict) -> int:
+    """An open edge with other open edges' ends on it (within CRACK_SNAP; the earlier T-junction repair only looks
+    near rebuilt cells and at 1e-4 m): its triangle becomes a fan through them, at their heights. Returns how many
+    triangles were split."""
+    vhash = {}
+    for p in ends:
+        vhash.setdefault((math.floor(p[0] / 0.5), math.floor(p[1] / 0.5)), []).append(p)
+    adds = {}
+    done = set()
+    for k, t, a, b, (px, py), (qx, qy) in edges:
+        if (k, t) in done:
+            continue
+        L = math.hypot(qx - px, qy - py)
+        if L < 1e-6:
+            continue
+        on = []
+        for hx in range(math.floor(min(px, qx) / 0.5) - 1, math.floor(max(px, qx) / 0.5) + 2):
+            for hy in range(math.floor(min(py, qy) / 0.5) - 1, math.floor(max(py, qy) / 0.5) + 2):
+                for (vx, vy) in vhash.get((hx, hy), ()):
+                    u = ((vx - px) * (qx - px) + (vy - py) * (qy - py)) / (L * L)
+                    if u * L <= 1e-4 or (1 - u) * L <= 1e-4:
+                        continue
+                    if abs((qx - px) * (vy - py) - (qy - py) * (vx - px)) / L < CRACK_SNAP:
+                        on.append((u, vx, vy))
+        if not on:
+            continue
+        nd = chunks[k]
+        T = nd["idx"].reshape(-1, 3)
+        c = [v for v in T[t] if v != a and v != b][0]
+        new_p, new_tris = adds.setdefault(k, ([], []))
+        fan = [a]
+        for u, vx, vy in sorted(on):
+            new_p.append((np.array([vx, ends[(vx, vy)], -vy]), a))
+            fan.append(len(nd["pos"]) + len(new_p) - 1)
+        fan.append(b)
+        # the edge a -> b runs in the triangle's winding, so a -> v -> c keeps it
+        T[t] = [fan[0], fan[1], c]
+        new_tris += [[fan[i], fan[i + 1], c] for i in range(1, len(fan) - 1)]
+        nd["idx"] = T.ravel()
+        done.add((k, t))
+    for k, (new_p, new_tris) in adds.items():
+        nd = chunks[k]
+        src = [s for _, s in new_p]
+        nd["pos"] = np.concatenate([nd["pos"], np.array([p for p, _ in new_p], dtype=np.float32)])
+        nd["nrm"] = np.concatenate([nd["nrm"], nd["nrm"][src]])
+        nd["col"] = np.concatenate([nd["col"], nd["col"][src]])
+        nd["cus"] = np.concatenate([nd["cus"], nd["cus"][src]])
+        nd["idx"] = np.concatenate([nd["idx"], np.array(new_tris, dtype=np.int32).ravel()]).astype(np.int32)
+    return len(done)
+
+
+def weld_open_ends(chunks: dict, ends: dict, orig_xy: set) -> int:
+    """Open edges' ends within CRACK_WELD of each other take one position (an original vertex's when one is): the
+    near-collinear slivers of two materials then share their corners. Returns how many vertices moved."""
+    pts = list(ends)
+    grid = {}
+    for n_, (x, y) in enumerate(pts):
+        grid.setdefault((math.floor(x / CRACK_WELD), math.floor(y / CRACK_WELD)), []).append(n_)
+    parent = list(range(len(pts)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for (gx, gy), members in grid.items():
+        cand = [j for dx in (-1, 0, 1) for dy in (-1, 0, 1) for j in grid.get((gx + dx, gy + dy), [])]
+        for i in members:
+            for j in cand:
+                if j > i and abs(pts[j][0] - pts[i][0]) < CRACK_WELD and abs(pts[j][1] - pts[i][1]) < CRACK_WELD:
+                    parent[find(j)] = find(i)
+    groups = {}
+    for i in range(len(pts)):
+        groups.setdefault(find(i), []).append(pts[i])
+    to = {}
+    for g in groups.values():
+        if len(g) < 2:
+            continue
+        orig = [p for p in g if (round(p[0], 9), round(p[1], 9)) in orig_xy]
+        rep = orig[0] if orig else min(g)
+        to.update({p: rep for p in g if p != rep})
+    if not to:
+        return 0
+    moved = 0
+    xs = np.array([p[0] for p in to])
+    ys = np.array([p[1] for p in to])
+    for nd in chunks.values():
+        P = nd["pos"]
+        if not len(P) or xs.max() < P[:, 0].min() - 1 or xs.min() > P[:, 0].max() + 1:
+            continue
+        cand = np.nonzero(np.isin(P[:, 0].astype(np.float64), xs) & np.isin(-P[:, 2].astype(np.float64), ys))[0]
+        for v in cand:
+            r = to.get((float(P[v, 0]), float(-P[v, 2])))
+            if r is not None:
+                P[v, 0], P[v, 2] = r[0], -r[1]
+                moved += 1
+    return moved
+
+
+def fill_outline_notches(chunks: dict, edges: list, outline) -> int:
+    """Two open edges p -> q -> r with p and r on the map's outline and q inside: a notch in the ground's edge (a
+    sliver cut off at the outline); a triangle under CRACK_HOLE m² fills it. Returns how many."""
+    at = {}
+    for e in edges:
+        at.setdefault(e[4], []).append(e)
+        at.setdefault(e[5], []).append(e)
+    on = lambda p: outline.distance(Point(p)) < 0.01
+    filled = 0
+    for q, es in at.items():
+        if len(es) != 2 or on(q):
+            continue
+        (k, t, a, b, pa, pb), e2 = es
+        p = pb if pa == q else pa
+        r = e2[5] if e2[4] == q else e2[4]
+        if p == r or not (on(p) and on(r)):
+            continue
+        if abs((p[0] - q[0]) * (r[1] - q[1]) - (r[0] - q[0]) * (p[1] - q[1])) / 2 > CRACK_HOLE:
+            continue
+        nd = chunks[k]
+        P = nd["pos"]
+        hits = np.nonzero((P[:, 0].astype(np.float64) == r[0]) & (-P[:, 2].astype(np.float64) == r[1]))[0]
+        if len(hits):
+            rv = int(hits[0])
+        else:
+            k2, _, a2, b2, pa2, _ = e2
+            src = chunks[k2]["pos"][a2 if pa2 == r else b2]
+            nd["pos"] = np.concatenate([P, np.array([[r[0], src[1], -r[1]]], dtype=np.float32)])
+            for key in ("nrm", "col", "cus"):
+                nd[key] = np.concatenate([nd[key], nd[key][a:a + 1]])
+            rv = len(nd["pos"]) - 1
+        tri3 = [a, b, rv]
+        A3 = nd["pos"][tri3].astype(np.float64)
+        if np.cross(A3[2] - A3[0], A3[1] - A3[0])[1] < 0:        # front faces up
+            tri3 = [a, rv, b]
+        nd["idx"] = np.concatenate([nd["idx"], np.array(tri3, dtype=np.int32)])
+        filled += 1
+    return filled
+
+
+def close_cracks(chunks: dict, world: dict, orig_xy: set, outline=None, owners=None) -> tuple:
+    """The last cracks the cuts leave (millimetres: bowties of near-collinear slivers, T-junctions just off an edge,
+    a missed sliver's hole or notch in the outline): weld, split and fill until no open edge is left off the map's
+    outline. `owners`: the chunks worked on; the others in `chunks` (a ring around them) only tell their open edges
+    from the edges they share with it. Returns (splits, welded, filled, open edges left)."""
+    m = world["meta"]
+    if outline is None:
+        outline = (Polygon(m["data_area"][0], m["data_area"][1:]) if m.get("data_area") else box(*m["bounds"])).boundary
+    splits = welded = filled = 0
+    for _ in range(4):
+        edges, ends = open_edges(chunks, outline, owners)
+        if not edges:
+            return splits, welded, filled, 0
+        n1 = weld_open_ends(chunks, ends, orig_xy)          # first: a bowtie's corners also lie on its edges
+        if n1:
+            for nd in chunks.values():
+                drop_degenerate(nd)
+        edges, ends = open_edges(chunks, outline, owners)
+        n2 = split_open_t_junctions(chunks, edges, ends)
+        n3 = fill_tiny_holes(chunks, m["bounds"], CRACK_HOLE)
+        n3 += fill_outline_notches(chunks, open_edges(chunks, outline, owners)[0], outline)
+        welded, splits, filled = welded + n1, splits + n2, filled + n3
+        if n1 + n2 + n3 == 0:
+            break
+    return splits, welded, filled, len(open_edges(chunks, outline, owners)[0])
 
 
 def vpos(P, extra_v, v):
@@ -1062,6 +1267,14 @@ def main() -> None:
         log("ground mesh: %d sub-millimetre holes left by slivers filled" % filled)
     log("ground mesh: %d triangle edges split where a neighbour put a vertex on them, %d vertices welded, "
         "%d slivers dropped" % (splits, welded, dropped))
+    # with a ring of the chunks around them: the edges they share with it are no cracks
+    near_boxes = shapely.union_all([chunks[k][1] for k in near]).buffer(0.5)
+    ring = [k for k, (c, cb) in enumerate(chunks) if k not in new_chunks and cb.intersects(near_boxes)]
+    for k in ring:
+        new_chunks[k] = read_chunk(raw_all, chunks[k][0])
+    cs, cw, cf, left = close_cracks({k: new_chunks[k] for k in list(near) + ring}, world, orig_xy, owners=set(near))
+    log("ground mesh: last cracks: %d triangles split at a T-junction, %d vertices welded, %d holes filled, "
+        "%d open edges left" % (cs, cw, cf, left))
     # cover the collision holes: every cell within one cell of a cliff cell gets raised collision faces
     cover = {(i + di, j + dj) for i, j in all_cliffs for di in (-1, 0, 1) for dj in (-1, 0, 1)}
     for k in near:

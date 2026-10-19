@@ -108,7 +108,7 @@ func _run_host() -> void:
 	_check(aboard and bot.s > s_aboard + 25.0 and stayed, "the bot drives on with them aboard, with the physics (%.0f m)" % [
 			bot.s - s_aboard])
 	# a stowed bus disappears there too
-	var other: Object = _main.traffic.bots[0]
+	var other: Object = _main.traffic.bots.filter(func(o: Object) -> bool: return o != bot)[0]   # not the one ridden
 	other._stow()
 	# the host's options: once the client parked a car of its own
 	var theirs := func() -> bool: return net.owner_of.values().any(func(o: int) -> bool: return o != net.me())
