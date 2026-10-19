@@ -257,9 +257,12 @@ def build_islands(osm: dict, tracks: list, edge: float, height: float, data_area
     return out
 
 
-def zones(yard: dict, taken, data_area=None) -> list:
+def zones(yard: dict, taken, data_area=None, streets=None) -> list:
     """patch_world zones: the islands (axis zones: their flat top along the spine) and the tracks' ballast strips
-    ("yard": the ground kept, ballast material), outside what the alignment's zones already take (`taken`)."""
+    ("yard": the ground kept, ballast material), outside what the alignment's zones already take (`taken`).
+    `streets`: the map's carriageways and pavements; a strip overlapping one (OSM's track a metre off the street
+    beside it, a decorative siding drawn under a street) leaves it, else the zebras and kerbs there lose their
+    corners. Where an RER track runs through one the ballast stays."""
     import shapely
     from shapely.geometry import LineString, Polygon
     from shapely.ops import unary_union
@@ -278,6 +281,9 @@ def zones(yard: dict, taken, data_area=None) -> list:
     strips = unary_union([LineString(t["pts"]).buffer(STRIP, cap_style=2) for t in yard["tracks"]])
     if data_area is not None:                   # on the map's ground only (the mains run on past it, hidden)
         strips = strips.intersection(data_area)
+    if streets is not None:                     # only the RER's own tracks keep their ballast through a street
+        rer = unary_union([LineString(t["pts"]) for t in yard["tracks"] if t["rer"] or t["main"]])
+        strips = strips.difference(streets.difference(rer.intersection(streets).buffer(STRIP, cap_style=2)))
     g = strips if used is None else strips.difference(used)
     g = shapely.set_precision(g, 0.001)
     polys = [x for x in getattr(g, "geoms", [g]) if x.geom_type == "Polygon" and x.area > 0.05]

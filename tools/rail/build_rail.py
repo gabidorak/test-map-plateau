@@ -2443,7 +2443,9 @@ def main() -> None:
     import yard as yd
     Y = yd.build(osm, A, spacing, RAIL_HEIGHT + PAD, H, DATA_AREA, set(ids1) | set(ids2), A.length, PLATFORM_EDGE,
                  PLATFORM_HEIGHT)
-    yz = yd.zones(Y, zunion, DATA_AREA)
+    streets = unary_union([_Pg(g["rings"][0], g["rings"][1:]).buffer(0) for g in world["ground"] if g["rings"] and
+                           g["kind"] in ("road", "sidewalk", "traffic_island", "pedestrian", "parking")])
+    yz = yd.zones(Y, zunion, DATA_AREA, streets)
     zs += yz
     zunion = unary_union([zunion] + [_Pg(pg[0], pg[1:]) for z in yz for pg in z["polygons"]])
     log("yard: %d tracks (%d of the RER B), %d islands (%s)" % (len(Y["tracks"]), sum(t["rer"] for t in Y["tracks"]),
