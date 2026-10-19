@@ -120,7 +120,9 @@ jobs:
               "$RUNNER_TEMP/thin/${{ matrix.file }}" "$RUNNER_TEMP/info/${{ matrix.launcher }}"
 
       # Data patch (the data is the same for every platform, Linux makes it): a Godot patch pack, delta-encoded against
-      # the latest release's data, unpacked from its Linux executable. Published on the "store" release.
+      # the latest release's data, unpacked from its Linux executable. Published on the "store" release, but only when
+      # it turns that data into exactly this build's game.pck (tools/verify_patch.gd): --export-patch exports the game
+      # a second time, and pack/ (the packed executables' manifest and launcher id by now) is no game data.
       - name: Data patch
         if: github.event_name == 'push' && matrix.preset == 'Linux'
         working-directory: godot
@@ -140,7 +142,15 @@ jobs:
             echo "Same data as $prev"
             exit 0
           fi
-          godot --headless --path . --export-patch Linux "$RUNNER_TEMP/info/patch.pck" --patches "$RUNNER_TEMP/prev.pck"
+          mv pack "$RUNNER_TEMP/pack-aside"
+          godot --headless --path . --export-patch Linux "$RUNNER_TEMP/patch.pck" --patches "$RUNNER_TEMP/prev.pck"
+          mv "$RUNNER_TEMP/pack-aside" pack
+          if ! godot --headless --path . --script res://tools/verify_patch.gd -- "$RUNNER_TEMP/prev.pck" \
+              "$RUNNER_TEMP/patch.pck" "$RUNNER_TEMP/game.pck" "$RUNNER_TEMP/merged.pck"; then
+            echo "::error::The data patch does not rebuild this build's data: not published, players get the full download"
+            exit 0
+          fi
+          mv "$RUNNER_TEMP/patch.pck" "$RUNNER_TEMP/info/patch.pck"
           echo "{\"from\": \"$from\", \"to\": \"$to\", \"prev\": \"$prev\"}" > "$RUNNER_TEMP/info/patch.json"
           ls -l "$RUNNER_TEMP/info"
 
@@ -213,6 +223,12 @@ jobs:
               "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$(jq -r .launcher "$info")" "$(jq -r .data "$info")" \
               > release/update.json
           cat release/update.json
+          # every platform must export the same data, else its players never find a patch path (full downloads)
+          for p in windows macos; do
+            id=$(jq -r .data "artifacts/plateau-map-$p-info/info.json")
+            [ "$id" = "$(jq -r .data "$info")" ] \
+                || echo "::error::The $p data ($id) is not the Linux data: its players always get the full download"
+          done
           ls -l release
 
       # The "store" prerelease (the latest-release API ignores prereleases) keeps the data patches and chain.json, the
