@@ -26,37 +26,37 @@ height = 0.24
 [sub_resource type="SphereShape3D" id="arm_shape"]
 radius = 0.2
 
-[node name="Player" type="CharacterBody3D"]
+[node name="Player" type="CharacterBody3D" unique_id=196828165]
 collision_layer = 8
 collision_mask = 119
 floor_max_angle = 0.8
 floor_snap_length = 0.5
 script = ExtResource("1_player")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1590701112]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.875, 0)
 shape = SubResource("shape")
 
-[node name="Body" type="Node3D" parent="."]
+[node name="Body" type="Node3D" parent="." unique_id=1366773291]
 
-[node name="Capsule" type="MeshInstance3D" parent="Body"]
+[node name="Capsule" type="MeshInstance3D" parent="Body" unique_id=1158971729]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
 mesh = SubResource("body_mesh")
 
-[node name="Nose" type="MeshInstance3D" parent="Body"]
+[node name="Nose" type="MeshInstance3D" parent="Body" unique_id=1739693742]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4, -0.3)
 mesh = SubResource("nose_mesh")
 
-[node name="Pivot" type="Node3D" parent="."]
+[node name="Pivot" type="Node3D" parent="." unique_id=1798960371]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
 
-[node name="SpringArm3D" type="SpringArm3D" parent="Pivot"]
+[node name="SpringArm3D" type="SpringArm3D" parent="Pivot" unique_id=181922291]
 collision_mask = 3
 shape = SubResource("arm_shape")
 spring_length = 4.5
 margin = 0.1
 
-[node name="Camera3D" type="Camera3D" parent="Pivot/SpringArm3D"]
+[node name="Camera3D" type="Camera3D" parent="Pivot/SpringArm3D" unique_id=578879448]
 fov = 70.0
 near = 0.1
 far = 1500.0
