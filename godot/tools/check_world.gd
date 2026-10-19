@@ -214,20 +214,46 @@ func _check_ground(root: Node, world: Dictionary) -> void:
 					open[key] = mi.name
 	var b: Array = world["meta"]["bounds"]
 	var box_area: float = (float(b[2]) - float(b[0])) * (float(b[3]) - float(b[1]))
+	# a corridor map (meta.data_area: the box plus the corridors): its ground ends on that outline, not on the box
+	var outline := []                       # [a, b] segments of the data area's rings, map x, y
+	var rings: Array = world["meta"].get("data_area", [])
+	for ring: Array in rings:                # open rings (no repeated first point): the closing segment too
+		for i in ring.size():
+			var j := (i + 1) % ring.size()
+			outline.append([Vector2(ring[i][0], ring[i][1]), Vector2(ring[j][0], ring[j][1])])
+	if not rings.is_empty():
+		box_area = 0.0
+		for k in rings.size():
+			var a2 := 0.0
+			var r: Array = rings[k]
+			for i in r.size():
+				var j := (i + 1) % r.size()
+				a2 += float(r[i][0]) * float(r[j][1]) - float(r[j][0]) * float(r[i][1])
+			box_area += absf(a2) * 0.5 * (1.0 if k == 0 else -1.0)
 	var holes := 0
 	for key: Vector4 in open:
 		# box edges, Godot axes: x = const at bounds x, or z = const at -bounds y
 		var on_box := (key.x == key.z and (is_equal_approx(key.x, b[0]) or is_equal_approx(key.x, b[2]))) or \
 				(key.y == key.w and (is_equal_approx(key.y, -b[1]) or is_equal_approx(key.y, -b[3])))
+		if not outline.is_empty():
+			on_box = _on_outline(outline, Vector2(key.x, -key.y)) and _on_outline(outline, Vector2(key.z, -key.w))
 		if not on_box:
 			holes += 1
 			if holes <= 10:
 				_fail("ground edge without a neighbour (hole or crack) at x %.3f y %.3f -> x %.3f y %.3f in %s" % [
 						key.x, -key.y, key.z, -key.w, open[key]])
-	if absf(area - box_area) > box_area * 1e-5:
-		_fail("ground mesh covers %.1f m² of the %.1f m² box" % [area, box_area])
+	if absf(area - box_area) > box_area * (1e-5 if rings.is_empty() else 1e-3):
+		_fail("ground mesh covers %.1f m² of the %.1f m² %s" % [area, box_area, "box" if rings.is_empty() else "data area"])
 	print("ground: %d chunks, %d surface triangles, %.1f m² of %.1f m², %d open edges inside the box" % [
 			ground.get_child_count(), tris, area, box_area, holes])
+
+
+## True when map point p lies on the data area's outline (within 10 cm: the land cover stops a few cm short of it).
+static func _on_outline(outline: Array, p: Vector2) -> bool:
+	for sg: Array in outline:
+		if Geometry2D.get_closest_point_to_segment(p, sg[0], sg[1]).distance_to(p) < 0.1:
+			return true
+	return false
 
 
 ## Undirected edge key (Godot x, z of both ends), exact floats.
@@ -449,6 +475,13 @@ func _check_railway(world: Dictionary, rail: Dictionary) -> void:
 			if p.x < play[0] or p.x > play[2] or p.y < play[1] or p.y > play[3]:
 				last = NAN
 				continue
+			var on_bridge := false              # the line's bridges: the ground under them is the road's
+			for rb: Dictionary in rail.get("rail_bridges", []):
+				if s >= float(rb["s0"]) - 3.0 and s <= float(rb["s1"]) + 3.0:     # the abutments' cells too
+					on_bridge = true
+			if on_bridge:
+				last = NAN
+				continue
 			centres.append(p)
 			samples += 1
 			var piece: int = map.piece_at(p.x, p.y)
@@ -488,6 +521,8 @@ func _check_railway(world: Dictionary, rail: Dictionary) -> void:
 			in_gauge += 1
 			_fail("prop %s %s: %.2f m from a track centre" % [p["id"], p["model"], d])
 	for b: Dictionary in world["buildings"]:
+		if float(b.get("min_height", 0.0)) >= 5.0:
+			continue                            # standing over the line, above the trains (patch_world.py)
 		var ring: Array = b["rings"][0]
 		for i in ring.size():
 			var p0 := Vector2(ring[i][0], ring[i][1])
@@ -516,13 +551,15 @@ func _check_railway(world: Dictionary, rail: Dictionary) -> void:
 		if absf(float(pf["height"]) - PLATFORM_HEIGHT) > 0.005:
 			_fail("%s: %.3f m above the rail" % [pf["id"], pf["height"]])
 		var top: Array = pf["top"]
-		for k in range(1, top.size() - 1):
+		for k in range(2, top.size() - 2):     # the end metres' cells straddle the platform and what follows it
 			var s: float = float(pf["s0"]) + k
 			var on := _mesh_z(_along(a, s, side * (edge + 0.5)))
 			var below := _mesh_z(_along(a, s, side * (edge - 0.2)))
 			var rail_z := _rail_level(a, s)
+			var lift := maxf(0.0, side * float(a["cant"][clampi(roundi(s), 0, (a["cant"] as Array).size() - 1)]) / 1000.0)
 			platform_samples += 1
-			if is_nan(on) or absf(on - float(top[k])) > 0.02 or absf(on - rail_z - PLATFORM_HEIGHT) > 0.1:
+			# 1.15 m above the platform side's rail (raised by the cant on a curve's high side)
+			if is_nan(on) or absf(on - float(top[k])) > 0.02 or absf(on - rail_z - lift - PLATFORM_HEIGHT) > 0.1:
 				_fail("%s at s %.0f: platform top %.3f, %.3f wanted (rail %.3f)" % [pf["id"], s, on, top[k], rail_z])
 			elif is_nan(below) or on - below < PLATFORM_HEIGHT * 0.8:
 				_fail("%s at s %.0f: the ground in front of the wall is %.3f, the top %.3f" % [pf["id"], s, below, on])

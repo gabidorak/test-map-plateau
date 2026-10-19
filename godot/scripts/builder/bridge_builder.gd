@@ -4,12 +4,14 @@ extends RefCounted
 ## mesh leaves out (the ground runs on under them, down to the road, railway or stream they cross). Per bridge, in the
 ## toy prop style: the deck slab along its points (top at the deck height, the way's material), parapets on car
 ## roads and railings on paths, a dashed centre line on two-way roads, and piers where the ground falls away under
-## it. Collision: the deck top, its edges and the parapets, on the terrain layer (one StaticBody3D "BridgeCollision",
+## it (never on a road, the railway, a platform or water). Collision: the deck top, its edges and the parapets, on the terrain layer (one StaticBody3D "BridgeCollision",
 ## each shape tagged for the picker), so vehicles drive and players walk on it.
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const GroundHeights = preload("res://scripts/ground_heights.gd")
+const GroundMap = preload("res://scripts/ground_map.gd")
+const NO_PIER := ["road", "railway", "platform", "water", "steps", "traffic_island"]     # ground a pier never stands on
 const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
 const PROP_SHADER := "res://shaders/toy_prop.gdshader"
 const ROAD_DECK := 0.9              # m, slab depth under a car road
@@ -29,6 +31,7 @@ const RAIL_METAL := Color("#5b616b")
 const PAINT := Color("#f4f1e8")
 
 var _ground: GroundHeights
+var _map: RefCounted                    # GroundMap: which ground piece is under a pier
 
 
 func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_dir: String) -> void:
@@ -38,6 +41,7 @@ func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_di
 	var t: Dictionary = world["terrain"]
 	_ground = GroundHeights.new(heights, t["w"], t["h"], t["cell"], t["origin_xy"][0], t["origin_xy"][1],
 			world["ground_mesh"]["cell"])
+	_map = GroundMap.get_map("res://world/" + String(world["ground_mesh"]["index"]))
 	var mat := ShaderMaterial.new()
 	mat.shader = load(PROP_SHADER)
 	mat.set_shader_parameter("mode", 0)
@@ -212,6 +216,14 @@ func _piers(m: RailBuilder.Mesher, fr: Array, width: float, depth: float) -> voi
 		var bottom: float = f["z"] - depth
 		var g := _ground.at(f["p"].x, f["p"].y)
 		if bottom - g < PIER_GAP:
+			continue
+		var across: Vector2 = f["left"] * maxf(width * 0.3, 0.4)
+		var blocked := false                # on a road, the railway, a platform, water below: no pier there
+		for q: Vector2 in [f["p"], f["p"] + across, f["p"] - across]:
+			var pk: int = _map.piece_at(q.x, q.y) if _map else -1
+			if pk >= 0 and _map.pieces[pk][0] in NO_PIER:
+				blocked = true
+		if blocked:
 			continue
 		var h := bottom - g + 0.3
 		var dir := _g(f["dir"], 0.0)

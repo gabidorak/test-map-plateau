@@ -75,7 +75,7 @@ func _run_host() -> void:
 	for i in tt.services.size():
 		if tt.services[i]["direction"] == "eastbound":
 			k = i
-	var mark: float = tt.services[k]["stops"][0]["s"]["8"]
+	var mark: float = _lozere(tt.services[k])["s"]["8"]
 	var tr: Node3D = tt._new_train(k)
 	var bot: Object = tt.bots[tr]
 	bot.start()
@@ -126,7 +126,7 @@ func _run_client() -> void:
 	if tr == null:
 		return
 	# its arrival on the shared clock
-	var mark: float = tr.service["stops"][0]["s"]["8"]
+	var mark: float = _lozere(tr.service)["s"]["8"]
 	var arrived_at := [NAN]                 # (a lambda captures locals by value: an array to write into)
 	await _until(func() -> bool: return tr.speed > 1.0, 20.0)     # under way to Lozère (not a state from before)
 	await _until(func() -> bool:
@@ -157,3 +157,11 @@ func _run_client() -> void:
 	player.set_carrier(null)
 	await _until(func() -> bool: return false, 1.0)
 	net.leave()
+
+
+## The service's stop at Lozère (the line runs on to Massy-Palaiseau: westbound trains stop elsewhere first).
+static func _lozere(svc: Dictionary) -> Dictionary:
+	for st: Dictionary in svc["stops"]:
+		if st["name"] == "Lozère":
+			return st
+	return svc["stops"][0]

@@ -27,6 +27,7 @@ const int PLANT = 6;
 const int PITCHED = 7;
 const int EAVE = 8;         // house roofs: soffit, fascia, chimney (plain vertex colour)
 const int TILES = 9;        // house roofs: UV = (along the eave, world height)
+const int GREEN = 10;       // planted (sedum) roof of a landmark: UV = world (x, y), COLOR = the sedum green
 
 const int F_BLIND = 0;
 const int F_PUNCHED = 1;
@@ -198,6 +199,24 @@ void fragment() {
 		float grit = hash12(floor(p * 9.0) + seed);
 		float seam = lines(p.x + 0.3 * p.y, 1.1, 0.03, fwidth(p.x));
 		col *= (0.94 + 0.1 * grit * detail(0.11, fwidth(p.x))) * (1.0 - 0.12 * seam) * (0.96 + 0.08 * fbm(p * 0.2));
+	} else if (part == GREEN) {
+		// sedum mats: green with drifts of olive, ochre and rust (they turn red in the sun), tufts and the rows of
+		// the planting trays
+		vec2 p = UV;
+		float fwp = fwidth(p.x) + fwidth(p.y);
+		float drift = fbm(p * 0.09 + seed * 0.37);
+		float rust = smoothstep(0.55, 0.72, fbm(p * 0.05 + vec2(seed * 0.11, 3.7)));
+		vec3 olive = vec3(0.5, 0.56, 0.2);
+		vec3 ochre = vec3(0.68, 0.46, 0.2);
+		vec3 red = vec3(0.62, 0.27, 0.17);
+		col = mix(col, olive, smoothstep(0.45, 0.7, drift) * 0.45);
+		col = mix(col, mix(ochre, red, smoothstep(0.5, 0.75, drift)), rust * 0.9);
+		float tuft = hash12(floor(p * 4.0) + seed);
+		col *= mix(1.0, 0.86 + 0.24 * tuft, detail(0.25, fwp));
+		float tray = max(lines(p.x, 1.2, 0.025, fwidth(p.x)), lines(p.y, 1.2, 0.025, fwidth(p.y)));
+		col *= 1.0 - 0.1 * tray * detail(1.2, fwp);
+		rough = 0.97;
+		spec = 0.15;
 	} else if (part == PITCHED) {
 		float row = lines(wpos.y, 0.32, 0.03, fwidth(wpos.y));
 		col *= (1.0 - 0.25 * row) * (0.95 + 0.08 * hash12(vec2(floor(wpos.y / 0.32), floor(UV.x * 2.0)) + seed));

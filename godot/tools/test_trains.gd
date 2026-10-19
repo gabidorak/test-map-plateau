@@ -138,7 +138,7 @@ func _entering() -> void:
 func _stop() -> void:
 	for dir: String in ["eastbound", "westbound"]:
 		var k := _service(dir)
-		var mark: float = _tt.services[k]["stops"][0]["s"]["8"]
+		var mark: float = _lozere(_tt.services[k])["s"]["8"]
 		var tr := _put(k, mark - 700.0, 22.0)
 		var bot: Object = _tt.bots[tr]
 		var stopped_at := INF
@@ -166,7 +166,7 @@ func _stop() -> void:
 func _doors_on_platform_side(tr: Node3D, k: int) -> bool:
 	var pf_side := 0.0
 	for pf: Dictionary in _tt._rm.data["platforms"]:
-		if pf["id"] == _tt.services[k]["stops"][0]["platform"]:
+		if pf["id"] == _lozere(_tt.services[k])["platform"]:
 			pf_side = pf["side"]
 	for car: Node3D in tr.cars:
 		for s: String in ["left", "right"]:
@@ -185,7 +185,7 @@ func _doors_on_platform_side(tr: Node3D, k: int) -> bool:
 ## A player in a doorway holds the doors open; in the car, they shut.
 func _hold() -> void:
 	var k := _service("eastbound")
-	var mark: float = _tt.services[k]["stops"][0]["s"]["8"]
+	var mark: float = _lozere(_tt.services[k])["s"]["8"]
 	var tr := _put(k, mark - 200.0, 12.0)
 	var bot: Object = _tt.bots[tr]
 	for f in 60 * 120:
@@ -220,7 +220,7 @@ func _hold() -> void:
 ## Walking in from the platform through an open door: over the gap and the step up, carried by the car.
 func _walk_in() -> void:
 	var k := _service("westbound")
-	var mark: float = _tt.services[k]["stops"][0]["s"]["8"]
+	var mark: float = _lozere(_tt.services[k])["s"]["8"]
 	var tr := _put(k, mark - 150.0, 10.0)
 	var bot: Object = _tt.bots[tr]
 	for f in 60 * 120:
@@ -253,7 +253,7 @@ func _walk_in() -> void:
 ## Carried from the station to the map edge, then put down by the line.
 func _ride() -> void:
 	var k := _service("eastbound")
-	var mark: float = _tt.services[k]["stops"][0]["s"]["8"]
+	var mark: float = _lozere(_tt.services[k])["s"]["8"]
 	var tr := _put(k, mark - 150.0, 10.0)
 	var bot: Object = _tt.bots[tr]
 	for f in 60 * 120:
@@ -268,7 +268,7 @@ func _ride() -> void:
 	var min_dy := INF
 	var lost := 0
 	var top_speed := 0.0
-	for f in 60 * 300:
+	for f in 60 * 720:                      # on to Massy-Palaiseau: three more stops (40 s each) before the map's end
 		await physics_frame
 		if _tt.teleports > teleports:
 			break
@@ -292,7 +292,7 @@ func _ride() -> void:
 ## A following train stops short of the red signal behind one standing at the platform.
 func _signals() -> void:
 	var k := _service("eastbound")
-	var mark: float = _tt.services[k]["stops"][0]["s"]["8"]
+	var mark: float = _lozere(_tt.services[k])["s"]["8"]
 	var lead := _put(k, mark, 0.0)
 	var lead_bot: Object = _tt.bots[lead]
 	lead_bot.state = "dwell"
@@ -316,7 +316,7 @@ func _signals() -> void:
 			red = node.get_meta("aspect", "") in ["S", "C"]
 	_check(stopped and closest > fb.SIGNAL_MARGIN, "the train behind stops short of the red signal (%.0f m behind the tail at the closest)" % closest)
 	_check(red, "the signal ahead of it shows red")
-	lead_bot._stops[0]["dwell"] = _tt.services[k]["stops"][0]["dwell"]
+	lead_bot._stops[0]["dwell"] = _lozere(_tt.services[k])["dwell"]
 
 
 ## A car on the track: horn and a stop short of it; too close, an emergency stop and a knock.
@@ -324,7 +324,8 @@ func _obstacle() -> void:
 	var k := _service("westbound")
 	var svc: Dictionary = _tt.services[k]
 	for far: bool in [true, false]:
-		var tr := _put(k, 1000.0, 25.0)
+		# west of Lozère, on the way to Le Guichet: no stop within reach (the line runs on east to Massy-Palaiseau)
+		var tr := _put(k, float(_lozere(svc)["s"]["8"]) + 120.0, 25.0)
 		var gap := 420.0 if far else 120.0
 		var spot: Vector3 = tr.route_point(tr.front + gap)
 		var car := Car.new()
@@ -385,3 +386,11 @@ func _cost() -> void:
 	print("cost: %.2f ms per physics tick with four trains running, %.2f ms with none (+%.2f ms)" % [
 			busy / 1000.0, idle / 1000.0, (busy - idle) / 1000.0])
 	_check(busy - idle < 2000.0, "four trains cost under 2 ms a tick (+%.2f ms)" % ((busy - idle) / 1000.0))
+
+
+## The service's stop at Lozère (the line runs on to Massy-Palaiseau: westbound trains stop elsewhere first).
+static func _lozere(svc: Dictionary) -> Dictionary:
+	for st: Dictionary in svc["stops"]:
+		if st["name"] == "Lozère":
+			return st
+	return svc["stops"][0]
