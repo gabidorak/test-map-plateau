@@ -45,7 +45,7 @@ import railgeo as rg  # noqa: E402
 
 PATCH_VERSION = 2
 HARD = {"trackbed": ("railway", "ballast"), "platform": ("platform", "asphalt"), "stairwell": ("steps", "concrete"),
-        "road_trench": ("road", "asphalt")}
+        "road_trench": ("road", "asphalt"), "island": ("platform", "asphalt"), "yard": ("railway", "ballast")}
 BALLAST_COLOUR = "#8c8379"      # toy ballast: rust-stained crushed granite (photos of the station), lightened like the
                                 # rest of the palette
 # The station building as the photos show it (Wikimedia Commons, "Gare Lozère RER IdF Ligne B - Palaiseau (FR91) -
@@ -112,6 +112,25 @@ class Zones:
         self.hard = unary_union([g for g, z in zip(self.geoms, self.list) if z["kind"] in HARD])
         shapely.prepare(self.union)
         shapely.prepare(self.hard)
+        # every zone's outline as short segments in one tree: a 2 m cell takes only the few near it (the yard's
+        # zones have outlines of thousands of vertices: intersecting all of it per cell took most of an hour)
+        segs, owner = [], []
+        for k, g in enumerate(self.geoms):
+            for ring in shapely.get_rings(shapely.get_parts(g)):
+                c = shapely.get_coordinates(ring)
+                segs += list(shapely.linestrings(np.stack([c[:-1], c[1:]], axis=1)))
+                owner += [k] * (len(c) - 1)
+        self.segs = np.array(segs, dtype=object)
+        self.seg_owner = np.array(owner)
+        self.seg_tree = shapely.STRtree(self.segs)
+
+    def boundary_in(self, k: int, cell) -> shapely.Geometry:
+        """Zone k's outline inside `cell` (a polygon): as zones.geoms[k].boundary.intersection(cell)."""
+        hit = self.seg_tree.query(cell)
+        hit = hit[self.seg_owner[hit] == k]
+        if not len(hit):
+            return shapely.LineString()
+        return shapely.intersection(shapely.multilinestrings(self.segs[hit]), cell)
 
     def label(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         lab = np.full(x.shape, -1, dtype=np.int32)
@@ -122,6 +141,26 @@ class Zones:
             inside = np.zeros(x.shape, dtype=bool)
             inside[free] = shapely.contains_xy(g, x[free], y[free])
             lab[inside] = k
+        return lab
+
+    def label_grid(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+        """label() on a regular grid (xs rising along columns, ys falling along rows), each zone tested only inside
+        its own bounds: the same labels, without testing every zone against the whole grid."""
+        lab = np.full(xs.shape, -1, dtype=np.int32)
+        x_axis, y_axis = xs[0], ys[:, 0]
+        for k, g in enumerate(self.geoms):
+            x0, y0, x1, y1 = g.bounds
+            c0, c1 = np.searchsorted(x_axis, x0), np.searchsorted(x_axis, x1, side="right")
+            r0, r1 = np.searchsorted(-y_axis, -y1), np.searchsorted(-y_axis, -y0, side="right")
+            if c1 <= c0 or r1 <= r0:
+                continue
+            sub = lab[r0:r1, c0:c1]
+            free = sub == -1
+            if not free.any():
+                continue
+            inside = np.zeros(sub.shape, dtype=bool)
+            inside[free] = shapely.contains_xy(g, xs[r0:r1, c0:c1][free], ys[r0:r1, c0:c1][free])
+            sub[inside] = k
         return lab
 
     def at(self, x: float, y: float) -> int:
@@ -149,7 +188,9 @@ def project(A: rg.Alignment, x: np.ndarray, y: np.ndarray) -> tuple:
 def zone_heights(design: rg.Design, zone: dict, s: np.ndarray, u: np.ndarray, x: np.ndarray, y: np.ndarray):
     """Vectorized railgeo.Design.zone_fn for many points of one zone."""
     kind = zone["kind"]
-    if kind in ("stairwell", "road_trench"):
+    if kind == "yard":                          # the yard's ballast strips keep the ground (tools/rail/yard.py)
+        return design.H.at(x, y)
+    if kind in ("stairwell", "road_trench", "island"):
         ax = np.asarray(zone["axis"], dtype=np.float64)
         az = np.asarray(zone["axis_z"], dtype=np.float64)
         best = np.full(len(x), np.inf)
@@ -376,7 +417,7 @@ def rebuild_chunk(d: dict, ctx: dict) -> tuple:
                 if t in surface:
                     tpolys[t] = pg
         for k in local:
-            inter = zones.geoms[k].boundary.intersection(gpoly)
+            inter = zones.boundary_in(k, gpoly)
             if not inter.is_empty:
                 lines.append(inter)
         faces = list(polygonize(unary_union(lines)))
@@ -564,7 +605,7 @@ def rebuild_chunk(d: dict, ctx: dict) -> tuple:
     # the raised collision faces: lifted with the ground (the pipeline's), later the hole covers are appended
     cf = d["colf"].astype(np.float64)
     if len(cf):
-        dz = ctx["H_new"].at(cf[:, 0], -cf[:, 2], zeros_new) - ctx["H_old"].at(cf[:, 0], -cf[:, 2], ctx["nodes_old"])
+        dz = ctx["H_new"].at(cf[:, 0], -cf[:, 2], ctx["nodes_new"]) - ctx["H_old"].at(cf[:, 0], -cf[:, 2], ctx["nodes_old"])
         cf[:, 1] += dz
     nd["colf"] = cf.astype(np.float32)
     return nd, cliffs, stats, rebuilt
@@ -869,15 +910,18 @@ def vattr(nd, extra_v, v, key):
 # ---------------------------------------------------------------- world.json
 
 def ring_tris(poly: Polygon) -> tuple:
-    """(rings without the closing point, triangle indices into their concatenation) of a polygon."""
+    """(rings without the closing point, triangle indices into their concatenation) of a polygon. The triangles'
+    corners are matched to the ring vertices by the nearest one (within 0.1 mm): exact float keys missed some, and
+    the triangles dropped left holes in the piece."""
+    from scipy.spatial import cKDTree
     rings = [np.asarray(poly.exterior.coords)[:-1]] + [np.asarray(h.coords)[:-1] for h in poly.interiors]
     flat = np.concatenate(rings)
-    index = {(round(x, 6), round(y, 6)): k for k, (x, y) in enumerate(flat)}
+    tree = cKDTree(flat)
     tris = []
     for t in shapely.constrained_delaunay_triangles(poly).geoms:
-        ids = [index.get((round(x, 6), round(y, 6))) for x, y in t.exterior.coords[:-1]]
-        if None not in ids:
-            tris += ids
+        d, ids = tree.query(np.asarray(t.exterior.coords)[:-1])
+        if d.max() < 1e-4 and len(set(ids.tolist())) == 3:
+            tris += [int(i) for i in ids]
     return [[[round(float(x), 3), round(float(y), 3)] for x, y in r] for r in rings], tris
 
 
@@ -905,7 +949,7 @@ def main() -> None:
     cc, rr = np.meshgrid(np.arange(c0, c1 + 1), np.arange(r0, r1 + 1))
     xs = H_old.ox + cc * H_old.cell
     ys = H_old.oy - rr * H_old.cell
-    lab = zones.label(xs.ravel(), ys.ravel()).reshape(xs.shape)
+    lab = zones.label_grid(xs, ys)
     new = H_old.data.copy()
     changed = 0
     for k, z in enumerate(zones.list):
@@ -992,6 +1036,10 @@ def main() -> None:
             totals[a_] = totals.get(a_, 0) + b_
     log("ground mesh: %d chunks touched, %s" % (len(touched), totals))
     near = [k for k, (c, cb) in enumerate(chunks) if cb.buffer(4.0).intersects(zones.union)]
+    # and every chunk bordering a rebuilt one: a vertex a rebuilt cell puts on their shared border splits theirs too
+    rebuilt_boxes = shapely.union_all([chunks[k][1] for k in touched]).buffer(0.5) if touched else None
+    if rebuilt_boxes is not None:
+        near = sorted(set(near) | {k for k, (c, cb) in enumerate(chunks) if cb.intersects(rebuilt_boxes)})
     for k in near:
         if k not in new_chunks:
             new_chunks[k] = read_chunk(raw_all, chunks[k][0])
@@ -1112,8 +1160,8 @@ def main() -> None:
         pg = Polygon(g["rings"][0], g["rings"][1:]).buffer(0)
         if not pg.intersects(cut) or pg.intersection(cut).area < 1e-4:
             continue
-        rest = pg.difference(cut)
-        parts = sorted([p for p in getattr(rest, "geoms", [rest]) if p.geom_type == "Polygon" and p.area > 1e-3],
+        rest = shapely.make_valid(shapely.set_precision(pg.difference(cut), 0.001))
+        parts = sorted([p for p in shapely.get_parts(rest) if p.geom_type == "Polygon" and p.area > 1e-3],
                        key=lambda p: -p.area)
         touched_ground += 1
         if not parts:
@@ -1134,7 +1182,7 @@ def main() -> None:
     order = sorted(set(piece_of_zone.values()))
     new_entries = {}
     for pi in order:
-        geom = unary_union(hard_by_piece[pi])
+        geom = shapely.make_valid(shapely.set_precision(unary_union(hard_by_piece[pi]), 0.001))
         polys = [p for p in getattr(geom, "geoms", [geom]) if p.geom_type == "Polygon" and p.area > 1e-3]
         pk, mat, src, nsrc = pieces[pi]
         entries = []
@@ -1201,8 +1249,10 @@ def main() -> None:
     canopies = []
     keep_b = []
     restyled = ""
+    # wall-less canopies on the line's own trackbed, platforms and stairs (the yard's islands keep theirs)
+    own = unary_union([g for g, z in zip(zones.geoms, zones.list) if z["kind"] in ("trackbed", "platform", "stairwell")])
     for b in world["buildings"]:
-        if not b.get("walls", True) and Polygon(b["rings"][0]).intersects(zones.hard):
+        if not b.get("walls", True) and Polygon(b["rings"][0]).intersects(own):
             canopies.append(b["id"])
             continue
         if b["id"] == STATION_BUILDING:
@@ -1210,7 +1260,15 @@ def main() -> None:
             restyled = b["id"]
         keep_b.append(b)
     world["buildings"] = keep_b
+    lifted, dropped_b = over_tracks(world, rail)
+    # the map's bridge decks the railway builds itself (Lozère's footbridges: rail.json footbridges)
+    own_fb = {o for fb in rail.get("footbridges", []) for o in fb["osm"]}
+    n_br = len(world.get("bridges", []))
+    world["bridges"] = [b for b in world.get("bridges", []) if b["osm"] not in own_fb]
     report += ["## Trees, props, fences, buildings", "",
+               "- bridge decks left to the railway's footbridges: %d" % (n_br - len(world["bridges"])),
+               "- buildings over the tracks raised into bridge buildings (above the trains): %s" % (", ".join(lifted) or "none"),
+               "- huts standing on a yard track dropped: %s" % (", ".join(dropped_b) or "none"),
                "- trees removed: %d of %d (%s)" % (before - len(world["trees"]), before,
                                                    ", ".join("%s %d" % (r, sum(1 for t in clear["trees"] if t["reason"] == r))
                                                              for r in sorted({t["reason"] for t in clear["trees"]}))),
@@ -1228,6 +1286,23 @@ def main() -> None:
     for b in clear["buildings"]:
         report.append("- %s %s (%s): %.2f m from the nearest track centre%s" % (
             b["id"], b["name"], b["kind"], b["nearest_track"], ", IN THE GAUGE" if b["in_gauge"] else ""))
+    # markings on ground the railway took (a lot's bays under a platform): those triangles go
+    n_mk = 0
+    for mk in world["markings"]:
+        v = np.asarray(mk["verts"], dtype=np.float64)
+        t = np.asarray(mk["tris"], dtype=np.int64).reshape(-1, 3)
+        if not len(t):
+            continue
+        c = v[t].mean(axis=1)
+        keep = ~shapely.contains_xy(zones.hard, c[:, 0], c[:, 1])
+        if keep.all():
+            continue
+        n_mk += int((~keep).sum())
+        used, inv = np.unique(t[keep].ravel(), return_inverse=True)
+        mk["verts"] = np.round(v[used], 3).tolist()
+        mk["tris"] = inv.astype(int).tolist()
+    world["markings"] = [mk for mk in world["markings"] if mk["tris"]]
+    report += ["", "Marking triangles dropped on the railway's ground: %d" % n_mk]
     # kerbs and markings crossing the railway's hard ground (none expected)
     bad_k = [k for k, kb in enumerate(world["kerbs"]) if len(kb["pts"]) > 1 and LineString(kb["pts"]).intersects(zones.hard)]
     report += ["", "Kerbs crossing the railway's ground: %d" % len(bad_k), ""]
@@ -1266,6 +1341,65 @@ def main() -> None:
         "- collision holes: %d samples, covered by raised faces over %d cells" % (len(holes), len(cover)), ""]
     (rg.TOOLS / "review" / "patch.md").write_text("\n".join(report) + "\n", encoding="utf-8")
     log("patched godot/world/ in %.0f s (report: tools/rail/review/patch.md)" % (time.time() - t0))
+
+
+GAUGE_HALF = 1.75              # m from a track centre (godot/tools/check_world.gd)
+TRAIN_CLEARANCE = 6.2           # m above the rail where a building over the line may start (catenary, its supports)
+HUT_AREA = 60.0                 # m²: a smaller building on a yard track goes (a cabin on the ballast)
+
+
+def over_tracks(world: dict, rail: dict) -> tuple:
+    """Walled buildings reaching into the trains' gauge: one standing over a track trains run on (the alignment's,
+    the yard's mains), or a station hall or footbridge over any yard track, with its roof well above the trains (a
+    station hall over the cutting, as at Palaiseau) keeps only what is above TRAIN_CLEARANCE, its tiers floating
+    there; a small one on a yard track is dropped; the others are left (depot sheds the yard's tracks run into;
+    patch.md lists them). Returns (raised ids, dropped ids)."""
+    A = rg.Alignment(rail["alignment"])
+    sp = rail["alignment"]["spacing"]
+    th = A.heading
+    n = np.c_[-np.sin(th), np.cos(th)]
+    lines = [(LineString(A.pts - n * sp / 2), A.s, A.z), (LineString(A.pts + n * sp / 2), A.s, A.z)]
+    trains = [True, True]                       # trains run on it (the alignment's tracks, the yard's mains)
+    for t in rail.get("yard", {}).get("tracks", []):
+        p = np.asarray(t["pts"])
+        lines.append((LineString(p), rg.cumlen(p), np.asarray(t["z"])))
+        trains.append(bool(t["main"]))
+    tree = shapely.STRtree([ln for ln, _, _ in lines])
+    lifted, dropped, keep = [], [], []
+    for b in world["buildings"]:
+        if not b.get("walls", True) or not b["rings"]:
+            keep.append(b)
+            continue
+        pg = Polygon(b["rings"][0]).buffer(0)
+        hits = [k for k in tree.query(pg.buffer(GAUGE_HALF)) if lines[k][0].distance(pg) < GAUGE_HALF]
+        if not hits:
+            keep.append(b)
+            continue
+        rail_z = max(float(np.interp(lines[k][0].project(pg.centroid), lines[k][1], lines[k][2])) for k in hits)
+        tiers = b.get("toy", {}).get("tiers", [])
+        top = max([t["top"] for t in tiers] or [b["base_z"] + b["height"]])
+        over_trains = any(trains[k] for k in hits)
+        hall = b.get("kind") == "train_station"   # a station hall or footbridge over the yard
+        if top - rail_z > TRAIN_CLEARANCE + 2.0 and (over_trains or hall):
+            z_min = rail_z + TRAIN_CLEARANCE
+            new = []
+            for t in tiers:
+                if t["top"] <= z_min + 0.5:
+                    continue
+                if t["z0"] < z_min:
+                    t["z0"] = round(z_min, 3)
+                    t["floating"] = True
+                new.append(t)
+            b["toy"]["tiers"] = new
+            b["min_height"] = round(z_min - b["base_z"], 3)
+            lifted.append(b["id"])
+            keep.append(b)
+        elif pg.area < HUT_AREA and any(k >= 2 for k in hits) and not over_trains:
+            dropped.append(b["id"])
+        else:
+            keep.append(b)
+    world["buildings"] = keep
+    return lifted, dropped
 
 
 def rg_hex(c: str) -> tuple:

@@ -1,6 +1,6 @@
 # Plateau map
 
-Real map of the Saclay plateau (2.1 × 1.74 km: Télécom Paris → École Polytechnique and its lake → ENSTA Paris and its Centre de l'Yvette, and south down the Lozère hillside to the Yvette valley) turned into a cartoon 3D scene for Godot 4.7.
+Real map of the Saclay plateau (2.1 × 1.74 km: Télécom Paris → École Polytechnique and its lake → ENSTA Paris and its Centre de l'Yvette, and south down the Lozère hillside to the Yvette valley) turned into a cartoon 3D scene for Godot 4.7, with two corridors east to Massy-Palaiseau station: along the 4606 bus (through Palaiseau) and along the RER B (through Palaiseau-Villebon and Palaiseau), 150 m walkable either side of the bus route and of the tracks (`meta.playable_area` in `godot/world/world.json`: the invisible walls follow it).
 
 ## Play
 
@@ -27,7 +27,8 @@ opens the in-game menu (resume, back to the main menu, quit; it lists the player
 7777 in (Windows asks the first time); LAN discovery uses UDP broadcasts on port 7775. Command line options skip the
 menu: `godot --path . -- --host` / `-- --join=192.168.1.42[:7777]` / `-- --solo`, plus `--name=NICK --color=0..7`.
 
-Bot buses drive real lines: the 4606 across the plateau (18 m buses) and the 4619, L and Z on the Lozère hillside
+Bot buses drive real lines: the 4606 across the plateau and down to the Massy-Palaiseau bus station (18 m buses; its
+TCSP busway crosses the RER B on a bridge) and the 4619, L and Z on the Lozère hillside
 (12 m buses), a bus every minute in each direction of each line (`headway` in `pipeline/buses.toml`). They keep to
 their lane, stop at every stop of the line (right indicator in, doors open, left indicator out), signal their turns,
 wait at red lights, give way at junctions and stop behind other vehicles. Get on at a stop while the doors are open and
@@ -93,8 +94,9 @@ blender -b --factory-startup -P blender/vehicles/build_train.py -- --preview=$PW
 
 # RER B (see "RER B" below): python venv with numpy, shapely and Pillow
 .venv/Scripts/python tools/rail/fetch_osm.py      # optional: refetch the OSM extract tools/rail/osm_rail.json (Overpass)
-.venv/Scripts/python tools/rail/build_rail.py     # OSM + LiDAR -> godot/world/rail.json, tools/rail/review/*.png (~35 s)
-.venv/Scripts/python tools/rail/patch_world.py    # godot/world/base/ + rail.json -> godot/world/ (~2-4 min), then build_world.gd
+.venv/Scripts/python tools/rail/fetch_osm.py --massy   # optional: the same for the line on to Massy-Palaiseau (osm_rail_massy.json)
+.venv/Scripts/python tools/rail/build_rail.py     # OSM + LiDAR -> godot/world/rail.json, tools/rail/review/*.png (~1 min)
+.venv/Scripts/python tools/rail/patch_world.py    # godot/world/base/ + rail.json -> godot/world/ (~25 min, ~6 GB RAM), then build_world.gd
 
 cd godot
 godot --headless --path . --import
@@ -341,6 +343,7 @@ buildings = ["osm:r9903423"]      # OSM ids (stable) or numbers; all get the spe
 label = "Télécom Paris"           # name shown by the picker
 height = 24.5                     # optional corrections: height (m), levels; lidar_tiers / roof_boxes / solar /
 levels = 6                        # auto_door / pilotis = false switch automatic parts off
+green_roof = true                 # planted sedum roofs (green with rust drifts; a volume may say false)
 floors = "grid"                   # M7 styles: blind punched ribbon curtain slats balconies loggias high_band grid
 ground = "lobby"                  # plain shopfront lobby plinth podium
 material = "concrete"             # render brick wood metal concrete panels shingles
@@ -361,7 +364,8 @@ depth = [-0.3, 1.3]
 z = [8.2]
 floors = "blind"
 
-[[landmark.module]]               # a kit module: model, facade, along, z, out, scale, tint, repeat = [step, n]
+[[landmark.module]]               # a kit module: model, facade, along, z, out, scale, tint, repeat = [step, n];
+                                  # landmark-only models: fin, green_wall (V of climbers, 3 x 7 m), x_bars (8 m)
 [[landmark.sign]]                 # a name sign: text, facade, along, z, width, color, plate
 [[landmark.photo]]                # a reference photo: file, eye = [x, y, h above ground], target, fov (horizontal)
 ```
@@ -369,12 +373,15 @@ floors = "blind"
 `world.json` buildings of a landmark carry `landmark` (its name), `toy.styles` (per-facade and volume styles;
 `toy.runs[k][3]` and volume tiers index it) and `toy.columns` (schema 9). If a shape cannot be expressed with the
 kit, the milestone plans a dedicated Blender script `blender/landmarks/<name>.py` whose model replaces the mass
-(not needed yet). The reference photos never reach the game.
+(not needed yet). The reference photos never reach the game. Landmarks so far: `telecom-paris`, `hacker-house`,
+`alice-milliat`, `ensta-paris` (white panels, sedum roofs, green wall on the road side, crossed bars on the east
+block, glazed hall with a canopy) and `ensta-residences` (white panels, brick ends, concrete gables, roof plant).
 
 ## RER B
 
 The RER B (Ligne de Sceaux, RATP, 1,500 V DC) crosses the south of the map where it really runs, with Gare de Lozère,
-and trains run on it both ways all the time. Since the map pipeline is not published, the railway is added after it by
+and runs on east along its corridor through Palaiseau-Villebon and Palaiseau to Massy-Palaiseau; trains run on it both
+ways all the time and stop at all four stations. Since the map pipeline is not published, the railway is added after it by
 committed scripts that regenerate everything from data (commands above).
 
 - Data, `tools/rail/` (Python: numpy, shapely, Pillow in `.venv`): `fetch_osm.py` keeps the Overpass extract
@@ -393,6 +400,21 @@ committed scripts that regenerate everything from data (commands above).
   by rule, contact wire 5.25 m above the rail), the station's furniture by rule from the OSM tags and entrances, the
   services (per direction: the route every metre, the planned speed, the stop at Lozère per train length, the block
   signals, the headway) and the trees and props the railway clears.
+- The line on to Massy-Palaiseau (2026-10-18): `fetch_osm.py --massy` keeps `osm_rail_massy.json` (read under
+  `osm_rail.json`, whose elements win, so the first stretch is built from exactly what it was). The alignment is fitted
+  in sections (`X_SECTIONS`): the first stretch's clothoid fit as before, then a smoothing spline through OSM's
+  centreline (the line has compound curves there; within 0.31 m rms of OSM), pinned to the first one's end and
+  heading. Palaiseau-Villebon and Palaiseau have OSM platform outlines (side platforms; where a station had only nodes,
+  `rule_platforms` lays side platforms over both directions' 8-car trains). Short bridges carrying the line over a
+  road (`rail_bridges`) leave the ground under them alone and get a concrete deck. Roads and paths over the line are
+  the map's bridge decks (`world.json` `bridges`): no catenary portal under them, the contact wire lowered where they
+  leave less room. Beyond the alignment (x 4030) `tools/rail/yard.py` builds the station yard of Massy-Palaiseau:
+  every OSM track (the RER B's four platform tracks, the terminus tracks, the depot, the TGV line, the RER C) is a
+  line of its own with its rail level from the LiDAR (humps such as the concourse over the tracks left out), drawn
+  with rails and sleepers on ballast ground (`yard` zones: the ground kept); the two islands between tracks 1 and A
+  and between B and 2 are raised platforms (`island` zones) with their copings and furniture; tracks 1 and 2 carry the
+  trains on out of the map. A building standing over a track trains run on, its roof well above them (Palaiseau's
+  station hall over the cutting, Massy's footbridge halls), keeps only what is above 6.2 m over the rail.
 - The map, `patch_world.py`: from the pipeline's files kept in `godot/world/base/` (never from patched ones: running
   it twice gives the same bytes; `world.json` `meta.rail` holds the version and the inputs' SHA-1) it draws the
   railway's ground into the heightmap and the ground mesh (cliff cells keep each side's plane, with skirts; the mesh
@@ -412,15 +434,19 @@ committed scripts that regenerate everything from data (commands above).
   state is the front's distance along its route, the speed, the doors and the lamps, and every car is posed from it
   between its bogies on the rail curve, canted. `scripts/train_bot.gd` drives them (1.0 m/s² from rest, 0.7 m/s²
   service braking, 1.1 when it must, 1.15 m/s² emergency: en.wikipedia "MI 79"), stops them on the 8-car mark at
-  Lozère, opens the platform-side doors for 40 s (longer while someone stands in a doorway), sounds the door warning,
+  every station (Lozère, Palaiseau-Villebon, Palaiseau, Massy-Palaiseau), opens the platform-side doors for 40 s (longer while someone stands in a doorway), sounds the door warning,
   obeys the block signals, and sounds the horn and brakes, at the emergency rate if it must, for people and vehicles
   on the track (a train that cannot stop in time knocks a car aside and damages it). `scripts/train_traffic.gd` sends
   a train each way every 120 s (`PLATEAU_TRAIN_HEADWAY`; the real B4 service is every 10-15 min), eastbound from rest
-  at Le Guichet just west of the map, westbound in at line speed from the east, fills the line at the start, sets the
+  at Le Guichet just west of the map, westbound in at line speed from beyond Massy-Palaiseau, fills the line at the start, sets the
   signals' aspects and the departure screens, and puts a player riding off the map down by the line. Sounds are
   synthesized (`vehicle_audio.gd`: traction whine, rail rumble, horn, door warning, brake squeal). In LAN games the
   host runs the trains and sends their states on the shared clock; the others pose them from the same routes.
-- Known differences from the real station: the station building is a toy approximation of the real one (cream render
+- Known differences from the real stations: at Massy-Palaiseau only the RER B's two islands are platforms (the RER C
+  and TGV platforms are the map's ground), the terminus, depot and TGV tracks have no catenary and no trains, and the
+  station's concourse is the map's footbridge decks and halls; the new stations have the rule-made furniture (lamps,
+  name boards, benches, bins, screens) rather than their own.
+- Known differences from the real Lozère station: the station building is a toy approximation of the real one (cream render
   with brick under a slate gable, after the photos); the entrances have validator pillars (as in the photos) rather
   than gates; the footbridges are open steel decks with bar railings; the south platform's long stone-clad wall
   building is the pipeline's generic box; the covered road's trench walls follow the LiDAR's banks and look rough at

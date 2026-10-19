@@ -31,7 +31,7 @@ const GLASS_SHADER := "res://shaders/toy_prop_glass.gdshader"
 const KIT_DIR := "res://assets/building_kit/"
 const CHUNK := 96.0
 const PART := {"wall": 0, "roof": 1, "coping": 2, "parapet": 3, "soffit": 4, "fascia": 5, "plant": 6, "pitched": 7,
-		"eave": 8, "tiles": 9}
+		"eave": 8, "tiles": 9, "green": 10}
 const HOUSE_SOFFIT := Color(0.93, 0.9, 0.85)
 const BEVEL_MID := Vector2(0.293, 0.707)   # quarter round: inset and height shares of the middle ring
 const PILLAR_SIZE := 0.45
@@ -338,7 +338,8 @@ func _add_tier(buf: Buf, faces: PackedVector3Array, b: Dictionary, toy: Dictiona
 	var zr := deck if par > 0.0 else top
 	buf.color = roof_col
 	buf.uv2_val = Vector2(0.0, deck - base)
-	buf.cust = [Color(st["g"], st["f"], -1.0, st["bay"]), Color(PART["roof"], st["floors"], st["ground"], st["material"]), c2, c3]
+	var roof_part: int = PART["green"] if t.get("green", false) else PART["roof"]
+	buf.cust = [Color(st["g"], st["f"], -1.0, st["bay"]), Color(roof_part, st["floors"], st["ground"], st["material"]), c2, c3]
 	if t.has("apex"):
 		var ax: Array = t["apex"]
 		var apex := MeshUtils.to_godot(ax[0], ax[1], top + float(ax[2]))

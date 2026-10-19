@@ -100,7 +100,12 @@ class Heights:
     def nodes(self, data=None) -> np.ndarray:
         """The node grid ground_heights.gd builds: (nh, nw), node (j, i) at x = ox + (i - 1) * mesh_cell,
         y = oy - (j - 1) * mesh_cell (one clamped node beyond each edge)."""
-        d = self.data if data is None else data
+        if data is None:                     # this heightmap's own grid: built once (per data array)
+            if getattr(self, "_nodes_of", None) is not self.data:
+                self._nodes_cache = self.nodes(self.data)
+                self._nodes_of = self.data
+            return self._nodes_cache
+        d = data
         nw = (self.w - 1) // self.step + 4
         nh = (self.h - 1) // self.step + 4
         rows = np.clip((np.arange(nh) - 1) * self.step, 0, self.h - 1)
@@ -224,7 +229,8 @@ class Design:
     level) to where it meets the ground (reach, top); kind 1, the formation up to a wall at its edge, then a landing at
     the wall's top out to reach; kind 2, a platform: the formation up to the platform wall (edge), the platform top
     (top) out to its back (reach), blended into the ground over BLEND_RUN when it is within BLEND_STEP of it. Zones
-    (stairwells, the road's open trench) override: their height runs along an axis."""
+    (stairwells, the road's open trench, the yard's islands) override: their height runs along an axis; the yard's
+    ballast strips keep the ground."""
 
     BLEND_STEP = 0.35
     BLEND_RUN = 2.0
@@ -338,7 +344,9 @@ class Design:
         if zone is None:
             return self.ground(p)
         kind = zone["kind"]
-        if kind in ("stairwell", "road_trench"):
+        if kind == "yard":                  # a yard track's ballast strip: the ground as it is (yard.py)
+            return self.ground(p)
+        if kind in ("stairwell", "road_trench", "island"):
             for k, z in enumerate(self.zones):
                 if z[5] is zone:
                     return self.zone_z(k, p)
