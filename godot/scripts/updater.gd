@@ -8,7 +8,7 @@ extends Node
 ## progress bar over the game):
 ## - same launcher: downloads the data patches from this build's data to the latest, merges them into a new pack and
 ##   restarts on it;
-## - another launcher (Windows, Linux): also rebuilds the executable from launcher-<platform>.bin, swaps it, restarts;
+## - another launcher (Windows, Linux): also rebuilds the executable from launcher2-<platform>.bin, swaps it, restarts;
 ## - otherwise (macOS launcher, no patch path, patches heavier than most of the full download, any failure): downloads
 ##   this platform's full file next to the game (a hidden ".update" file, ".part" while downloading) and restarts on it.
 ## Esc skips: the downloads go on in the background, and the update installs on "Restart now" in the welcome menu
@@ -27,8 +27,10 @@ const API := "https://api.github.com/repos/" + REPO + "/releases/latest"
 const STORE := "https://github.com/" + REPO + "/releases/download/store/"
 const ASSETS := {"Windows": "plateau-map-windows.exe", "Windows arm64": "plateau-map-windows-arm64.exe",
 		"Linux": "plateau-map-linux.x86_64", "macOS": "plateau-map-macos.zip"}
-const LAUNCHER_ASSETS := {"Windows": "launcher-windows.bin", "Windows arm64": "launcher-windows-arm64.bin",
-		"Linux": "launcher-linux.bin"}
+# "launcher2-": builds up to 38 never swapped in a rebuilt launcher (they restarted the old one and updated again, in a
+# loop); without the "launcher-" files they look for, they take the full download instead.
+const LAUNCHER_ASSETS := {"Windows": "launcher2-windows.bin", "Windows arm64": "launcher2-windows-arm64.bin",
+		"Linux": "launcher2-linux.bin"}
 const UPDATE_INFO := "update.json"
 const MAX_PATCH_SHARE := 0.6                # patches heavier than this share of the full download: the full one
 const STATE_FILE := "user://update.cfg"     # [update] tag and commit of the downloaded executable, [data] patches
@@ -357,6 +359,7 @@ func _install_data(cfg: ConfigFile) -> void:
 	await get_tree().process_frame
 	var target_id := str(cfg.get_value("data", "target"))
 	var launcher := str(cfg.get_value("data", "launcher"))
+	var tag := str(cfg.get_value("data", "tag"))         # read now: _drop_patches() erases the section
 	var base: String = _installed["path"]
 	var err := ""
 	if _installed["embedded"] and not Delta.has_file(base, int(_installed["size"])):
@@ -380,7 +383,7 @@ func _install_data(cfg: ConfigFile) -> void:
 					DirAccess.remove_absolute(target)
 					e = "merged data does not match"
 				return e)
-	if err == "" and not Delta.write_pointer(launcher, target, target_id, str(cfg.get_value("data", "tag")),
+	if err == "" and not Delta.write_pointer(launcher, target, target_id, tag,
 			int(cfg.get_value("data", "run")), str(cfg.get_value("data", "commit"))):
 		err = "can't write " + Delta.pointer(launcher)
 	_drop_patches(cfg)
@@ -394,7 +397,7 @@ func _install_data(cfg: ConfigFile) -> void:
 			_download_full()
 		return
 	_step = 1.0
-	if FileAccess.file_exists(_pending()) and cfg.get_value("update", "tag", "") == cfg.get_value("data", "tag", "-"):
+	if FileAccess.file_exists(_pending()) and cfg.get_value("update", "tag", "") == tag:
 		err = _install()                        # also deletes STATE_FILE
 		if err != "":
 			_fail(err)

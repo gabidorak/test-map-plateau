@@ -8,7 +8,7 @@ extends RefCounted
 ## launcher uses. An update with the same launcher id only changes the data: Godot delta patches (one per build,
 ## exported by .github/workflows/build.yml against the previous build, kept on the "store" release with chain.json),
 ## mounted over the current pack and merged into a new one with PCKPacker. Another launcher id also rebuilds the
-## executable from launcher-<platform>.bin: the blocks of this executable it keeps, the ones it ships (launcher()).
+## executable from launcher2-<platform>.bin: the blocks of this executable it keeps, the ones it ships (launcher()).
 ## Data ids hash the packs' file lists (path and md5), not their layout: a merged pack has the id of the exported one
 ## (tools/pck_tool.py content-id).
 
