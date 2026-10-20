@@ -18,6 +18,9 @@ extends Node3D
 ## first person and the cab view carry over when taking and leaving the driver seat. The articulated bus carries the
 ## player in whichever of its two sections they stand (Car.carrier_at).
 ## The horse (scripts/horse.gd, in the vehicle menu) is got on and off with E: Space jumps, over fences too.
+## The lakes and ponds are water (scripts/water.gd): the player swims, vehicles float a moment then sink, the horse swims.
+## The jet-ski (scripts/jet_ski.gd, in the vehicle menu) is parked on the nearest lake or pond (JET_SKI_REACH; on land
+## beside the player when there is none), got on with E and off with Space, into the water.
 ## The biplane (scripts/plane.gd, in the vehicle menu) is got in and out of like a car, and flies. The armed one fires
 ## its machine guns with the left mouse button (scripts/plane_guns.gd; a ring on the screen shows where the rounds
 ## converge): a vehicle hit takes damage (net.gd hit_vehicle, car.gd damage) and smokes black once broken, a breakable
@@ -31,11 +34,14 @@ extends Node3D
 ## wheel if nobody has it, Space gets out on the right.
 ## The two-seat biplane's passenger seat is its gunner's (same E rule): the mouse aims its belly turret, which fires
 ## forward only (up to 45° off the nose) with the left mouse button; V or the mouse wheel goes to the turret view, and a
-## ring shows where the barrel points.
+## ring shows where the barrel points. So is the GAZ Tiger's (scripts/armored_car.gd): the gunner stands in its roof
+## hatch and the mouse turns the machine gun on the hatch's ring all the way round.
 ## Vehicles bend thin trees and knock over sign poles, bollards and the like (scripts/breakables.gd).
 ## Bot buses and bot cars (scripts/traffic.gd, scripts/bus_bot.gd) drive their lines and routes when playing solo,
 ## hosting, or on a dedicated server: the player can ride the buses (in through the open doors at a stop) but drive
-## none of them. Instanced by the tools they stay off unless PLATEAU_BUSES=1. The traffic lights cycle on the game's shared clock (the same on every screen).
+## none of them. The host (or solo player) switches them off and on in the in-game menu (remembered, Settings "traffic";
+## --no-bots on the command line), and can clear the map of every vehicle there. Instanced by the tools they stay off
+## unless PLATEAU_BUSES=1. The traffic lights cycle on the game's shared clock (the same on every screen).
 ## The RER B trains (scripts/train_traffic.gd, scripts/train.gd) run both ways through Lozère likewise (PLATEAU_TRAINS=1
 ## for the tools): the player gets on at the station while the doors are open, walks through the cars of a unit and is
 ## carried like in a bus; riding one off the map puts them down by the line at that end.
@@ -49,6 +55,10 @@ extends Node3D
 ## Races (scripts/races.gd): a driver stopped in a glowing start circle (the campus lap in the big parking by the lake,
 ## the bus race at the stop ENSTA - Les Joncherettes) is offered to race with T (alone) or Y (with the other drivers in
 ## the circle); the leaderboards stand beside the circles, the host keeps the records.
+## Showrooms (scripts/dealership.gd: the Institut d'Optique is now a luxury car dealership, world/interiors.json): the
+## host (or solo player, or dedicated server) parks their drivable display cars at start and again after clearing the
+## map; their salesman (scripts/salesman.gd) follows the player around. Instanced by the tools, the display cars stay
+## off unless PLATEAU_SHOWROOM=1.
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
@@ -58,8 +68,11 @@ const GroundMap = preload("res://scripts/ground_map.gd")
 const Car = preload("res://scripts/car.gd")
 const Biplane = preload("res://scripts/plane.gd")
 const Horse = preload("res://scripts/horse.gd")
+const JetSki = preload("res://scripts/jet_ski.gd")
+const Water = preload("res://scripts/water.gd")
 const PlaneGuns = preload("res://scripts/plane_guns.gd")
 const FireTruck = preload("res://scripts/fire_truck.gd")
+const ArmoredCar = preload("res://scripts/armored_car.gd")
 const PoliceCar = preload("res://scripts/police_car.gd")
 const WaterCannon = preload("res://scripts/water_cannon.gd")
 const Breakables = preload("res://scripts/breakables.gd")
@@ -75,6 +88,9 @@ const Night = preload("res://scripts/night.gd")
 const Races = preload("res://scripts/races.gd")
 const WATER_SHOVE := 0.7                    # m/s a full-power water packet shoves a player along the jet
 const ENTER_RANGE := 3.0                    # metres from the car body
+const JET_SKI_REACH := 200.0                # m: the jet-ski is parked on water this near the player...
+const JET_SKI_ROOM := 4.0                   # ...with this much water round it...
+const JET_SKI_LAKE := 300.0                 # ...in a body of water this big (m²): no fountain basins
 const SEAT_RANGE := 1.6                     # metres from the driver seat, from inside a walkable vehicle
 const UPDATE_POLL := 300.0                  # s between release checks (dedicated server)
 const UPDATE_WAIT := 1800.0                 # s a dedicated server waits for its players to leave before updating
@@ -86,6 +102,7 @@ const UPDATE_WAIT := 1800.0                 # s a dedicated server waits for its
 @export var debug_cars := true              # park a few cars next to the player at start (solo and hosting)
 @export var bus_bots := true                # bot buses on their lines and bot cars (solo, hosting, dedicated server)
 @export var train_bots := true              # the RER B trains (scripts/train_traffic.gd), likewise
+@export var showroom_cars := true           # the showrooms' display cars (scripts/dealership.gd), likewise
 ## Welcome menu flight: circles this point (pipeline x, y) at MENU_ORBIT radius and height above it.
 const MENU_ORBIT_CENTRE := Vector2(260.0, -120.0)
 const MENU_ORBIT := Vector2(330.0, 140.0)
@@ -174,6 +191,8 @@ func _ready() -> void:
 	pause.resume.connect(set_pause_open.bind(false))
 	pause.leave.connect(back_to_menu.bind(""))
 	pause.quit.connect(get_tree().quit)
+	pause.traffic_toggled.connect(set_bot_traffic)
+	pause.clear_vehicles.connect(clear_vehicles)
 	var env: Environment = $WorldEnvironment.environment
 	_high = {"ssil": env.ssil_enabled, "ssao": env.ssao_enabled, "glow": env.glow_enabled,
 			"msaa": get_viewport().msaa_3d, "aa": get_viewport().screen_space_aa}
@@ -197,6 +216,11 @@ func _ready() -> void:
 	if get_tree().current_scene != self:
 		bus_bots = OS.get_environment("PLATEAU_BUSES") == "1"
 		train_bots = OS.get_environment("PLATEAU_TRAINS") == "1"
+		showroom_cars = OS.get_environment("PLATEAU_SHOWROOM") == "1"
+	else:
+		bus_bots = Settings.values["traffic"] and not _args.has("no-bots")
+	for s in get_tree().get_nodes_in_group("showroom"):
+		s.game = self
 	var welcome := get_tree().current_scene == self and not (_args.has("solo") or _args.has("host") or _args.has("join") \
 			or _args.has("dedicated"))
 	fly_camera.active = false
@@ -249,6 +273,7 @@ func start_solo() -> void:
 	if debug_cars:
 		for i in 4:
 			spawn_car_near_player()
+	_stock_showrooms()
 	if bus_bots:
 		traffic.start_bots()
 	if train_bots:
@@ -267,6 +292,7 @@ func start_host() -> void:
 	if debug_cars:
 		for i in 4:
 			spawn_car_near_player()
+	_stock_showrooms()
 	if bus_bots:
 		traffic.start_bots()
 	if train_bots:
@@ -294,6 +320,7 @@ func start_dedicated() -> void:
 	if debug_cars:
 		for i in 4:
 			spawn_car_near_player()
+	_stock_showrooms()
 	if bus_bots:
 		traffic.start_bots()
 	if train_bots:
@@ -419,14 +446,18 @@ func _process(delta: float) -> void:
 	if _toast_t > 0.0:
 		_toast_t -= delta
 		_toast.modulate.a = clampf(_toast_t, 0.0, 1.0)
-	_dash.visible = driving != null or riding is Biplane
+	_dash.visible = driving != null or riding is Biplane or riding is ArmoredCar
 	_update_gunsight()
 	if driving is Biplane:
 		_dash.text = (driving as Biplane).dash_text()
 	elif riding is Biplane:
 		_dash.text = (riding as Biplane).dash_text()
+	elif riding is ArmoredCar:
+		_dash.text = (riding as ArmoredCar).gunner_dash()
 	elif driving is Horse:
 		_dash.text = (driving as Horse).dash_text()
+	elif driving is JetSki:
+		_dash.text = (driving as JetSki).dash_text()
 	elif driving:
 		var arrows := ["  ", "  "]
 		if driving.indicator != 0 and fmod(Time.get_ticks_msec() / 1000.0, Car.BLINK) < Car.BLINK * 0.5:
@@ -447,13 +478,14 @@ func _process(delta: float) -> void:
 
 
 ## The armed plane's gunsight: a ring where its guns' rounds converge, on the screen; for the gunner of the two-seater,
-## where its turret's are aimed.
+## where its turret's are aimed, and for the armoured car's, its roof gun's.
 func _update_gunsight() -> void:
 	var plane := driving as Biplane
 	var gunner := riding as Biplane
 	var cam := get_viewport().get_camera_3d()
 	var aim: Variant = plane.aim_point() if plane and plane.armed \
-			else gunner.turret_aim_point() if gunner and gunner.turret else null
+			else gunner.turret_aim_point() if gunner and gunner.turret \
+			else (riding as ArmoredCar).turret_aim_point() if riding is ArmoredCar else null
 	_gunsight.visible = aim != null and cam != null and not cam.is_position_behind(aim)
 	if _gunsight.visible:
 		_gunsight.position = cam.unproject_position(aim) - _gunsight.size * 0.5
@@ -488,6 +520,8 @@ func net_player_state() -> Array:
 		var seated := [riding.net_id, 0, riding.passenger_seat, 0.0, flags | 2]
 		if riding is Biplane and (riding as Biplane).turret:
 			seated.append_array((riding as Biplane).gunner_state())
+		elif riding is ArmoredCar:
+			seated.append_array((riding as ArmoredCar).gunner_state())
 		return seated
 	var c: Node3D = player.carrier if is_instance_valid(player.carrier) else null
 	if c and not driving and c.get("train") != null:   # an RER B car (train.gd TrainCar): its train and its index
@@ -576,6 +610,15 @@ func spawn_car_near_player(model := "") -> Car:
 		_next_model += 1
 	var car := new_vehicle(model)
 	var yaw: float = player.camera.global_rotation.y
+	if car is JetSki and Water.current:
+		var on_water: Variant = Water.current.spot_near(player.global_position, JET_SKI_REACH, JET_SKI_ROOM, JET_SKI_LAKE)
+		if on_water != null:
+			add_child(car)
+			car.place(on_water)
+			_add_car(car)
+			net.car_parked(car)
+			return car
+		_show_toast("No lake within %d m: the jet-ski is parked on land (it only crawls there)" % roundi(JET_SKI_REACH))
 	var spot: Variant = _find_car_spot(yaw, car.half_extents, true)
 	if spot == null:
 		spot = _find_car_spot(yaw, car.half_extents, false)
@@ -592,6 +635,24 @@ func spawn_car_near_player(model := "") -> Car:
 	return car
 
 
+## Host (or solo): the showrooms' display cars missing from their podiums (scripts/dealership.gd).
+func _stock_showrooms() -> void:
+	if not showroom_cars:
+		return
+	for s in get_tree().get_nodes_in_group("showroom"):
+		s.stock(self)
+
+
+## `model` parked at `xf` (+Z forward, on the ground: a showroom podium), the footprint centred there.
+func park_vehicle(model: String, xf: Transform3D) -> Car:
+	var car := new_vehicle(model)
+	add_child(car)
+	car.place(xf.translated_local(-car.extents_center).translated(Vector3.UP * 0.3))
+	_add_car(car)
+	net.car_parked(car)
+	return car
+
+
 ## A bot bus or car (scripts/traffic.gd): `car` (new_vehicle, not in the tree yet) at `xf`, driven by `bot` (bus_bot.gd).
 func add_bot_bus(car: Car, xf: Transform3D, bot: Object) -> void:
 	add_child(car)
@@ -599,6 +660,54 @@ func add_bot_bus(car: Car, xf: Transform3D, bot: Object) -> void:
 	car.set_pilot(bot)
 	_add_car(car)
 	net.car_parked(car)
+
+
+## Host (or solo): bot traffic on (the lines filled afresh) or off (every bot vehicle off the map, on every peer).
+func set_bot_traffic(on: bool) -> void:
+	if mode not in ["solo", "host", "server"] or on == bus_bots:
+		return
+	bus_bots = on
+	if get_tree().current_scene == self and mode != "server":
+		Settings.set_value("traffic", on)
+	if on:
+		traffic.start_bots()
+	else:
+		remove_vehicles(traffic.stop_bots())
+
+
+## Host (or solo): every vehicle off the map, on every peer (the bots come back at once when bot traffic is on, the
+## showroom display cars too).
+## Returns how many were cleared.
+func clear_vehicles() -> int:
+	if mode not in ["solo", "host", "server"]:
+		return 0
+	var n := cars.size()
+	traffic.stop_bots()
+	remove_vehicles(cars.duplicate())
+	_stock_showrooms()
+	if bus_bots:
+		traffic.start_bots()
+	_show_toast("Cleared %d vehicles" % n)
+	return n
+
+
+## Takes `gone` (Car) off the map here, the player out of them first; the host's net.gd takes them off the other
+## peers' too.
+func remove_vehicles(gone: Array) -> void:
+	for car: Car in gone:
+		if not is_instance_valid(car):
+			continue
+		if driving == car:
+			exit_car()
+		if riding == car:
+			leave_ride()
+		if is_instance_valid(player.carrier) and player.carrier in car.bodies():
+			player.set_carrier(null)
+		cars.erase(car)
+		car.queue_free()
+	net.cars_removed(gone)
+	_update_controls()
+	_update_help()
 
 
 ## How many players ride `car` (standing in it or in a seat), here and on the other peers.
@@ -643,12 +752,15 @@ func add_net_car(model: String, xf: Transform3D) -> Car:
 	return car
 
 
-## A vehicle of `model`, set up but not in the tree yet: a Horse (Car.SPECS "horse"), a Biplane for the aircraft
-## ("plane"), a FireTruck for the fire truck ("fittings"), a PoliceCar for the police car ("police"), else a Car.
+## A vehicle of `model`, set up but not in the tree yet: a Horse (Car.SPECS "horse"), a JetSki ("jet_ski"), a Biplane for the aircraft
+## ("plane"), a FireTruck for the fire truck ("fittings"), a PoliceCar for the police car ("police"), an ArmoredCar for
+## the GAZ Tiger ("roof_gun"), else a Car.
 static func new_vehicle(model: String) -> Car:
 	var spec: Dictionary = Car.SPECS[model]
-	var car: Car = Horse.new() if spec.get("horse", false) else Biplane.new() if spec.get("plane", false) \
-			else FireTruck.new() if spec.has("fittings") else PoliceCar.new() if spec.get("police", false) else Car.new()
+	var car: Car = Horse.new() if spec.get("horse", false) else JetSki.new() if spec.get("jet_ski", false) \
+			else Biplane.new() if spec.get("plane", false) \
+			else FireTruck.new() if spec.has("fittings") else PoliceCar.new() if spec.get("police", false) \
+			else ArmoredCar.new() if spec.get("roof_gun", false) else Car.new()
 	car.setup(model)
 	return car
 
@@ -661,6 +773,8 @@ func _add_car(car: Car) -> void:
 		(car as Biplane).guns.hit.connect(_on_round_hit)
 	if car is Biplane and (car as Biplane).turret_guns:
 		(car as Biplane).turret_guns.hit.connect(_on_round_hit)
+	if car is ArmoredCar:
+		(car as ArmoredCar).turret_guns.hit.connect(_on_round_hit)
 	if car is FireTruck:
 		(car as FireTruck).cannon.hit.connect(_on_water_hit)
 	cars.append(car)
@@ -742,7 +856,7 @@ func _find_car_spot(yaw: float, half: Vector3, on_road: bool) -> Variant:
 	for o in offsets:
 		var p := origin + Basis(Vector3.UP, yaw) * Vector3(o.x, 0.0, o.y)
 		var g := WorldQuery.ground_y(get_world_3d(), p.x, p.z, Layers.SOLID, origin.y + 3.0)
-		if is_nan(g) or absf(g - origin.y) > 2.0 or _near_a_car(p, half.z + 0.5):
+		if is_nan(g) or absf(g - origin.y) > 2.0 or _near_a_car(p, half.z + 0.5) or Water.depth_at(Vector3(p.x, g, p.z)) > 0.3:
 			continue
 		for turn: float in turns:
 			# the model faces +Z: yaw + PI points it where the player looks (-Z of the camera)
@@ -909,6 +1023,7 @@ func _put_beside(car: Car, side: float) -> void:
 		var g := WorldQuery.ground_y(get_world_3d(), p.x, p.z, Layers.SOLID, car.global_position.y + 2.5)
 		if is_nan(g):
 			continue
+		g = maxf(g, Water.surface_at(p) - player.float_depth) if not is_nan(Water.surface_at(p)) else g   # swimming
 		q.transform = Transform3D(Basis(), Vector3(p.x, g + 1.05, p.z))
 		if not space.intersect_shape(q, 1):
 			target = Vector3(p.x, g + 0.1, p.z)
@@ -977,7 +1092,7 @@ func set_pause_open(on: bool) -> void:
 		if net.active:
 			for id: int in net.players:
 				players.append([net.player_name(id) + (" (you)" if id == net.me() else ""), net.player_color(id)])
-		pause.open(info, players, "Back to main menu")
+		pause.open(info, players, "Back to main menu", mode == "solo" or mode == "host", bus_bots)
 	else:
 		pause.close()
 		Input.mouse_mode = _pause_mouse
@@ -1294,6 +1409,12 @@ func _update_help() -> void:
 				"%s jump (the faster, the higher: fences!) · %s neigh\n" % [k.call("jump"), k.call("horn")] + \
 				("%s · wheel zoom (all the way in: rider's view) · %s rider's view · %s back on its feet · " % [look,
 				k.call("toggle_view"), k.call("reset_vehicle")]) + "%s get off · %s" % [k.call("interact"), common]
+	elif driving is JetSki:
+		_help.text = ("JET-SKI · %s throttle · %s slow down, then reverse · %s/%s steer (with the throttle) · %s horn\n" % [
+				k.call("throttle"), k.call("brake"), k.call("steer_left"), k.call("steer_right"), k.call("horn")]) + \
+				("mouse look · wheel zoom (all the way in: rider's view) · %s rider's view · %s right it · " % [
+				k.call("toggle_view"), k.call("reset_vehicle")]) + "%s get off (into the water: swim) · %s" % [
+				k.call("exit_vehicle"), common]
 	elif driving:
 		_help.text = ("DRIVE · %s throttle, %s brake then reverse, %s/%s steer · %s/%s turn signals · %s horn · " % [
 				k.call("throttle"), k.call("brake"), k.call("steer_left"), k.call("steer_right"), k.call("signal_left"),
@@ -1309,6 +1430,10 @@ func _update_help() -> void:
 		_help.text = ("GUNNER · mouse aims the belly turret (forward only, up to 45° off the nose) · %s (held) fire · " % \
 				k.call("fire")) + "wheel zoom (all the way in: turret view) · %s turret view\n" % k.call("toggle_view") + \
 				"%s take the controls (if nobody flies) · %s get out\n%s" % [k.call("interact"), k.call("exit_vehicle"), common]
+	elif riding is ArmoredCar:
+		_help.text = ("GUNNER · mouse aims the roof gun (all round, from %d° down to %d° up) · %s (held) fire · " % [
+				roundi(rad_to_deg(ArmoredCar.PITCH_DOWN)), roundi(rad_to_deg(ArmoredCar.PITCH_UP)), k.call("fire")]) + "wheel zoom (all the way in: turret view) · %s turret view\n" % k.call("toggle_view") + \
+				"%s take the wheel (if nobody drives) · %s get out\n%s" % [k.call("interact"), k.call("exit_vehicle"), common]
 	elif riding:
 		_help.text = "PASSENGER · %s · wheel zoom (all the way in: cab view) · %s cab view · " % [look,
 				k.call("toggle_view")] +"%s take the wheel (if nobody drives) · %s get out\n%s" % [k.call("interact"),
@@ -1318,13 +1443,16 @@ func _update_help() -> void:
 				k.call("jump")] + \
 				"wheel zoom (all the way in: first person) · %s first/third person · %s get in the nearest car " % [
 				k.call("toggle_view"), k.call("interact")] + "(in the bus: near the driver seat; fire truck: " + \
-				"from its right side, the passenger seat; biplane with gunner: from its right side, the turret)\n" + \
+				"from its right side, the passenger seat; biplane with gunner: from its right side, the turret; " + \
+				"GAZ Tiger: from its right side, the roof gun)\n" + \
 				"%s park a car here · %s vehicle menu · %s" % [k.call("park_car"), k.call("vehicle_menu"), common]
 	if driving is FireTruck:
 		_help.text += "\n%s (held) water cannon, aimed where you look (the view holds while it sprays) · %s siren and beacons" % [
 				k.call("fire"), k.call("bell")]
 	elif driving is PoliceCar:
 		_help.text += "\n%s siren and blue lights" % k.call("bell")
+	elif driving is ArmoredCar:
+		_help.text += "\nyour gunner boards from the right side and works the roof gun"
 	_help.text += "\n%s graphics: %s · %s %s · %s frame rate%s · F11 fullscreen" % [k.call("toggle_quality"),
 			"low" if low_quality else "high", k.call("night"), "day" if night and night.on else "night",
 			k.call("toggle_stats"), " and network" if net.active else ""]

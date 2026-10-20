@@ -617,6 +617,7 @@ func _physics_process(delta: float) -> void:
 	if remote:
 		_remote_process(delta)
 		return
+	_water_physics(delta)                   # ditched in a lake: floats a moment, then sinks (car.gd)
 	var keys := Vector3.ZERO                # pitch up, roll left, yaw left
 	var lever_in := 0.0
 	var braking := false

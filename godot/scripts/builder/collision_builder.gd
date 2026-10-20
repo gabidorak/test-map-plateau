@@ -29,6 +29,7 @@ func terrain(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_
 	var span := TILE * STEP                 # heightmap cells per tile side
 	var n := TILE + 1                       # samples per tile side
 	var ground := GroundHeights.new(heights, w, h, cell, ox, oy, world["ground_mesh"]["cell"])
+	var water: Variant = root.get_node_or_null("Water")     # lake beds dug out (scripts/water.gd)
 	var holes := {}                         # Vector2i(tile row, tile column) -> PackedInt32Array of sample rows, columns
 	for hs: Array in world["ground_mesh"].get("holes", {}).get("samples", []):
 		var r: int = hs[0]
@@ -49,14 +50,30 @@ func terrain(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_
 	body.collision_mask = 0
 	body.set_meta("plateau", {"type": "terrain", "id": "terrain"})
 	root.add_child(body)
+	# tiles only where the ground mesh has chunks (a corridor map leaves most of its box empty)
+	var drawn := {}
+	for ch: Dictionary in world["ground_mesh"]["chunks"]:
+		var bb: Array = ch["aabb"]          # Godot [x, y, z, size x, size y, size z]
+		var ca := floori((float(bb[0]) - ox) / (span * cell))
+		var cb := floori((float(bb[0]) + float(bb[3]) - ox) / (span * cell))
+		var ra := floori((oy + float(bb[2])) / (span * cell))
+		var rb := floori((oy + float(bb[2]) + float(bb[5])) / (span * cell))
+		for tr in range(ra, rb + 1):
+			for tc in range(ca, cb + 1):
+				drawn[Vector2i(tr, tc)] = true
 	for r0 in range(0, h - 1, span):
 		for c0 in range(0, w - 1, span):
+			if not drawn.has(Vector2i(r0 / span, c0 / span)):
+				continue
 			var data := PackedFloat32Array()
 			data.resize(n * n)
+			var wet: bool = water != null and water.touches(AABB(Vector3(ox + c0 * cell, -1e4, -(oy - r0 * cell)),
+					Vector3(span * cell, 2e4, span * cell)))
 			for i in n:
 				var y := oy - (r0 + i * STEP) * cell
 				for j in n:
-					data[i * n + j] = ground.at(ox + (c0 + j * STEP) * cell, y)
+					var x := ox + (c0 + j * STEP) * cell
+					data[i * n + j] = water.carve(x, y, ground.at(x, y)) if wet else ground.at(x, y)
 			for rc: int in holes.get(Vector2i(r0 / span, c0 / span), PackedInt32Array()):
 				var i := (rc / 65536 - r0) / STEP
 				var j := (rc % 65536 - c0) / STEP
@@ -78,33 +95,39 @@ func terrain(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_
 			body.add_child(cs)
 
 
-## Invisible walls on the four sides of world.json `playable`.
+## Invisible walls around the playable area: along world.json meta.playable_area (rings of the walkable polygon, the
+## exterior counter-clockwise and holes clockwise: the box plus the corridors, pipeline/plateau/merge.py) when there is
+## one, else on the four sides of the `playable` box.
 func boundary(root: Node3D, world: Dictionary) -> void:
-	var p: Array = world["meta"]["playable"]
-	var x0: float = p[0]
-	var y0: float = p[1]
-	var x1: float = p[2]
-	var y1: float = p[3]
 	var body := StaticBody3D.new()
 	body.name = "Boundary"
 	body.collision_layer = Layers.BOUNDARY
 	body.collision_mask = 0
 	body.set_meta("plateau", {"type": "boundary", "id": "boundary"})
 	root.add_child(body)
+	var rings: Array = world["meta"].get("playable_area", [])
+	if rings.is_empty():
+		var p: Array = world["meta"]["playable"]
+		rings = [[[p[0], p[1]], [p[2], p[1]], [p[2], p[3]], [p[0], p[3]], [p[0], p[1]]]]
 	var t := WALL_THICKNESS
-	var sides := {
-		"West": [Vector2(x0 - t / 2, (y0 + y1) / 2), Vector2(t, y1 - y0 + 2 * t)],
-		"East": [Vector2(x1 + t / 2, (y0 + y1) / 2), Vector2(t, y1 - y0 + 2 * t)],
-		"South": [Vector2((x0 + x1) / 2, y0 - t / 2), Vector2(x1 - x0 + 2 * t, t)],
-		"North": [Vector2((x0 + x1) / 2, y1 + t / 2), Vector2(x1 - x0 + 2 * t, t)],
-	}
-	for side: String in sides:
-		var centre: Vector2 = sides[side][0]
-		var size: Vector2 = sides[side][1]
-		var box := BoxShape3D.new()
-		box.size = Vector3(size.x, WALL_HEIGHT, size.y)
-		var cs := CollisionShape3D.new()
-		cs.name = side
-		cs.shape = box
-		cs.position = MeshUtils.to_godot(centre.x, centre.y, 0.0)
-		body.add_child(cs)
+	var n := 0
+	for ring: Array in rings:
+		# the inside is on the left of every edge (counter-clockwise exterior, clockwise holes): walls go on the right
+		for k in ring.size() - 1:
+			var a := Vector2(ring[k][0], ring[k][1])
+			var b := Vector2(ring[k + 1][0], ring[k + 1][1])
+			var d := b - a
+			if d.length() < 0.01:
+				continue
+			var dir := d.normalized()
+			var right := Vector2(dir.y, -dir.x)
+			var centre := (a + b) / 2 + right * t / 2
+			var box := BoxShape3D.new()
+			box.size = Vector3(d.length() + 2 * t, WALL_HEIGHT, t)     # overlapping at the corners: no gap
+			var cs := CollisionShape3D.new()
+			cs.name = "Wall_%d" % n
+			cs.shape = box
+			cs.position = MeshUtils.to_godot(centre.x, centre.y, 0.0)
+			cs.rotation.y = atan2(dir.y, dir.x)     # map (x, y) -> Godot (x, -z): local +x along the edge
+			body.add_child(cs)
+			n += 1

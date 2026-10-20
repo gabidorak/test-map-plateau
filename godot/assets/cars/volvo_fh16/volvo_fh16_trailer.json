@@ -1,0 +1,81 @@
+{
+ "wheels": [
+  "wheel_front_left",
+  "wheel_front_right",
+  "wheel_rear_left",
+  "wheel_rear_right"
+ ],
+ "indicators": {
+  "left": [
+   "indicator_left",
+   "trailer_indicator_left"
+  ],
+  "right": [
+   "indicator_right",
+   "trailer_indicator_right"
+  ]
+ },
+ "brake_lights": [
+  "brake_lights",
+  "trailer_brake_lights"
+ ],
+ "reverse_lights": [
+  "reverse_lights",
+  "trailer_reverse_lights"
+ ],
+ "cab": {
+  "driver_seat": [
+   0.687,
+   1.9197,
+   1.8743
+  ],
+  "driver_eye": [
+   0.687,
+   2.6997,
+   1.7743
+  ],
+  "passenger_seat": [
+   -0.687,
+   1.9197,
+   1.8743
+  ],
+  "passenger_eye": [
+   -0.687,
+   2.6997,
+   1.7743
+  ],
+  "steering_wheel": "steering",
+  "figure": 0.8,
+  "eye_pitch": 0.1
+ },
+ "trailer": {
+  "nodes": [
+   "trailer_body",
+   "trailer_prints",
+   "trailer_indicator_left",
+   "trailer_indicator_right",
+   "trailer_brake_lights",
+   "trailer_reverse_lights",
+   "trailer_wheel_1_left",
+   "trailer_wheel_1_right",
+   "trailer_wheel_2_left",
+   "trailer_wheel_2_right",
+   "trailer_wheel_3_left",
+   "trailer_wheel_3_right"
+  ],
+  "body": "trailer_body",
+  "wheels": [
+   "trailer_wheel_1_left",
+   "trailer_wheel_1_right",
+   "trailer_wheel_2_left",
+   "trailer_wheel_2_right",
+   "trailer_wheel_3_left",
+   "trailer_wheel_3_right"
+  ]
+ },
+ "hitch": [
+  0.0,
+  1.0997,
+  -2.0257
+ ]
+}

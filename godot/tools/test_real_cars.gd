@@ -6,8 +6,13 @@ extends SceneTree
 ## and the hands on the steering wheel, which turns with the steering; W drives it and A turns it; the indicators, brake
 ## lamps and headlights are the model's own (its lamp meshes, its "headlight" and "taillight" surfaces lit, a beam); the
 ## paint has a clear coat; E from the right side sits the player in the passenger seat (the cab view from the
-## passenger's eye, a look-alike that fits under the roof in the chase view), Space gets out on the right. The Zoe is
+## passenger's eye, a look-alike that fits under the roof in the chase view; back at its parking spot first if the drive
+## ended on a bank), Space gets out on the right. "mercedes-1928" comes from blender/vehicles/import_textured.py. The Zoe is
 ## electric: silent at rest, its pedestrian warning hum moving off, its motor's whine pitched up with the speed, "gear D".
+## A car with reversing lamps ("bmw-m4") backs up on S held with them lit, off on release. The Volvo FH16 tractor
+## ("volvo-fh16", blender/vehicles/import_truck.py) is checked the same way; with its semi-trailer: tools/test_truck_trailer.gd.
+## So is the GAZ Tiger's driver ("gaz-tiger", a roof gun: matt paint, and its passenger seat is the gunner's, checked by
+## tools/test_tiger.gd).
 ## godot --headless --fixed-fps 60 --path godot --script res://tools/test_real_cars.gd [-- <model> ...]
 ## Without --headless (add --disable-vsync) it also saves shots to /tmp/real_car_<model>_*.png.
 
@@ -16,7 +21,12 @@ const Layers = preload("res://scripts/physics_layers.gd")
 const WorldQuery = preload("res://scripts/world_query.gd")
 const VehicleAudio = preload("res://scripts/vehicle_audio.gd")
 const MODELS := {"compact-hatchback": [3.9, 4.2, 1180.0], "family-suv": [4.3, 4.6, 1500.0],    # length range, mass
-		"police-hatchback": [3.9, 4.2, 1180.0], "renault-zoe": [4.0, 4.2, 1470.0]}
+		"police-hatchback": [3.9, 4.2, 1180.0], "renault-zoe": [4.0, 4.2, 1470.0], "audi-r8": [4.3, 4.5, 1600.0],
+		"mercedes-1928": [4.7, 4.9, 1600.0, 0.8],   # (and how far the driver's eye may be from the middle: 0.6 m)
+		"bmw-m4": [4.55, 4.75, 1570.0],
+		"audi-rs6": [4.95, 5.2, 2075.0, 0.6, 2.1],  # (and how wide it may be: 2 m; this one has a wide-body kit)
+		"volvo-fh16": [6.0, 6.4, 8500.0, 2.0, 2.6],     # truck: the cab is over the front axle, 2.5 m wide
+		"gaz-tiger": [5.6, 6.0, 7200.0, 0.6, 2.6]}      # armoured car, 2.5 m wide (its gunner: tools/test_tiger.gd)
 
 var _main: Node
 var _failures: PackedStringArray = []
@@ -110,13 +120,15 @@ func _car(model: String) -> void:
 		return
 	var spec: Array = MODELS[model]
 	var length: float = car.half_extents.z * 2.0
-	_check(length > spec[0] and length < spec[1] and car.half_extents.x * 2.0 < 1.9 and car.mass == spec[2],
+	_check(length > spec[0] and length < spec[1] and car.half_extents.x * 2.0 < (spec[4] if spec.size() > 4 else 2.0)
+			and car.mass == spec[2],
 			"%.2f m long, %.2f m wide, %d kg" % [length, car.half_extents.x * 2.0, car.mass])
 	_face_open_ground(car)
 	await _frames(90)
 	_check(absf(car.global_basis.y.angle_to(Vector3.UP)) < 0.1 and car.linear_velocity.length() < 0.3,
 			"it rests level on its wheels (%.1f°, %.2f m/s)" % [rad_to_deg(car.global_basis.y.angle_to(Vector3.UP)),
 			car.linear_velocity.length()])
+	var parked: Transform3D = car.global_transform
 	await _look(car, Vector3(3.2, 1.5, 4.6), Vector3(0.0, 0.6, 0.3), "real_car_%s_front.png" % tag)
 	await _look(car, Vector3(-3.0, 1.7, -4.8), Vector3(0.0, 0.7, -0.3), "real_car_%s_rear.png" % tag)
 	_check(car._lit_surfaces.size() >= 2 and car._beam != null and car._head_lamps.is_empty(),
@@ -128,7 +140,8 @@ func _car(model: String) -> void:
 		for k in mi.mesh.get_surface_count():
 			var mat := mi.mesh.surface_get_material(k) as StandardMaterial3D
 			glossed = glossed or (mat != null and mat.resource_name.begins_with("paint") and mat.clearcoat_enabled)
-	_check(glossed, "the paint has a clear coat")
+	if not Car.SPECS[model].get("roof_gun", false):     # (the armoured car's paint is matt)
+		_check(glossed, "the paint has a clear coat")
 
 	player.teleport(car.to_global(Vector3(car.half_extents.x + 1.0, 0.3, 0.0)))
 	await _frames(5)
@@ -147,8 +160,8 @@ func _car(model: String) -> void:
 	var eye: Vector3 = car.to_local(cam.global_position)
 	var body := car.find_child("body", true, false) as MeshInstance3D
 	var roof: float = (car._in_car(body) * body.get_aabb()).end.y
-	_check(car.cab_view and cam == car._cab_camera and eye.x > 0.25 and absf(eye.z) < 0.6 and eye.y > 1.0
-			and eye.y < roof - 0.15, "V: the cab view from the driver's eye, under the roof (%s, roof %.2f)" % [eye, roof])
+	_check(car.cab_view and cam == car._cab_camera and eye.x > 0.25 and absf(eye.z) < (spec[3] if spec.size() > 3 else 0.6)
+			and eye.y > 1.0 and eye.y < roof - 0.15, "V: the cab view from the driver's eye, under the roof (%s, roof %.2f)" % [eye, roof])
 	var pitch: float = cam.global_rotation.x
 	_check(pitch < -0.05 and pitch > -0.3, "looking ahead and a little down (%.0f°)" % rad_to_deg(pitch))
 	_check(not car._driver_body.visible and car._hands[0].visible, "the driver's body is hidden there, the hands on the wheel show")
@@ -193,6 +206,18 @@ func _car(model: String) -> void:
 		await physics_frame
 		if absf(car.speed()) < 0.3:
 			break
+	if not car._reverse_lamps.is_empty():           # a model with reversing lamps: S held backs it up, lit
+		await _frames(40)
+		var lit: bool = car.speed() < -0.3 and car._reverse_lamps.all(func(l: MeshInstance3D) -> bool:
+				return l.material_override == car._lamp_mats["reverse"])
+		_key(KEY_S, false)
+		await _frames(3)
+		_check(lit and car._reverse_lamps[0].material_override == null,
+				"S held backs it up with the reversing lamps lit, off on release")
+		for i in 120:
+			await physics_frame
+			if absf(car.speed()) < 0.3:
+				break
 	_key(KEY_S, false)
 	_tap(KEY_L)
 	await _frames(2)
@@ -203,7 +228,11 @@ func _car(model: String) -> void:
 	_main.exit_car()
 	await _frames(5)
 	_check(_main.driving == null and player.visible, "Space gets out")
-	await _passenger_seat(car, tag, roof)
+	if car.global_basis.y.angle_to(Vector3.UP) > 0.15:     # stopped on a bank: back where it was parked, level
+		car.place(parked)
+		await _frames(60)
+	if not Car.SPECS[model].get("roof_gun", false):     # (its passenger is the gunner: tools/test_tiger.gd)
+		await _passenger_seat(car, tag, roof)
 	_main.cars.erase(car)
 	car.queue_free()
 	await _frames(5)

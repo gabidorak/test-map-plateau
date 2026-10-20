@@ -12,6 +12,15 @@ var _oy := 0.0
 var _mesh_cell := 2.0
 
 
+## The heightmap described by world.json "terrain" (or ground_index.json "heights") in `dir`: its file, or the bands of
+## rows it is split into when large ("parts", pipeline/plateau/terrain.py write_heightmap), joined in order.
+static func read_heightmap(dir: String, t: Dictionary) -> PackedFloat32Array:
+	var bytes := PackedByteArray()
+	for f in t.get("parts", [t["file"]]):
+		bytes.append_array(FileAccess.get_file_as_bytes(dir.path_join(f)))
+	return bytes.to_float32_array()
+
+
 ## heights: the heightmap (row 0 north), w x h samples `cell` apart, sample (0, 0) at (ox, oy).
 func _init(heights: PackedFloat32Array, w: int, h: int, cell: float, ox: float, oy: float, mesh_cell: float) -> void:
 	_ox = ox

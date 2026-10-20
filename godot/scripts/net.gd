@@ -5,7 +5,8 @@ extends Node
 ##   driving or not). A player standing in a vehicle sends its position in that vehicle's frame, so on every screen it
 ##   stays inside it however that vehicle's motion is smoothed there; one in a vehicle's passenger seat (the fire
 ##   truck's) sends flag 2, and that vehicle shows them seated; in the gunner's seat of the two-seat biplane, also its
-##   turret (plane.gd gunner_state), whose hits count on the gunner's peer. Others show it as a remote_player.gd, which the
+##   turret (plane.gd gunner_state; the GAZ Tiger's roof gun likewise, armored_car.gd), whose hits count on the gunner's
+##   peer. Others show it as a remote_player.gd, which the
 ##   vehicles they simulate collide with.
 ## - Vehicles: each one is simulated by a single peer, its owner: the one who parked it, then whoever drives it (the
 ##   host takes over the vehicles of a player who leaves). The other peers pose a frozen copy from the owner's states
@@ -559,6 +560,41 @@ func _make_car(net_id: String, model: String, owner_id: int, driver_id: int, sta
 		_car_tracks[net_id] = Track.new(CAR_SEND_RATE)
 	car.apply_net_state(state, state, 0.0)
 	_show_driver(net_id)
+
+
+## Host: vehicles taken off the map here (game.gd remove_vehicles): off it on the other peers too.
+func cars_removed(removed: Array) -> void:
+	var ids := PackedStringArray()
+	for car: Car in removed:
+		if car.net_id != "":
+			ids.append(car.net_id)
+		forget_car(car)
+	if active and multiplayer.is_server() and not ids.is_empty():
+		_remove_cars.rpc(ids)
+
+
+## A vehicle that left the map: no longer tracked.
+func forget_car(car: Car) -> void:
+	var id := car.net_id
+	if id == "":
+		return
+	cars.erase(id)
+	owner_of.erase(id)
+	driver_of.erase(id)
+	_car_tracks.erase(id)
+	_sent.erase(id)
+	if _pending_drive == id:
+		_pending_drive = ""
+
+
+## (Named to sort after _refused and _register, like _vehicle_hit.)
+@rpc("authority", "call_remote", "reliable")
+func _remove_cars(ids: PackedStringArray) -> void:
+	var gone := []
+	for id in ids:
+		if cars.has(id):
+			gone.append(cars[id])
+	game.remove_vehicles(gone)
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered", 2)

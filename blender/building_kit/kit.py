@@ -98,4 +98,61 @@ def solar_panel() -> Model:
     return m
 
 
-MODELS = {f.__name__: f for f in (balcony, loggia_railing, slat, fin, entrance_canopy, piloti, roof_railing, roof_unit, solar_panel)}
+def green_wall() -> Model:
+    """Landmark green wall (ENSTA Paris): a pair of climbing plants on steel cables, opening in a V from a foot
+    on the ground, 3 m wide and 7 m tall at scale 1 (stretched per instance to the bay and the wall height), the
+    leaves 0.25-0.45 m off the wall. Plain colours (not tinted): the cables stay steel, the leaves green."""
+    import random
+    m = Model("green_wall", wall=True, view_range=260.0)
+    rnd = random.Random(7)
+    leaf = ["#4f8a32", "#5f9c3a", "#447a2c", "#6aa843"]
+    for side in (-1, 1):
+        top = (side * 1.3, 7.0)
+        foot = (side * 0.18, 0.0)
+        m.tube([(foot[0], -0.3, 0.0), (top[0], -0.3, top[1])], 0.012, "steel", sides=5)
+        m.cyl(0.035, 0.06, (top[0], -0.15, top[1] - 0.03), "steel", sides=6, rot=(90, 0, 0))
+        n = 22
+        for k in range(n):
+            t = (k + 0.5) / n
+            r = 0.42 * (1.0 - 0.4 * t) + rnd.uniform(-0.05, 0.05)           # thick at the foot, thin at the top
+            for j in range(2 if t < 0.7 else 1):                             # a second, offset clump low down
+                x = foot[0] + (top[0] - foot[0]) * t + rnd.uniform(-0.22, 0.22)
+                z = foot[1] + (top[1] - foot[1]) * t + rnd.uniform(-0.15, 0.15)
+                m.sphere(r * (1.0 - 0.3 * j), (x, -0.3 - rnd.uniform(-0.06, 0.14), z), rnd.choice(leaf), seg=6,
+                         scale=(1.25, 0.55, 1.0), rot=(0, rnd.uniform(-40, 40), 0))
+    m.box((0.9, 0.5, 0.35), (0, -0.3, 0.0), "#5b4a3a", base=True, bevel=0.08)    # the planting pit's soil
+    return m
+
+
+def _clip_x(poly: list, lo: float, hi: float) -> list:
+    """Polygon of (x, z) points clipped to lo <= x <= hi (Sutherland-Hodgman against both lines)."""
+    for edge, keep in ((lo, lambda x: x >= lo), (hi, lambda x: x <= hi)):
+        out = []
+        for i, p in enumerate(poly):
+            q = poly[i - 1]
+            if keep(p[0]) != keep(q[0]):
+                t = (edge - q[0]) / (p[0] - q[0])
+                out.append((edge, q[1] + (p[1] - q[1]) * t))
+            if keep(p[0]):
+                out.append(p)
+        poly = out
+    return poly
+
+
+def x_bars() -> Model:
+    """Landmark cladding of crossing diagonal bars (ENSTA Paris): flat bars 0.6 m wide (measured across x),
+    8 m wide and 1 m tall at scale 1 (stretched to the wall height; it tiles seamlessly every 8 m: what leaves one
+    side comes back on the other), 0.25 m deep with their back 0.05 m off the wall. Tinted: takes the module tint."""
+    m = Model("x_bars", wall=True, view_range=320.0)
+    bars = [(-4.0, 1.6), (-0.6, -4.6), (1.0, 4.4), (4.0, -0.2), (-2.6, 2.6)]     # (x at the foot, x at the top)
+    for x0, x1 in bars:
+        for dx in (0.0, 8.0, -8.0):
+            a, b = x0 + dx, x1 + dx
+            poly = _clip_x([(a - 0.3, 0.0), (a + 0.3, 0.0), (b + 0.3, 1.0), (b - 0.3, 1.0)], -4.0, 4.0)
+            if len(poly) >= 3:
+                m.plate(poly, 0.25, (0, -0.3, 0), "white", "tint")
+    return m
+
+
+MODELS = {f.__name__: f for f in (balcony, loggia_railing, slat, fin, entrance_canopy, piloti, roof_railing, roof_unit,
+                                  solar_panel, green_wall, x_bars)}

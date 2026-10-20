@@ -45,7 +45,7 @@ import railgeo as rg  # noqa: E402
 
 PATCH_VERSION = 2
 HARD = {"trackbed": ("railway", "ballast"), "platform": ("platform", "asphalt"), "stairwell": ("steps", "concrete"),
-        "road_trench": ("road", "asphalt")}
+        "road_trench": ("road", "asphalt"), "island": ("platform", "asphalt"), "yard": ("railway", "ballast")}
 BALLAST_COLOUR = "#8c8379"      # toy ballast: rust-stained crushed granite (photos of the station), lightened like the
                                 # rest of the palette
 # The station building as the photos show it (Wikimedia Commons, "Gare Lozère RER IdF Ligne B - Palaiseau (FR91) -
@@ -112,6 +112,25 @@ class Zones:
         self.hard = unary_union([g for g, z in zip(self.geoms, self.list) if z["kind"] in HARD])
         shapely.prepare(self.union)
         shapely.prepare(self.hard)
+        # every zone's outline as short segments in one tree: a 2 m cell takes only the few near it (the yard's
+        # zones have outlines of thousands of vertices: intersecting all of it per cell took most of an hour)
+        segs, owner = [], []
+        for k, g in enumerate(self.geoms):
+            for ring in shapely.get_rings(shapely.get_parts(g)):
+                c = shapely.get_coordinates(ring)
+                segs += list(shapely.linestrings(np.stack([c[:-1], c[1:]], axis=1)))
+                owner += [k] * (len(c) - 1)
+        self.segs = np.array(segs, dtype=object)
+        self.seg_owner = np.array(owner)
+        self.seg_tree = shapely.STRtree(self.segs)
+
+    def boundary_in(self, k: int, cell) -> shapely.Geometry:
+        """Zone k's outline inside `cell` (a polygon): as zones.geoms[k].boundary.intersection(cell)."""
+        hit = self.seg_tree.query(cell)
+        hit = hit[self.seg_owner[hit] == k]
+        if not len(hit):
+            return shapely.LineString()
+        return shapely.intersection(shapely.multilinestrings(self.segs[hit]), cell)
 
     def label(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         lab = np.full(x.shape, -1, dtype=np.int32)
@@ -122,6 +141,26 @@ class Zones:
             inside = np.zeros(x.shape, dtype=bool)
             inside[free] = shapely.contains_xy(g, x[free], y[free])
             lab[inside] = k
+        return lab
+
+    def label_grid(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+        """label() on a regular grid (xs rising along columns, ys falling along rows), each zone tested only inside
+        its own bounds: the same labels, without testing every zone against the whole grid."""
+        lab = np.full(xs.shape, -1, dtype=np.int32)
+        x_axis, y_axis = xs[0], ys[:, 0]
+        for k, g in enumerate(self.geoms):
+            x0, y0, x1, y1 = g.bounds
+            c0, c1 = np.searchsorted(x_axis, x0), np.searchsorted(x_axis, x1, side="right")
+            r0, r1 = np.searchsorted(-y_axis, -y1), np.searchsorted(-y_axis, -y0, side="right")
+            if c1 <= c0 or r1 <= r0:
+                continue
+            sub = lab[r0:r1, c0:c1]
+            free = sub == -1
+            if not free.any():
+                continue
+            inside = np.zeros(sub.shape, dtype=bool)
+            inside[free] = shapely.contains_xy(g, xs[r0:r1, c0:c1][free], ys[r0:r1, c0:c1][free])
+            sub[inside] = k
         return lab
 
     def at(self, x: float, y: float) -> int:
@@ -149,7 +188,9 @@ def project(A: rg.Alignment, x: np.ndarray, y: np.ndarray) -> tuple:
 def zone_heights(design: rg.Design, zone: dict, s: np.ndarray, u: np.ndarray, x: np.ndarray, y: np.ndarray):
     """Vectorized railgeo.Design.zone_fn for many points of one zone."""
     kind = zone["kind"]
-    if kind in ("stairwell", "road_trench"):
+    if kind == "yard":                          # the yard's ballast strips keep the ground (tools/rail/yard.py)
+        return design.H.at(x, y)
+    if kind in ("stairwell", "road_trench", "island"):
         ax = np.asarray(zone["axis"], dtype=np.float64)
         az = np.asarray(zone["axis_z"], dtype=np.float64)
         best = np.full(len(x), np.inf)
@@ -197,8 +238,10 @@ def zone_heights(design: rg.Design, zone: dict, s: np.ndarray, u: np.ndarray, x:
 
 # ---------------------------------------------------------------- ground.bin
 
-def read_chunk(raw_all: bytes, c: dict) -> dict:
-    raw = zlib.decompress(raw_all[c["offset"]:c["offset"] + c["size"]])
+def read_chunk(raw_all, c: dict) -> dict:
+    """A chunk of ground.bin; raw_all: the file's bytes, or {id(chunk): its file's bytes} for a split ground mesh."""
+    data = raw_all[id(c)] if isinstance(raw_all, dict) else raw_all
+    raw = zlib.decompress(data[c["offset"]:c["offset"] + c["size"]])
     nv, ni, nc = c["nv"], c["ni"], c["nc"]
     o = 0
     out = {}
@@ -374,7 +417,7 @@ def rebuild_chunk(d: dict, ctx: dict) -> tuple:
                 if t in surface:
                     tpolys[t] = pg
         for k in local:
-            inter = zones.geoms[k].boundary.intersection(gpoly)
+            inter = zones.boundary_in(k, gpoly)
             if not inter.is_empty:
                 lines.append(inter)
         faces = list(polygonize(unary_union(lines)))
@@ -562,7 +605,7 @@ def rebuild_chunk(d: dict, ctx: dict) -> tuple:
     # the raised collision faces: lifted with the ground (the pipeline's), later the hole covers are appended
     cf = d["colf"].astype(np.float64)
     if len(cf):
-        dz = ctx["H_new"].at(cf[:, 0], -cf[:, 2], zeros_new) - ctx["H_old"].at(cf[:, 0], -cf[:, 2], ctx["nodes_old"])
+        dz = ctx["H_new"].at(cf[:, 0], -cf[:, 2], ctx["nodes_new"]) - ctx["H_old"].at(cf[:, 0], -cf[:, 2], ctx["nodes_old"])
         cf[:, 1] += dz
     nd["colf"] = cf.astype(np.float32)
     return nd, cliffs, stats, rebuilt
@@ -784,9 +827,9 @@ def drop_overlapping_slivers(nd: dict) -> int:
     return dropped
 
 
-def fill_tiny_holes(chunks: dict, bounds: list) -> int:
-    """Three unshared edges closing on themselves round under 1e-3 m² are a sliver's place left empty: a triangle
-    fills it, with the attributes and heights of its neighbours. Returns how many."""
+def fill_tiny_holes(chunks: dict, bounds: list, max_area: float = 1e-3) -> int:
+    """Three unshared edges closing on themselves round under `max_area` m² are a sliver's place left empty: a
+    triangle fills it, with the attributes and heights of its neighbours. Returns how many."""
     owner = {}
     for k, nd in chunks.items():
         P = nd["pos"]
@@ -819,7 +862,7 @@ def fill_tiny_holes(chunks: dict, bounds: list) -> int:
             if key in done:
                 continue
             area = abs((q[0] - p[0]) * (r[1] - p[1]) - (r[0] - p[0]) * (q[1] - p[1])) / 2
-            if area > 1e-3:
+            if area > max_area:
                 continue
             done.add(key)
             nd = chunks[k]
@@ -852,6 +895,211 @@ def fill_tiny_holes(chunks: dict, bounds: list) -> int:
     return filled
 
 
+CRACK_SNAP = 1e-3               # m: an open edge's end this close to another open edge is a T-junction on it
+CRACK_WELD = 5e-3               # m: open edges' ends this close are one point (a bowtie of near-collinear slivers)
+CRACK_HOLE = 0.05               # m²: the largest three-edge hole filled at the end
+
+
+def open_edges(chunks: dict, outline, owners=None) -> tuple:
+    """The tiling edges used once, off the map's outline, in the `owners` chunks (the rest only close theirs):
+    [(chunk, triangle, a, b, (x, y) of a, (x, y) of b)], and their ends {(x, y): height}."""
+    rows = []
+    for k, nd in chunks.items():
+        T = nd["idx"].reshape(-1, 3)
+        til = np.nonzero(~np.isin(nd["cus"][T[:, 0], 0], list(OVERLAY)))[0]
+        if not len(til):
+            continue
+        P = nd["pos"].astype(np.float64)
+        for e0, e1 in ((0, 1), (1, 2), (2, 0)):
+            a, b = T[til, e0], T[til, e1]
+            rows.append(np.column_stack([np.full(len(til), k), til, a, b, P[a, 0], -P[a, 2], P[b, 0], -P[b, 2]]))
+    if not rows:
+        return [], {}
+    E = np.concatenate(rows)
+    sw = (E[:, 4] > E[:, 6]) | ((E[:, 4] == E[:, 6]) & (E[:, 5] > E[:, 7]))
+    key = np.where(sw[:, None], E[:, [6, 7, 4, 5]], E[:, [4, 5, 6, 7]])
+    _, inv, n = np.unique(key, axis=0, return_inverse=True, return_counts=True)
+    E = E[n[inv.ravel()] == 1]
+    if owners is not None:
+        E = E[np.isin(E[:, 0], list(owners))]
+    on_outline = (shapely.distance(outline, shapely.points(E[:, 4:6])) < 0.01) & \
+                 (shapely.distance(outline, shapely.points(E[:, 6:8])) < 0.01)
+    edges, ends = [], {}
+    for r in E[~on_outline]:
+        k, t, a, b = int(r[0]), int(r[1]), int(r[2]), int(r[3])
+        pa, pb = (float(r[4]), float(r[5])), (float(r[6]), float(r[7]))
+        edges.append((k, t, a, b, pa, pb))
+        P = chunks[k]["pos"]
+        ends[pa], ends[pb] = float(P[a, 1]), float(P[b, 1])
+    return edges, ends
+
+
+def split_open_t_junctions(chunks: dict, edges: list, ends: dict) -> int:
+    """An open edge with other open edges' ends on it (within CRACK_SNAP; the earlier T-junction repair only looks
+    near rebuilt cells and at 1e-4 m): its triangle becomes a fan through them, at their heights. Returns how many
+    triangles were split."""
+    vhash = {}
+    for p in ends:
+        vhash.setdefault((math.floor(p[0] / 0.5), math.floor(p[1] / 0.5)), []).append(p)
+    adds = {}
+    done = set()
+    for k, t, a, b, (px, py), (qx, qy) in edges:
+        if (k, t) in done:
+            continue
+        L = math.hypot(qx - px, qy - py)
+        if L < 1e-6:
+            continue
+        on = []
+        for hx in range(math.floor(min(px, qx) / 0.5) - 1, math.floor(max(px, qx) / 0.5) + 2):
+            for hy in range(math.floor(min(py, qy) / 0.5) - 1, math.floor(max(py, qy) / 0.5) + 2):
+                for (vx, vy) in vhash.get((hx, hy), ()):
+                    u = ((vx - px) * (qx - px) + (vy - py) * (qy - py)) / (L * L)
+                    if u * L <= 1e-4 or (1 - u) * L <= 1e-4:
+                        continue
+                    if abs((qx - px) * (vy - py) - (qy - py) * (vx - px)) / L < CRACK_SNAP:
+                        on.append((u, vx, vy))
+        if not on:
+            continue
+        nd = chunks[k]
+        T = nd["idx"].reshape(-1, 3)
+        c = [v for v in T[t] if v != a and v != b][0]
+        new_p, new_tris = adds.setdefault(k, ([], []))
+        fan = [a]
+        for u, vx, vy in sorted(on):
+            new_p.append((np.array([vx, ends[(vx, vy)], -vy]), a))
+            fan.append(len(nd["pos"]) + len(new_p) - 1)
+        fan.append(b)
+        # the edge a -> b runs in the triangle's winding, so a -> v -> c keeps it
+        T[t] = [fan[0], fan[1], c]
+        new_tris += [[fan[i], fan[i + 1], c] for i in range(1, len(fan) - 1)]
+        nd["idx"] = T.ravel()
+        done.add((k, t))
+    for k, (new_p, new_tris) in adds.items():
+        nd = chunks[k]
+        src = [s for _, s in new_p]
+        nd["pos"] = np.concatenate([nd["pos"], np.array([p for p, _ in new_p], dtype=np.float32)])
+        nd["nrm"] = np.concatenate([nd["nrm"], nd["nrm"][src]])
+        nd["col"] = np.concatenate([nd["col"], nd["col"][src]])
+        nd["cus"] = np.concatenate([nd["cus"], nd["cus"][src]])
+        nd["idx"] = np.concatenate([nd["idx"], np.array(new_tris, dtype=np.int32).ravel()]).astype(np.int32)
+    return len(done)
+
+
+def weld_open_ends(chunks: dict, ends: dict, orig_xy: set) -> int:
+    """Open edges' ends within CRACK_WELD of each other take one position (an original vertex's when one is): the
+    near-collinear slivers of two materials then share their corners. Returns how many vertices moved."""
+    pts = list(ends)
+    grid = {}
+    for n_, (x, y) in enumerate(pts):
+        grid.setdefault((math.floor(x / CRACK_WELD), math.floor(y / CRACK_WELD)), []).append(n_)
+    parent = list(range(len(pts)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for (gx, gy), members in grid.items():
+        cand = [j for dx in (-1, 0, 1) for dy in (-1, 0, 1) for j in grid.get((gx + dx, gy + dy), [])]
+        for i in members:
+            for j in cand:
+                if j > i and abs(pts[j][0] - pts[i][0]) < CRACK_WELD and abs(pts[j][1] - pts[i][1]) < CRACK_WELD:
+                    parent[find(j)] = find(i)
+    groups = {}
+    for i in range(len(pts)):
+        groups.setdefault(find(i), []).append(pts[i])
+    to = {}
+    for g in groups.values():
+        if len(g) < 2:
+            continue
+        orig = [p for p in g if (round(p[0], 9), round(p[1], 9)) in orig_xy]
+        rep = orig[0] if orig else min(g)
+        to.update({p: rep for p in g if p != rep})
+    if not to:
+        return 0
+    moved = 0
+    xs = np.array([p[0] for p in to])
+    ys = np.array([p[1] for p in to])
+    for nd in chunks.values():
+        P = nd["pos"]
+        if not len(P) or xs.max() < P[:, 0].min() - 1 or xs.min() > P[:, 0].max() + 1:
+            continue
+        cand = np.nonzero(np.isin(P[:, 0].astype(np.float64), xs) & np.isin(-P[:, 2].astype(np.float64), ys))[0]
+        for v in cand:
+            r = to.get((float(P[v, 0]), float(-P[v, 2])))
+            if r is not None:
+                P[v, 0], P[v, 2] = r[0], -r[1]
+                moved += 1
+    return moved
+
+
+def fill_outline_notches(chunks: dict, edges: list, outline) -> int:
+    """Two open edges p -> q -> r with p and r on the map's outline and q inside: a notch in the ground's edge (a
+    sliver cut off at the outline); a triangle under CRACK_HOLE m² fills it. Returns how many."""
+    at = {}
+    for e in edges:
+        at.setdefault(e[4], []).append(e)
+        at.setdefault(e[5], []).append(e)
+    on = lambda p: outline.distance(Point(p)) < 0.01
+    filled = 0
+    for q, es in at.items():
+        if len(es) != 2 or on(q):
+            continue
+        (k, t, a, b, pa, pb), e2 = es
+        p = pb if pa == q else pa
+        r = e2[5] if e2[4] == q else e2[4]
+        if p == r or not (on(p) and on(r)):
+            continue
+        if abs((p[0] - q[0]) * (r[1] - q[1]) - (r[0] - q[0]) * (p[1] - q[1])) / 2 > CRACK_HOLE:
+            continue
+        nd = chunks[k]
+        P = nd["pos"]
+        hits = np.nonzero((P[:, 0].astype(np.float64) == r[0]) & (-P[:, 2].astype(np.float64) == r[1]))[0]
+        if len(hits):
+            rv = int(hits[0])
+        else:
+            k2, _, a2, b2, pa2, _ = e2
+            src = chunks[k2]["pos"][a2 if pa2 == r else b2]
+            nd["pos"] = np.concatenate([P, np.array([[r[0], src[1], -r[1]]], dtype=np.float32)])
+            for key in ("nrm", "col", "cus"):
+                nd[key] = np.concatenate([nd[key], nd[key][a:a + 1]])
+            rv = len(nd["pos"]) - 1
+        tri3 = [a, b, rv]
+        A3 = nd["pos"][tri3].astype(np.float64)
+        if np.cross(A3[2] - A3[0], A3[1] - A3[0])[1] < 0:        # front faces up
+            tri3 = [a, rv, b]
+        nd["idx"] = np.concatenate([nd["idx"], np.array(tri3, dtype=np.int32)])
+        filled += 1
+    return filled
+
+
+def close_cracks(chunks: dict, world: dict, orig_xy: set, outline=None, owners=None) -> tuple:
+    """The last cracks the cuts leave (millimetres: bowties of near-collinear slivers, T-junctions just off an edge,
+    a missed sliver's hole or notch in the outline): weld, split and fill until no open edge is left off the map's
+    outline. `owners`: the chunks worked on; the others in `chunks` (a ring around them) only tell their open edges
+    from the edges they share with it. Returns (splits, welded, filled, open edges left)."""
+    m = world["meta"]
+    if outline is None:
+        outline = (Polygon(m["data_area"][0], m["data_area"][1:]) if m.get("data_area") else box(*m["bounds"])).boundary
+    splits = welded = filled = 0
+    for _ in range(4):
+        edges, ends = open_edges(chunks, outline, owners)
+        if not edges:
+            return splits, welded, filled, 0
+        n1 = weld_open_ends(chunks, ends, orig_xy)          # first: a bowtie's corners also lie on its edges
+        if n1:
+            for nd in chunks.values():
+                drop_degenerate(nd)
+        edges, ends = open_edges(chunks, outline, owners)
+        n2 = split_open_t_junctions(chunks, edges, ends)
+        n3 = fill_tiny_holes(chunks, m["bounds"], CRACK_HOLE)
+        n3 += fill_outline_notches(chunks, open_edges(chunks, outline, owners)[0], outline)
+        welded, splits, filled = welded + n1, splits + n2, filled + n3
+        if n1 + n2 + n3 == 0:
+            break
+    return splits, welded, filled, len(open_edges(chunks, outline, owners)[0])
+
+
 def vpos(P, extra_v, v):
     return P[v] if v < len(P) else extra_v[v - len(P)][0]
 
@@ -867,15 +1115,18 @@ def vattr(nd, extra_v, v, key):
 # ---------------------------------------------------------------- world.json
 
 def ring_tris(poly: Polygon) -> tuple:
-    """(rings without the closing point, triangle indices into their concatenation) of a polygon."""
+    """(rings without the closing point, triangle indices into their concatenation) of a polygon. The triangles'
+    corners are matched to the ring vertices by the nearest one (within 0.1 mm): exact float keys missed some, and
+    the triangles dropped left holes in the piece."""
+    from scipy.spatial import cKDTree
     rings = [np.asarray(poly.exterior.coords)[:-1]] + [np.asarray(h.coords)[:-1] for h in poly.interiors]
     flat = np.concatenate(rings)
-    index = {(round(x, 6), round(y, 6)): k for k, (x, y) in enumerate(flat)}
+    tree = cKDTree(flat)
     tris = []
     for t in shapely.constrained_delaunay_triangles(poly).geoms:
-        ids = [index.get((round(x, 6), round(y, 6))) for x, y in t.exterior.coords[:-1]]
-        if None not in ids:
-            tris += ids
+        d, ids = tree.query(np.asarray(t.exterior.coords)[:-1])
+        if d.max() < 1e-4 and len(set(ids.tolist())) == 3:
+            tris += [int(i) for i in ids]
     return [[[round(float(x), 3), round(float(y), 3)] for x, y in r] for r in rings], tris
 
 
@@ -886,7 +1137,7 @@ def main() -> None:
     world = rg.load_json(rg.BASE / "world.json")
     index = rg.load_json(rg.BASE / "ground_index.json")
     gm = world["ground_mesh"]
-    H_old = rg.Heights(rg.BASE / "heightmap.f32", world["terrain"], gm["cell"])
+    H_old = rg.Heights(rg.BASE, world["terrain"], gm["cell"])
     A = rg.Alignment(rail["alignment"])
     design = rg.Design(rail["earthworks"], A, H_old, [z for z in rail["zones"] if "axis" in z])
     zones = Zones(rail)
@@ -903,7 +1154,7 @@ def main() -> None:
     cc, rr = np.meshgrid(np.arange(c0, c1 + 1), np.arange(r0, r1 + 1))
     xs = H_old.ox + cc * H_old.cell
     ys = H_old.oy - rr * H_old.cell
-    lab = zones.label(xs.ravel(), ys.ravel()).reshape(xs.shape)
+    lab = zones.label_grid(xs, ys)
     new = H_old.data.copy()
     changed = 0
     for k, z in enumerate(zones.list):
@@ -915,7 +1166,7 @@ def main() -> None:
         zz = zone_heights(design, z, s, u, x, y)
         new[rr[m], cc[m]] = zz
         changed += int(m.sum())
-    H_new = rg.Heights(rg.BASE / "heightmap.f32", world["terrain"], gm["cell"])
+    H_new = rg.Heights(rg.BASE, world["terrain"], gm["cell"])
     H_new.data = new
     log("heightmap: %d samples in the railway's zones" % changed)
     report += ["## Heightmap", "", "%d samples (0.5 m) set to the designed ground in %d zones." % (changed,
@@ -954,7 +1205,12 @@ def main() -> None:
     skirt_attr = (srgb_col(SKIRT_COLOUR), np.array([KERB, FLAG_SIDE, 0, 0], dtype=np.uint8))
 
     # --- ground mesh
-    raw_all = (rg.BASE / gm["file"]).read_bytes()
+    files = {}                                  # ground.bin and its parts (a chunk's "file"), as read
+    for c in gm["chunks"]:
+        f = c.get("file", gm["file"])
+        if f not in files:
+            files[f] = (rg.BASE / f).read_bytes()
+    raw_all = {id(c): files[c.get("file", gm["file"])] for c in gm["chunks"]}
     orig_xy = set()
     ctx = {"grid": grid, "zones": zones, "design": design, "A": A, "H_new": H_new, "H_old": H_old,
            "nodes_new": H_new.nodes(), "nodes_old": H_old.nodes(), "snapper": Snapper(zones, grid),
@@ -985,6 +1241,10 @@ def main() -> None:
             totals[a_] = totals.get(a_, 0) + b_
     log("ground mesh: %d chunks touched, %s" % (len(touched), totals))
     near = [k for k, (c, cb) in enumerate(chunks) if cb.buffer(4.0).intersects(zones.union)]
+    # and every chunk bordering a rebuilt one: a vertex a rebuilt cell puts on their shared border splits theirs too
+    rebuilt_boxes = shapely.union_all([chunks[k][1] for k in touched]).buffer(0.5) if touched else None
+    if rebuilt_boxes is not None:
+        near = sorted(set(near) | {k for k, (c, cb) in enumerate(chunks) if cb.intersects(rebuilt_boxes)})
     for k in near:
         if k not in new_chunks:
             new_chunks[k] = read_chunk(raw_all, chunks[k][0])
@@ -1007,6 +1267,14 @@ def main() -> None:
         log("ground mesh: %d sub-millimetre holes left by slivers filled" % filled)
     log("ground mesh: %d triangle edges split where a neighbour put a vertex on them, %d vertices welded, "
         "%d slivers dropped" % (splits, welded, dropped))
+    # with a ring of the chunks around them: the edges they share with it are no cracks
+    near_boxes = shapely.union_all([chunks[k][1] for k in near]).buffer(0.5)
+    ring = [k for k, (c, cb) in enumerate(chunks) if k not in new_chunks and cb.intersects(near_boxes)]
+    for k in ring:
+        new_chunks[k] = read_chunk(raw_all, chunks[k][0])
+    cs, cw, cf, left = close_cracks({k: new_chunks[k] for k in list(near) + ring}, world, orig_xy, owners=set(near))
+    log("ground mesh: last cracks: %d triangles split at a T-junction, %d vertices welded, %d holes filled, "
+        "%d open edges left" % (cs, cw, cf, left))
     # cover the collision holes: every cell within one cell of a cliff cell gets raised collision faces
     cover = {(i + di, j + dj) for i, j in all_cliffs for di in (-1, 0, 1) for dj in (-1, 0, 1)}
     for k in near:
@@ -1036,8 +1304,10 @@ def main() -> None:
                 if 0 <= r < H_old.h and 0 <= c_ < H_old.w and r % 2 == 0 and c_ % 2 == 0:
                     holes.add((r, c_))
     log("collision: %d cliff cells, %d hole samples, %d cover cells" % (len(all_cliffs), len(holes), len(cover)))
-    # write ground.bin
+    # write ground.bin (and ground.1.bin... past PART_BYTES, as the pipeline splits it)
     blob = bytearray()
+    blobs = []
+    total_bytes = 0
     chunk_meta = []
     tri_total = 0
     vert_total = 0
@@ -1052,19 +1322,31 @@ def main() -> None:
                     float(np.ptp(P[:, 0])), float(np.ptp(P[:, 1])), float(np.ptp(P[:, 2]))] if len(P) else c["aabb"]
             nv, ni, nc = len(nd["pos"]), len(nd["idx"]), len(nd["colf"])
         else:
-            comp = raw_all[c["offset"]:c["offset"] + c["size"]]
+            comp = raw_all[id(c)][c["offset"]:c["offset"] + c["size"]]
             raw = None
             aabb, nv, ni, nc = c["aabb"], c["nv"], c["ni"], c["nc"]
+        if len(blob) and len(blob) + len(comp) > rg.PART_BYTES:
+            blobs.append(blob)
+            blob = bytearray()
         m = dict(c)
+        m.pop("file", None)
         m.update({"offset": len(blob), "size": len(comp), "nv": nv, "ni": ni, "nc": nc,
                   "raw": len(raw) if raw is not None else c["raw"],
                   "aabb": [round(v, 3) for v in aabb] if raw is not None else c["aabb"]})
+        if blobs:
+            m["file"] = "%s.%d.bin" % (Path(gm["file"]).stem, len(blobs))
         blob += comp
+        total_bytes += len(comp)
         chunk_meta.append(m)
         tri_total += ni // 3
         vert_total += nv
         col_total += nc // 3
-    (rg.WORLD / gm["file"]).write_bytes(bytes(blob))
+    blobs.append(blob)
+    stem = Path(gm["file"]).stem
+    for old in rg.WORLD.glob(stem + ".*.bin"):
+        old.unlink()
+    for k, b in enumerate(blobs):
+        (rg.WORLD / (gm["file"] if k == 0 else "%s.%d.bin" % (stem, k))).write_bytes(bytes(b))
 
     # --- ground ids
     ids_info = index["ids"]
@@ -1074,7 +1356,7 @@ def main() -> None:
         m = lab == k
         ids[rr[m], cc[m]] = pi + 1
     (rg.WORLD / ids_info["file"]).write_bytes(zlib.compress(ids.astype("<u2").tobytes(), 9))
-    new.astype("<f4").tofile(rg.WORLD / world["terrain"]["file"])
+    rg.write_heightmap(rg.WORLD, world["terrain"], new)
 
     # --- world.json ground partition
     hard_by_piece = {}
@@ -1091,8 +1373,8 @@ def main() -> None:
         pg = Polygon(g["rings"][0], g["rings"][1:]).buffer(0)
         if not pg.intersects(cut) or pg.intersection(cut).area < 1e-4:
             continue
-        rest = pg.difference(cut)
-        parts = sorted([p for p in getattr(rest, "geoms", [rest]) if p.geom_type == "Polygon" and p.area > 1e-3],
+        rest = shapely.make_valid(shapely.set_precision(pg.difference(cut), 0.001))
+        parts = sorted([p for p in shapely.get_parts(rest) if p.geom_type == "Polygon" and p.area > 1e-3],
                        key=lambda p: -p.area)
         touched_ground += 1
         if not parts:
@@ -1113,7 +1395,7 @@ def main() -> None:
     order = sorted(set(piece_of_zone.values()))
     new_entries = {}
     for pi in order:
-        geom = unary_union(hard_by_piece[pi])
+        geom = shapely.make_valid(shapely.set_precision(unary_union(hard_by_piece[pi]), 0.001))
         polys = [p for p in getattr(geom, "geoms", [geom]) if p.geom_type == "Polygon" and p.area > 1e-3]
         pk, mat, src, nsrc = pieces[pi]
         entries = []
@@ -1180,8 +1462,10 @@ def main() -> None:
     canopies = []
     keep_b = []
     restyled = ""
+    # wall-less canopies on the line's own trackbed, platforms and stairs (the yard's islands keep theirs)
+    own = unary_union([g for g, z in zip(zones.geoms, zones.list) if z["kind"] in ("trackbed", "platform", "stairwell")])
     for b in world["buildings"]:
-        if not b.get("walls", True) and Polygon(b["rings"][0]).intersects(zones.hard):
+        if not b.get("walls", True) and Polygon(b["rings"][0]).intersects(own):
             canopies.append(b["id"])
             continue
         if b["id"] == STATION_BUILDING:
@@ -1189,7 +1473,15 @@ def main() -> None:
             restyled = b["id"]
         keep_b.append(b)
     world["buildings"] = keep_b
+    lifted, dropped_b = over_tracks(world, rail)
+    # the map's bridge decks the railway builds itself (Lozère's footbridges: rail.json footbridges)
+    own_fb = {o for fb in rail.get("footbridges", []) for o in fb["osm"]}
+    n_br = len(world.get("bridges", []))
+    world["bridges"] = [b for b in world.get("bridges", []) if b["osm"] not in own_fb]
     report += ["## Trees, props, fences, buildings", "",
+               "- bridge decks left to the railway's footbridges: %d" % (n_br - len(world["bridges"])),
+               "- buildings over the tracks raised into bridge buildings (above the trains): %s" % (", ".join(lifted) or "none"),
+               "- huts standing on a yard track dropped: %s" % (", ".join(dropped_b) or "none"),
                "- trees removed: %d of %d (%s)" % (before - len(world["trees"]), before,
                                                    ", ".join("%s %d" % (r, sum(1 for t in clear["trees"] if t["reason"] == r))
                                                              for r in sorted({t["reason"] for t in clear["trees"]}))),
@@ -1207,6 +1499,23 @@ def main() -> None:
     for b in clear["buildings"]:
         report.append("- %s %s (%s): %.2f m from the nearest track centre%s" % (
             b["id"], b["name"], b["kind"], b["nearest_track"], ", IN THE GAUGE" if b["in_gauge"] else ""))
+    # markings on ground the railway took (a lot's bays under a platform): those triangles go
+    n_mk = 0
+    for mk in world["markings"]:
+        v = np.asarray(mk["verts"], dtype=np.float64)
+        t = np.asarray(mk["tris"], dtype=np.int64).reshape(-1, 3)
+        if not len(t):
+            continue
+        c = v[t].mean(axis=1)
+        keep = ~shapely.contains_xy(zones.hard, c[:, 0], c[:, 1])
+        if keep.all():
+            continue
+        n_mk += int((~keep).sum())
+        used, inv = np.unique(t[keep].ravel(), return_inverse=True)
+        mk["verts"] = np.round(v[used], 3).tolist()
+        mk["tris"] = inv.astype(int).tolist()
+    world["markings"] = [mk for mk in world["markings"] if mk["tris"]]
+    report += ["", "Marking triangles dropped on the railway's ground: %d" % n_mk]
     # kerbs and markings crossing the railway's hard ground (none expected)
     bad_k = [k for k, kb in enumerate(world["kerbs"]) if len(kb["pts"]) > 1 and LineString(kb["pts"]).intersects(zones.hard)]
     report += ["", "Kerbs crossing the railway's ground: %d" % len(bad_k), ""]
@@ -1219,14 +1528,14 @@ def main() -> None:
                              "the ground steps there (tools/rail/patch_world.py), raised collision faces cover them",
                     "samples": sorted([list(h) for h in holes])}
     st = dict(gm.get("stats", {}))
-    st.update({"triangles": tri_total, "vertices": vert_total, "collision_triangles": col_total, "bytes": len(blob)})
+    st.update({"triangles": tri_total, "vertices": vert_total, "collision_triangles": col_total, "bytes": total_bytes})
     gm2["stats"] = st
     world["ground_mesh"] = gm2
     world["ground_materials"] = [m for m in mats if m not in ("kerb", "paint")]
     world["palette"]["ground"] = palette
     # No date in the stamp: the same inputs give the same bytes.
     world["meta"]["rail"] = {"version": PATCH_VERSION, "rail_json": sha1(rg.RAIL_JSON),
-                             "base": {f: sha1(rg.BASE / f) for f in rg.BASE_FILES},
+                             "base": {f: sha1(rg.BASE / f) for f in rg.world_files(rg.load_json(rg.BASE / "world.json"))},
                              "tool": "tools/rail/patch_world.py"}
     index["pieces"] = final_pieces
     index["materials"] = mats
@@ -1245,6 +1554,65 @@ def main() -> None:
         "- collision holes: %d samples, covered by raised faces over %d cells" % (len(holes), len(cover)), ""]
     (rg.TOOLS / "review" / "patch.md").write_text("\n".join(report) + "\n", encoding="utf-8")
     log("patched godot/world/ in %.0f s (report: tools/rail/review/patch.md)" % (time.time() - t0))
+
+
+GAUGE_HALF = 1.75              # m from a track centre (godot/tools/check_world.gd)
+TRAIN_CLEARANCE = 6.2           # m above the rail where a building over the line may start (catenary, its supports)
+HUT_AREA = 60.0                 # m²: a smaller building on a yard track goes (a cabin on the ballast)
+
+
+def over_tracks(world: dict, rail: dict) -> tuple:
+    """Walled buildings reaching into the trains' gauge: one standing over a track trains run on (the alignment's,
+    the yard's mains), or a station hall or footbridge over any yard track, with its roof well above the trains (a
+    station hall over the cutting, as at Palaiseau) keeps only what is above TRAIN_CLEARANCE, its tiers floating
+    there; a small one on a yard track is dropped; the others are left (depot sheds the yard's tracks run into;
+    patch.md lists them). Returns (raised ids, dropped ids)."""
+    A = rg.Alignment(rail["alignment"])
+    sp = rail["alignment"]["spacing"]
+    th = A.heading
+    n = np.c_[-np.sin(th), np.cos(th)]
+    lines = [(LineString(A.pts - n * sp / 2), A.s, A.z), (LineString(A.pts + n * sp / 2), A.s, A.z)]
+    trains = [True, True]                       # trains run on it (the alignment's tracks, the yard's mains)
+    for t in rail.get("yard", {}).get("tracks", []):
+        p = np.asarray(t["pts"])
+        lines.append((LineString(p), rg.cumlen(p), np.asarray(t["z"])))
+        trains.append(bool(t["main"]))
+    tree = shapely.STRtree([ln for ln, _, _ in lines])
+    lifted, dropped, keep = [], [], []
+    for b in world["buildings"]:
+        if not b.get("walls", True) or not b["rings"]:
+            keep.append(b)
+            continue
+        pg = Polygon(b["rings"][0]).buffer(0)
+        hits = [k for k in tree.query(pg.buffer(GAUGE_HALF)) if lines[k][0].distance(pg) < GAUGE_HALF]
+        if not hits:
+            keep.append(b)
+            continue
+        rail_z = max(float(np.interp(lines[k][0].project(pg.centroid), lines[k][1], lines[k][2])) for k in hits)
+        tiers = b.get("toy", {}).get("tiers", [])
+        top = max([t["top"] for t in tiers] or [b["base_z"] + b["height"]])
+        over_trains = any(trains[k] for k in hits)
+        hall = b.get("kind") == "train_station"   # a station hall or footbridge over the yard
+        if top - rail_z > TRAIN_CLEARANCE + 2.0 and (over_trains or hall):
+            z_min = rail_z + TRAIN_CLEARANCE
+            new = []
+            for t in tiers:
+                if t["top"] <= z_min + 0.5:
+                    continue
+                if t["z0"] < z_min:
+                    t["z0"] = round(z_min, 3)
+                    t["floating"] = True
+                new.append(t)
+            b["toy"]["tiers"] = new
+            b["min_height"] = round(z_min - b["base_z"], 3)
+            lifted.append(b["id"])
+            keep.append(b)
+        elif pg.area < HUT_AREA and any(k >= 2 for k in hits) and not over_trains:
+            dropped.append(b["id"])
+        else:
+            keep.append(b)
+    world["buildings"] = keep
+    return lifted, dropped
 
 
 def rg_hex(c: str) -> tuple:

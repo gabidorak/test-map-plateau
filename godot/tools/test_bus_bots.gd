@@ -355,7 +355,8 @@ func _vehicle_ahead() -> void:
 				lat_after = absf(p.y)
 				if b.s - b.tail > at + 50.0:
 					break
-			if not room and still > 60 * 10 and honked:
+			# (its own blocked timer: on a slope the body creeps, which resets `still`, and at GIVE_UP it vanishes)
+			if not room and honked and (still > 60 * 10 or b._blocked_t > b.HORN_AFTER + 4.0):
 				break
 		if room:
 			_check(gap > b.GAP and gap < b.GAP + b.PASS_IN + 5.0, "stops behind a car parked in its lane, room to pull out (gap %.1f m)" % gap)

@@ -13,7 +13,7 @@ extends SceneTree
 ##  7. Street furniture (M6): a ray down onto every prop and fence identifies it (or something above
 ##     it), and walking into poles, shelters and fences stops at them.
 ##  8. Toy buildings (M7): under every wall-less slab (canopies, covered passages) and through every
-##     building passage there is open space down to the ground.
+##     building passage there is open space down to the ground (a house's eaves may run under a canopy against it).
 ## godot --headless --fixed-fps 60 --path godot --script res://tools/test_play.gd
 ## (--fixed-fps makes the simulation run as fast as the machine allows.)
 
@@ -99,16 +99,33 @@ func _ray(from: Vector3, to: Vector3, mask := Layers.SOLID) -> Dictionary:
 	return _space.intersect_ray(PhysicsRayQueryParameters3D.create(from, to, mask))
 
 
+## True when map point xy is in the walkable area `margin` m in from its walls (meta.playable_area: the box plus the
+## corridors; else the `playable` box).
+func _in_playable(xy: Vector2, margin := 0.0) -> bool:
+	var rings: Array = _world["meta"].get("playable_area", [])
+	if rings.is_empty():
+		var p: Array = _world["meta"]["playable"]
+		return xy.x > p[0] + margin and xy.x < p[2] - margin and xy.y > p[1] + margin and xy.y < p[3] - margin
+	for k in rings.size():
+		var poly := PackedVector2Array()
+		for q: Array in rings[k]:
+			poly.append(Vector2(q[0], q[1]))
+		if Geometry2D.is_point_in_polygon(xy, poly) != (k == 0):
+			return false
+		if margin > 0.0:
+			for i in poly.size():
+				if Geometry2D.get_closest_point_to_segment(xy, poly[i], poly[(i + 1) % poly.size()]).distance_to(xy) < margin:
+					return false
+	return true
+
+
 ## True when the mass's outline reaches into the playable area. Masses in the margin between
 ## `playable` and `bounds` are scenery the player cannot reach (some are clipped by the box edge).
 func _reachable(b: Dictionary) -> bool:
-	var p: Array = _world["meta"]["playable"]
-	var area := Rect2(p[0], p[1], p[2] - p[0], p[3] - p[1])
-	var ring: Array = b["rings"][0]
-	var rect := Rect2(ring[0][0], ring[0][1], 0, 0)
-	for pt: Array in ring:
-		rect = rect.expand(Vector2(pt[0], pt[1]))
-	return area.intersects(rect)
+	for pt: Array in b["rings"][0]:
+		if _in_playable(Vector2(pt[0], pt[1])):
+			return true
+	return false
 
 
 ## Top of the mass's ground tier, whose walls follow the outline (higher tiers may be set back from it).
@@ -291,8 +308,6 @@ func _test_walk() -> void:
 
 func _test_walls() -> void:
 	var tested := 0
-	var pl: Array = _world["meta"]["playable"]
-	var area := Rect2(pl[0], pl[1], pl[2] - pl[0], pl[3] - pl[1])
 	for b: Dictionary in _world["buildings"]:
 		if not b["walls"] or b["min_height"] > 0.0 or b["height"] < 2.5 or not _reachable(b):
 			continue
@@ -310,7 +325,7 @@ func _test_walls() -> void:
 		if _in_passage(mid - out * 0.5):
 			continue
 		var start := mid + out * 2.5
-		if not area.has_point(start):
+		if not _in_playable(start):
 			continue                          # the wall faces the boundary
 		var g := WorldQuery.ground_y(_main.get_world_3d(), start.x, -start.y)
 		var pos := MeshUtils.to_godot(start.x, start.y, g + 0.05)
@@ -337,34 +352,51 @@ func _test_walls() -> void:
 # --- 4. boundary -------------------------------------------------------------------------------
 
 func _test_boundary() -> void:
-	var p: Array = _world["meta"]["playable"]
-	var cases := [
-		[Vector2(p[0] + 3, -100), Vector2.LEFT], [Vector2(p[2] - 3, -100), Vector2.RIGHT],
-		[Vector2(500, p[3] - 3), Vector2(0, 1)], [Vector2(500, p[1] + 3), Vector2(0, -1)],
-	]
+	# starts 3 m inside the walls, walking out square to them: on the box's sides, or spread along the corridors' outline
+	var cases := []
+	var rings: Array = _world["meta"].get("playable_area", [])
+	if rings.is_empty():
+		var p: Array = _world["meta"]["playable"]
+		cases = [[Vector2(p[0] + 3, -100), Vector2.LEFT], [Vector2(p[2] - 3, -100), Vector2.RIGHT],
+				[Vector2(500, p[3] - 3), Vector2(0, 1)], [Vector2(500, p[1] + 3), Vector2(0, -1)]]
+	else:
+		var ring: Array = rings[0]                  # counter-clockwise: the inside on the left of each edge
+		var n := 8
+		for k in n:
+			var i := k * ring.size() / n
+			var a := Vector2(ring[i][0], ring[i][1])
+			var b := Vector2(ring[(i + 1) % ring.size()][0], ring[(i + 1) % ring.size()][1])
+			if a.distance_to(b) < 4.0:
+				continue
+			var d := (b - a).normalized()
+			var inward := Vector2(-d.y, d.x)
+			cases.append([(a + b) / 2.0 + inward * 3.0, -inward])
+	var checked := 0
 	for c: Array in cases:
 		var xy: Vector2 = c[0]
 		var g := WorldQuery.ground_y(_main.get_world_3d(), xy.x, -xy.y, Layers.SOLID, 200.0)
+		if is_nan(g) or _inside_building(xy):
+			continue
 		_player.teleport(MeshUtils.to_godot(xy.x, xy.y, g + 0.05), 0.0)
 		await _walk(c[1], 3.0, true)
 		var pos: Vector3 = _player.global_position
-		var x := pos.x
-		var y := -pos.z
-		if x < p[0] - 0.01 or x > p[2] + 0.01 or y < p[1] - 0.01 or y > p[3] + 0.01:
-			_fail("left the playable area at (%.1f, %.1f)" % [x, y])
-	print("boundary: checked %d sides" % cases.size())
+		checked += 1
+		if not _in_playable(Vector2(pos.x, -pos.z), -0.05) and not _in_playable(Vector2(pos.x, -pos.z)):
+			_fail("left the playable area at (%.1f, %.1f)" % [pos.x, -pos.z])
+	print("boundary: checked %d sides" % checked)
+	if checked < 4:
+		_fail("only %d boundary sides could be checked" % checked)
 
 
 # --- 5. kerbs ----------------------------------------------------------------------------------
 
 func _test_kerbs() -> void:
-	var p: Array = _world["meta"]["playable"]
 	var raised: Array = []
 	for k: Dictionary in _world["kerbs"]:
 		var a: Array = k["pts"][0]
 		var b: Array = k["pts"][-1]
 		if k["kind"] == "raised" and Vector2(a[0], a[1]).distance_to(Vector2(b[0], b[1])) > 3.0 \
-				and a[0] > p[0] + 5 and a[0] < p[2] - 5 and a[1] > p[1] + 5 and a[1] < p[3] - 5:
+				and _in_playable(Vector2(a[0], a[1]), 5.0):
 			raised.append(k)
 	var step := maxi(1, raised.size() / 60)
 	var tested := 0
@@ -379,7 +411,7 @@ func _test_kerbs() -> void:
 			b = Vector2(pts[-1][0], pts[-1][1])
 			a = Vector2(pts[0][0], pts[0][1])
 		var mid := (a + b) / 2.0
-		if mid.x < p[0] + 5 or mid.x > p[2] - 5 or mid.y < p[1] + 5 or mid.y > p[3] - 5:
+		if not _in_playable(mid, 5.0):
 			skipped += 1                      # the run starts inside but this point is at the boundary
 			continue
 		var n := (b - a).normalized().orthogonal() * -1.0       # left of the point order: raised side
@@ -439,7 +471,6 @@ func _bank_slope(mid: Vector2, n: Vector2, g: float) -> float:
 
 func _test_trees() -> void:
 	var data = _main.get_node("Neighborhood/TreeCollision").data
-	var p: Array = _world["meta"]["playable"]
 	var stats := {"trunk ok": 0, "trunk occluded": 0, "crown ok": 0, "crown covered": 0}
 	var step := maxi(1, data.size() / 300)
 	for k in range(0, data.size(), step):
@@ -485,7 +516,7 @@ func _test_trees() -> void:
 			break
 		var base: Vector3 = data.base[k]
 		var r: float = maxf(data.trunk[k].x, 0.12)
-		if r < 0.15 or base.x < p[0] + 5 or base.x > p[2] - 5 or -base.z < p[1] + 5 or -base.z > p[3] - 5:
+		if r < 0.15 or not _in_playable(Vector2(base.x, -base.z), 5.0):
 			continue
 		var start := base + Vector3(2.0, 0.05, 0.0)
 		var g := WorldQuery.ground_y(_main.get_world_3d(), start.x, start.z)
@@ -537,7 +568,6 @@ func _test_props() -> void:
 		_fail("only %d of %d props identified from above" % [stats["picked"], first_shape.size()])
 
 	# walking into poles (lamps, signs, signals, bus poles), shelter walls and fences
-	var p: Array = _world["meta"]["playable"]
 	var walked := {"pole": 0, "box": 0}
 	for i in data.shape_record.size():
 		if walked["pole"] >= 15 and walked["box"] >= 10:
@@ -548,7 +578,7 @@ func _test_props() -> void:
 		var kind := "pole" if cyl else "box"
 		if walked[kind] >= (15 if cyl else 10) or s.y < 1.5 or (cyl and s.x < 0.04) or (not cyl and minf(s.x, s.z) > 0.6):
 			continue
-		if c.x < p[0] + 5 or c.x > p[2] - 5 or -c.z < p[1] + 5 or -c.z > p[3] - 5:
+		if not _in_playable(Vector2(c.x, -c.z), 5.0):
 			continue
 		var yaw: float = data.shape_yaw[i]
 		# approach across the thin side of boxes (shelter walls, fence panels)
@@ -616,9 +646,26 @@ func _test_open_spaces() -> void:
 				continue
 			var hit := _ray(MeshUtils.to_godot(best.x, best.y, float(t["z0"]) - 0.1), MeshUtils.to_godot(best.x, best.y, g - 1.0))
 			var info := WorldQuery.hit_info(hit)
-			if info.get("type") == "building":
+			if info.get("type") == "building" and _under_house_eaves(String(info.get("id")), best):
+				stats["slabs beside house eaves"] = stats.get("slabs beside house eaves", 0) + 1
+			elif info.get("type") == "building":
 				_fail("%s under the %s of #%d %s at (%.1f, %.1f): hit %s" % ["no open space", t["kind"], b["num"], b["id"],
 						best.x, best.y, info.get("id")])
 			else:
 				stats["slabs open" if t["kind"] == "slab" else "passages open"] += 1
 	print("open spaces: ", stats)
+
+
+## A canopy or carport against a house: its eaves overhang the walls (plus the slack of its roof rectangles)
+## and may run under the slab, which is open otherwise.
+func _under_house_eaves(id: String, p: Vector2) -> bool:
+	for b: Dictionary in _world["buildings"]:
+		if b["id"] != id or not b.get("house", false) or not b["toy"]["tiers"][0].has("house"):
+			continue
+		var ring: Array = b["rings"][0]
+		for i in ring.size():
+			var a := Vector2(ring[i][0], ring[i][1])
+			var c := Vector2(ring[(i + 1) % ring.size()][0], ring[(i + 1) % ring.size()][1])
+			if p.distance_to(Geometry2D.get_closest_point_to_segment(p, a, c)) < 1.0:
+				return true
+	return false

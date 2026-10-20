@@ -1,0 +1,14 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://shaders/showroom_floor.gdshader" id="1_e2ivy"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_e2ivy")
+shader_parameter/tile = null
+shader_parameter/band = null
+shader_parameter/cream = null
+shader_parameter/warm = null
+shader_parameter/vein = null
+shader_parameter/grout = null
+shader_parameter/gold = null

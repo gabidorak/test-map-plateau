@@ -3,7 +3,8 @@
   buildings, trees): the reshaped zones (trackbed, platforms, slopes, wall landings, stairwells, the road's open
   trench), retaining walls (red), tracks, structures, signals, catenary portals, trees removed (red crosses), props
   moved (blue arrows) or dropped (red squares);
-- station.png: Gare de Lozère at 0.12 m per pixel, same layers;
+- station.png: Gare de Lozère at 0.12 m per pixel, same layers; station_<name>.png the stations on to Massy-Palaiseau;
+- rail_massy.png: the line on to Massy-Palaiseau (per 700 m) and the station yard there;
 - profile.png: long section along the line, x east: the LiDAR trackbed samples (grey: rejected), the rail level
   designed, the ground 8 m either side of the centreline, grade breaks and structures;
 - sections.png: cross-sections every 100 m inside the map: LiDAR ground (grey) and the designed ground (black),
@@ -18,7 +19,7 @@ import railgeo as rg
 
 ZONE_COLOURS = {"trackbed": (120, 112, 104), "platform": (70, 74, 82), "slope": (196, 170, 120),
                 "landing": (170, 150, 120), "platform_blend": (150, 150, 140), "stairwell": (230, 120, 40),
-                "road_trench": (240, 160, 40)}
+                "road_trench": (240, 160, 40), "island": (60, 64, 110), "yard": (140, 120, 104)}
 
 
 def _font(size):
@@ -92,6 +93,11 @@ def _draw_plan(pl: Plan, rail: dict, world: dict, removed: set, font):
                 r = t["r"] / pl.res
                 d.ellipse([c[0] - r, c[1] - r, c[0] + r, c[1] + r], outline=(40, 120, 40, 160))
     A = rg.Alignment(rail["alignment"])
+    for t in rail.get("yard", {}).get("tracks", []):        # the yard's tracks (tools/rail/yard.py)
+        pts = np.asarray(t["pts"])
+        if pl.visible(pts):
+            d.line([pl.P(q) for q in pts[::2]], fill=(20, 20, 20) if t["rer"] else (90, 90, 90),
+                   width=2 if t["main"] else 1)
     sp = rail["alignment"]["spacing"]
     for off in (-sp / 2, sp / 2):
         for gauge in (-0.7175, 0.7175):
@@ -180,12 +186,36 @@ def draw(rail: dict, world: dict, H) -> None:
         img.paste(t, (0, y))
         y += t.height + 10
     img.save(out / "rail.png")
+    # the line on to Massy (2026-10-18): per 700 m of alignment, its box; then the yard
+    tiles = []
+    for s0 in range(2600, int(A.length), 700):
+        m = (A.s >= s0) & (A.s < s0 + 700)
+        p = A.pts[m]
+        pl = Plan(float(p[:, 0].min()) - 60, float(p[:, 0].max()) + 60, float(p[:, 1].min()) - 60,
+                  float(p[:, 1].max()) + 60, 0.5)
+        _draw_plan(pl, rail, world, removed, font)
+        tiles.append(pl.img)
+    pl = Plan(4000.0, 4800.0, 850.0, 1700.0, 0.6)
+    _draw_plan(pl, rail, world, removed, font)
+    tiles.append(pl.img)
+    row_w = sum(t.width for t in tiles) + 10 * len(tiles)
+    img = Image.new("RGB", (row_w, max(t.height for t in tiles)), (255, 255, 255))
+    x = 0
+    for t in tiles:
+        img.paste(t, (x, 0))
+        x += t.width + 10
+    img.save(out / "rail_massy.png")
     pl = Plan(790.0, 1110.0, -900.0, -760.0, 0.12)
     _draw_plan(pl, rail, world, removed, _font(14))
     pl.img.save(out / "station.png")
+    for name, box_ in (("palaiseau_villebon", (2690.0, 2860.0, -760.0, -420.0)), ("palaiseau", (3240.0, 3520.0, 190.0, 560.0)),
+                       ("massy_palaiseau", (4250.0, 4620.0, 1100.0, 1480.0))):
+        pl = Plan(*box_, 0.2)
+        _draw_plan(pl, rail, world, removed, _font(14))
+        pl.img.save(out / ("station_%s.png" % name))
     _profile(rail, H, out / "profile.png", font)
     _sections(rail, H, out / "sections.png", font)
-    print("review: %s" % ", ".join(str((out / f).relative_to(rg.ROOT)) for f in ("rail.png", "station.png",
+    print("review: %s" % ", ".join(str((out / f).relative_to(rg.ROOT)) for f in ("rail.png", "rail_massy.png", "station.png",
                                                                                   "profile.png", "sections.png")))
 
 

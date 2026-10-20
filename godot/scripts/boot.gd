@@ -2,19 +2,19 @@ extends Control
 ## First scene of the packed release builds (application/run/main_scene.packed: the "... Packed" export presets have
 ## the "packed" feature). To keep the download small, their executable does not carry the game's pack as it is:
 ## .github/workflows/build.yml exports it, tools/pack_game.sh compresses it into zstd chunks (res://pack/, with
-## manifest.json), and only the chunks, this scene and the autoloads (scripts/settings.gd, scripts/updater.gd) go into
-## the executable: the "Packed" presets' export_files list them. At the first start of each build the chunks are
-## unpacked into the cache folder (game-<id>.pck; the other builds' packs are deleted), then the pack is mounted and the
-## game opens. While the updater updates in the foreground (its own full-screen page), nothing is unpacked or loaded:
+## manifest.json), and only the chunks, this scene, scripts/delta.gd and the autoloads (scripts/settings.gd,
+## scripts/updater.gd) go into the executable: the "Packed" presets' export_files list them. The game runs from an
+## unpacked pack in the user data folder: the one the delta updates made for this launcher, or this executable's chunks,
+## unpacked at the first start of each build (scripts/delta.gd, Delta.installed()); the packs no launcher uses any more
+## are deleted. While the updater updates in the foreground (its own full-screen page), nothing is unpacked or loaded:
 ## the game restarts on the new build, or carries on once the update is skipped. Editor runs and the other exports start
 ## main.tscn directly.
 
+const Delta = preload("res://scripts/delta.gd")
 const UiStyle = preload("res://scripts/ui_style.gd")
-const MANIFEST := "res://pack/manifest.json"
 const GAME := "res://scenes/main.tscn"
 
-var _manifest: Dictionary
-var _target := ""                           # the unpacked pack
+var _data: Dictionary                       # Delta.installed()
 var _thread: Thread
 var _label: Label
 var _bar: ProgressBar
@@ -24,22 +24,22 @@ func _ready() -> void:
 	var updater := get_node_or_null("/root/AutoUpdater")
 	while updater and updater.foreground():
 		await updater.changed
-	var manifest: Variant = JSON.parse_string(FileAccess.get_file_as_string(MANIFEST)) \
-			if FileAccess.file_exists(MANIFEST) else null
-	if not manifest is Dictionary:
-		_open_game.call_deferred()
+	_data = Delta.installed()
+	if _data["path"] == "":
+		if _data["launcher"] == "" and not FileAccess.file_exists(Delta.MANIFEST):
+			_open_game.call_deferred()          # not a packed build
+		else:
+			_fail("the game data is missing: download the game again from its release page")
 		return
-	_manifest = manifest
-	var dir := OS.get_cache_dir().path_join("plateau-map") if OS.get_cache_dir() != "" else OS.get_user_data_dir()
-	DirAccess.make_dir_recursive_absolute(dir)
-	_target = dir.path_join("game-%s.pck" % _manifest["id"])
-	if _unpacked():
+	if not _data["embedded"] or Delta.has_file(_data["path"], int(_data["size"])):
 		_mount.call_deferred()
 		return
 	_build_ui()
-	print("Unpacking the game data to %s" % _target)
+	print("Unpacking the game data to %s" % _data["path"])
 	_thread = Thread.new()
-	_thread.start(_unpack)
+	_thread.start(func() -> void:
+		var err := Delta.unpack(_data["path"], func(f: float) -> void: _progress.call_deferred(f))
+		_unpack_done.call_deferred(err))
 
 
 func _build_ui() -> void:
@@ -63,41 +63,6 @@ func _build_ui() -> void:
 	UiStyle.centre(panel)
 
 
-func _unpacked() -> bool:
-	var f := FileAccess.open(_target, FileAccess.READ)
-	return f != null and f.get_length() == int(_manifest["size"])
-
-
-## On the thread: the chunks one after the other into a ".part" file, renamed when complete.
-func _unpack() -> void:
-	var part := "%s.%d.part" % [_target, OS.get_process_id()]
-	var err := _write(part)
-	if err == "":
-		DirAccess.remove_absolute(_target)      # a damaged one, or another instance just unpacked it too
-		if DirAccess.rename_absolute(part, _target) != OK and not _unpacked():
-			err = "cannot write %s" % _target
-	DirAccess.remove_absolute(part)
-	_unpack_done.call_deferred(err)
-
-
-func _write(part: String) -> String:
-	var f := FileAccess.open(part, FileAccess.WRITE)
-	if f == null:
-		return "cannot write %s (%s)" % [part, error_string(FileAccess.get_open_error())]
-	var done := 0
-	for chunk: Dictionary in _manifest["chunks"]:
-		var size := int(chunk["size"])
-		var data := FileAccess.get_file_as_bytes("res://pack/" + chunk["file"]).decompress(size,
-				FileAccess.COMPRESSION_ZSTD)
-		if data.size() != size:
-			return "damaged game data (%s)" % chunk["file"]
-		if not f.store_buffer(data):
-			return "cannot write %s (disk full?)" % part
-		done += size
-		_progress.call_deferred(float(done) / int(_manifest["size"]))
-	return ""
-
-
 func _progress(fraction: float) -> void:
 	_bar.value = fraction
 
@@ -107,25 +72,17 @@ func _unpack_done(err: String) -> void:
 	if err != "":
 		_fail(err)
 		return
+	Delta.write_pointer(_data["launcher"], _data["path"], _data["id"], _data["tag"], _data["run"], _data["commit"])
 	_mount()
 
 
 func _mount() -> void:
-	_remove_other_builds()
-	if not ProjectSettings.load_resource_pack(_target):
-		DirAccess.remove_absolute(_target)
-		_fail("cannot load %s, start the game again to unpack it again" % _target)
+	Delta.cleanup(_data["path"])
+	if not ProjectSettings.load_resource_pack(_data["path"]):
+		DirAccess.remove_absolute(_data["path"])
+		_fail("cannot load %s, start the game again to unpack it again" % _data["path"])
 		return
 	_open_game()
-
-
-## Packs (and leftover .part files) of other builds: each update unpacks its own.
-func _remove_other_builds() -> void:
-	var dir := _target.get_base_dir()
-	var own := _target.get_file()
-	for name in DirAccess.get_files_at(dir):
-		if name.begins_with("game-") and not name.begins_with(own):
-			DirAccess.remove_absolute(dir.path_join(name))
 
 
 func _open_game() -> void:
