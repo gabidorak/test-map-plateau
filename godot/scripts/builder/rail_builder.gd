@@ -211,6 +211,9 @@ func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_di
 	var b: Array = rail["box"]
 	_box = Rect2(b[0], b[1], float(b[2]) - float(b[0]), float(b[3]) - float(b[1]))
 	_track(node, root)
+	_rail_bridges(node)
+	_yard(node)
+	_islands(node)
 	_platforms(node)
 	_furniture(node)
 	_signals(node)
@@ -974,6 +977,184 @@ func _sleepers(span: Vector2, tracks: Array, tr: Dictionary) -> Dictionary:
 	return out
 
 
+# ---------------------------------------------------------------- rail bridges
+
+## The line's short bridges beyond the first box (rail.json rail_bridges: the ground under them is the road's): a
+## concrete deck under the formation from one formation edge to the other, parapets along both edges; collision for
+## the deck top and the parapets (the ballast is the track's).
+func _rail_bridges(node: Node3D) -> void:
+	var m := Mesher.new()
+	for k in (_rail.get("rail_bridges", []) as Array).size():
+		var b: Dictionary = _rail["rail_bridges"][k]
+		var info := {"type": "rail_structure", "kind": "rail_bridge", "id": "rail_bridge:%d" % k, "osm": b.get("osm", [])}
+		var faces := PackedVector3Array()
+		var s0: float = b["s0"]
+		var s1: float = b["s1"]
+		var n := maxi(1, ceili((s1 - s0) / 1.0))
+		var prev := []
+		for i in n + 1:
+			var s := lerpf(s0, s1, float(i) / n)
+			var F := _ew_at(s, "formation")
+			var ul := _ew_at(s, "edge", "left") + 0.3
+			var ur := -_ew_at(s, "edge", "right") - 0.3
+			var pl: Vector2 = _rm.point(s, ul)
+			var pr: Vector2 = _rm.point(s, ur)
+			var cur := [_g(pl.x, pl.y, F), _g(pr.x, pr.y, F), _g(pl.x, pl.y, F - 0.9), _g(pr.x, pr.y, F - 0.9)]
+			if not prev.is_empty():
+				var along: Vector3 = (cur[0] - prev[0]).normalized()
+				var left := Vector3.UP.cross(along).normalized() * -1.0
+				m.quad(prev[0], prev[1], cur[1], cur[0], Vector3.UP, CONCRETE)
+				faces.append_array([prev[0], prev[1], cur[1], prev[0], cur[1], cur[0]])
+				m.quad(prev[2], prev[3], cur[3], cur[2], Vector3.DOWN, Color(CONCRETE_DARK, 0.6))
+				m.quad(prev[0], cur[0], cur[2], prev[2], left, CONCRETE_DARK)
+				m.quad(prev[1], cur[1], cur[3], prev[3], -left, CONCRETE_DARK)
+				for e in [[prev[0], cur[0], left], [prev[1], cur[1], -left]]:
+					var a: Vector3 = e[0]
+					var c: Vector3 = e[1]
+					var o: Vector3 = e[2]
+					var h := Vector3(0.0, 1.0, 0.0)
+					m.quad(a, c, c + h, a + h, o, CONCRETE)
+					m.quad(a - o * 0.3, c - o * 0.3, c - o * 0.3 + h, a - o * 0.3 + h, -o, CONCRETE)
+					m.quad(a + h, c + h, c - o * 0.3 + h, a - o * 0.3 + h, Vector3.UP, CONCRETE)
+					faces.append_array([a - o * 0.3, c - o * 0.3, c - o * 0.3 + h, a - o * 0.3, c - o * 0.3 + h, a - o * 0.3 + h])
+			prev = cur
+		_shape_faces("RailBridge_%d" % k, faces, info)
+	_emit(node, "RailBridges", m, _mat_toy, {"type": "rail_structure", "id": "rail:bridges"}, PORTAL_RANGE)
+
+
+# ---------------------------------------------------------------- the yard (tools/rail/yard.py)
+
+## The yard's tracks beyond the alignment (rail.json yard tracks: each its own line, rail top per metre): rails and
+## sleepers per CHUNK m chunk; the ballast is the patched ground's ("yard" zones), the sleepers' tops show above it.
+func _yard(node: Node3D) -> void:
+	var yard: Dictionary = _rail.get("yard", {})
+	if yard.is_empty():
+		return
+	var tr: Dictionary = _rail["track"]
+	var half := float(tr["gauge"]) * 0.5 + float(tr["rail"]["head"]) * 0.5
+	var drop := float(tr["rail"]["height"]) + float(tr["pad"]) + float(tr["sleeper"]["depth"]) * 0.5
+	var spacing: float = tr["sleeper"]["spacing"]
+	var reach := Vector3.ONE * float(tr["sleeper"]["length"]) * 0.5
+	var track_node := node.get_node("Track")
+	var rails := {}                         # chunk -> Mesher
+	var sleepers := {}                      # chunk -> [buffer, AABB]
+	for t: Dictionary in yard.get("tracks", []):
+		var pts: Array = t["pts"]
+		var zs: Array = t["z"]
+		var hs: Array = t["heading"]
+		var prev := []
+		var next_sleeper := spacing * 0.5
+		var d := 0.0
+		var drawn: Array = t.get("drawn", [0, pts.size() - 1])     # its run on the map's ground (build_rail.py)
+		for i in range(int(drawn[0]), int(drawn[1]) + 1):
+			var p := Vector2(pts[i][0], pts[i][1])
+			if i > int(drawn[0]):
+				d += p.distance_to(Vector2(pts[i - 1][0], pts[i - 1][1]))
+			var th: float = hs[i]
+			var left := Vector3(-sin(th), 0.0, -cos(th))
+			var along := Vector3(cos(th), 0.0, -sin(th))
+			var basis := Basis(left, Vector3.UP, along)
+			var frames := []
+			for side: float in [-1.0, 1.0]:
+				var q := p + Vector2(-sin(th), cos(th)) * side * half
+				frames.append([_g(q.x, q.y, zs[i]), left, Vector3.UP])
+			var ck := Vector2i(floori(p.x / CHUNK), floori(p.y / CHUNK))
+			if not prev.is_empty():
+				if not rails.has(ck):
+					rails[ck] = Mesher.new()
+				for k in 2:
+					_rail_quads(rails[ck], prev[k], frames[k])
+			prev = frames
+			while next_sleeper <= d and i > int(drawn[0]):
+				var f := (d - next_sleeper) / maxf(p.distance_to(Vector2(pts[i - 1][0], pts[i - 1][1])), 1e-6)
+				var sp := p.lerp(Vector2(pts[i - 1][0], pts[i - 1][1]), f)
+				var sz := lerpf(zs[i], zs[i - 1], f) - drop
+				var sk := Vector2i(floori(sp.x / CHUNK), floori(sp.y / CHUNK))
+				if not sleepers.has(sk):
+					sleepers[sk] = [PackedFloat32Array(), AABB()]
+				var o := _g(sp.x, sp.y, sz) - Vector3((sk.x + 0.5) * CHUNK, 0.0, -(sk.y + 0.5) * CHUNK)
+				var g: Array = sleepers[sk]
+				g[0].append_array([basis.x.x, basis.y.x, basis.z.x, o.x, basis.x.y, basis.y.y, basis.z.y, o.y,
+						basis.x.z, basis.y.z, basis.z.z, o.z])
+				var box := AABB(o - reach, reach * 2.0)
+				g[1] = box if g[0].size() == 12 else (g[1] as AABB).merge(box)
+				next_sleeper += spacing
+	for ck: Vector2i in rails:
+		var chunk := _chunk(track_node, ck)
+		var mi := MeshInstance3D.new()
+		mi.name = "YardRails"
+		mi.mesh = MeshUtils.save((rails[ck] as Mesher).commit(_mat_toy), _mesh_dir + "rail_yard_rails_%d_%d.res" % [ck.x, ck.y])
+		mi.position = -chunk.position
+		mi.visibility_range_end = RAIL_RANGE
+		mi.visibility_range_end_margin = 10.0
+		mi.set_meta("plateau", {"type": "rail_track", "id": "rail:yard_%d_%d" % [ck.x, ck.y]})
+		chunk.add_child(mi)
+	var sleeper_mesh: ArrayMesh = load(_mesh_dir + "rail_sleeper.res")
+	for ck: Vector2i in sleepers:
+		var chunk := _chunk(track_node, ck)
+		var buf: PackedFloat32Array = sleepers[ck][0]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = sleeper_mesh
+		mm.instance_count = buf.size() / 12
+		mm.buffer = buf
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = "YardSleepers"
+		mmi.multimesh = mm
+		mmi.custom_aabb = sleepers[ck][1]
+		mmi.visibility_range_end = SLEEPER_RANGE
+		mmi.visibility_range_end_margin = 10.0
+		mmi.set_meta("plateau", {"type": "rail_track", "id": "rail:yard_sleepers_%d_%d" % [ck.x, ck.y]})
+		chunk.add_child(mmi)
+
+
+## The yard's islands (rail.json yard islands; their raised top is the patched ground's "island" zone): the edge
+## coping over each track, the light band and the tactile strip behind it (walkable: collision), railings across the
+## ends.
+func _islands(node: Node3D) -> void:
+	var m := Mesher.new()
+	for isl: Dictionary in _rail.get("yard", {}).get("islands", []):
+		var z: float = isl["top"]
+		var info := {"type": "rail_platform", "id": isl["id"], "osm": isl.get("osm", ""), "name": isl["name"],
+				"track": ", ".join(isl.get("refs", [])), "height": isl["top"], "tags": isl.get("tags", {})}
+		var faces := PackedVector3Array()
+		var spine: Array = isl["spine"]
+		for e: Dictionary in isl["edges"]:
+			var pts: Array = e["pts"]
+			for i in pts.size() - 1:
+				var a := Vector2(pts[i][0], pts[i][1])
+				var b := Vector2(pts[i + 1][0], pts[i + 1][1])
+				var c := Vector2(spine[mini(i, spine.size() - 1)][0], spine[mini(i, spine.size() - 1)][1])
+				var inward := (c - a).normalized()   # from the edge onto the island
+				var rows := []
+				for u: float in [0.0, COPING_BACK + 0.30, BAND, BAND + TACTILE]:     # the coping is 0.30 m over the wall
+					rows.append([a + inward * u, b + inward * u])
+				var e0: Array = rows[0]
+				var e1: Array = rows[1]
+				var top := [_g(e0[0].x, e0[0].y, z + 0.012), _g(e1[0].x, e1[0].y, z + 0.012), _g(e1[1].x, e1[1].y, z + 0.012),
+						_g(e0[1].x, e0[1].y, z + 0.012)]
+				m.quad(top[0], top[1], top[2], top[3], Vector3.UP, COPING)
+				var down := Vector3(0.0, -COPING_DEPTH - 0.012, 0.0)
+				m.quad(top[0], top[3], top[3] + down, top[0] + down, _gd(-inward), COPING_FACE)
+				faces.append_array([top[0], top[1], top[2], top[0], top[2], top[3]])
+				var b0: Array = rows[2]
+				var c0: Array = rows[3]
+				m.quad(_g(e1[0].x, e1[0].y, z + 0.006), _g(b0[0].x, b0[0].y, z + 0.006), _g(b0[1].x, b0[1].y, z + 0.006),
+						_g(e1[1].x, e1[1].y, z + 0.006), Vector3.UP, EDGE_SLABS)
+				m.quad(_g(b0[0].x, b0[0].y, z + 0.008), _g(c0[0].x, c0[0].y, z + 0.008), _g(c0[1].x, c0[1].y, z + 0.008),
+						_g(b0[1].x, b0[1].y, z + 0.008), Vector3.UP, TACTILE_COL)
+		_shape_faces("Island_" + String(isl["id"]).replace(":", "_"), faces, info)
+		# railings across both ends, edge to edge
+		var ea: Array = isl["edges"][0]["pts"]
+		var eb: Array = isl["edges"][1]["pts"]
+		for k in [0, -1]:
+			var a := Vector2(ea[k][0], ea[k][1])
+			var b := Vector2(eb[k][0], eb[k][1])
+			var d := (b - a).normalized()
+			_railing(m, a + d * 0.35, z, b - d * 0.35, z, RAILING_HEIGHT, true, info)
+	_emit(node, "Islands", m, _mat_toy, {"type": "rail_platform", "id": "rail:islands"}, STATION_RANGE)
+
+
 # ---------------------------------------------------------------- the platforms and the station
 
 ## Frame of a piece of platform furniture at map (x, y, z) beside s: x along the platform (eastwards on the north
@@ -1091,8 +1272,12 @@ func _furniture(node: Node3D) -> void:
 		var s: float = f.get("s", 0.0)
 		var fz: float = f.get("z", _ground_at(Vector2(f["x"], f["y"])))
 		var xf := _platform_frame(f["x"], f["y"], fz, s, side)
+		if pf.is_empty() and f.has("yaw"):     # a yard island's (build_rail.py island_furniture): its own heading
+			var to := Vector3(cos(deg_to_rad(f["yaw"])), 0.0, -sin(deg_to_rad(f["yaw"])))
+			xf = Transform3D(Basis(Vector3.UP.cross(to).normalized(), Vector3.UP, to), _g(f["x"], f["y"], fz))
+			pf = _island_of(f.get("platform", ""))
 		var info := {"type": "rail_furniture", "kind": f["kind"], "id": "rail:%s_%s_%d" % [f["kind"], f.get("platform", ""), roundi(s)],
-				"platform": f.get("platform", ""), "station": _rail["station"]["name"]}
+				"platform": f.get("platform", ""), "station": pf.get("name", _rail["station"]["name"])}
 		match f["kind"]:
 			"lamp":
 				_lamp(m, glow, xf, info)
@@ -1106,7 +1291,7 @@ func _furniture(node: Node3D) -> void:
 			"track_board":
 				_track_board(station, m, xf, f.get("text", ""), info)
 			"departure_screen":
-				_screen(station, m, glow, xf, f, n_screen, info)
+				_screen(station, m, glow, xf, f, n_screen, info, info["station"])
 				n_screen += 1
 			"gates":
 				info["name"] = f.get("name", "")
@@ -1117,6 +1302,13 @@ func _furniture(node: Node3D) -> void:
 	_emit(station, "Furniture", m, _mat_toy, {"type": "rail_furniture", "id": "rail:furniture"}, STATION_RANGE)
 	_emit(station, "Glow", glow, _mat_glow, {"type": "rail_furniture", "id": "rail:lamps"}, STATION_RANGE)
 	station.set_meta("lamp_lights", lights)          # night.gd lights the platforms from there
+
+
+func _island_of(id: String) -> Dictionary:
+	for isl: Dictionary in _rail.get("yard", {}).get("islands", []):
+		if isl["id"] == id:
+			return isl
+	return {}
 
 
 func _platform_of(id: String) -> Dictionary:
@@ -1191,7 +1383,8 @@ func _track_board(parent: Node3D, m: Mesher, xf: Transform3D, text: String, info
 
 ## A departure screen on a post, across the platform, readable from both ends; the runtime writes the next trains
 ## into its labels (named "Screen_<n>": the trains, scripts/train_traffic.gd).
-func _screen(parent: Node3D, m: Mesher, glow: Mesher, xf: Transform3D, f: Dictionary, k: int, info: Dictionary) -> void:
+func _screen(parent: Node3D, m: Mesher, glow: Mesher, xf: Transform3D, f: Dictionary, k: int, info: Dictionary,
+		station_name := "Lozère") -> void:
 	m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 1.3, 0.0)), Vector3(0.1, 2.6, 0.1), ANTHRACITE)
 	_shape_box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 1.3, 0.0)), Vector3(0.12, 2.6, 0.12), info)
 	var across := Basis(Vector3.UP, PI * 0.5)        # its faces along the platform
@@ -1210,7 +1403,7 @@ func _screen(parent: Node3D, m: Mesher, glow: Mesher, xf: Transform3D, f: Dictio
 		side.name = "Face%d" % (0 if face > 0.0 else 1)
 		side.rotation.y = 0.0 if face > 0.0 else PI
 		holder.add_child(side)
-		var l := _label(side, "Lozère\n—", centre + Vector3(0.0, 0.0, 0.07), 26, SCREEN_AMBER, 0.95)
+		var l := _label(side, station_name + "\n—", centre + Vector3(0.0, 0.0, 0.07), 26, SCREEN_AMBER, 0.95)
 		l.name = "Text"
 
 

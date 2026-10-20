@@ -15,15 +15,24 @@ extends RefCounted
 ## Collision: one StaticBody3D, one concave shape per mass from the plain tier prisms and the pillars.
 ## Landmarks (M9): toy.styles holds per-facade styles (runs[k][3] indexes it; volume tiers too), a style's
 ## ground_wall colours the ground floor band, toy.columns are round columns (kit pilotis + collision boxes).
+## Houses (pipeline/plateau/houses.py): a body tier with `house` carries gabled or hipped roof rectangles that
+## interpenetrate (L and T houses), drawn with tiles, an overhang (soffit + fascia), gable walls and a chimney.
+## Interiors (world/interiors.json, builder/interior_builder.gd): such a building is reshaped (reshape): its tiers start
+## at the interior's ceiling, floating over a glass ground floor the interior builder draws, in the interior's style,
+## and its name sign is left out (the interior has its own); the kit modules on its facade below the ceiling or listed in
+## its `drop_modules` go too.
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
+const InteriorBuilder = preload("res://scripts/builder/interior_builder.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const SHADER := "res://shaders/toy_building.gdshader"
 const PROP_SHADER := "res://shaders/toy_prop.gdshader"
 const GLASS_SHADER := "res://shaders/toy_prop_glass.gdshader"
 const KIT_DIR := "res://assets/building_kit/"
 const CHUNK := 96.0
-const PART := {"wall": 0, "roof": 1, "coping": 2, "parapet": 3, "soffit": 4, "fascia": 5, "plant": 6, "pitched": 7}
+const PART := {"wall": 0, "roof": 1, "coping": 2, "parapet": 3, "soffit": 4, "fascia": 5, "plant": 6, "pitched": 7,
+		"eave": 8, "tiles": 9, "green": 10}
+const HOUSE_SOFFIT := Color(0.93, 0.9, 0.85)
 const BEVEL_MID := Vector2(0.293, 0.707)   # quarter round: inset and height shares of the middle ring
 const PILLAR_SIZE := 0.45
 const PILLAR_SIZE_TALL := 0.75
@@ -37,6 +46,7 @@ var _kit_scene: Node
 var _kit_mats := {}
 var _groups := {}
 var _mesh_dir := ""
+var _interiors := {}                    # building id -> interior spec (world/interiors.json)
 
 
 ## Packed vertex buffers of one mesh (non-indexed triangles).
@@ -115,6 +125,7 @@ func build(root: Node3D, world: Dictionary, mesh_dir: String) -> Error:
 		push_error("no building kit: run blender/building_kit/build_kit.py")
 		return ERR_FILE_NOT_FOUND
 	_kit = manifest["models"]
+	_interiors = InteriorBuilder.load_specs()
 	for name: String in world["building_kit"]:
 		if not _kit.has(name):
 			push_error("building kit module %s missing from kit.json: run blender/building_kit/build_kit.py" % name)
@@ -137,12 +148,16 @@ func build(root: Node3D, world: Dictionary, mesh_dir: String) -> Error:
 	for b: Dictionary in world["buildings"]:
 		var buf := Buf.new()
 		var faces := PackedVector3Array()
-		var toy: Dictionary = b["toy"]
+		var interior: Dictionary = _interiors.get(b["id"], {})
+		var toy: Dictionary = b["toy"] if interior.is_empty() else InteriorBuilder.reshape(b["toy"], interior)
 		for t: Dictionary in toy["tiers"]:
 			_add_tier(buf, faces, b, toy, t)
 		_add_pillars(faces, b, toy)
 		_add_columns(faces, toy)
 		var info := info_of(b)
+		if not interior.is_empty():
+			info["name"] = interior["name"]
+			info["interior"] = interior["kind"]
 		var node_name := String(b["id"]).replace(":", "_")
 		var mi := MeshInstance3D.new()
 		mi.name = node_name
@@ -323,7 +338,8 @@ func _add_tier(buf: Buf, faces: PackedVector3Array, b: Dictionary, toy: Dictiona
 	var zr := deck if par > 0.0 else top
 	buf.color = roof_col
 	buf.uv2_val = Vector2(0.0, deck - base)
-	buf.cust = [Color(st["g"], st["f"], -1.0, st["bay"]), Color(PART["roof"], st["floors"], st["ground"], st["material"]), c2, c3]
+	var roof_part: int = PART["green"] if t.get("green", false) else PART["roof"]
+	buf.cust = [Color(st["g"], st["f"], -1.0, st["bay"]), Color(roof_part, st["floors"], st["ground"], st["material"]), c2, c3]
 	if t.has("apex"):
 		var ax: Array = t["apex"]
 		var apex := MeshUtils.to_godot(ax[0], ax[1], top + float(ax[2]))
@@ -343,6 +359,8 @@ func _add_tier(buf: Buf, faces: PackedVector3Array, b: Dictionary, toy: Dictiona
 			var bb := flat_c[cap[k + 1]]
 			var c := flat_c[cap[k + 2]]
 			buf.tri(_g(a, zr), _g(bb, zr), _g(c, zr), up, up, up, a, bb, c, up)
+	if t.has("house"):
+		_add_house_roof(buf, faces, b, st, t)
 	if t["floating"]:
 		buf.color = wall_col
 		buf.cust = [Color(st["g"], st["f"], -1.0, st["bay"]), Color(PART["soffit"], st["floors"], st["ground"], st["material"]), c2, c3]
@@ -352,6 +370,148 @@ func _add_tier(buf: Buf, faces: PackedVector3Array, b: Dictionary, toy: Dictiona
 			var bb := flat_v[tris[k + 1]]
 			var c := flat_v[tris[k + 2]]
 			buf.tri(_g(a, z0), _g(bb, z0), _g(c, z0), down, down, down, a, bb, c, down)
+
+
+# ---------------------------------------------------------------- house roofs
+
+## Pitched roofs of a house on top of its body tier: every part (centre, unit vector along the ridge, half
+## length, half width; pipeline frame) is a hipped or gabled roof starting at the eaves (the tier top) with
+## the house's slope, `over` m beyond the walls, `thick` m thick. Planes of one part: z = top + slope * d with
+## d the distance inside its rectangle, so neighbouring parts meet in valleys where their roofs cross.
+func _add_house_roof(buf: Buf, faces: PackedVector3Array, b: Dictionary, st: Dictionary, t: Dictionary) -> void:
+	var h: Dictionary = t["house"]
+	var top: float = t["top"]
+	var base: float = b["base_z"]
+	var s: float = h["slope"]
+	var o: float = h["over"]
+	var th: float = h["thick"]
+	var hip: bool = h["kind"] == "hip"
+	var roof_col := Color.html(t["roof"])
+	var wall_col := Color.html(st["wall"])
+	var c2 := _c2(st)
+	var c3 := Color(float(st["seed"]), float(st["levels"]), top - base, 0.0)
+	var c0 := Color(st["g"], st["f"], -1.0, st["bay"])
+	for part: Array in h["parts"]:
+		var c := Vector2(part[0], part[1])
+		var u := Vector2(part[2], part[3])
+		var v := Vector2(-u.y, u.x)
+		var ha: float = part[4]
+		var hc: float = part[5]
+		var A := ha + o
+		var C := hc + o
+		var r := maxf(ha - hc, 0.0) if hip else A
+		var z_eave := top + th - s * o               # top of the covering at the eave line
+		var z_ridge := top + th + s * hc
+		# (a, c, z) corners of the top faces: two long slopes, and the hip ends when hipped
+		var P := func(a: float, cc: float, z: float) -> Vector3:
+			var p := c + u * a + v * cc
+			return Vector3(p.x, z, -p.y)
+		var quads := [
+			[P.call(-A, C, z_eave), P.call(A, C, z_eave), P.call(r, 0.0, z_ridge), P.call(-r, 0.0, z_ridge)],
+			[P.call(A, -C, z_eave), P.call(-A, -C, z_eave), P.call(-r, 0.0, z_ridge), P.call(r, 0.0, z_ridge)],
+		]
+		if hip:
+			quads.append([P.call(A, -C, z_eave), P.call(A, C, z_eave), P.call(r, 0.0, z_ridge)])
+			quads.append([P.call(-A, C, z_eave), P.call(-A, -C, z_eave), P.call(-r, 0.0, z_ridge)])
+		for f: Array in quads:
+			var n := _roof_normal(f)
+			# tiles: u along the eave of the face, v the world height (courses)
+			var eh := Vector2(n.z, -n.x).normalized() if Vector2(n.x, n.z).length() > 1e-4 else Vector2(1.0, 0.0)
+			buf.color = roof_col
+			buf.uv2_val = Vector2.ZERO
+			buf.cust = [c0, Color(PART["tiles"], st["floors"], st["ground"], st["material"]), c2, c3]
+			_roof_poly(buf, f, n, eh)
+			for k in range(1, f.size() - 1):
+				_col_tri(faces, f[0], f[k], f[k + 1], n)
+			# underside (soffit under the overhang) and its normal
+			var under := []
+			for p: Vector3 in f:
+				under.append(p - Vector3(0.0, th, 0.0))
+			buf.color = HOUSE_SOFFIT
+			buf.cust[1] = Color(PART["eave"], st["floors"], st["ground"], st["material"])
+			_roof_poly(buf, under, -n, eh)
+		# fascia boards along the eaves (and the verges of a gable)
+		buf.color = roof_col.darkened(0.25)
+		buf.cust[1] = Color(PART["eave"], st["floors"], st["ground"], st["material"])
+		var edges := [[P.call(-A, C, z_eave), P.call(A, C, z_eave)], [P.call(A, -C, z_eave), P.call(-A, -C, z_eave)]]
+		if hip:
+			edges.append([P.call(A, C, z_eave), P.call(A, -C, z_eave)])
+			edges.append([P.call(-A, -C, z_eave), P.call(-A, C, z_eave)])
+		else:
+			for sa: float in [1.0, -1.0]:
+				edges.append([P.call(sa * A, sa * C, z_eave), P.call(sa * A, 0.0, z_ridge)])
+				edges.append([P.call(sa * A, 0.0, z_ridge), P.call(sa * A, -sa * C, z_eave)])
+		var mid: Vector3 = P.call(0.0, 0.0, top)
+		for e: Array in edges:
+			var p0: Vector3 = e[0]
+			var p1: Vector3 = e[1]
+			var out := (p1 - p0).cross(Vector3.UP).normalized()
+			if out.dot(p0 - mid) < 0.0:
+				out = -out
+			var dn := Vector3(0.0, th, 0.0)
+			buf.quad(p0 - dn, p1 - dn, p1, p0, out, out, out, out, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, out)
+		# gable walls in the wall colour, above the window floors (no windows)
+		if not hip:
+			buf.color = wall_col
+			buf.uv2_val = Vector2(2.0 * hc, top - base)
+			buf.cust = [c0, Color(PART["wall"], st["floors"], st["ground"], st["material"]), c2, c3]
+			for sa: float in [1.0, -1.0]:
+				var g0: Vector3 = P.call(sa * ha, -hc, top)
+				var g1: Vector3 = P.call(sa * ha, hc, top)
+				var g2: Vector3 = P.call(sa * ha, 0.0, top + s * hc)
+				var gn := Vector3(u.x, 0.0, -u.y) * sa
+				buf.tri(g0, g1, g2, gn, gn, gn, Vector2(0.0, top - base), Vector2(2.0 * hc, top - base),
+						Vector2(hc, top + s * hc - base), gn)
+				_col_tri(faces, g0, g1, g2, gn)
+	if h.has("chimney"):
+		_add_chimney(buf, h, top, Vector2(h["parts"][0][2], h["parts"][0][3]), wall_col, st, c0, c2, c3)
+
+
+func _add_chimney(buf: Buf, h: Dictionary, top: float, u: Vector2, wall_col: Color, st: Dictionary, c0: Color,
+		c2: Color, c3: Color) -> void:
+	var ch: Array = h["chimney"]
+	var hs: float = ch[3] / 2.0
+	var v := Vector2(-u.y, u.x)
+	var ctr := Vector2(ch[0], ch[1])
+	var z1: float = ch[2]
+	var corners: Array[Vector2] = [ctr - u * hs - v * hs, ctr + u * hs - v * hs, ctr + u * hs + v * hs, ctr - u * hs + v * hs]
+	buf.color = wall_col.darkened(0.12)
+	buf.uv2_val = Vector2.ZERO
+	buf.cust = [c0, Color(PART["eave"], st["floors"], st["ground"], st["material"]), c2, c3]
+	var mid := _g(ctr, top)
+	for i in 4:
+		var p := corners[i]
+		var q := corners[(i + 1) % 4]
+		var nrm := Vector3(q.y - p.y, 0.0, q.x - p.x).normalized()
+		if nrm.dot(_g(p, top) - mid) < 0.0:
+			nrm = -nrm
+		buf.quad(_g(p, top), _g(q, top), _g(q, z1), _g(p, z1), nrm, nrm, nrm, nrm, Vector2.ZERO, Vector2.ZERO,
+				Vector2.ZERO, Vector2.ZERO, nrm)
+	buf.color = wall_col.darkened(0.45)
+	buf.quad(_g(corners[0], z1), _g(corners[1], z1), _g(corners[2], z1), _g(corners[3], z1), Vector3.UP, Vector3.UP,
+			Vector3.UP, Vector3.UP, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector3.UP)
+
+
+## Upward normal of a planar roof face (Godot coordinates).
+static func _roof_normal(f: Array) -> Vector3:
+	var p0: Vector3 = f[0]
+	var n := Vector3.ZERO
+	for k in range(1, f.size() - 1):
+		n += (f[k] - p0).cross(f[k + 1] - p0)
+	n = n.normalized()
+	return -n if n.y < 0.0 else n
+
+
+## A fan of a convex face (3 or 4 corners, possibly two of them equal), facing `n`.
+static func _roof_poly(buf: Buf, f: Array, n: Vector3, eh: Vector2) -> void:
+	for k in range(1, f.size() - 1):
+		var a: Vector3 = f[0]
+		var bb: Vector3 = f[k]
+		var c: Vector3 = f[k + 1]
+		if (bb - a).cross(c - a).length_squared() < 1e-8:
+			continue
+		buf.tri(a, bb, c, n, n, n, Vector2(a.x * eh.x + a.z * eh.y, a.y), Vector2(bb.x * eh.x + bb.z * eh.y, bb.y),
+				Vector2(c.x * eh.x + c.z * eh.y, c.y), n)
 
 
 ## CUSTOM2: accent colour and top style + 4 * window variant.
@@ -422,7 +582,10 @@ func _modules(root: Node3D, world: Dictionary) -> Error:
 		push_error("missing %skit.glb: run blender/building_kit/build_kit.py, then godot --headless --import" % KIT_DIR)
 		return ERR_FILE_NOT_FOUND
 	_kit_scene = load(KIT_DIR + "kit.glb").instantiate()
+	var dropped := InteriorBuilder.dropped_modules(world, _interiors)
 	for md: Dictionary in world["building_modules"]:
+		if dropped.call(md):
+			continue
 		var s: Array = md.get("s", [1.0, 1.0, 1.0])
 		var theta := deg_to_rad(float(md["yaw"])) + PI / 2.0
 		var xf := Transform3D(Basis(Vector3.UP, theta) * Basis.from_scale(Vector3(s[0], s[2], s[1])),
@@ -509,6 +672,8 @@ func _signs(node: Node3D, world: Dictionary) -> void:
 	node.add_child(parent)
 	var mats := {}
 	for s: Dictionary in world["building_signs"]:
+		if _interiors.has("osm:" + String(s["building"])):
+			continue
 		var w: float = s["w"]
 		var holder := Node3D.new()
 		holder.name = String(s["building"]).replace(":", "_")

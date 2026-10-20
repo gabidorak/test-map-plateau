@@ -18,9 +18,13 @@ extends "res://scripts/car.gd"
 ## from how fast their pose moves. Its rounds-and-water health is the cars' (car.gd): at 0 the horse lies down (no fire,
 ## no smoke) until it gets up REPAIR_AFTER s later or after EXTINGUISH s of the fire truck's water. Vehicles do not
 ## knock props over with it (breakables.gd skips "knocks_props" = false).
+## In deep water (scripts/water.gd) it swims: held with its back at the surface (SWIM_DRAFT), slowly (SWIM_SPEED), no
+## jumps; the legs paddle in a walk.
 ## Frame: like the cars, +Z forward, +X its left, origin on the ground between the hooves.
 
 const Biplane = preload("res://scripts/plane.gd")
+const SWIM_DRAFT := 1.45                    # m of its legs and barrel under the surface while it swims
+const SWIM_SPEED := 2.2                     # m/s
 const MASS := 500.0                         # kg
 const CANTER := 7.5                         # m/s with W...
 const GALLOP := 13.0                        # ...and with Shift too
@@ -65,6 +69,7 @@ const BIT := Vector3(0.09, -0.32, 0.36)     # left end of the bit, head frame (m
 const HAND := Vector3(0.13, 0.32, 0.45)     # rider's left hand, rider frame (mirrored)
 
 var on_ground := false
+var swimming := false
 var gait := "stand"
 var _airborne := false                      # jumping or falling (LAN: from the state)
 var _ground_y := NAN                        # under the hooves (mean of the front and the hind ones)
@@ -407,6 +412,7 @@ func ring_bell() -> void:
 
 func _physics_process(delta: float) -> void:
 	_measure_ground()
+	_float()
 	_measure_motion(delta)
 	if remote:
 		return
@@ -427,7 +433,7 @@ func _physics_process(delta: float) -> void:
 	var vf := v.dot(f)
 	var target := 0.0
 	if fwd_in > 0.0:
-		target = (GALLOP if fast else CANTER) * fwd_in
+		target = (SWIM_SPEED if swimming else GALLOP if fast else CANTER) * fwd_in
 	elif fwd_in < 0.0:
 		target = 0.0 if vf > 0.3 else -BACK_SPEED
 	on_ground = not is_nan(_ground_y) and _gap < REACH and not (_since_jump < 0.3 and v.y > 0.0)
@@ -442,7 +448,7 @@ func _physics_process(delta: float) -> void:
 		var a_s := clampf(-v.dot(r) * SIDE_GRIP, -15.0, 15.0)
 		var a_y := clampf(_gravity + RIDE_K * (_ground_y - global_position.y) - RIDE_C * v.y, 0.0, _gravity * 16.0)
 		force = (f * a_f + r * a_s + Vector3.UP * a_y) * mass
-	if _jump_buffer > 0.0 and _since_jump > 0.3 and (on_ground or _since_ground < COYOTE):
+	if _jump_buffer > 0.0 and _since_jump > 0.3 and (on_ground or _since_ground < COYOTE) and not swimming:
 		_jump(f, r, vf)
 		force = Vector3.ZERO
 	apply_central_force(force)
@@ -484,6 +490,20 @@ func _measure_ground() -> void:
 	_ground_y = (front + back) * 0.5
 	_gap = global_position.y - _ground_y
 	_slope = atan2(front - back, 2.0 * HOOF_Z)
+
+
+## Deep water: the surface less SWIM_DRAFT is the "ground" its spring holds it at (it swims); a splash going in.
+func _float() -> void:
+	var lvl := Water.surface_at(global_position)
+	var was := swimming
+	swimming = not is_nan(lvl) and (is_nan(_ground_y) or lvl - SWIM_DRAFT > _ground_y)
+	if not swimming:
+		return
+	_ground_y = lvl - SWIM_DRAFT
+	_gap = global_position.y - _ground_y
+	_slope = 0.0
+	if not was and Water.current:
+		Water.current.splash(global_position + Vector3.UP * SWIM_DRAFT, maxf(absf(linear_velocity.y), 3.0), 1.2)
 
 
 ## Speed and turn rate for the animation: the body's own, or for a remote copy how fast its pose moves.
@@ -540,7 +560,8 @@ func apply_net_state(a: Array, b: Array, w: float) -> void:
 
 
 func dash_text() -> String:
-	var line := "%3d km/h   %s" % [roundi(absf(_fwd_speed) * 3.6), "backing up" if _fwd_speed < -0.2 else GAIT_NAMES[gait]]
+	var line := "%3d km/h   %s" % [roundi(absf(_fwd_speed) * 3.6), "swimming" if swimming else "backing up"
+			if _fwd_speed < -0.2 else GAIT_NAMES[gait]]
 	if broken:
 		line += "\nDOWN · back on its feet in %d s" % ceili(repair_in())
 	return line

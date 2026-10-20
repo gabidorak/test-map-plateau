@@ -25,6 +25,9 @@ const int SOFFIT = 4;
 const int FASCIA = 5;
 const int PLANT = 6;
 const int PITCHED = 7;
+const int EAVE = 8;         // house roofs: soffit, fascia, chimney (plain vertex colour)
+const int TILES = 9;        // house roofs: UV = (along the eave, world height)
+const int GREEN = 10;       // planted (sedum) roof of a landmark: UV = world (x, y), COLOR = the sedum green
 
 const int F_BLIND = 0;
 const int F_PUNCHED = 1;
@@ -35,6 +38,7 @@ const int F_BALCONIES = 5;
 const int F_LOGGIAS = 6;
 const int F_HIGH_BAND = 7;
 const int F_GRID = 8;
+const int F_HOUSE = 9;      // houses: punched windows with shutters, white frames, one front door
 
 const int G_PLAIN = 0;
 const int G_SHOPFRONT = 1;
@@ -163,6 +167,7 @@ vec4 window_rect(int fs, float bw, float fh) {
 	if (fs == F_BALCONIES) return vec4(clamp(bw * 0.3, 0.55, 1.1), 0.05, fh - 0.45, 1.0);
 	if (fs == F_LOGGIAS) return vec4(bw * 0.4, 0.0, fh - 0.3, 2.0);
 	if (fs == F_GRID) return vec4(bw * 0.36, 0.75, fh - 0.55, 1.0);
+	if (fs == F_HOUSE) return vec4(clamp(bw * 0.19, 0.42, 0.62), 0.95, fh - 0.5, 1.0);
 	return vec4(0.0);
 }
 
@@ -194,9 +199,42 @@ void fragment() {
 		float grit = hash12(floor(p * 9.0) + seed);
 		float seam = lines(p.x + 0.3 * p.y, 1.1, 0.03, fwidth(p.x));
 		col *= (0.94 + 0.1 * grit * detail(0.11, fwidth(p.x))) * (1.0 - 0.12 * seam) * (0.96 + 0.08 * fbm(p * 0.2));
+	} else if (part == GREEN) {
+		// sedum mats: green with drifts of olive, ochre and rust (they turn red in the sun), tufts and the rows of
+		// the planting trays
+		vec2 p = UV;
+		float fwp = fwidth(p.x) + fwidth(p.y);
+		float drift = fbm(p * 0.09 + seed * 0.37);
+		float rust = smoothstep(0.55, 0.72, fbm(p * 0.05 + vec2(seed * 0.11, 3.7)));
+		vec3 olive = vec3(0.5, 0.56, 0.2);
+		vec3 ochre = vec3(0.68, 0.46, 0.2);
+		vec3 red = vec3(0.62, 0.27, 0.17);
+		col = mix(col, olive, smoothstep(0.45, 0.7, drift) * 0.45);
+		col = mix(col, mix(ochre, red, smoothstep(0.5, 0.75, drift)), rust * 0.9);
+		float tuft = hash12(floor(p * 4.0) + seed);
+		col *= mix(1.0, 0.86 + 0.24 * tuft, detail(0.25, fwp));
+		float tray = max(lines(p.x, 1.2, 0.025, fwidth(p.x)), lines(p.y, 1.2, 0.025, fwidth(p.y)));
+		col *= 1.0 - 0.1 * tray * detail(1.2, fwp);
+		rough = 0.97;
+		spec = 0.15;
 	} else if (part == PITCHED) {
 		float row = lines(wpos.y, 0.32, 0.03, fwidth(wpos.y));
 		col *= (1.0 - 0.25 * row) * (0.95 + 0.08 * hash12(vec2(floor(wpos.y / 0.32), floor(UV.x * 2.0)) + seed));
+	} else if (part == TILES) {
+		// courses of tiles (curved terracotta when reddish, flat slates or tiles otherwise), joints staggered
+		float row = floor(UV.y / 0.21);
+		float bx = (UV.x + mod(row, 2.0) * 0.14) / 0.28;
+		float id = hash12(vec2(floor(bx), row) + seed);
+		float t = fract(UV.y / 0.21);
+		float fwr = fwidth(UV.y) + fwidth(UV.x);
+		float shade = mix(0.8, 1.0, smoothstep(0.0, 0.4, t));
+		float joint = 1.0 - smoothstep(0.01, 0.01 + fwr * 2.0, abs(fract(bx + 0.5) - 0.5) * 0.28);
+		float terracotta = smoothstep(0.05, 0.15, col.r - col.b);
+		float ripple = 0.9 + 0.1 * sin(fract(bx) * 6.2832);
+		col *= (0.92 + 0.14 * id) * mix(1.0, shade * mix(1.0 - 0.2 * joint, ripple, terracotta), detail(0.3, fwr));
+		col *= 0.97 + 0.06 * fbm(UV * 0.3 + seed);
+	} else if (part == EAVE) {
+		rough = 0.8;
 	} else if (part == COPING) {
 		col = coping_color.rgb;
 		rough = 0.5;
@@ -253,6 +291,9 @@ void fragment() {
 				rect = window_rect(fs, bw, fh);
 			}
 		}
+		if (fs == F_HOUSE && k == 0 && door >= 0.0 && abs((bi + 0.5) * bw - door) < bw * 0.5 + 0.6) {
+			rect = vec4(0.0);
+		}
 		// window variants (M9): pairs get wider openings split by a pier, framed ones a thick frame; staggered
 		// windows move along their bay from floor to floor
 		if (k > 0 && rect.w > 0.0 && rect.w < 1.5) {
@@ -288,6 +329,17 @@ void fragment() {
 		// shingles: a dark joint along each floor line
 		if (mat == M_SHINGLES && k > 0 && y < 0.05 && h >= 0.0) {
 			outc = mix(wall, accent * 0.7, 0.8);
+		}
+		// house shutters: one each side of the window, the width of half the window, horizontal louvres
+		bool house = fs == F_HOUSE;
+		vec3 house_frame = vec3(0.93, 0.93, 0.9);
+		if (house && rect.w == 1.0 && rect.z > rect.y) {
+			float sx = abs(x) - rect.x - 0.04;
+			float sy = abs(y - (rect.y + rect.z) * 0.5) - (rect.z - rect.y) * 0.5;
+			if (sx > 0.0 && sx < rect.x && sy < 0.0) {
+				outc = accent * (1.0 - 0.28 * lines(y, 0.075, 0.025, fw)) * (sx < 0.03 || sx > rect.x - 0.03 ? 0.8 : 1.0);
+				rough = 0.6;
+			}
 		}
 		// windows
 		float coverage = 0.0;
@@ -335,9 +387,9 @@ void fragment() {
 					emis = lamp * lit * (1.0 - fres) * 1.1;
 					outc = mix(room, sky_reflection(v_world, wnrm), fres);
 					// mullion and transom
-					float mull = curtain || fs == F_RIBBON || gs == G_LOBBY ? 1.0 - smoothstep(0.02, 0.02 + fw, abs(gq.x)) : 0.0;
+					float mull = curtain || fs == F_RIBBON || gs == G_LOBBY || house ? 1.0 - smoothstep(0.02, 0.02 + fw, abs(gq.x)) : 0.0;
 					float tran = (fs == F_PUNCHED || fs == F_GRID) && k > 0 ? 1.0 - smoothstep(0.02, 0.02 + fw, abs(gq.y - hh * 0.45)) : 0.0;
-					outc = mix(outc, accent, max(mull, tran) * detail(0.08, fw));
+					outc = mix(outc, house ? house_frame : accent, max(mull, tran) * detail(0.08, fw));
 					if (curtain) {
 						float slab = 1.0 - smoothstep(0.3, 0.3 + fw, abs(y - fh + 0.2));
 						outc = mix(outc, mix(glass_deep_color.rgb, accent, 0.35), slab);
@@ -345,15 +397,25 @@ void fragment() {
 					rough = 0.08;
 					spec = 0.6;
 				} else if (abs(q.x) > hw - fr || abs(q.y) > hh - fr) {
-					outc = accent;               // the frame
+					outc = house ? house_frame : accent;   // the frame
 					rough = 0.5;
 				} else {
 					outc = wall * (gq.y > 0.0 ? 0.58 : 0.82);   // reveal: lintel soffit darker than the sill
 				}
 			}
 		}
-		// door
-		if (door >= 0.0 && k == 0 && abs(u - door) < 1.0 && y < 2.55 && h > -1.0) {
+		// door: a house has one panelled leaf in its shutter colour, in a white frame
+		if (house && door >= 0.0 && k == 0 && abs(u - door) < 0.6 && y < 2.25 && h > -1.0) {
+			float dx = abs(u - door);
+			if (dx > 0.5 || y > 2.15) {
+				outc = house_frame;
+			} else {
+				float panel = max(1.0 - smoothstep(0.02, 0.02 + fw, abs(dx - 0.3)), 1.0 - smoothstep(0.02, 0.02 + fw, abs(y - 1.0)));
+				outc = accent * 0.82 * (1.0 - 0.25 * panel * step(dx, 0.3) * step(0.25, y) * step(y, 1.9));
+				rough = 0.45;
+			}
+			coverage = 0.0;
+		} else if (door >= 0.0 && k == 0 && abs(u - door) < 1.0 && y < 2.55 && h > -1.0) {
 			float dx = u - door;
 			if (abs(dx) > 0.9 || y > 2.45) {
 				outc = accent;

@@ -2,7 +2,8 @@
 extends RefCounted
 ## Ground (milestone M4): the draped ground mesh from the pipeline (world/ground.bin, see
 ## pipeline/plateau/ground_mesh.py) as one MeshInstance3D per 64 m chunk with the toy ground shader,
-## collision for raised sidewalks, and the runtime grass scatter. The orthophoto is never used.
+## collision for raised sidewalks, and the runtime grass scatter. The orthophoto is never used. Under the lakes and
+## ponds the ground is dug out and their water surface laid over it (root's "Water", scripts/water.gd).
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
@@ -17,10 +18,11 @@ const MATERIALS := ["asphalt", "concrete", "paving", "sett", "gravel", "dirt", "
 
 func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String) -> Error:
 	var gm: Dictionary = world["ground_mesh"]
-	if gm["materials"] != MATERIALS:
+	# the railway patch (tools/rail/patch_world.py) appends "ballast": a world without it builds too
+	if gm["materials"] != MATERIALS and gm["materials"] != MATERIALS.slice(0, MATERIALS.size() - 1):
 		push_error("ground materials changed in the pipeline: update toy_ground.gdshader and ground_builder.gd")
 		return ERR_INVALID_DATA
-	var bytes := FileAccess.get_file_as_bytes(world_dir.path_join(gm["file"]))
+	var files := {}                     # ground.bin and its parts ground.1.bin... (a chunk's "file") once read
 	var mat := ShaderMaterial.new()
 	mat.shader = load(SHADER)
 	MeshUtils.save(mat, mesh_dir + "ground_material.tres")
@@ -35,7 +37,13 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 	body.set_meta("plateau", {"type": "ground", "id": "ground:raised"})
 	root.add_child(body)
 	var custom_flags := Mesh.ARRAY_CUSTOM_RGBA8_UNORM << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+	var water: Variant = root.get_node_or_null("Water")
+	var water_id := MATERIALS.find("water")
 	for c: Dictionary in gm["chunks"]:
+		var file: String = c.get("file", gm["file"])
+		if not files.has(file):
+			files[file] = FileAccess.get_file_as_bytes(world_dir.path_join(file))
+		var bytes: PackedByteArray = files[file]
 		var raw := bytes.slice(c["offset"], c["offset"] + c["size"]).decompress(c["raw"], FileAccess.COMPRESSION_DEFLATE)
 		if raw.size() != int(c["raw"]):
 			push_error("ground chunk %s is corrupt" % c["name"])
@@ -51,11 +59,23 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 		if nv > 0:
 			var arrays := []
 			arrays.resize(Mesh.ARRAY_MAX)
-			arrays[Mesh.ARRAY_VERTEX] = parts[0].to_vector3_array()
-			arrays[Mesh.ARRAY_NORMAL] = parts[1].to_vector3_array()
+			var verts: PackedVector3Array = parts[0].to_vector3_array()
+			var normals: PackedVector3Array = parts[1].to_vector3_array()
+			var index: PackedInt32Array = parts[4].to_int32_array()
+			var a: Array = c["aabb"]
+			if water and water.touches(AABB(Vector3(a[0], a[1], a[2]), Vector3(a[3], a[4], a[5]))):
+				water.carve_vertices(verts, normals)
+				var is_water := PackedByteArray()
+				is_water.resize(nv)
+				var custom: PackedByteArray = parts[3]
+				for k in nv:
+					is_water[k] = 1 if custom[k * 4] == water_id else 0
+				water.add_surface(c["name"], verts, index, is_water, mesh_dir)
+			arrays[Mesh.ARRAY_VERTEX] = verts
+			arrays[Mesh.ARRAY_NORMAL] = normals
 			arrays[Mesh.ARRAY_COLOR] = parts[2].to_color_array()
 			arrays[Mesh.ARRAY_CUSTOM0] = parts[3]
-			arrays[Mesh.ARRAY_INDEX] = parts[4].to_int32_array()
+			arrays[Mesh.ARRAY_INDEX] = index
 			var mesh := ArrayMesh.new()
 			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, custom_flags)
 			mesh.surface_set_material(0, mat)

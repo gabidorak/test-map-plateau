@@ -1,0 +1,76 @@
+{
+ "wheels": [
+  "wheel_front_left",
+  "wheel_front_right",
+  "wheel_rear_left",
+  "wheel_rear_right"
+ ],
+ "indicators": {
+  "left": [
+   "indicator_left"
+  ],
+  "right": [
+   "indicator_right"
+  ]
+ },
+ "brake_lights": [
+  "brake_lights"
+ ],
+ "cab": {
+  "driver_seat": [
+   0.762,
+   1.105,
+   0.19
+  ],
+  "driver_eye": [
+   0.762,
+   1.86,
+   0.05
+  ],
+  "passenger_seat": [
+   0.0,
+   1.05,
+   -0.95
+  ],
+  "passenger_eye": [
+   0.042,
+   2.84,
+   -0.98
+  ],
+  "steering_wheel": "steering",
+  "figure": 0.8,
+  "eye_pitch": 0.05
+ },
+ "reverse_lights": [
+  "reverse_lights"
+ ],
+ "turret": {
+  "ring": "turret",
+  "gun": "gun",
+  "pivot": [
+   0.0,
+   2.35,
+   -0.858
+  ],
+  "trunnion": [
+   0.042,
+   2.55,
+   -0.3
+  ],
+  "muzzle": [
+   0.042,
+   2.655,
+   0.71
+  ],
+  "gunner": [
+   0.0,
+   1.05,
+   -0.95
+  ],
+  "gunner_eye": [
+   0.042,
+   2.84,
+   -0.98
+  ]
+ }
+}

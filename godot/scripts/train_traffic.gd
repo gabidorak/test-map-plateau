@@ -51,11 +51,12 @@ var _rm
 var _route_s: Array = []                    # per service: centreline s of each route point
 var _route_inc: Array = []                  # per service: whether that s grows along the route
 var _track_u := PackedFloat32Array()        # per service: its track centre's offset from the centreline
-var _togo: Array = []                       # per service: s to run from each route metre to Lozère (screens)
+var _cum: Array = []                        # per service: s from its route's start to each metre, planned (screens)
 var _landing := {}
 var _play := Rect2()
+var _play_area: Array = []                  # rail.json playable_area: rings of the walkable polygon (else _play)
 var _signals := {}                          # signal id -> Node3D (Rail/Signals)
-var _screens: Array = []                    # [service index, Array[Label3D]]
+var _screens: Array = []                    # [service index, Array[Label3D], stop s, station name]
 var _signal_t := 0.0
 var _screen_t := 0.0
 var _next_id := 0
@@ -72,6 +73,13 @@ func _ready() -> void:
 	_landing = rail.get("landing", {})
 	var pl: Array = rail["playable"]
 	_play = Rect2(pl[0], pl[1], float(pl[2]) - float(pl[0]), float(pl[3]) - float(pl[1]))
+	var area = rail.get("playable_area")
+	if area is Array:
+		for ring: Array in area:
+			var poly := PackedVector2Array()
+			for q: Array in ring:
+				poly.append(Vector2(q[0], q[1]))
+			_play_area.append(poly)
 	headway = float(services[0].get("headway", headway)) if not services.is_empty() else headway
 	var env := OS.get_environment("PLATEAU_TRAIN_HEADWAY")
 	if env.is_valid_float() and float(env) > 30.0:
@@ -88,17 +96,15 @@ func _ready() -> void:
 			if tr["ref"] == svc["track"]:
 				u = tr["offset"]
 		_track_u.append(u)
-		# time to go to Lozère from each metre at the planned speeds (the departure screens)
-		var stop: float = svc["stops"][0]["s"]["8"]
+		# time from the route's start to each metre at the planned speeds (the departure screens: to a stop)
 		var v: Array = svc["v"]
-		var togo := PackedFloat32Array()
-		togo.resize(v.size())
+		var cum := PackedFloat32Array()
+		cum.resize(v.size())
 		var acc := 0.0
-		for i in range(v.size() - 1, -1, -1):
-			if i < stop:
-				acc += 1.0 / maxf(float(v[i]), 3.0)
-			togo[i] = acc if i < stop else 0.0
-		_togo.append(togo)
+		for i in v.size():
+			cum[i] = acc
+			acc += 1.0 / maxf(float(v[i]), 3.0)
+		_cum.append(cum)
 	departures.resize(services.size())
 	departed.resize(services.size())
 
@@ -214,12 +220,18 @@ func _physics_process(delta: float) -> void:
 				departures[k] += headway
 				_depart(k)
 		var doorway := _doorway_players()
+		var near_line = null                # only looked for when some train runs (not at a stop)
 		for tr: Node3D in trains:
 			if tr.stowed or not bots.has(tr):
 				continue
 			var bot: TrainBot = bots[tr]
 			var k := service_index(tr)
-			bot.drive(delta, _same_service(tr), _obstacles(tr, k), doorway)
+			var obstacles: Array = []
+			if bot.state == "run":
+				if near_line == null:
+					near_line = _near_line()
+				obstacles = _obstacles(tr, k, near_line)
+			bot.drive(delta, _same_service(tr), obstacles, doorway)
 			if bot.is_done():
 				_stow(tr)
 	_knock_things(delta)
@@ -244,7 +256,11 @@ func _same_service(tr: Node3D) -> Array:
 
 ## Route distance along service k and offset from its track centre of map point xy, or null when off its route.
 func route_distance(k: int, xy: Vector2) -> Variant:
-	var su: Vector2 = _rm.project(xy)
+	return _route_distance_su(k, _rm.project(xy))
+
+
+## Same from the point's (s, u) on the centreline (rail_map.gd project()).
+func _route_distance_su(k: int, su: Vector2) -> Variant:
 	if is_nan(su.x):
 		return null
 	var sc: PackedFloat32Array = _route_s[k]
@@ -266,31 +282,42 @@ func route_distance(k: int, xy: Vector2) -> Variant:
 	return Vector2(d, su.y - _track_u[k])
 
 
-## What is near the track ahead of `tr`: [route distance, offset from the track centre (vehicles: less their half
-## width), height above the rails].
-func _obstacles(tr: Node3D, k: int) -> Array:
+## The players on foot and the vehicles near the line this tick: [global position, (s, u) on the centreline, half
+## width]. Projected once per tick for every train; most vehicles are far from the line and cost one lookup.
+func _near_line() -> Array:
 	var out: Array = []
 	if game == null:
 		return out
-	var head: Vector3 = tr.route_point(tr.front)
 	for p: Vector3 in _people():
-		_add_obstacle(out, tr, k, head, p, 0.0)
+		_add_near(out, p, 0.0)
 	for car: Node3D in game.cars:
-		if car.stowed or not is_instance_valid(car):
-			continue
-		_add_obstacle(out, tr, k, head, car.global_position, 1.0)
+		if is_instance_valid(car) and not car.stowed:
+			_add_near(out, car.global_position, 1.0)
 	return out
 
 
-func _add_obstacle(out: Array, tr: Node3D, k: int, head: Vector3, p: Vector3, half: float) -> void:
-	if p.distance_squared_to(head) > NEAR * NEAR:
-		return
-	var rd: Variant = route_distance(k, Vector2(p.x, -p.z))
-	if rd == null:
-		return
-	var lateral: float = maxf(absf(rd.y) - half, 0.0)
-	var level: float = p.y - tr.route_point(rd.x).y
-	out.append([rd.x, lateral, level - 0.6 if level > 0.6 else level])
+func _add_near(out: Array, p: Vector3, half: float) -> void:
+	var su: Vector2 = _rm.project(Vector2(p.x, -p.z))
+	if not is_nan(su.x):
+		out.append([p, su, half])
+
+
+## What is near the track ahead of `tr`, from `near_line` (_near_line()): [route distance, offset from the track
+## centre (vehicles: less their half width), height above the rails].
+func _obstacles(tr: Node3D, k: int, near_line: Array) -> Array:
+	var out: Array = []
+	var head: Vector3 = tr.route_point(tr.front)
+	for n: Array in near_line:
+		var p: Vector3 = n[0]
+		if p.distance_squared_to(head) > NEAR * NEAR:
+			continue
+		var rd: Variant = _route_distance_su(k, n[1])
+		if rd == null:
+			continue
+		var lateral: float = maxf(absf(rd.y) - n[2], 0.0)
+		var level: float = p.y - tr.route_point(rd.x).y
+		out.append([rd.x, lateral, level - 0.6 if level > 0.6 else level])
+	return out
 
 
 ## Global positions of the players on foot: this peer's and the others'.
@@ -400,10 +427,13 @@ func _land_riders() -> void:
 		return
 	var p: Vector3 = game.player.global_position
 	var xy := Vector2(p.x, -p.z)
-	if _play.has_point(xy) and not c.train.stowed:
+	if _walkable(xy) and not c.train.stowed:
 		return
-	var key := "west" if xy.x < _play.get_center().x else "east"
-	var spot: Dictionary = _landing.get(key, {})
+	var spot := {}                          # the nearer end's landing spot
+	for key: String in _landing:
+		var cand: Dictionary = _landing[key]
+		if spot.is_empty() or xy.distance_to(Vector2(cand["x"], cand["y"])) < xy.distance_to(Vector2(spot["x"], spot["y"])):
+			spot = cand
 	if spot.is_empty():
 		return
 	game.player.set_carrier(null)
@@ -411,6 +441,18 @@ func _land_riders() -> void:
 	game.player.velocity = Vector3.ZERO
 	teleports += 1
 	game._show_toast("The RER B leaves the map here: you are put down by the line")
+
+
+## Map point inside the walkable area (rail.json playable_area: the corridors' polygon, holes included; else the box).
+func _walkable(xy: Vector2) -> bool:
+	if _play_area.is_empty():
+		return _play.has_point(xy)
+	if not Geometry2D.is_point_in_polygon(xy, _play_area[0]):
+		return false
+	for k in range(1, _play_area.size()):
+		if Geometry2D.is_point_in_polygon(xy, _play_area[k]):
+			return false
+	return true
 
 
 ## The car of a train carrying global point p, or null.
@@ -450,16 +492,21 @@ func _find_world_nodes() -> void:
 			if String(n.name).begins_with("Screen_"):
 				var pf: String = n.get_meta("plateau", {}).get("platform", "")
 				var k := -1
+				var stop := 0.0
+				var stop_name := ""
 				for i in services.size():
-					if services[i]["stops"][0].get("platform", "") == pf:
-						k = i
+					for st: Dictionary in services[i]["stops"]:
+						if st.get("platform", "") == pf:
+							k = i
+							stop = float(st["s"]["8"])
+							stop_name = st["name"]
 				var labels: Array = []
 				for face in n.get_children():
 					var l := face.get_node_or_null("Text") as Label3D
 					if l:
 						labels.append(l)
 				if k >= 0:
-					_screens.append([k, labels])
+					_screens.append([k, labels, stop, stop_name])
 
 
 ## Each service's signals from the trains' positions: the block beyond an occupied signal shows S (a carré its two
@@ -514,8 +561,9 @@ func _update_screens() -> void:
 	for sc: Array in _screens:
 		var k: int = sc[0]
 		var svc: Dictionary = services[k]
-		var togo: PackedFloat32Array = _togo[k]
-		var stop: float = svc["stops"][0]["s"]["8"]
+		var cum: PackedFloat32Array = _cum[k]
+		var stop: float = sc[2]
+		var at_stop: float = cum[clampi(int(stop), 0, cum.size() - 1)]
 		var etas: Array = []
 		var at_platform := false
 		for tr: Node3D in trains:
@@ -525,13 +573,13 @@ func _update_screens() -> void:
 				at_platform = true
 				continue
 			if tr.front < stop:
-				etas.append(togo[clampi(int(tr.front), 0, togo.size() - 1)])
+				etas.append(at_stop - cum[clampi(int(tr.front), 0, cum.size() - 1)])
 		if running:
 			var t_next: float = departures[k] - time
-			etas.append(t_next + togo[clampi(int(svc["start"]), 0, togo.size() - 1)])
+			etas.append(t_next + at_stop - cum[clampi(int(svc["start"]), 0, cum.size() - 1)])
 		etas.sort()
 		var dest: String = Train.DESTINATIONS.get(svc.get("direction", ""), "")
-		var lines: PackedStringArray = ["RER B · Lozère"]
+		var lines: PackedStringArray = ["RER B · " + String(sc[3])]
 		if at_platform:
 			lines.append("%s   à quai" % dest)
 		for eta: float in etas.slice(0, 2 - (1 if at_platform else 0)):

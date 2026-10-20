@@ -109,6 +109,8 @@ CANT_PRACTICAL = 0.7            # SNCF practice: cant ~7/10 of the theoretical (
 CANT_DEFICIENCY_MAX = 150.0     # mm; assumed (SNCF admits high cant deficiencies on conventional lines)
 CANT_GRADIENT_MAX = 2.5         # mm/m along a transition; assumed (EN 13803 order of magnitude)
 TRAIN_LENGTHS = {"8": 208.32, "4": 104.16}   # MI 79: one unit of 4 cars is 104.16 m (en.wikipedia "MI 79")
+EXTEND_END = 320.0              # m the line runs on straight beyond the OSM data at its north-east end (a westbound
+                                # train starts there, hidden, front and back)
 SERVICE_BRAKE = 0.7             # m/s², planned braking to a stop; assumed (comfortable, under the MI 79's 1.1 m/s²)
 MAX_SERVICE_BRAKE = 1.1         # m/s², en.wikipedia "MI 79" infobox: deceleration 1.1 m/s² and 1.15 m/s²; the lower one...
 EMERGENCY_BRAKE = 1.15          # ...for full service braking, the higher one for the emergency brake
@@ -119,8 +121,14 @@ TRANSITION_MIN = 20.0           # m, shortest transition curve the fit may use
 CURVE_THRESHOLD = 1 / 2500.0    # 1/m: OSM stretches curving more than this become curves
 # extent
 X_WEST = -615.0                 # the alignment follows OSM from here (past Le Guichet, where the westbound trains end)...
-X_EAST = 2180.0                 # ...to here (the tracks part beyond, east of the map); then straight on:
-EXTEND_EAST = 560.0             # m of straight beyond (a westbound train starts there, hidden, front and back)
+X_EAST = 4030.0                 # ...to here, where the tracks start parting for Massy-Palaiseau's four platform tracks;
+                                # from there on the station yard (yard.py terms: each track its own line) takes over
+# the stations on the alignment (Lozère's platforms are OSM's outlines; the others have only nodes: side platforms by
+# rule, see rule_platforms) and the yard's (Massy-Palaiseau: OSM's island outlines)
+STATIONS = ["Lozère", "Palaiseau - Villebon", "Palaiseau", "Massy-Palaiseau"]
+RULE_PLATFORM_WIDTH = 3.5       # m from the platform edge to its back where OSM draws no outline; assumed (LiDAR: the
+                                # raised ground runs ~2-6 m out from the track centre at both stations)
+RULE_PLATFORM_MARGIN = 5.0      # m beyond the trains' ends (both directions' 8-car trains stand on it)
 REVIEW = rg.TOOLS / "review"
 
 
@@ -128,13 +136,43 @@ def log(*a):
     print(*a, flush=True)
 
 
+DATA_AREA = None                # the map's ground (shapely, prepared): world.json meta.data_area, else its bounds box
+OLD_BOX = (-250.0, -1110.0, 1810.0, 630.0)  # the first map's box: Lozère's structures (footbridge, road tunnel)
+
+
+def set_data_area(world: dict) -> None:
+    global DATA_AREA
+    from shapely import prepare
+    from shapely.geometry import Polygon, box
+    rings = world["meta"].get("data_area")
+    DATA_AREA = Polygon(rings[0], rings[1:]).buffer(0) if rings else box(*world["meta"]["bounds"])
+    prepare(DATA_AREA)
+
+
+def inside(x, y, margin: float = 0.0) -> np.ndarray:
+    """Points (arrays) inside the map's ground, `margin` m in from its edge."""
+    import shapely
+    g = DATA_AREA if margin == 0 else DATA_AREA.buffer(-margin)
+    return shapely.contains_xy(g, np.asarray(x, float), np.asarray(y, float))
+
+
 # ---------------------------------------------------------------- 1. OSM
 
 def load_osm() -> dict:
+    """osm_rail.json, and under it osm_rail_massy.json (the line on to Massy-Palaiseau) when there: the first file's
+    elements win, so the first stretch is built from exactly what it was."""
     d = rg.load_json(rg.TOOLS / "osm_rail.json")
-    ways = {e["id"]: e for e in d["elements"] if e["type"] == "way"}
-    nodes = {e["id"]: e for e in d["elements"] if e["type"] == "node"}
-    return {"ways": ways, "nodes": nodes, "timestamp": d.get("osm3s", {}).get("timestamp_osm_base", "")}
+    elements = {(e["type"], e["id"]): e for e in d["elements"]}
+    stamps = [d.get("osm3s", {}).get("timestamp_osm_base", "")]
+    if (rg.TOOLS / "osm_rail_massy.json").exists():
+        m = rg.load_json(rg.TOOLS / "osm_rail_massy.json")
+        for e in m["elements"]:
+            elements.setdefault((e["type"], e["id"]), e)
+        stamps.append(m.get("osm3s", {}).get("timestamp_osm_base", ""))
+    ways = {i: e for (t, i), e in elements.items() if t == "way"}
+    nodes = {i: e for (t, i), e in elements.items() if t == "node"}
+    rels = {i: e for (t, i), e in elements.items() if t == "relation"}
+    return {"ways": ways, "nodes": nodes, "relations": rels, "timestamp": " + ".join(x for x in stamps if x)}
 
 
 def way_pts(w: dict) -> np.ndarray:
@@ -267,14 +305,16 @@ class Fit:
         T1, T2 = P - n * p[3] / 2, P + n * p[3] / 2
         return np.r_[self.lateral(*self.obs[0], T1), self.lateral(*self.obs[1], T2)]
 
-    def solve(self, p: np.ndarray, iters=120) -> np.ndarray:
+    def solve(self, p: np.ndarray, iters=120, frozen=()) -> np.ndarray:
+        """Levenberg-Marquardt; the parameters in `frozen` (indices) keep their value."""
         lam = 1e-2
         r = self.residuals(p)
         cost = r @ r
         stalled = 0
+        free = [j for j in range(len(p)) if j not in frozen]
         for it in range(iters):
             J = np.zeros((len(r), len(p)))
-            for j in range(len(p)):
+            for j in free:
                 h = 1e-6 if j == 2 else (1e-7 if j >= 4 and (j - 4) % 5 == 4 else 1e-3)
                 pp = p.copy()
                 pp[j] += h
@@ -282,7 +322,9 @@ class Fit:
             A, g = J.T @ J, J.T @ r
             improved = False
             while lam < 1e9:
-                dp = -np.linalg.solve(A + lam * np.diag(np.diag(A) + 1e-12), g)
+                dp = np.zeros(len(p))
+                Af, gf = A[np.ix_(free, free)], g[free]
+                dp[free] = -np.linalg.solve(Af + lam * np.diag(np.diag(Af) + 1e-12), gf)
                 rn = self.residuals(p + dp)
                 if rn @ rn < cost:
                     gain = (cost - rn @ rn) / cost
@@ -297,9 +339,109 @@ class Fit:
         return p
 
 
+X_SECTIONS = [X_WEST, 2180.0, X_EAST]   # the alignment is fitted section by section: the first one is the first map's
+                                        # (X_WEST to 2180, unchanged since), each next one from the previous one's end
+
+
 def fit_alignment(t1: np.ndarray, t2: np.ndarray) -> dict:
-    """Centreline from the two tracks, curves found on its curvature, then the least-squares fit."""
-    a1 = crop_x(t1, X_WEST, X_EAST)
+    """The alignment section by section (X_SECTIONS: one fit over the whole line drifts into a poor local minimum
+    with this many curves), each next section starting where the previous one ends, with its heading and spacing.
+    Returns the sections' fits and the joined result (fit_section's keys, the stats over the map)."""
+    secs = []
+    for x0, x1 in zip(X_SECTIONS[:-1], X_SECTIONS[1:]):
+        start = None
+        if secs:
+            prev = secs[-1]
+            s_, P, th, k = prev["fit"].path(prev["p"])
+            start = (P[-1], float(th[-1]), float(prev["p"][3]))
+        secs.append(fit_section(t1, t2, x0, x1, start))
+    return {"sections": secs, "stats": joined_stats(secs), "fit": secs[0]["fit"], "p": secs[0]["p"]}
+
+
+def joined_stats(secs: list) -> dict:
+    rb = np.concatenate([s["inbox"] for s in secs])
+    out = {"rms": float(np.sqrt(rb @ rb / len(rb))), "max": float(np.abs(rb).max()),
+           "p95": float(np.percentile(np.abs(rb), 95)), "all_max": max(s["stats"]["all_max"] for s in secs),
+           "osm_spacing_median": secs[0]["stats"]["osm_spacing_median"]}
+    log("alignment: %d sections, %d curves, OSM deviation in the map rms %.2f m, p95 %.2f m, max %.2f m"
+        % (len(secs), sum(len(s["fit"].elements(s["p"])) for s in secs), out["rms"], out["p95"], out["max"]))
+    return out
+
+
+class SplineSection:
+    """An alignment section as a smoothing spline through the OSM centreline (the line on to Massy has compound
+    curves, radius changing within a bend, which one arc per curve cannot follow), pinned to the previous section's
+    end and heading; the same calls as Fit (path, elements, length) for alignment_arrays. Its "curves" for the cant
+    and speed rules come from the spline's curvature: each run beyond CURVE_THRESHOLD, its sharpest curvature, its
+    transitions the stretches where the curvature climbs to and falls from 80 % of that."""
+
+    SIGMA = 0.20                    # m, the OSM noise the spline smooths away (rms of the residuals it allows)
+    PIN = 30.0                      # m of the previous section's tangent the spline is held to at its start
+
+    def __init__(self, centre: np.ndarray, start):
+        from scipy.interpolate import UnivariateSpline
+        p0, th0 = np.asarray(start[0]), float(start[1])
+        lead = p0 + np.c_[np.cos(th0), np.sin(th0)] * np.arange(-self.PIN, 0.0, 1.0)[:, None]
+        pts = np.vstack([lead, centre])
+        u = rg.cumlen(pts)
+        w = np.ones(len(pts))
+        w[:len(lead) + 1] = 20.0            # the tangent held, the joint exact
+        self.u0 = u[len(lead)]
+        smooth = len(pts) * self.SIGMA ** 2
+        self.sx = UnivariateSpline(u, pts[:, 0], w=w, k=5, s=smooth)
+        self.sy = UnivariateSpline(u, pts[:, 1], w=w, k=5, s=smooth)
+        dense = np.arange(self.u0, u[-1], 0.25)
+        q = np.c_[self.sx(dense), self.sy(dense)]
+        q[0] = p0
+        self.dense, self.du = dense, rg.cumlen(q)
+        self.length = float(self.du[-1])
+        self.q = q
+
+    def path(self, p=None, s_end=None, step=1.0):
+        s = np.arange(0.0, (s_end or self.length) + step * 0.5, step)
+        s = s[s <= self.length + 1e-6]
+        uu = np.interp(s, self.du, self.dense)
+        P = np.c_[self.sx(uu), self.sy(uu)]
+        P[0] = self.q[0]
+        dx, dy = self.sx.derivative(1)(uu), self.sy.derivative(1)(uu)
+        ddx, ddy = self.sx.derivative(2)(uu), self.sy.derivative(2)(uu)
+        th = np.unwrap(np.arctan2(dy, dx))
+        k = (dx * ddy - dy * ddx) / np.maximum((dx * dx + dy * dy) ** 1.5, 1e-9)
+        return s, P, th, k
+
+    def elements(self, p=None) -> list:
+        s, P, th, k = self.path(step=1.0)
+        ks = np.convolve(k, np.ones(9) / 9, mode="same")
+        out = []
+        on = np.abs(ks) > CURVE_THRESHOLD
+        i = 0
+        while i < len(on):
+            if not on[i]:
+                i += 1
+                continue
+            j = i
+            while j < len(on) and on[j] and np.sign(ks[j]) == np.sign(ks[i]):
+                j += 1
+            if j - i >= 20:
+                seg = ks[i:j]
+                m = int(np.argmax(np.abs(seg)))
+                kc = float(seg[m])
+                hi = np.nonzero(np.abs(seg) >= 0.8 * abs(kc))[0]
+                a, b = int(hi[0]), int(hi[-1])
+                L1 = max(float(a), TRANSITION_MIN)
+                L2 = max(float(j - i - 1 - b), TRANSITION_MIN)
+                out.append((float(s[i]), L1, max(float(b - a), 0.0), L2, kc))
+            i = j
+        return out
+
+
+def fit_section(t1: np.ndarray, t2: np.ndarray, x_from: float, x_to: float, start=None) -> dict:
+    """Centreline from the two tracks between x_from and x_to, curves found on its curvature, then the least-squares
+    fit; `start` (point, heading, spacing): the section begins there, as the previous one ends (those are kept)."""
+    a1 = crop_x(t1, x_from, x_to)
+    if start is not None:                   # begin at the previous section's end
+        k = int(np.argmin(np.linalg.norm(a1 - start[0], axis=1)))
+        a1 = a1[k:]
     r1 = rg.resample(a1, 1.0)
     mids, spacing = [], []
     for p in r1:
@@ -307,6 +449,28 @@ def fit_alignment(t1: np.ndarray, t2: np.ndarray) -> dict:
         mids.append((p + q) / 2)
         spacing.append(dd)
     centre = rg.resample(np.array(mids), 1.0)
+    if start is not None:                   # a later section: the spline (compound curves), from the previous end
+        sp = SplineSection(centre[1:], start)
+        p = np.r_[start[0][0], start[0][1], start[1], start[2]]
+        s_, P, th, k = sp.path()
+        n = np.c_[-np.sin(th), np.cos(th)]
+        res = []
+        for t, sg in ((t1, -1.0), (t2, 1.0)):
+            o = rg.resample(t, 2.0)
+            o = o[(o[:, 0] > x_from + 3) & (o[:, 0] < x_to - 3)]
+            T = P + n * sg * start[2] / 2
+            from shapely.geometry import LineString, Point
+            ln = LineString(T)
+            res.append(np.array([ln.distance(Point(q)) for q in o]))
+            res[-1] = res[-1][inside(o[:, 0], o[:, 1])]
+        rb = np.concatenate(res)
+        stats = {"rms": float(np.sqrt(rb @ rb / len(rb))), "max": float(np.abs(rb).max()),
+                 "p95": float(np.percentile(np.abs(rb), 95)), "all_max": float(np.abs(rb).max()),
+                 "osm_spacing_median": float(np.median(spacing))}
+        log("alignment section x %.0f..%.0f: smoothing spline, %d curves, spacing %.3f m (the previous section's; "
+            "OSM's median %.2f m), OSM deviation in the map rms %.2f m, p95 %.2f m, max %.2f m"
+            % (x_from, x_to, len(sp.elements()), start[2], np.median(spacing), stats["rms"], stats["p95"], stats["max"]))
+        return {"fit": sp, "p": p, "stats": stats, "inbox": rb}
     fit = Fit(t1, t2, centre)
     # first guess: curves where the smoothed OSM curvature passes CURVE_THRESHOLD
     d = np.diff(centre, axis=0)
@@ -344,19 +508,24 @@ def fit_alignment(t1: np.ndarray, t2: np.ndarray) -> dict:
         guess.append((g, L1 - TRANSITION_MIN, La, L2 - TRANSITION_MIN, kc))
         prev_end = (s0 if n_ == 0 else prev_end + g) + L1 + La + L2
     p = np.r_[centre[0, 0], centre[0, 1], th[0], float(np.median(spacing)), np.array(guess).ravel()]
+    frozen = ()
+    if start is not None:
+        p[0], p[1], p[2], p[3] = start[0][0], start[0][1], start[1], start[2]
+        frozen = (0, 1, 2, 3)
     t0 = time.time()
-    p = fit.solve(p)
+    p = fit.solve(p, frozen=frozen)
     r = fit.residuals(p)
     inbox = []
     for (o, _), rr in zip(fit.obs, np.split(r, [len(fit.obs[0][0])])):
-        inbox.append(rr[(o[:, 0] > -250) & (o[:, 0] < 1810)])
+        inbox.append(rr[inside(o[:, 0], o[:, 1])])
     rb = np.concatenate(inbox)
     stats = {"rms": float(np.sqrt(rb @ rb / len(rb))), "max": float(np.abs(rb).max()),
              "p95": float(np.percentile(np.abs(rb), 95)), "all_max": float(np.abs(r).max()),
              "osm_spacing_median": float(np.median(spacing))}
-    log("alignment: %d curves, spacing %.3f m, OSM deviation in the map rms %.2f m, p95 %.2f m, max %.2f m (%.0f s)"
-        % (len(guess), p[3], stats["rms"], stats["p95"], stats["max"], time.time() - t0))
-    return {"fit": fit, "p": p, "stats": stats}
+    log("alignment section x %.0f..%.0f: %d curves, spacing %.3f m, OSM deviation in the map rms %.2f m, p95 %.2f m, "
+        "max %.2f m (%.0f s)" % (x_from, x_to, len(guess), p[3], stats["rms"], stats["p95"], stats["max"],
+                                 time.time() - t0))
+    return {"fit": fit, "p": p, "stats": stats, "inbox": rb}
 
 
 def _fit_curve(s: np.ndarray, th: np.ndarray, a: int, b: int, kc: float) -> tuple:
@@ -397,11 +566,28 @@ def _fit_curve(s: np.ndarray, th: np.ndarray, a: int, b: int, kc: float) -> tupl
 
 
 def alignment_arrays(fa: dict, step=1.0) -> dict:
-    """The fitted centreline every `step` m, extended east by EXTEND_EAST m of straight, with its elements."""
-    fit, p = fa["fit"], fa["p"]
-    curves = fit.elements(p)
-    total = fit.length + EXTEND_EAST
-    s, P, th, k = fit.path(p, s_end=total, step=step)
+    """The fitted centreline every `step` m, the sections joined (each next one's s goes on from the previous one's
+    end), with its elements (it ends at X_EAST: the yard carries on)."""
+    S, Ps, Ths, Ks, curves = [], [], [], [], []
+    base = 0.0
+    for sec in fa["sections"]:
+        fit, p = sec["fit"], sec["p"]
+        s_, P_, th_, k_ = fit.path(p, s_end=fit.length, step=step)
+        if S:
+            s_, P_, th_, k_ = s_[1:], P_[1:], th_[1:], k_[1:]
+        S.append(s_ + base)
+        Ps.append(P_)
+        Ths.append(th_)
+        Ks.append(k_)
+        curves += [(c[0] + base, *c[1:]) for c in fit.elements(p)]
+        base += fit.length
+    s, P, th, k = np.concatenate(S), np.concatenate(Ps), np.concatenate(Ths), np.concatenate(Ks)
+    # every `step` m of the joined line exactly (each section's last sample falls short of its end)
+    d = rg.cumlen(P)
+    s = np.arange(0.0, d[-1] + 1e-9, step)
+    P = np.c_[np.interp(s, d, P[:, 0]), np.interp(s, d, P[:, 1])]
+    th, k = np.interp(s, d, np.unwrap(th)), np.interp(s, d, k)
+    total = float(s[-1])
     els = []
     pos = 0.0
     for s0, L1, La, L2, kc in curves:
@@ -418,7 +604,8 @@ def alignment_arrays(fa: dict, step=1.0) -> dict:
     els = [e for e in els if e["s1"] > 0.0]
     for e in els:
         e["s0"] = max(e["s0"], 0.0)
-    return {"s": s, "pts": P, "heading": th, "kappa": k, "curves": curves, "elements": els, "spacing": float(p[3])}
+    return {"s": s, "pts": P, "heading": th, "kappa": k, "curves": curves, "elements": els,
+            "spacing": float(fa["sections"][0]["p"][3])}
 
 
 # ---------------------------------------------------------------- 3. cant and speed
@@ -468,7 +655,7 @@ def lidar_profile(al: dict, H: rg.Heights, avoid: list) -> np.ndarray:
     rows = []
     for k in range(0, len(s), 5):
         x, y = P[k]
-        if not (-245 < x < 1805):
+        if not inside(x, y, 5.0):
             continue
         us = np.linspace(-2.6, 2.6, 11)
         a, b = max(k - 2, 0), min(k + 3, len(s))
@@ -609,8 +796,11 @@ def osm_structures(osm: dict, A: rg.Alignment, H: rg.Heights) -> list:
         if not (t.get("bridge") == "yes" or t.get("tunnel") == "yes"):
             continue
         s, u = su[i][:, 0], su[i][:, 1]
-        x = pts[i][:, 0]
-        if np.any(np.diff(np.sign(u)) != 0) and np.all(np.abs(u) < 60) and np.any((x > -250) & (x < 1810)):
+        x, y = pts[i][:, 0], pts[i][:, 1]
+        in_old = np.any((x > OLD_BOX[0]) & (x < OLD_BOX[2]) & (y > OLD_BOX[1]) & (y < OLD_BOX[3]))
+        # beyond the first box the bridges are world.json's (the map's bridge decks); only the tunnels are the line's
+        if np.any(np.diff(np.sign(u)) != 0) and np.all(np.abs(u) < 60) and np.all((s > 1.0) & (s < A.length - 1.0)) \
+                and np.any(inside(x, y)) and (in_old or t.get("tunnel") == "yes"):
             crossing.append(i)
     groups = []
     seen = set()
@@ -672,7 +862,7 @@ def osm_platforms(osm: dict, A: rg.Alignment, spacing: float, cant_at) -> list:
             continue
         p = way_pts(w)
         su = A.project(p)
-        if np.abs(su[:, 1]).min() > 15:
+        if np.abs(su[:, 1]).min() > 15 or su[:, 0].min() > A.length - 1.0 or su[:, 0].max() < 1.0:
             continue
         side = 1.0 if np.median(su[:, 1]) > 0 else -1.0
         poly = Polygon(su)                      # in (s, u)
@@ -686,7 +876,8 @@ def osm_platforms(osm: dict, A: rg.Alignment, spacing: float, cant_at) -> list:
         back = np.array(back)
         edge = spacing / 2 + PLATFORM_EDGE
         back = np.maximum(np.array([np.median(back[max(0, i - 3):i + 4]) for i in range(len(back))]), edge + 2.5)
-        out.append({"id": "platform:" + ("north" if side > 0 else "south"), "osm": "w%d" % w["id"],
+        out.append({"id": "platform:" + ("north" if side > 0 else "south") if t.get("name", "") in ("", "Lozère")
+                    else "platform:%s:%s" % (slug(t["name"]), "north" if side > 0 else "south"), "osm": "w%d" % w["id"],
                     "name": t.get("name", ""), "track": "2" if side > 0 else "1", "side": side,
                     "s0": float(ss[0]), "s1": float(ss[-1]), "ss": ss, "edge": edge, "wall": edge + PLATFORM_COPING,
                     "back_u": back, "tags": {k: v for k, v in t.items() if k not in ("name", "railway",
@@ -698,6 +889,58 @@ def osm_platforms(osm: dict, A: rg.Alignment, spacing: float, cant_at) -> list:
         p["top"] = (lambda side=side: (lambda s: float(A.level(s) + max(side * cant_at(s), 0.0) / 1000.0
                                                        + PLATFORM_HEIGHT)))()
     out.sort(key=lambda p: -p["side"])
+    return out
+
+
+def slug(name: str) -> str:
+    import re
+    import unicodedata
+    a = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "-", a.lower()).strip("-")
+
+
+def stop_nodes(osm: dict) -> dict:
+    """(station name, track ref) -> map point of OSM's stop position (railway=stop, ref 1 or 2)."""
+    out = {}
+    for nd in osm["nodes"].values():
+        t = nd.get("tags", {})
+        if t.get("railway") == "stop" and (t.get("ref") or t.get("local_ref")) in ("1", "2"):
+            out[(t.get("name", ""), t.get("ref") or t.get("local_ref"))] = np.array(fwd(nd["lat"], nd["lon"]))
+    return out
+
+
+def rule_platforms(osm: dict, A: rg.Alignment, spacing: float, cant_at, have: list) -> list:
+    """Side platforms where OSM maps a station on the alignment by nodes only (Palaiseau - Villebon, Palaiseau; the
+    LiDAR shows raised ground outside both tracks there): both sides over the stretch both directions' 8-car trains
+    stand on (their fronts at OSM's stop positions), RULE_PLATFORM_MARGIN beyond, the edge PLATFORM_EDGE out from the
+    outer track, RULE_PLATFORM_WIDTH deep, furnished as a lit platform with shelters, benches and bins."""
+    stops = stop_nodes(osm)
+    named = {slug(p["name"]) for p in have}          # "Palaiseau-Villebon" outlines = station "Palaiseau - Villebon"
+    out = []
+    L8 = TRAIN_LENGTHS["8"]
+    for name in STATIONS:
+        if slug(name) in named or (name, "1") not in stops or (name, "2") not in stops:
+            continue
+        s1 = float(A.project(stops[(name, "1")][None, :])[0][0])      # westbound front: the train runs on east of it
+        s2 = float(A.project(stops[(name, "2")][None, :])[0][0])      # eastbound front: the train runs on west of it
+        if not (5.0 < s1 < A.length - 5.0 and 5.0 < s2 < A.length - 5.0):
+            continue
+        a = min(s1, s2 - L8) - RULE_PLATFORM_MARGIN
+        b = max(s1 + L8, s2) + RULE_PLATFORM_MARGIN
+        ss = np.arange(math.ceil(a), math.floor(b) + 1.0)
+        edge = spacing / 2 + PLATFORM_EDGE
+        for side in (1.0, -1.0):
+            out.append({"id": "platform:%s:%s" % (slug(name), "north" if side > 0 else "south"), "osm": "",
+                        "name": name, "track": "2" if side > 0 else "1", "side": side, "s0": float(ss[0]),
+                        "s1": float(ss[-1]), "ss": ss, "edge": edge, "wall": edge + PLATFORM_COPING,
+                        "back_u": np.full(len(ss), edge + RULE_PLATFORM_WIDTH),
+                        "tags": {"lit": "yes", "shelter": "yes", "bench": "yes", "bin": "yes", "source": "rule"}})
+    for p in out:
+        ss, b = p["ss"], p["back_u"]
+        p["back"] = (lambda ss=ss, b=b: (lambda s: float(np.interp(s, ss, b))))()
+        side = p["side"]
+        p["top"] = (lambda side=side: (lambda s: float(A.level(s) + max(side * cant_at(s), 0.0) / 1000.0
+                                                       + PLATFORM_HEIGHT)))()
     return out
 
 
@@ -804,8 +1047,8 @@ def earthworks(al: dict, A: rg.Alignment, H: rg.Heights, corridor: Corridor, pla
     Platforms take the place of the formation edge on their side."""
     sec = section_dims()
     s_all = al["s"]
-    inside = np.nonzero((al["pts"][:, 0] > -250) & (al["pts"][:, 0] < 1810))[0]
-    k0, k1 = int(inside[0]), int(inside[-1])
+    ins = np.nonzero(inside(al["pts"][:, 0], al["pts"][:, 1]))[0]
+    k0, k1 = int(ins[0]), int(ins[-1])
     toe = ballast_toe(spacing)
     out = {"step": 1.0, "s0": float(s_all[k0]), "sides": {}, "walls": []}
     us_rel = np.arange(0.0, SLOPE_REACH + 0.01, 0.5)
@@ -1159,8 +1402,84 @@ def pk_points(osm: dict, A: rg.Alignment) -> dict:
     return {"a": float(a), "b": float(b), "posts": sorted(posts, key=lambda x: x["s"])}
 
 
+def rail_bridges(osm: dict, A: rg.Alignment, track_ids: list) -> list:
+    """Where the line runs on a bridge beyond the first box (OSM bridge=yes on its tracks: short spans over a road or
+    a path): [{s0, s1, osm}], both tracks' spans joined, half a metre more each end. The patch leaves the ground under
+    them alone (the road goes on under) and the builder draws the deck."""
+    spans = []
+    for wid in track_ids:
+        w = osm["ways"].get(wid)
+        if w is None or w.get("tags", {}).get("bridge") not in ("yes", "viaduct"):
+            continue
+        p = way_pts(w)
+        if np.all((p[:, 0] > OLD_BOX[0]) & (p[:, 0] < OLD_BOX[2]) & (p[:, 1] > OLD_BOX[1]) & (p[:, 1] < OLD_BOX[3])):
+            continue                            # the first box's structures are its own (the covered road)
+        su = A.project(p)
+        su = su[np.abs(su[:, 1]) < 10.0]
+        if not len(su) or su[:, 0].max() < 1.0 or su[:, 0].min() > A.length - 1.0:
+            continue
+        spans.append([float(su[:, 0].min()) - 0.5, float(su[:, 0].max()) + 0.5, "w%d" % wid])
+    spans.sort()
+    out = []
+    for a, b, o in spans:
+        if out and a <= out[-1]["s1"] + 1.0:
+            out[-1]["s1"] = max(out[-1]["s1"], b)
+            out[-1]["osm"].append(o)
+        else:
+            out.append({"s0": a, "s1": b, "osm": [o]})
+    return out
+
+
+def cut_spans(zs: list, A: rg.Alignment, spans: list) -> list:
+    """The zones less the rail bridges' spans (|u| < 45 m): the ground there stays as it is."""
+    import shapely
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+    if not spans:
+        return zs
+    cuts = []
+    for sp in spans:
+        ss = np.arange(sp["s0"], sp["s1"] + 0.01, 0.5)
+        cuts.append(Polygon(np.concatenate([A.point(ss, np.full(len(ss), 45.0)),
+                                            A.point(ss[::-1], np.full(len(ss), -45.0))])).buffer(0))
+    cut = unary_union(cuts)
+    out = []
+    for z in zs:
+        g = unary_union([Polygon(pg[0], pg[1:]).buffer(0) for pg in z["polygons"]])
+        if not g.intersects(cut):
+            out.append(z)
+            continue
+        g = shapely.set_precision(g.difference(cut), 0.001)
+        polys = [x for x in getattr(g, "geoms", [g]) if x.geom_type == "Polygon" and x.area > 0.05]
+        if polys:
+            out.append(dict(z, polygons=[[np.asarray(q.exterior.coords)[:-1]] + [np.asarray(h.coords)[:-1]
+                                                                             for h in q.interiors] for q in polys]))
+    return out
+
+
+def bridge_decks(world: dict, A: rg.Alignment) -> list:
+    """The map's bridge decks (world.json bridges, the pipeline's: roads and paths over the line beyond the first box)
+    crossing the alignment: [(s, half width along the line, deck underside level, id)]."""
+    out = []
+    for b in world.get("bridges", []):
+        p = np.asarray(b["pts"], dtype=np.float64)
+        su = A.project(p[:, :2])
+        for k in range(len(p) - 1):
+            ua, ub = su[k, 1], su[k + 1, 1]
+            if ua == 0 or np.sign(ua) == np.sign(ub) or not (1.0 < su[k, 0] < A.length - 1.0) or abs(ua - ub) > 40:
+                continue
+            t = ua / (ua - ub)
+            s_x = su[k, 0] + (su[k + 1, 0] - su[k, 0]) * t
+            z_x = p[k, 2] + (p[k + 1, 2] - p[k, 2]) * t
+            depth = 0.9 if b.get("kind") == "road" else 0.45      # godot builder/bridge_builder.gd ROAD_DECK, PATH_DECK
+            ang = abs(math.sin(math.atan2(p[k + 1, 1] - p[k, 1], p[k + 1, 0] - p[k, 0]) - float(A.theta(s_x))))
+            half = (float(b["width"]) / 2 + 0.6) / max(ang, 0.3)
+            out.append((float(s_x), half, float(z_x - depth), b["id"]))
+    return out
+
+
 def catenary(al: dict, A: rg.Alignment, design: rg.Design, platforms: list, structures: dict, spacing: float,
-             pk: dict) -> dict:
+             pk: dict, decks: list = ()) -> dict:
     """Portals (two masts and a beam across both tracks, as at Gare de Lozère) by rule: spans up to SPAN_MAX on
     straight track and shorter in curves, where a span's chord may stray at most WIRE_OFFSET_MAX off the track
     (span <= 2 sqrt(2 R WIRE_OFFSET_MAX)); never over a footbridge deck, an underpass or the road tunnel, nor on a
@@ -1188,6 +1507,9 @@ def catenary(al: dict, A: rg.Alignment, design: rg.Design, platforms: list, stru
         if near.any():
             keep_out.append((float(su[near, 0].min()) - 4.0, float(su[near, 0].max()) + 4.0))
 
+    for sd, half, under, _id in decks:            # the map's bridges over the line: no portal under a deck
+        keep_out.append((sd - half - 2.5, sd + half + 2.5))
+
     def allowed(x):
         return not any(a <= x <= b for a, b in keep_out)
 
@@ -1209,6 +1531,7 @@ def catenary(al: dict, A: rg.Alignment, design: rg.Design, platforms: list, stru
     deck_low = []
     for fb in structures["footbridges"]:
         deck_low.append((fb["s"], fb["level"] - fb["depth"]))
+    deck_low += [(sd, under) for sd, half, under, _id in decks]
     out = []
     flip = 1.0
     for x in supports:
@@ -1338,7 +1661,7 @@ FURNITURE_DUPLICATES = {"bench_back", "bench_flat", "bin_vigipirate", "lamp_path
 
 
 def clearance(world: dict, A: rg.Alignment, design: rg.Design, zones_union, hard_union, spacing: float,
-              platforms: list) -> dict:
+              platforms: list, yard_lines=None) -> dict:
     """Trees and props in the railway's way, decided by rule: trees whose trunk is on the reshaped ground or in the
     cleared strip, or whose crown hangs within CROWN_GAP of a track; props on the trackbed, the platforms or in a
     stairwell or the road's trench (`hard_union`; on a slope they just follow the new ground): furniture the platforms have their own of is dropped, the rest moved to the nearest free spot
@@ -1347,47 +1670,58 @@ def clearance(world: dict, A: rg.Alignment, design: rg.Design, zones_union, hard
     from shapely.prepared import prep
     zp = prep(zones_union)
     hp = prep(hard_union)
+    from shapely.geometry import Polygon as _P
+    from shapely.ops import unary_union as _u
+    roads = prep(_u([_P(g["rings"][0], g["rings"][1:]).buffer(0) for g in world["ground"]
+                     if g["kind"] == "road" and g["rings"]]))   # a moved prop never lands on a carriageway
     toe = ballast_toe(spacing)
+    bx = zones_union.buffer(45.0).bounds
+    near = lambda x, y: bx[0] < x < bx[2] and bx[1] < y < bx[3]
     trees = []
     for t in world["trees"]:
-        if not (-260 < t["x"] < 1820 and -950 < t["y"] < -720):
+        if not near(t["x"], t["y"]):
             continue
         s, u = A.project(np.array([[t["x"], t["y"]]]))[0]
-        if not (0 < s < A.length) or abs(u) > 40:
-            continue
+        on_line = 0 < s < A.length and abs(u) <= 40
         reason = ""
         if zp.contains(Point(t["x"], t["y"])):
             reason = "on the reshaped ground"
-        elif abs(u) < toe + CLEAR_STRIP:
+        elif on_line and abs(u) < toe + CLEAR_STRIP:
             reason = "in the cleared strip"
-        elif abs(u) - float(t["r"]) < spacing / 2 + CROWN_GAP:
+        elif on_line and abs(u) - float(t["r"]) < spacing / 2 + CROWN_GAP:
             reason = "crown over the tracks"
+        elif yard_lines is not None and yard_lines.distance(Point(t["x"], t["y"])) - float(t["r"]) < CROWN_GAP:
+            reason = "crown over a yard track"
         if reason:
             trees.append({"id": t["id"], "s": round(float(s), 1), "u": round(float(u), 1), "reason": reason})
     props, moved = [], []
     for p in world["props"]:
-        if not (-260 < p["x"] < 1820 and -950 < p["y"] < -720):
+        if not near(p["x"], p["y"]):
             continue
         q = np.array([[p["x"], p["y"]]])
         s, u = A.project(q)[0]
-        if not (0 < s < A.length) or abs(u) > 30:
-            continue
         if not hp.contains(Point(p["x"], p["y"])):
             continue
+        on_line = 0 < s < A.length and abs(u) <= 30
         model = p["model"]
         if model in ("bus_pole", "bus_shelter"):
-            props.append({"id": p["id"], "model": model, "action": "kept", "reason": "bus stop"})
+            props.append({"id": p["id"], "osm": p.get("osm", ""), "model": model, "action": "kept", "reason": "bus stop"})
             continue
-        if model in FURNITURE_DUPLICATES and any(pf["s0"] - 5 <= s <= pf["s1"] + 5 for pf in platforms):
-            props.append({"id": p["id"], "model": model, "action": "dropped",
+        if model in FURNITURE_DUPLICATES and on_line and any(pf["s0"] - 5 <= s <= pf["s1"] + 5 for pf in platforms):
+            props.append({"id": p["id"], "osm": p.get("osm", ""), "model": model, "action": "dropped",
                           "reason": "the platform has its own (%s)" % model})
             continue
         # nearest free spot outwards (and along) off the railway's ground
         best = None
         for du in np.arange(0.5, 15.01, 0.5):
             for ds in (0.0, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0):
-                c = A.point(s + ds, u + math.copysign(du, u if u else 1.0))
-                if hp.contains(Point(c[0], c[1]).buffer(0.4)) or hp.intersects(Point(c[0], c[1]).buffer(0.4)):
+                if on_line:
+                    c = A.point(s + ds, u + math.copysign(du, u if u else 1.0))
+                else:                           # in the yard: round the prop, outwards ring by ring
+                    a = math.radians(ds * 45.0 + 22.5 * (du * 2 % 2))
+                    c = np.array([p["x"] + du * math.cos(a), p["y"] + du * math.sin(a)])
+                if hp.contains(Point(c[0], c[1]).buffer(0.4)) or hp.intersects(Point(c[0], c[1]).buffer(0.4)) \
+                        or roads.intersects(Point(c[0], c[1]).buffer(0.3)):
                     continue
                 if any(math.hypot(o["x"] - c[0], o["y"] - c[1]) < 1.0 for o in world["props"] if o is not p
                        and abs(o["x"] - c[0]) < 2 and abs(o["y"] - c[1]) < 2):
@@ -1397,7 +1731,8 @@ def clearance(world: dict, A: rg.Alignment, design: rg.Design, zones_union, hard
             if best is not None:
                 break
         if best is None:
-            props.append({"id": p["id"], "model": model, "action": "dropped", "reason": "no free spot within 15 m"})
+            props.append({"id": p["id"], "osm": p.get("osm", ""), "model": model, "action": "dropped",
+                          "reason": "no free spot within 15 m"})
         else:
             moved.append({"id": p["id"], "model": model, "to": [round(float(best[0]), 3), round(float(best[1]), 3)],
                           "reason": "on the railway's ground"})
@@ -1406,7 +1741,7 @@ def clearance(world: dict, A: rg.Alignment, design: rg.Design, zones_union, hard
     buildings = []
     for b in world["buildings"]:
         ring = np.array(b["rings"][0])
-        if ring[:, 0].max() < -260 or ring[:, 0].min() > 1820 or ring[:, 1].max() < -950 or ring[:, 1].min() > -720:
+        if ring[:, 0].max() < bx[0] or ring[:, 0].min() > bx[2] or ring[:, 1].max() < bx[1] or ring[:, 1].min() > bx[3]:
             continue
         su = A.project(ring)
         if not np.any((su[:, 0] > 0) & (su[:, 0] < A.length)):
@@ -1547,7 +1882,8 @@ def furniture(platforms: list, A: rg.Alignment, world: dict, osm: dict, structur
         for k in range(int(L // BOARD_SPACING) + 1):
             s = pf["s0"] + 12.0 + k * BOARD_SPACING
             if s < pf["s1"] - 5 and free(s, pf["side"]):
-                place("name_board", pf, s, 0.9, {"text": pf["name"], "subtitle": "École Polytechnique"})
+                place("name_board", pf, s, 0.9, {"text": pf["name"],
+                                                 "subtitle": "École Polytechnique" if pf["name"] == "Lozère" else ""})
         # a canopy along a station building at the platform's back, else two shelters
         canopy = None
         for bpoly in station_buildings:
@@ -1677,7 +2013,11 @@ def zones(ew: dict, A: rg.Alignment, platforms: list, structures: dict, design: 
                 edge = np.asarray(sd["edge"], dtype=float)
                 reach = np.asarray(sd["reach"], dtype=float)
                 outer = np.maximum(reach, edge + 0.05)
-                src = sources["platform"].get(side, "") if k_ == 2 else ""
+                src = ""
+                if k_ == 2:             # the platform of that side over this run (one per station)
+                    sg = 1.0 if side == "left" else -1.0
+                    src = next((ps for psg, a0, a1, ps in sources["platform"]
+                                if psg == sg and a0 <= ss[min(b - 1, n - 1)] and a1 >= ss[a]), "")
                 raw.append((name, side, band(side, a, b, edge, outer), None, src))
                 if k_ == 2:
                     raw.append(("platform_blend", side, band(side, a, b, reach, reach + rg.Design.BLEND_RUN), None,
@@ -1768,19 +2108,24 @@ def r3(a):
     return a
 
 
-def landing_spots(world: dict, A: rg.Alignment, rail_ground) -> dict:
+def landing_spots(world: dict, route: np.ndarray, track_lines, rail_ground) -> dict:
     """Where a player riding a train off the map is put back (the user's rule): beside the line just inside the
-    playable box at each end, off the railway's ground and out of buildings, on a sidewalk, path or road within 40 m
-    if there is one, else on open ground (grass, dirt)."""
-    from shapely.geometry import Point, Polygon
+    walkable area at each end (the eastbound route's first and last points 12 m inside it), off the railway's ground
+    and out of buildings, on a sidewalk, path or road within 40 m if there is one, else on open ground (grass, dirt);
+    never between the right-of-way fences (12 m from every track)."""
+    import shapely
+    from shapely.geometry import Point, Polygon, box
     from shapely.prepared import prep
     from shapely.strtree import STRtree
-    play = world["meta"]["playable"]
+    rings = world["meta"].get("playable_area")
+    play = Polygon(rings[0], rings[1:]) if rings else box(*world["meta"]["playable"])
+    deep = play.buffer(-3.0)
+    edge_in = shapely.contains_xy(play.buffer(-12.0), route[:, 0], route[:, 1])
+    idx = np.nonzero(edge_in)[0]
     rp = prep(rail_ground)
     out = {}
-    for end, x_edge in (("west", play[0] + 12.0), ("east", play[2] - 12.0)):
-        k = int(np.argmin(np.abs(A.pts[:, 0] - x_edge)))
-        c = A.pts[k]
+    for end, k in (("west", int(idx[0])), ("east", int(idx[-1]))):
+        c = route[k]
         polys, info = [], []
         for g in world["ground"]:
             ring = np.asarray(g["rings"][0])
@@ -1793,12 +2138,10 @@ def landing_spots(world: dict, A: rg.Alignment, rail_ground) -> dict:
         for dx in np.arange(-40.0, 40.01, 1.0):
             for dy in np.arange(-40.0, 40.01, 1.0):
                 q = (float(c[0] + dx), float(c[1] + dy))
-                if not (play[0] + 3 < q[0] < play[2] - 3 and play[1] + 3 < q[1] < play[3] - 3):
-                    continue
                 pt = Point(q)
-                if rp.intersects(pt.buffer(1.5)):
+                if not deep.contains(pt) or rp.intersects(pt.buffer(1.5)):
                     continue
-                if abs(float(A.project(np.array([q]))[0][1])) < 12.0:
+                if track_lines.distance(pt) < 12.0:
                     continue                    # outside the right-of-way fences, never between them
                 hit = [i for i in tree.query(pt) if polys[i].contains(pt)]
                 if not hit:
@@ -1814,21 +2157,223 @@ def landing_spots(world: dict, A: rg.Alignment, rail_ground) -> dict:
                     best = (score, q, kind, mat)
         if best:
             out[end] = {"x": round(best[1][0], 3), "y": round(best[1][1], 3), "ground": "%s %s" % best[2:],
-                        "s": round(float(A.s[k]), 1)}
+                        "route": k}
     return out
+
+
+def resample_route(parts: list) -> dict:
+    """Route pieces (dicts of per-point arrays pts, z, heading, roll, limit, s_centre) joined and resampled every metre
+    (the alignment's route and the yard track meet less than a metre apart)."""
+    keys = ("z", "heading", "roll", "limit", "s_centre")
+    pts = np.concatenate([p["pts"] for p in parts])
+    vals = {k: np.concatenate([np.asarray(p[k], dtype=np.float64) for p in parts]) for k in keys}
+    vals["heading"] = np.unwrap(vals["heading"])
+    d = rg.cumlen(pts)
+    keep = np.r_[True, np.diff(d) > 1e-6]
+    pts, d = pts[keep], d[keep]
+    vals = {k: v[keep] for k, v in vals.items()}
+    st = np.arange(0.0, d[-1], 1.0)
+    out = {"pts": np.c_[np.interp(st, d, pts[:, 0]), np.interp(st, d, pts[:, 1])]}
+    for k, v in vals.items():
+        out[k] = np.interp(st, d, v)
+    return out
+
+
+def yard_piece(tr: dict, s_start: float, reverse: bool) -> dict:
+    """A yard track as a route piece (in its trains' direction): s_centre goes on from the alignment's end."""
+    pts, z, th = np.asarray(tr["pts"]), np.asarray(tr["z"]), np.asarray(tr["heading"])
+    lim = np.asarray(tr.get("maxspeed", np.full(len(pts), LINE_SPEED)), dtype=np.float64)
+    sc = s_start + rg.cumlen(pts)
+    if reverse:
+        pts, z, th, lim, sc = pts[::-1], z[::-1], th[::-1] + math.pi, lim[::-1], sc[::-1]
+    return {"pts": pts, "z": z, "heading": th, "roll": np.zeros(len(pts)), "limit": lim, "s_centre": sc}
+
+
+def build_services(osm: dict, al: dict, A: rg.Alignment, cant: np.ndarray, spacing: float, limits: np.ndarray,
+                   platforms: list, Y: dict, sigs: list, world: dict) -> list:
+    """Per direction: its track's route on the alignment and on through the yard (track 2 eastbound, out past the
+    map's north-east end; track 1 westbound, in from there), the stops at every station (the front on OSM's stop
+    position; 4-car trains centred on the platform), the signals facing it, the block sections, where it enters and
+    leaves the map, its departure phase (both directions meet at Lozère, as before)."""
+    import shapely
+    from scipy.spatial import cKDTree
+    stops = stop_nodes(osm)
+    for nd in osm["nodes"].values():                 # Le Guichet (west, the westbound trains' terminus)
+        t = nd.get("tags", {})
+        if t.get("railway") == "stop" and t.get("name") == "Le Guichet" and t.get("ref") in ("1", "2"):
+            stops[("Le Guichet", t["ref"])] = np.array(fwd(nd["lat"], nd["lon"]))
+    mains = {t["ref"]: t for t in Y["tracks"] if t["main"]}
+    L8 = TRAIN_LENGTHS["8"]
+    services = []
+    for track, sid, direction in (("2", "B-east", "eastbound"), ("1", "B-west", "westbound")):
+        r = track_route(al, A, cant, track, spacing, limits)
+        piece = {"pts": r["pts"], "z": r["z"], "heading": r["heading"], "roll": r["roll"], "limit": r["limit"],
+                 "s_centre": r["s_centre"]}
+        yp = yard_piece(mains[track], A.length, reverse=direction == "westbound")
+        R = resample_route([piece, yp] if direction == "eastbound" else [yp, piece])
+        pts = R["pts"]
+        kd = cKDTree(pts)
+        sc = R["s_centre"]
+        idx = np.arange(len(sc), dtype=np.float64)
+        order = np.argsort(sc)
+        to_route = lambda s, sc=sc, idx=idx, order=order: float(np.interp(s, sc[order], idx[order]))
+        route = {"limit": R["limit"]}
+
+        def at(p):                                   # route index nearest a map point
+            return float(kd.query(np.asarray(p, dtype=np.float64))[1])
+
+        stop_list = []
+        for name in STATIONS:
+            key = (name, track)
+            if key not in stops:
+                continue
+            k8 = at(stops[key])
+            if np.linalg.norm(pts[int(k8)] - stops[key]) > 30.0:
+                continue
+            # the platform beside this track there: one of the alignment's, or a yard island
+            pf_id, c4, side = None, None, "left"
+            for pf in platforms:
+                if slug(pf["name"]) == slug(name) and pf["track"] == track:
+                    pf_id = pf["id"]
+                    c4 = 0.5 * (to_route(pf["s0"]) + to_route(pf["s1"]))
+                    break
+            if pf_id is None:
+                for isl in Y["islands"]:
+                    if slug(isl["name"]) == slug(name) and mains[track]["id"] in isl["tracks"]:
+                        pf_id = isl["id"]
+                        e = np.asarray(next(e["pts"] for e in isl["edges"] if e["track"] == mains[track]["id"]))
+                        ks = sorted([at(e[0]), at(e[-1])])
+                        c4 = 0.5 * (ks[0] + ks[1])
+                        mid = e[len(e) // 2]
+                        k = int(at(mid))
+                        hd = np.array([math.cos(R["heading"][k]), math.sin(R["heading"][k])])
+                        rel = mid - pts[k]
+                        side = "left" if hd[0] * rel[1] - hd[1] * rel[0] > 0 else "right"
+                        break
+            if pf_id is None:
+                continue
+            stop_list.append({"name": name, "s": {"8": round(k8, 2), "4": round(c4 + TRAIN_LENGTHS["4"] / 2, 2)},
+                              "side": side, "platform": pf_id, "dwell": DWELL})
+        guichet = stops.get(("Le Guichet", track))
+        guichet_s = at(guichet) if guichet is not None else None
+        ins = shapely.contains_xy(DATA_AREA, pts[:, 0], pts[:, 1])     # on the map's ground (as the box was)
+        in_idx = np.nonzero(ins)[0]
+        r_in, r_out = int(in_idx[0]), int(in_idx[-1])
+        if direction == "eastbound":
+            start, start_speed = guichet_s, 0.0
+            end = min(r_out + 15.0 + L8 + 5.0, len(pts) - 3.0)
+            v = planned_speed(route, L8)
+        else:
+            start = max(r_in - 15.0, 0.0)
+            end = guichet_s
+            v = planned_speed(route, L8, end_stop=end)
+            start_speed = float(v[int(start)])
+            stop_list.append({"name": "Le Guichet", "s": {"8": round(guichet_s, 2)}, "side": "left", "terminus": True})
+        stop_list.sort(key=lambda x: x["s"]["8"])
+        # time from the start to the stop at Lozère, stopping on the way (the phase: both directions meet there)
+        t_loz, cur, cur_v = 0.0, start, start_speed
+        for st in stop_list:
+            if st["s"]["8"] < cur:
+                continue
+            t_loz += run_time(v, cur, st["s"]["8"], cur_v)
+            if st["name"] == "Lozère":
+                break
+            t_loz += st.get("dwell", DWELL)
+            cur, cur_v = st["s"]["8"], 0.0
+        n_route = int(math.ceil(end)) + 2
+        facing = 1 if direction == "eastbound" else -1
+        rsig = []
+        for sg in sigs:
+            if sg["facing"] == facing:
+                rsig.append({"id": sg["id"], "ref": sg["ref"], "kind": sg["kind"], "s": round(to_route(sg["s"]), 2),
+                             "normal": sg["normal"], "track": sg["track"]})
+        rsig.sort(key=lambda x: x["s"])
+        blocks = [x["s"] for x in rsig if x["normal"] and x["kind"] in ("FR:S", "FR:CARRE")]
+        services.append({"id": sid, "track": track, "direction": direction, "step": 1.0,
+                         "pts": np.c_[pts[:n_route], R["z"][:n_route]], "heading": R["heading"][:n_route],
+                         "roll": R["roll"][:n_route], "v": v[:n_route], "s_centre": sc[:n_route],
+                         "length": n_route - 1.0, "start": round(start, 2), "start_speed": round(start_speed, 2),
+                         "end": round(end, 2), "enter": float(r_in), "exit": float(r_out) + L8,
+                         "stops": stop_list, "origin": "Le Guichet" if direction == "eastbound" else None,
+                         "signals": rsig, "blocks": blocks, "headway": HEADWAY, "run_to_lozere": round(t_loz, 1)})
+    te = services[0]["run_to_lozere"]
+    tw = services[1]["run_to_lozere"]
+    services[0]["phase"] = 0.0
+    services[1]["phase"] = round(((te + 20.0 - tw) % HEADWAY) / HEADWAY, 4)
+    log("services: eastbound reaches Lozère %.0f s after leaving Le Guichet, westbound %.0f s after entering; "
+        "westbound phase %.2f of the %d s headway (they meet in the station)" % (te, tw, services[1]["phase"], HEADWAY))
+    for sv in services:
+        log("  %s: %.0f m, stops %s" % (sv["id"], sv["length"], ", ".join("%s %s at %.0f (%s)" % (
+            st["name"], st.get("platform", ""), st["s"]["8"], st["side"]) for st in sv["stops"])))
+    return services
+
+
+def drawn_range(pts) -> list:
+    """[first, last] point index of a yard track on the map's ground (its longest run there): the builder draws that
+    much (the main tracks run on past the data for the hidden trains)."""
+    ins = inside(np.asarray(pts)[:, 0], np.asarray(pts)[:, 1])
+    best, i = (0, -1), 0
+    while i < len(ins):
+        if ins[i]:
+            j = i
+            while j < len(ins) and ins[j]:
+                j += 1
+            if j - 1 - i > best[1] - best[0]:
+                best = (i, j - 1)
+            i = j
+        else:
+            i += 1
+    return [int(best[0]), int(best[1])]
+
+
+def island_furniture(Y: dict) -> list:
+    """Furniture on the yard's islands, by rule as on the side platforms (lamps every LAMP_SPACING, name boards every
+    BOARD_SPACING, a bench and a bin between): along each island's spine, facing its first track."""
+    items = []
+    for isl in Y["islands"]:
+        spine = np.asarray(isl["spine"])
+        d = rg.cumlen(spine)
+        e = np.asarray(isl["edges"][0]["pts"])
+        L = float(d[-1])
+
+        def at(s):
+            p = np.array([np.interp(s, d, spine[:, 0]), np.interp(s, d, spine[:, 1])])
+            k = int(np.clip(np.searchsorted(d, s), 1, len(spine) - 1))
+            t = spine[k] - spine[k - 1]
+            q = e[min(k, len(e) - 1)]
+            yaw = math.atan2(q[1] - p[1], q[0] - p[0])        # facing the first track's edge
+            return p, math.degrees(yaw), t
+        for kind, step, off, extra in (("lamp", LAMP_SPACING, 4.0, {}),
+                                       ("name_board", BOARD_SPACING, 12.0, {"text": isl["name"], "subtitle": ""}),
+                                       ("bench", BENCH_SPACING, 25.0, {"seats": 3}),
+                                       ("bin", BENCH_SPACING, 35.0, {})):
+            s = off
+            while s < L - 4.0:
+                p, yaw, _t = at(s)
+                items.append({"kind": kind, "platform": isl["id"], "s": round(s, 2), "u": 0.0,
+                              "x": round(float(p[0]), 3), "y": round(float(p[1]), 3), "z": round(isl["top"], 3),
+                              "yaw": round(yaw, 1), **extra})
+                s += step
+        for f in (0.3, 0.7):
+            p, yaw, _t = at(f * L)
+            items.append({"kind": "departure_screen", "platform": isl["id"], "s": round(f * L, 2), "u": 0.0,
+                          "x": round(float(p[0]), 3), "y": round(float(p[1]), 3), "z": round(isl["top"], 3),
+                          "yaw": round(yaw, 1)})
+    return items
 
 
 def main() -> None:
     t_start = time.time()
     osm = load_osm()
+    rg.ensure_base()
+    world = rg.load_json(rg.BASE / "world.json")
+    set_data_area(world)
     t1, ids1 = chain_track(osm, "1")
     t2, ids2 = chain_track(osm, "2")
     fa = fit_alignment(t1, t2)
     al = alignment_arrays(fa)
     spacing = al["spacing"]
-    rg.ensure_base()
-    world = rg.load_json(rg.BASE / "world.json")
-    H = rg.Heights(rg.BASE / "heightmap.f32", world["terrain"], world["ground_mesh"]["cell"])
+    H = rg.Heights(rg.BASE, world["terrain"], world["ground_mesh"]["cell"])
     L = float(al["s"][-1])
     A0 = rg.Alignment({"step": 1.0, "pts": al["pts"], "heading": al["heading"], "z": np.zeros(len(al["s"])),
                        "length": L})
@@ -1857,12 +2402,14 @@ def main() -> None:
     A.spacing = spacing
     cant_at = lambda s: float(np.interp(s, al["s"], cant))
     platforms = osm_platforms(osm, A, spacing, cant_at)
+    platforms += rule_platforms(osm, A, spacing, cant_at, platforms)
     caps = cess_caps(osm, A)
     groups = osm_structures(osm, A, H)
     from shapely.geometry import LineString
+    from shapely.geometry import Polygon as _Pg
     from shapely.ops import unary_union
-    inside = (al["pts"][:, 0] > -260) & (al["pts"][:, 0] < 1820)
-    near = LineString(al["pts"][inside]).buffer(SLOPE_REACH + 15.0)
+    in_map = inside(al["pts"][:, 0], al["pts"][:, 1])
+    near = LineString(al["pts"][in_map]).buffer(SLOPE_REACH + 15.0)
     ignore = unary_union([LineString(p).buffer(1.5) for g in groups for p in g["geom"].values() if len(p) > 1])
     corridor = Corridor(world, near, ignore)
     cap_platform_backs(platforms, A, corridor)
@@ -1885,87 +2432,49 @@ def main() -> None:
             structures["road_tunnel"] = road_tunnel(g, osm, A, lambda s, u, p: design.z_or_ground(s, u, p), H)
     longest = [max(ids, key=lambda i: _way_len(way_pts(osm["ways"][i]))) for ids in (ids1, ids2)]
     sources = {"track": "osm:w%d+w%d" % tuple(longest),
-               "platform": {("left" if p["side"] > 0 else "right"): "osm:" + p["osm"] for p in platforms}}
+               "platform": [(p["side"], p["s0"], p["s1"], ("osm:" + p["osm"]) if p["osm"] else "rule:" + slug(p["name"]))
+                            for p in platforms]}
     zs, zunion = zones(ew_json, A, platforms, structures, design, sources)
-    from shapely.geometry import Polygon as _Pg
+    spans = rail_bridges(osm, A, ids1 + ids2)
+    zs = cut_spans(zs, A, spans)
+    zunion = unary_union([_Pg(pg[0], pg[1:]) for z in zs for pg in z["polygons"]])
+    log("rail bridges: %s" % ", ".join("s %.0f-%.0f (%s)" % (b["s0"], b["s1"], "+".join(b["osm"])) for b in spans))
+    # the station yard beyond the alignment (Massy-Palaiseau): every track a line of its own, the islands
+    import yard as yd
+    Y = yd.build(osm, A, spacing, RAIL_HEIGHT + PAD, H, DATA_AREA, set(ids1) | set(ids2), A.length, PLATFORM_EDGE,
+                 PLATFORM_HEIGHT)
+    streets = unary_union([_Pg(g["rings"][0], g["rings"][1:]).buffer(0) for g in world["ground"] if g["rings"] and
+                           g["kind"] in ("road", "sidewalk", "traffic_island", "pedestrian", "parking")])
+    yz = yd.zones(Y, zunion, DATA_AREA, streets)
+    zs += yz
+    zunion = unary_union([zunion] + [_Pg(pg[0], pg[1:]) for z in yz for pg in z["polygons"]])
+    log("yard: %d tracks (%d of the RER B), %d islands (%s)" % (len(Y["tracks"]), sum(t["rer"] for t in Y["tracks"]),
+                                                             len(Y["islands"]), ", ".join(i["id"] for i in Y["islands"])))
+    # props on the islands ride up with them; elsewhere on the railway's hard ground they move off it
     hard = unary_union([_Pg(pg[0], pg[1:]) for z in zs if z["kind"] in ("trackbed", "platform", "stairwell",
-                                                                         "road_trench") for pg in z["polygons"]])
+                                                                         "road_trench", "yard") for pg in z["polygons"]])
     soft = unary_union([_Pg(pg[0], pg[1:]) for z in zs if z["kind"] != "platform_blend" for pg in z["polygons"]])
     for z in zs:
         if "axis" in z:
             design.add_zone(z)
     pk = pk_points(osm, A)
-    cat = catenary(al, A, design, platforms, structures, spacing, pk)
+    # the map's bridge decks over the line, less the footbridges the line builds itself (Lozère's)
+    own = {o for fb in structures["footbridges"] for o in fb["osm"]}
+    decks = [d for d in bridge_decks(world, A) if next(b["osm"] for b in world["bridges"] if b["id"] == d[3]) not in own]
+    cat = catenary(al, A, design, platforms, structures, spacing, pk, decks)
     furn = furniture(platforms, A, world, osm, structures, cat["supports"])
-    clear = clearance(world, A, design, soft, hard, spacing, platforms)
+    furn["items"] += island_furniture(Y)
+    yard_rer = unary_union([LineString(t["pts"]) for t in Y["tracks"] if t["rer"]])
+    clear = clearance(world, A, design, soft, hard, spacing, platforms, yard_rer)
     row_fences = fences(ew_json, A, world, platforms, structures, furn["items"])
-    from shapely.geometry import LineString as _Ls
-    fenced = unary_union([soft] + [_Ls(f["pts"]).buffer(1.0) for f in row_fences])
-    land = landing_spots(world, A, fenced)
+    fenced = unary_union([soft] + [LineString(f["pts"]).buffer(1.0) for f in row_fences])
+    ss_all = np.arange(0.0, A.length, 2.0)
+    track_lines = unary_union([LineString(A.point(ss_all, np.full(len(ss_all), u))) for u in (-spacing / 2, spacing / 2)]
+                              + [LineString(t["pts"]) for t in Y["tracks"]])
     # services
     limits = speed_limits(al, curves)
-    stops = {}
-    for nd in osm["nodes"].values():
-        t = nd.get("tags", {})
-        if t.get("railway") == "stop" and t.get("ref") in ("1", "2"):
-            stops[(t.get("name", ""), t["ref"])] = np.array(fwd(nd["lat"], nd["lon"]))
-    services = []
-    box = world["meta"]["bounds"]
-    for track, sid, direction in (("2", "B-east", "eastbound"), ("1", "B-west", "westbound")):
-        r = track_route(al, A, cant, track, spacing, limits)
-        sc = r["s_centre"]
-        idx = np.arange(len(sc), dtype=np.float64)
-        order = np.argsort(sc)
-        to_route = lambda s, sc=sc, idx=idx, order=order: float(np.interp(s, sc[order], idx[order]))
-        pts = r["pts"]
-        pf = [p for p in platforms if p["track"] == track][0]
-        loz = stops.get(("Lozère", track))
-        stop8 = to_route(A.project(loz[None, :])[0][0]) if loz is not None else None
-        c = 0.5 * (to_route(pf["s0"]) + to_route(pf["s1"]))
-        stop4 = c + TRAIN_LENGTHS["4"] / 2
-        guichet = stops.get(("Le Guichet", track))
-        guichet_s = to_route(A.project(guichet[None, :])[0][0]) if guichet is not None else None
-        xs = pts[:, 0]
-        in_box = np.nonzero((xs > box[0]) & (xs < box[2]))[0]
-        r_in, r_out = int(in_box[0]), int(in_box[-1])
-        L8 = TRAIN_LENGTHS["8"]
-        if direction == "eastbound":
-            start, start_speed = guichet_s, 0.0
-            end = r_out + 15.0 + L8 + 5.0
-            v = planned_speed(r, L8)
-            t_arr = run_time(v, start, stop8, 0.0)
-        else:
-            start = r_in - 15.0
-            end = guichet_s
-            v = planned_speed(r, L8, end_stop=end)
-            start_speed = float(v[int(start)])
-            t_arr = run_time(v, start, stop8, start_speed)
-        n_route = int(math.ceil(end)) + 2
-        facing = 1 if direction == "eastbound" else -1
-        rsig = []
-        for sg in sigs:
-            if sg["facing"] == facing:
-                rsig.append({"id": sg["id"], "ref": sg["ref"], "kind": sg["kind"], "s": round(to_route(sg["s"]), 2),
-                             "normal": sg["normal"], "track": sg["track"]})
-        rsig.sort(key=lambda x: x["s"])
-        blocks = [x["s"] for x in rsig if x["normal"] and x["kind"] in ("FR:S", "FR:CARRE")]
-        services.append({"id": sid, "track": track, "direction": direction, "step": 1.0,
-                         "pts": np.c_[pts[:n_route], r["z"][:n_route]], "heading": r["heading"][:n_route],
-                         "roll": r["roll"][:n_route], "v": v[:n_route], "s_centre": sc[:n_route],
-                         "length": n_route - 1.0, "start": round(start, 2), "start_speed": round(start_speed, 2),
-                         "end": round(end, 2), "enter": float(r_in), "exit": float(r_out) + L8,
-                         "stops": [{"name": "Lozère", "s": {"8": round(stop8, 2), "4": round(stop4, 2)},
-                                    "side": "left", "platform": pf["id"], "dwell": DWELL},
-                                   ] + ([{"name": "Le Guichet", "s": {"8": round(guichet_s, 2)}, "side": "left",
-                                          "terminus": True}] if direction == "westbound" else []),
-                         "origin": "Le Guichet" if direction == "eastbound" else None,
-                         "signals": rsig, "blocks": blocks, "headway": HEADWAY, "run_to_lozere": round(t_arr, 1)})
-    te = services[0]["run_to_lozere"]
-    tw = services[1]["run_to_lozere"]
-    services[0]["phase"] = 0.0
-    services[1]["phase"] = round(((te + 20.0 - tw) % HEADWAY) / HEADWAY, 4)
-    log("services: eastbound reaches Lozère %.0f s after leaving Le Guichet, westbound %.0f s after entering; "
-        "westbound phase %.2f of the %d s headway (they meet in the station)" % (te, tw, services[1]["phase"], HEADWAY))
+    services = build_services(osm, al, A, cant, spacing, limits, platforms, Y, sigs, world)
+    land = landing_spots(world, np.asarray(services[0]["pts"])[:, :2], track_lines, fenced)
     for st in structures["footbridges"]:
         log("footbridge %s at s %.0f: deck %.2f m (%.2f m over the rail; from the steps %s), flights %s"
             % (st["id"], st["s"], st["level"], st["clearance"], st["from_steps"],
@@ -1977,6 +2486,9 @@ def main() -> None:
     if rt:
         log("road tunnel: %d m long, covered %s m along it, lowest %.2f m, steepest %.1f %%"
             % (rt["t"][-1], rt["covered"], rt["lowest"], rt["max_grade"]))
+    log("platforms: %s" % ", ".join("%s %.0f-%.0f" % (p["id"], p["s0"], p["s1"]) for p in platforms))
+    log("bridges over the line (the map's): %s" % ", ".join("%s at s %.0f, underside %.2f m over the rail"
+                                                            % (d[3], d[0], d[2] - float(A.level(d[0]))) for d in decks))
     nw = {"left": 0, "right": 0}
     for w in ew["walls"]:
         nw[w["side"]] += w["s1"] - w["s0"] + 1
@@ -1984,14 +2496,16 @@ def main() -> None:
         % (nw, len(row_fences), sum(_way_len(np.asarray(f["pts"])) for f in row_fences), len(clear["trees"]),
            len(clear["props"]),
            {a: sum(1 for p in clear["props"] if p["action"] == a) for a in ("dropped", "moved", "kept")}))
+    box = world["meta"]["bounds"]
     rail = {
         "schema": RAIL_SCHEMA,
         "about": "RER B (Ligne de Sceaux) across the map: tools/rail/build_rail.py from OSM and the LiDAR ground; "
                  "map coordinates (x east, y north, z up, metres; Godot = (x, z, -y)); s along the centreline from "
                  "its west end, u across it (north positive). Schema: the docstring of build_rail.py.",
-        "built_from": {"osm": "tools/rail/osm_rail.json", "osm_timestamp": osm["timestamp"],
-                       "lidar": "godot/world/base/heightmap.f32"},
+        "built_from": {"osm": "tools/rail/osm_rail.json + osm_rail_massy.json", "osm_timestamp": osm["timestamp"],
+                       "lidar": "godot/world/base (heightmap)"},
         "box": box, "playable": world["meta"]["playable"],
+        "playable_area": world["meta"].get("playable_area"),
         "fit": fa["stats"],
         "alignment": {"step": 1.0, "length": L, "spacing": spacing, "pts": al["pts"], "heading": al["heading"],
                       "z": z_rail, "cant": cant, "kappa": al["kappa"], "elements": al["elements"],
@@ -2017,10 +2531,20 @@ def main() -> None:
                        "s0": p["s0"], "s1": p["s1"], "ends": [p["s0"] - 0.5, p["s1"] + 0.5], "edge": p["edge"], "wall": p["wall"], "coping": PLATFORM_COPING,
                        "height": PLATFORM_HEIGHT, "back": p["back_u"],
                        "top": [p["top"](s) for s in p["ss"]], "tags": p["tags"]} for p in platforms],
+        "rail_bridges": spans,
         "footbridges": structures["footbridges"],
         "underpasses": structures["underpasses"],
         "road_tunnel": {k: v for k, v in rt.items() if k not in ("surface",)} if rt else None,
         "station": {"name": "Lozère", "osm": "n5838690254", "furniture": furn["items"]},
+        "stations": STATIONS,
+        "yard": {"about": "tools/rail/yard.py: the tracks beyond the alignment (each its own line: points every metre, "
+                          "rail top, heading; `main`: the RER B's tracks 1 and 2 going on from the alignment's end) and "
+                          "the islands between them (ring, the platform edges along each track, top level)",
+                 "s_start": Y["s_start"],
+                 "tracks": [{"id": t["id"], "ref": t["ref"], "osm": t["osm"], "rer": t["rer"], "main": t["main"],
+                             "pts": t["pts"], "z": t["z"], "heading": t["heading"], "drawn": drawn_range(t["pts"])}
+                            for t in Y["tracks"]],
+                 "islands": [{k: v for k, v in i.items()} for i in Y["islands"]]},
         "signals": sigs,
         "pk": pk,
         "catenary": cat,

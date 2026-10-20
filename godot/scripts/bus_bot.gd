@@ -105,6 +105,7 @@ var half_width := 1.3                       # m, half the vehicle's width
 var obstacle_car: Node3D                    # the vehicle in the way, or null
 
 var _pts := PackedVector2Array()
+var _deck_z := PackedFloat32Array()         # per path point: the bridge deck's height (route "decks"), NAN on the ground
 var _v := PackedFloat32Array()
 var _step := 1.0
 var _length := 0.0
@@ -195,6 +196,15 @@ func _set_route(index: int) -> void:
 	for p: Array in route["pts"]:
 		_pts.append(Vector2(p[0], p[1]))
 	_v = PackedFloat32Array(route["v"])
+	_deck_z = PackedFloat32Array()
+	if route.has("decks"):
+		_deck_z.resize(_pts.size())
+		_deck_z.fill(NAN)
+		for span: Array in route["decks"]:
+			var zs: Array = span[1]
+			for k in zs.size():
+				if int(span[0]) + k < _deck_z.size():
+					_deck_z[int(span[0]) + k] = zs[k]
 	_room = PackedFloat32Array()
 	for run: Array in route.get("room", []):
 		for k in int(run[0]):
@@ -251,12 +261,27 @@ func _ground(p: Vector2) -> float:
 	return map.height(p.x, p.y) if map else 0.0
 
 
+## The surface the path runs on `d` m along it, at `p`: a bridge deck there (route "decks"), else the ground.
+func _surface(d: float, p: Vector2) -> float:
+	if not _deck_z.is_empty():
+		var f := d / _step
+		var i := clampi(int(f), 0, _deck_z.size() - 1)
+		var j := mini(i + 1, _deck_z.size() - 1)
+		var za := _deck_z[i]
+		var zb := _deck_z[j]
+		if not is_nan(za) and not is_nan(zb):
+			return lerpf(za, zb, clampf(f - i, 0.0, 1.0))
+		if not is_nan(za) or not is_nan(zb):
+			return za if not is_nan(za) else zb
+	return _ground(p)
+
+
 ## Car transform (origin on the ground) with the reference point at `d` along the path, its axles on the path.
 func pose_at(d: float) -> Transform3D:
 	var a := at(d - wheelbase * 0.5)
 	var b := at(d + wheelbase * 0.5)
-	var ha := _ground(a)
-	var hb := _ground(b)
+	var ha := _surface(d - wheelbase * 0.5, a)
+	var hb := _surface(d + wheelbase * 0.5, b)
 	var f := Vector3(b.x - a.x, hb - ha, -(b.y - a.y)).normalized()
 	var x := Vector3.UP.cross(f).normalized()
 	var basis := Basis(x, f.cross(x), f)
@@ -272,7 +297,7 @@ func _trailer_pose(front: Transform3D, d: float) -> Transform3D:
 	for k in 3:
 		st += h2.distance_to(at(st)) - _trailer_reach
 	var a := at(st)
-	var ha := _ground(a)
+	var ha := _surface(st, a)
 	var f := (hitch - Vector3(a.x, ha + _ride, -a.y)).normalized()
 	var x := Vector3.UP.cross(f).normalized()
 	var basis := Basis(x, f.cross(x), f)
@@ -306,7 +331,7 @@ func _drive(delta: float) -> Array:
 	if not gliding:
 		var p := project(flat(car.to_global(Vector3(0.0, 0.0, _ref_z))), s - 6.0, s + 20.0)
 		s = p.x
-		_ride = lerpf(_ride, car.global_position.y - _ground(flat(car.global_position)), 0.02)
+		_ride = lerpf(_ride, car.global_position.y - _surface(s, flat(car.global_position)), 0.02)
 	_look_t -= delta
 	if _look_t <= 0.0:
 		_look_t = GLIDE_LOOK_EVERY if gliding else LOOK_EVERY

@@ -7,6 +7,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Pushes build one after the other: each build's data patch starts from the release before it (scripts/delta.gd).
+concurrency:
+  group: build-${{ github.event_name == 'pull_request' && github.head_ref || 'release' }}
+  cancel-in-progress: false
+
 env:
   GODOT_VERSION: 4.7.2
   GODOT_RELEASE: stable
@@ -23,14 +28,24 @@ jobs:
             artifact: plateau-map-windows
             output: output/windows
             file: Plateau Map.exe
+            launcher: launcher2-windows.bin
+          # Windows on ARM laptops (Snapdragon X): runs natively instead of through x64 emulation, on Direct3D 12 (the
+          # Packed preset's windows_arm64 feature, project.godot: Adreno's Vulkan driver fails to submit frames).
+          - preset: Windows Desktop ARM64
+            artifact: plateau-map-windows-arm64
+            output: output/windows-arm64
+            file: Plateau Map.exe
+            launcher: launcher2-windows-arm64.bin
           - preset: Linux
             artifact: plateau-map-linux
             output: output/linux
             file: Plateau Map.x86_64
+            launcher: launcher2-linux.bin
           - preset: macOS
             artifact: plateau-map-macos
             output: output/macos
             file: Plateau Map.zip
+            launcher: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -60,15 +75,14 @@ jobs:
         working-directory: godot
         run: godot --headless --path . --import
 
-      # The release tag and commit, read by scripts/updater.gd (builds without them never look for updates). After the
-      # import, so that the import cache key (it hashes project.godot) stays the same.
-      - name: Stamp version
+      # The release tag, run number and commit, written into the packed builds' pack/manifest.json by pack_game.sh
+      # (builds without them never look for updates), and the launcher id into pack/launcher.json (scripts/delta.gd).
+      - name: Version
         if: github.event_name == 'push'
         working-directory: godot
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then tag="$GITHUB_REF_NAME"; else tag="build-${GITHUB_RUN_NUMBER}"; fi
-          sed -i "/^config\/name=/a config/version=\"$tag\"\nconfig/commit=\"$GITHUB_SHA\"" project.godot
-          grep -A2 "^config/name=" project.godot
+          { echo "TAG=$tag"; echo "RUN=$GITHUB_RUN_NUMBER"; echo "COMMIT=$GITHUB_SHA"; } >> "$GITHUB_ENV"
 
       # Packed build (scripts/boot.gd): the game's pack is exported on its own and compressed into zstd chunks, and
       # the "<preset> Packed" executable carries only these chunks, unpacked at the first start of each build.
@@ -84,13 +98,75 @@ jobs:
           godot --headless --path . --export-pack "${{ matrix.preset }}" "$RUNNER_TEMP/game.pck"
           command -v zstd || sudo apt-get install -y zstd
           tools/pack_game.sh "$RUNNER_TEMP/game.pck" pack
-          rm "$RUNNER_TEMP/game.pck"
+          mkdir -p "$RUNNER_TEMP/info"
+          id=$(python3 -I tools/pck_tool.py content-id "$RUNNER_TEMP/game.pck")
+          launcher=""
+          if [ -n "${TAG:-}" ]; then
+            launcher=$(python3 -I tools/pck_tool.py launcher-id . "$GODOT_VERSION.$GODOT_RELEASE")
+            echo "{\"id\": \"$launcher\"}" > pack/launcher.json
+          fi
+          echo "{\"data\": \"$id\", \"launcher\": \"$launcher\"}" > "$RUNNER_TEMP/info/info.json"
+          cat "$RUNNER_TEMP/info/info.json"
 
       - name: Export
         working-directory: godot
         run: |
           mkdir -p "${{ matrix.output }}"
           godot --headless --path . --export-release "${{ matrix.preset }} Packed" "${{ matrix.output }}/${{ matrix.file }}"
+
+      # Launcher delta (scripts/delta.gd): the same executable without the data chunks, as the blocks a player's
+      # executable already has and the few it lacks (macOS gets the full download when its launcher changes).
+      - name: Launcher delta
+        if: github.event_name == 'push' && matrix.launcher != ''
+        working-directory: godot
+        run: |
+          mkdir -p "$RUNNER_TEMP/thin"
+          mv pack/*.zst "$RUNNER_TEMP/thin/"
+          godot --headless --path . --export-release "${{ matrix.preset }} Packed" "$RUNNER_TEMP/thin/${{ matrix.file }}"
+          python3 -I tools/pck_tool.py launcher "${{ matrix.output }}/${{ matrix.file }}" \
+              "$RUNNER_TEMP/thin/${{ matrix.file }}" "$RUNNER_TEMP/info/${{ matrix.launcher }}"
+
+      # Data patch (the data is the same for every platform, Linux makes it): a Godot patch pack, delta-encoded against
+      # the latest release's data, unpacked from its Linux executable. Published on the "store" release, but only when
+      # it turns that data into exactly this build's game.pck (tools/verify_patch.gd): --export-patch exports the game
+      # a second time, and pack/ (the packed executables' manifest and launcher id by now) is no game data.
+      - name: Data patch
+        if: github.event_name == 'push' && matrix.preset == 'Linux'
+        working-directory: godot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          prev=$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name || true)
+          if [ -z "$prev" ] || ! gh release download "$prev" -p plateau-map-linux.x86_64 -D "$RUNNER_TEMP/prev"; then
+            echo "No previous release to patch from"
+            exit 0
+          fi
+          python3 -I tools/pck_tool.py unpack-exe "$RUNNER_TEMP/prev/plateau-map-linux.x86_64" "$RUNNER_TEMP/prev.pck"
+          from=$(python3 -I tools/pck_tool.py content-id "$RUNNER_TEMP/prev.pck")
+          to=$(python3 -I tools/pck_tool.py content-id "$RUNNER_TEMP/game.pck")
+          if [ "$from" = "$to" ]; then
+            echo "Same data as $prev"
+            exit 0
+          fi
+          mv pack "$RUNNER_TEMP/pack-aside"
+          godot --headless --path . --export-patch Linux "$RUNNER_TEMP/patch.pck" --patches "$RUNNER_TEMP/prev.pck"
+          mv "$RUNNER_TEMP/pack-aside" pack
+          if ! godot --headless --path . --script res://tools/verify_patch.gd -- "$RUNNER_TEMP/prev.pck" \
+              "$RUNNER_TEMP/patch.pck" "$RUNNER_TEMP/game.pck" "$RUNNER_TEMP/merged.pck"; then
+            echo "::error::The data patch does not rebuild this build's data: not published, players get the full download"
+            exit 0
+          fi
+          mv "$RUNNER_TEMP/patch.pck" "$RUNNER_TEMP/info/patch.pck"
+          echo "{\"from\": \"$from\", \"to\": \"$to\", \"prev\": \"$prev\"}" > "$RUNNER_TEMP/info/patch.json"
+          ls -l "$RUNNER_TEMP/info"
+
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: ${{ matrix.artifact }}-info
+          path: ${{ runner.temp }}/info
+          retention-days: 3
 
       # upload-artifact drops the executable bit, so the Linux build is tarred.
       - name: Package Linux build
@@ -115,20 +191,79 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: godot/tools
+          path: src
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
 
+      # A run older than an existing build-N release (it finished late) publishes nothing: it would become "latest".
+      - name: Check this build is the newest
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          newest=$(gh release list --limit 1000 --json tagName --jq '.[].tagName' \
+              | sed -n 's/^build-\([0-9]*\)$/\1/p' | sort -n | tail -n 1)
+          if [ "$GITHUB_REF_TYPE" = branch ] && [ -n "$newest" ] && [ "$newest" -gt "$GITHUB_RUN_NUMBER" ]; then
+            echo "build-$newest is newer: not publishing"
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Collect release assets
+        if: steps.guard.outputs.skip != '1'
         run: |
           mkdir release
           mv "artifacts/plateau-map-windows/Plateau Map.exe" release/plateau-map-windows.exe
+          mv "artifacts/plateau-map-windows-arm64/Plateau Map.exe" release/plateau-map-windows-arm64.exe
           tar xzf artifacts/plateau-map-linux/plateau-map-linux.tar.gz -C artifacts/plateau-map-linux
           mv "artifacts/plateau-map-linux/Plateau Map.x86_64" release/plateau-map-linux.x86_64
           mv "artifacts/plateau-map-macos/Plateau Map.zip" release/plateau-map-macos.zip
+          mv artifacts/plateau-map-windows-info/launcher2-windows.bin \
+              artifacts/plateau-map-windows-arm64-info/launcher2-windows-arm64.bin \
+              artifacts/plateau-map-linux-info/launcher2-linux.bin release/
+          if [ "$GITHUB_REF_TYPE" = tag ]; then tag="$GITHUB_REF_NAME"; else tag="build-${GITHUB_RUN_NUMBER}"; fi
+          info=artifacts/plateau-map-linux-info/info.json
+          printf '{"tag": "%s", "run": %d, "commit": "%s", "launcher": "%s", "data": {"id": "%s"}}\n' "$tag" \
+              "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$(jq -r .launcher "$info")" "$(jq -r .data "$info")" \
+              > release/update.json
+          cat release/update.json
+          # every platform must export the same data, else its players never find a patch path (full downloads)
+          for p in windows windows-arm64 macos; do
+            id=$(jq -r .data "artifacts/plateau-map-$p-info/info.json")
+            [ "$id" = "$(jq -r .data "$info")" ] \
+                || echo "::error::The $p data ($id) is not the Linux data: its players always get the full download"
+          done
+          ls -l release
+
+      # The "store" prerelease (the latest-release API ignores prereleases) keeps the data patches and chain.json, the
+      # path players' data follows to the latest one (scripts/updater.gd); the oldest patches are dropped.
+      - name: Publish the data patch
+        if: steps.guard.outputs.skip != '1' && hashFiles('artifacts/plateau-map-linux-info/patch.pck') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then tag="$GITHUB_REF_NAME"; else tag="build-${GITHUB_RUN_NUMBER}"; fi
+          gh release view store > /dev/null 2>&1 || gh release create store --prerelease --target "$GITHUB_SHA" \
+              --title "Update store" --notes "Data patches for the game's updater (scripts/delta.gd). Not a build."
+          mkdir store
+          gh release download store -p chain.json -D store || true
+          command -v zstd || sudo apt-get install -y zstd
+          p=artifacts/plateau-map-linux-info
+          dropped=$(python3 -I src/godot/tools/pck_tool.py chain-add store/chain.json "$p/patch.pck" store "$(jq -r .from "$p/patch.json")" \
+              "$(jq -r .to "$p/patch.json")" "$GITHUB_RUN_NUMBER" "$tag")
+          gh release upload store "store/patch-${GITHUB_RUN_NUMBER}.pck.zst" store/chain.json --clobber
+          for f in $dropped; do gh release delete-asset store "$f" --yes || true; done
+          ls -l store
 
       # Pushed v* tags are released as-is; every push to main gets its own build-N tag.
       - name: Create release
+        if: steps.guard.outputs.skip != '1'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -148,7 +283,7 @@ jobs:
       # The releases page sorts tags as text (build-9 above build-12), so only the newest build-N release is kept; the
       # updater only reads the latest release. Higher build numbers are left alone (runs can finish out of order).
       - name: Delete older builds
-        if: github.ref_type == 'branch'
+        if: github.ref_type == 'branch' && steps.guard.outputs.skip != '1'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

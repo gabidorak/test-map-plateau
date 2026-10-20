@@ -1,6 +1,6 @@
 # Plateau map
 
-Real map of the Saclay plateau (2.1 × 1.74 km: Télécom Paris → École Polytechnique and its lake → ENSTA Paris and its Centre de l'Yvette, and south down the Lozère hillside to the Yvette valley) turned into a cartoon 3D scene for Godot 4.7.
+Real map of the Saclay plateau (2.1 × 1.74 km: Télécom Paris → École Polytechnique and its lake → ENSTA Paris and its Centre de l'Yvette, and south down the Lozère hillside to the Yvette valley) turned into a cartoon 3D scene for Godot 4.7, with two corridors east to Massy-Palaiseau station: along the 4606 bus (through Palaiseau) and along the RER B (through Palaiseau-Villebon and Palaiseau), 150 m walkable either side of the bus route and of the tracks (`meta.playable_area` in `godot/world/world.json`: the invisible walls follow it).
 
 ## Play
 
@@ -27,7 +27,8 @@ opens the in-game menu (resume, back to the main menu, quit; it lists the player
 7777 in (Windows asks the first time); LAN discovery uses UDP broadcasts on port 7775. Command line options skip the
 menu: `godot --path . -- --host` / `-- --join=192.168.1.42[:7777]` / `-- --solo`, plus `--name=NICK --color=0..7`.
 
-Bot buses drive real lines: the 4606 across the plateau (18 m buses) and the 4619, L and Z on the Lozère hillside
+Bot buses drive real lines: the 4606 across the plateau and down to the Massy-Palaiseau bus station (18 m buses; its
+TCSP busway crosses the RER B on a bridge) and the 4619, L and Z on the Lozère hillside
 (12 m buses), a bus every minute in each direction of each line (`headway` in `pipeline/buses.toml`). They keep to
 their lane, stop at every stop of the line (right indicator in, doors open, left indicator out), signal their turns,
 wait at red lights, give way at junctions and stop behind other vehicles. Get on at a stop while the doors are open and
@@ -61,7 +62,10 @@ they ask GitHub for the latest release and, when it is another build, download i
 progress page, then restart on it by themselves. Esc skips: the download carries on in the background (the bottom of
 the welcome menu shows the progress), **Restart now** installs it, otherwise it is installed at the next start. When the game's folder is not writable (or on a macOS app still in Downloads), the menu links to the
 releases page instead. Runs from the editor and local exports never update (the release workflow stamps the build
-tag into `application/config/version`).
+tag into `application/config/version`). Windows on ARM laptops (Snapdragon X) take `plateau-map-windows-arm64.exe`,
+which runs natively, renders with Direct3D 12 (the `windows_arm64` feature of its export preset: Adreno's Vulkan
+driver fails to submit frames, the screen stays on the last boot frame) and updates to the next ARM64 build. The x86_64
+build hits that Vulkan failure there; `--rendering-driver d3d12` gets it going.
 
 To keep the download small, the release executables carry the game data as zstd chunks (the `... Packed` export
 presets, built by `.github/workflows/build.yml` with `godot/tools/prepare_packed.gd` and `godot/tools/pack_game.sh`):
@@ -87,13 +91,15 @@ blender -b --factory-startup -P blender/vehicles/build_bus.py -- --preview=data/
 blender -b --factory-startup -P blender/vehicles/build_bus.py -- --model=artic --preview=data/review/bus_idfm_artic   # 18 m articulated bus -> bus_idfm_artic.glb + .json (~30 s with the preview)
 blender -b --factory-startup -P blender/vehicles/build_fire_truck.py -- --preview=data/review/fire_truck   # fire truck -> fire_truck.glb + .json (~10 s with the preview)
 blender -b --factory-startup -P blender/vehicles/build_car.py -- --preview=data/review/cars   # realistic cars -> compact_hatchback.glb, family_suv.glb, police_hatchback.glb + .json (~11 s, previews ~2 min a car on the CPU; --car=police_hatchback builds one)
+blender -b --factory-startup -P blender/vehicles/import_textured.py   # 1928 Mercedes from ref/mercedes_1928 (a textured OBJ) -> godot/assets/cars/mercedes_1928/: .gltf + .bin, textures (downscaled by car_textures.py in .venv: Pillow, numpy), .json (~10 s, then godot --headless --import)
 blender -b --factory-startup -P blender/building_kit/build_kit.py  # building kit -> godot/assets/building_kit/kit.glb (~1 s)
 blender -b --factory-startup -P blender/vehicles/build_train.py -- --preview=$PWD/data/review/mi79/mi79   # RER B MI 79 R cars -> mi79.glb + .json (~10 s, previews ~40 s; an absolute --preview path)
 
 # RER B (see "RER B" below): python venv with numpy, shapely and Pillow
 .venv/Scripts/python tools/rail/fetch_osm.py      # optional: refetch the OSM extract tools/rail/osm_rail.json (Overpass)
-.venv/Scripts/python tools/rail/build_rail.py     # OSM + LiDAR -> godot/world/rail.json, tools/rail/review/*.png (~35 s)
-.venv/Scripts/python tools/rail/patch_world.py    # godot/world/base/ + rail.json -> godot/world/ (~2-4 min), then build_world.gd
+.venv/Scripts/python tools/rail/fetch_osm.py --massy   # optional: the same for the line on to Massy-Palaiseau (osm_rail_massy.json)
+.venv/Scripts/python tools/rail/build_rail.py     # OSM + LiDAR -> godot/world/rail.json, tools/rail/review/*.png (~1 min)
+.venv/Scripts/python tools/rail/patch_world.py    # godot/world/base/ + rail.json -> godot/world/ (~25 min, ~6 GB RAM), then build_world.gd
 
 cd godot
 godot --headless --path . --import
@@ -106,14 +112,19 @@ godot --headless --fixed-fps 60 --path . --script res://tools/test_plane.gd  # b
 godot --headless --fixed-fps 60 --path . --script res://tools/test_guns.gd  # armed biplane: G fires both guns, rounds break a car (grey then black smoke, engine dead), repair, LAN state, a round knocks a prop over
 godot --headless --fixed-fps 60 --path . --script res://tools/test_fire_truck.gd  # fire truck: drives, the cannon aims where you look, the jet lands on a car and puts a burning one out, siren (its notes, cadence and harmonics) and beacons, props knocked over, players shoved, LAN state, cab view with a turning steering wheel, passenger seat
 godot --headless --fixed-fps 60 --path . --script res://tools/test_real_cars.gd  # realistic cars (the police car too): size, own lamps and headlights, clear coat, cab view inside the cabin, turning steering wheel, drives, passenger seat
+godot --headless --fixed-fps 60 --path . --script res://tools/test_tiger.gd  # GAZ Tiger's roof gun (its driver: test_real_cars.gd): E from the right side stands the gunner in the hatch, the gun reaches all round within its pitch limits, the turret view turns the ring and the gun onto a car ahead and behind and hits it, armour, out-of-reach warning, LAN state
+godot --headless --fixed-fps 60 --path . --script res://tools/test_truck_trailer.gd  # Volvo FH16 with its semi-trailer: two sections on 4 + 6 wheels, towed trailer held at the fifth wheel, its own lamps, pulls, turns, reverses straight
 godot --headless --fixed-fps 60 --path . --script res://tools/test_police_car.gd  # police car: livery and light bar (out of the collision box), B siren and blue lights (three flashes a side in turn), the siren's notes, cadence and harmonics, LAN state
 godot --headless --fixed-fps 60 --path . --script res://tools/test_camera.gd  # vehicle cameras: auto (holds a look 2 s, then eases back, no turning round in reverse), look back (Z, W on AZERTY), right click free camera (held: only while held), the fire truck's view held while spraying, the cab view looking the chase camera's way, the plane's calmer bank, no jump through rolls and loops
 godot --headless --fixed-fps 60 --path . --script res://tools/test_horse.gd  # horse: stands at leg height, canters, gallops, stops, turns on the spot, hops; a fence holds it, jumped it clears 1.6 m and 2 m fences but not a 3.5 m one; neigh, LAN state, down and up again, gets off
+godot --headless --fixed-fps 60 --path . --script res://tools/test_dealership.gd  # car dealership (Institut d'Optique): display cars still on their podiums, floor/glass/ceiling collide, walk in up the ramp, the salesman greets, follows and pitches, a test drive out of the main door, clearing the map restocks
+godot --headless --fixed-fps 60 --path . --script res://tools/test_water.gd  # water and jet-ski: the lake's level and dug-out bed, the player swims; the jet-ski parked on the lake floats level, E on, W past 15 m/s upright, turns, coasts, Space off into the water; parked on land far from water it only crawls; a car floats then sinks, the horse swims
 godot --headless --fixed-fps 60 --path . --script res://tools/test_bus_bots.gd  # bot buses: both directions out, a departure every headway, indicators and doors at a stop, a turn, a red light, overtaking a parked car (or waiting and honking where there is no room), giving way, not slowing for oncoming traffic in a junction, riding to the map edge, vanishing and coming back, gliding far away (PLATEAU_TEST_ONLY=check,... runs some)
 godot --headless --fixed-fps 60 --path . --script res://tools/test_car_bots.gd  # bot cars: spawned and moving, sent out again, passing an oncoming car without slowing, a head-on in one lane sorted out
+godot --headless --fixed-fps 60 --path . --script res://tools/test_host_options.gd  # host options: bot traffic off/on, clear all vehicles (the player out first)
 godot --headless --fixed-fps 60 --path . --script res://tools/probe_traffic.gd -- 10  # not a test: 10 simulated minutes of traffic, buses per direction, stalls and what held them, tick cost
 tools/test_lan.sh   # LAN game: a host and a client on this machine; riding in the host's bus, taking over a car, breakables, damage, leaving
-tools/test_lan_buses.sh   # LAN game with bot buses: the client gets them (no wheel for anyone), the lights on the host's clock, riding one from a stop
+tools/test_lan_buses.sh   # LAN game with bot buses: the client gets them (no wheel for anyone), the lights on the host's clock, riding one from a stop, the host's bot traffic off/on and clear all vehicles
 godot --headless --fixed-fps 60 --path . --script res://tools/test_races.gd  # races, solo: offered in the start circle (not to a plane, the bus race only to buses), countdown hold, checkpoints in order, finish, results, chat, leaderboard and records file; off the road in the bus race; a bot drives each route to the finish (PLATEAU_TEST_ONLY=lap,bus,bot_bus,bot_lap)
 tools/test_lan_races.sh   # races in a LAN game: the leaderboard for a newcomer, inviting the other driver in the circle, the same GO, results and chat on both
 tools/test_server_records.sh   # a dedicated server's race records outlive a restart (~1 min)
@@ -143,9 +154,13 @@ on a 4K screen; the first window fills 80 % of the screen.
 - Fire truck (vehicle menu): a red 6x6 airport crash tender after `ref/fire_truck.png` (built by `blender/vehicles/build_fire_truck.py`; 9 m, 16 t, all six wheels drive, the front two steer), with a working roof water cannon (`scripts/fire_truck.gd`, `scripts/water_cannon.gd`). The cannon aims where you look: the turret turns and the barrel rises to drop the jet on the point in the middle of the screen, allowing for gravity and air drag (about 80 m of reach), and a dashed blue ring shows where it lands. Hold the left mouse button to spray: the jet is simulated packet by packet, splashes where it lands and leaves wet patches that dry out. It nudges vehicles (a braked car's tyres hold it), shoves players, pushes debris, knocks light props (bins, sign poles, bollards…) over and holds against heavy ones, and 2 s of water on a burning wreck puts the fire out and the vehicle runs again. B switches the fire brigade's two-tone siren (la 435 Hz – si 488 Hz, 27.5 cycles a minute as the 1987 rules ask, the brassy sound of compressor horns) and the flashing blue beacons on and off. In LAN games the water counts on the peer simulating the truck and acts on the peer simulating what it hits; everyone sees the turret, the jet and the beacons and hears the siren. Its cab is fitted out inside (dashboard and gauges, two seats, the cannon's joystick) behind see-through tinted glass: V or the mouse wheel zoomed all the way in gives the cab view, where the driver's hands hold the steering wheel and it turns with the steering. E from the truck's right side (or while another player drives it) sits you in the passenger seat: look around with the mouse, V for the passenger's view out of the cab, E to slide over to the wheel if nobody has it, Space to get out on the right. Other players see you seated there in your colour.
 - Realistic cars (vehicle menu): a red compact hatchback (Clio-sized, 4.05 m) and a blue family SUV with a black roof (3008-sized, 4.45 m), built from code by `blender/vehicles/build_car.py` with real materials (clear-coated paint, chrome, glass) and no badges. Their cabins are fitted out (dashboard with a digital cluster and a centre touchscreen, vents, console and gear selector, door cards, front seats and a rear bench) and seen through see-through glass. V or the mouse wheel zoomed all the way in gives the driver's view from inside, with the hands on a steering wheel that turns. E from the right side sits you in the passenger seat, like the fire truck. Their indicators, brake lamps, headlights and tail lamps are the model's own, lit at night.
 - Police car (vehicle menu, "Police nationale car"): the compact hatchback in the Police nationale's grey livery of 2021 on (after photos of its Peugeot 5008, Renault Scénic and Dacia Duster): a blue band sweeping over the wheel arch on the left of each side and a red one on the right (so each side reads blue-white-red), POLICE NATIONALE with the tricolour mark across the doors, on the bonnet (read from the front) and on the tailgate, a dotted reflective line under the windows, blue, white and red reflective squares across the rear bumper. A blue LED light bar sits on the roof and two blue flashers in the grille (`scripts/police_car.gd`). B switches the French police two-tone siren (la 435 Hz – ré 580 Hz, 55 cycles a minute, as the 1987 rules ask: an electronic siren's square wave through a horn loudspeaker, synthesized in `scripts/vehicle_audio.gd`) and the blue lights: three quick flashes on one side, then the other, lighting the street in blue at night. They keep going when you get out. It drives like the compact hatchback, with the same cab view and passenger seat; in LAN games everyone sees the lights and hears the siren.
+- 1928 Mercedes (vehicle menu, "Mercedes 1928"): a yellow SSK-type tourer with its hood up, from a ready-made model with its own textures (`blender/vehicles/import_textured.py`): slow (100 km/h, four long gears, a lazy old straight six), a cab view behind the big steering wheel, head, wing and scuttle lamps lit at night (L), rear amber and red lenses as indicators and brake lamps.
 - Horse (vehicle menu): a toy chestnut horse with a black mane and tail, a white blaze and socks, saddle, stirrups and reins, built from primitive shapes by `scripts/horse.gd` and ridden by your look-alike in your colour. E gets on and off; W canters (27 km/h), W with Shift gallops (47 km/h), S stops then backs up slowly, A / D turn (on the spot too), G neighs, V or the mouse wheel zoomed all the way in gives the rider's view. Space jumps, the higher the faster it goes: from a canter it clears the map's 1.6 m bar fences and 2 m mesh fences (take off a few metres before), while the 3.5 m fences around pitches and high walls stop it. Its legs move in the gait of its speed (walk, trot, canter, gallop), step round on the spot as it turns, tuck over a jump and fold under it when it is down; the hooves clop on every footfall. It steps up kerbs and low steps, goes round street furniture instead of knocking it over, and in LAN games syncs like the other vehicles (everyone sees it jump). Shot by the armed biplane it lies down for a minute, or until the fire truck hoses it.
+- Water: the Lac de l'X, the ponds and fountain basins are real water (`scripts/water.gd`, `shaders/water.gdshader`). When the scene is built, the ground under each one is dug out into a bed sloping from the shore (up to 2.5 m deep in the lake, shallower in small ponds: OSM gives no depths, so it goes by size) and a see-through surface is laid at the water's level: rippling, refracting the bed (silt, pebbles, weed patches, sun caustics), turquoise in the shallows and darker as it deepens, with foam along the shore and around whatever stands in it. You wade slower as it gets deeper, then swim with your head out (Shift a bit faster, Space kicks up to climb a bank). A car driven in splashes, floats nose down for a few seconds, then fills and settles on the bed with its engine drowned; a plane ditched in the lake does the same; the horse swims.
+- Jet-ski (vehicle menu): a toy sit-down jet-ski (white hull, yellow deck, `scripts/jet_ski.gd`) parked on the nearest lake or pond within 200 m (on land beside you when there is none: there it only crawls). E gets on, Space gets off into the water. W throttle (about 80 km/h flat out), S slows then reverses, A / D steer with the jet (more with speed, a little at idle), G horn, R rights it, V or the mouse wheel zoomed all the way in gives the rider's view. It bobs on the swell, squats and lifts its bow as it pulls away, carves and leans into turns, and throws a rooster tail of spray; its supercharged three-cylinder is synthesized like the other engines.
 - Races: drive into a race's start circle (the big parking by the lake: the campus lap; the stop ENSTA - Les Joncherettes towards Polytechnique, in a bus: the bus race) and press T to race alone, Y to race with the other drivers in the circle (campus lap; T joins an invitation, Y declines it). T twice gives up during a race.
 - Bot buses and cars (`scripts/traffic.gd`, `scripts/bus_bot.gd`): walk in through an open door at a stop and the bus carries you to the next stops; at the end of its route at the map edge it waits for you to get off. E next to one tells you a bot drives it. The tools leave them off unless `PLATEAU_BUSES=1`; `PLATEAU_CARS=n` sets the number of bot cars.
+- Host options (Esc menu, solo or hosting): **Bot traffic: on/off** takes every bot bus and car off the map (for the other players too) or brings them back, and is remembered for the next game (`--no-bots` on the command line, also for `--dedicated`). **Clear all vehicles** (press twice) takes every vehicle off the map, the other players' too; anyone in one is put out first, and the bots come straight back when bot traffic is on.
 - RER B trains (see "RER B" below): get on at Lozère while a train's doors are open (standing in a doorway keeps them open), walk through the four cars of a unit, and you are carried along; riding one off the map puts you down by the line at that end. E next to a train tells you a bot drives it. The tools leave them off unless `PLATEAU_TRAINS=1`; `PLATEAU_TRAIN_HEADWAY=s` sets the time between trains (120 s).
 - Like in Euro Truck Simulator 2, vehicles bend thin trees (trunk up to 10 cm, up to 8 m tall: ~1,500 of them) and knock over sign poles, bus stop poles, route markers, guideposts, bollards, bin poles, lamps, traffic lights, light barriers, bike racks, benches, picnic tables, wheelie bins, parking meters, post boxes, info boards and fire hydrants (`scripts/breakables.gd`; kiosks, shelters, concrete blocks and masts hold). A tree bends away from the bumper, stays flat while the vehicle is over it and springs back up behind it; a pole snaps off and flies on as debris, and comes back 20 s later once the camera is 60 m away. Faster than 7 km/h for props (0.5 m/s for trees); slower they hold like any other obstacle. The vehicle loses the momentum it gives them, and they make a sound (a metal clang, a swish of leaves). A knocked-over fire hydrant (or water tap) leaves a 10 m geyser of water (3 m for taps, `scripts/geyser.gd`) that roars and lifts whatever is parked over it; the pipe is repaired a minute later, in view or not, the water easing off over the last 3 s.
 - F1: fly camera (hold right mouse to look, WASD + Q/E, Shift faster, wheel for speed). F1 again drops the player below the camera.
@@ -270,6 +285,15 @@ signs over the main entrances are placed there too. `world.json` gets `buildings
 (UV, UV2 and four custom channels) and one shared material, `shaders/toy_building.gdshader` (windows with fake
 recesses, frames and sky-reflecting glass, doors, materials, roof membranes, soffits, louvres); the kit
 (`blender/building_kit/`, toy prop shader with the accent tint) is drawn with one MultiMesh per module and 96 m chunk.
+Houses (`plateau/houses.py`, rules in `buildings.toml [house]`): OSM `building=house|detached|semidetached_house|
+terrace|bungalow`, or an untyped building BD TOPO calls residential with 1-2 dwellings, small and low. The footprint
+is covered by up to 4 rectangles on the grid of its wall lines; each gets a gabled or hipped roof with a shared eave
+height and pitch, and wings reach into the main block so L and T roofs meet in valleys. Gable or hip, the ridge
+direction of square-ish blocks, the pitch and the eaves come from a fit of the LiDAR surface (over ±1 m shifts of the
+outline); a clearly flat LiDAR roof stays flat, and a house the LiDAR cannot explain (trees, built after the flight)
+gets a default roof (eaves from BD TOPO `hauteur`, which is about the gutter height). Walls stop at the eaves; the
+house style draws punched windows with shutters and one panelled front door (`tiers[].house` in world.json;
+`building_builder.gd` draws tiles, overhang soffits, fascias, gable walls and a chimney on ~60% of them).
 Review: `buildings_toy.png` (tiers, facade styles, doors, modules over the faded orthophoto),
 `buildings_closeups/<viewpoint>.png` (10 cm/px with the style of each building), `buildings_stats.md`.
 
@@ -323,6 +347,7 @@ buildings = ["osm:r9903423"]      # OSM ids (stable) or numbers; all get the spe
 label = "Télécom Paris"           # name shown by the picker
 height = 24.5                     # optional corrections: height (m), levels; lidar_tiers / roof_boxes / solar /
 levels = 6                        # auto_door / pilotis = false switch automatic parts off
+green_roof = true                 # planted sedum roofs (green with rust drifts; a volume may say false)
 floors = "grid"                   # M7 styles: blind punched ribbon curtain slats balconies loggias high_band grid
 ground = "lobby"                  # plain shopfront lobby plinth podium
 material = "concrete"             # render brick wood metal concrete panels shingles
@@ -343,7 +368,8 @@ depth = [-0.3, 1.3]
 z = [8.2]
 floors = "blind"
 
-[[landmark.module]]               # a kit module: model, facade, along, z, out, scale, tint, repeat = [step, n]
+[[landmark.module]]               # a kit module: model, facade, along, z, out, scale, tint, repeat = [step, n];
+                                  # landmark-only models: fin, green_wall (V of climbers, 3 x 7 m), x_bars (8 m)
 [[landmark.sign]]                 # a name sign: text, facade, along, z, width, color, plate
 [[landmark.photo]]                # a reference photo: file, eye = [x, y, h above ground], target, fov (horizontal)
 ```
@@ -351,12 +377,15 @@ floors = "blind"
 `world.json` buildings of a landmark carry `landmark` (its name), `toy.styles` (per-facade and volume styles;
 `toy.runs[k][3]` and volume tiers index it) and `toy.columns` (schema 9). If a shape cannot be expressed with the
 kit, the milestone plans a dedicated Blender script `blender/landmarks/<name>.py` whose model replaces the mass
-(not needed yet). The reference photos never reach the game.
+(not needed yet). The reference photos never reach the game. Landmarks so far: `telecom-paris`, `hacker-house`,
+`alice-milliat`, `ensta-paris` (white panels, sedum roofs, green wall on the road side, crossed bars on the east
+block, glazed hall with a canopy) and `ensta-residences` (white panels, brick ends, concrete gables, roof plant).
 
 ## RER B
 
 The RER B (Ligne de Sceaux, RATP, 1,500 V DC) crosses the south of the map where it really runs, with Gare de Lozère,
-and trains run on it both ways all the time. Since the map pipeline is not published, the railway is added after it by
+and runs on east along its corridor through Palaiseau-Villebon and Palaiseau to Massy-Palaiseau; trains run on it both
+ways all the time and stop at all four stations. Since the map pipeline is not published, the railway is added after it by
 committed scripts that regenerate everything from data (commands above).
 
 - Data, `tools/rail/` (Python: numpy, shapely, Pillow in `.venv`): `fetch_osm.py` keeps the Overpass extract
@@ -375,6 +404,21 @@ committed scripts that regenerate everything from data (commands above).
   by rule, contact wire 5.25 m above the rail), the station's furniture by rule from the OSM tags and entrances, the
   services (per direction: the route every metre, the planned speed, the stop at Lozère per train length, the block
   signals, the headway) and the trees and props the railway clears.
+- The line on to Massy-Palaiseau (2026-10-18): `fetch_osm.py --massy` keeps `osm_rail_massy.json` (read under
+  `osm_rail.json`, whose elements win, so the first stretch is built from exactly what it was). The alignment is fitted
+  in sections (`X_SECTIONS`): the first stretch's clothoid fit as before, then a smoothing spline through OSM's
+  centreline (the line has compound curves there; within 0.31 m rms of OSM), pinned to the first one's end and
+  heading. Palaiseau-Villebon and Palaiseau have OSM platform outlines (side platforms; where a station had only nodes,
+  `rule_platforms` lays side platforms over both directions' 8-car trains). Short bridges carrying the line over a
+  road (`rail_bridges`) leave the ground under them alone and get a concrete deck. Roads and paths over the line are
+  the map's bridge decks (`world.json` `bridges`): no catenary portal under them, the contact wire lowered where they
+  leave less room. Beyond the alignment (x 4030) `tools/rail/yard.py` builds the station yard of Massy-Palaiseau:
+  every OSM track (the RER B's four platform tracks, the terminus tracks, the depot, the TGV line, the RER C) is a
+  line of its own with its rail level from the LiDAR (humps such as the concourse over the tracks left out), drawn
+  with rails and sleepers on ballast ground (`yard` zones: the ground kept); the two islands between tracks 1 and A
+  and between B and 2 are raised platforms (`island` zones) with their copings and furniture; tracks 1 and 2 carry the
+  trains on out of the map. A building standing over a track trains run on, its roof well above them (Palaiseau's
+  station hall over the cutting, Massy's footbridge halls), keeps only what is above 6.2 m over the rail.
 - The map, `patch_world.py`: from the pipeline's files kept in `godot/world/base/` (never from patched ones: running
   it twice gives the same bytes; `world.json` `meta.rail` holds the version and the inputs' SHA-1) it draws the
   railway's ground into the heightmap and the ground mesh (cliff cells keep each side's plane, with skirts; the mesh
@@ -394,15 +438,19 @@ committed scripts that regenerate everything from data (commands above).
   state is the front's distance along its route, the speed, the doors and the lamps, and every car is posed from it
   between its bogies on the rail curve, canted. `scripts/train_bot.gd` drives them (1.0 m/s² from rest, 0.7 m/s²
   service braking, 1.1 when it must, 1.15 m/s² emergency: en.wikipedia "MI 79"), stops them on the 8-car mark at
-  Lozère, opens the platform-side doors for 40 s (longer while someone stands in a doorway), sounds the door warning,
+  every station (Lozère, Palaiseau-Villebon, Palaiseau, Massy-Palaiseau), opens the platform-side doors for 40 s (longer while someone stands in a doorway), sounds the door warning,
   obeys the block signals, and sounds the horn and brakes, at the emergency rate if it must, for people and vehicles
   on the track (a train that cannot stop in time knocks a car aside and damages it). `scripts/train_traffic.gd` sends
   a train each way every 120 s (`PLATEAU_TRAIN_HEADWAY`; the real B4 service is every 10-15 min), eastbound from rest
-  at Le Guichet just west of the map, westbound in at line speed from the east, fills the line at the start, sets the
+  at Le Guichet just west of the map, westbound in at line speed from beyond Massy-Palaiseau, fills the line at the start, sets the
   signals' aspects and the departure screens, and puts a player riding off the map down by the line. Sounds are
   synthesized (`vehicle_audio.gd`: traction whine, rail rumble, horn, door warning, brake squeal). In LAN games the
   host runs the trains and sends their states on the shared clock; the others pose them from the same routes.
-- Known differences from the real station: the station building is a toy approximation of the real one (cream render
+- Known differences from the real stations: at Massy-Palaiseau only the RER B's two islands are platforms (the RER C
+  and TGV platforms are the map's ground), the terminus, depot and TGV tracks have no catenary and no trains, and the
+  station's concourse is the map's footbridge decks and halls; the new stations have the rule-made furniture (lamps,
+  name boards, benches, bins, screens) rather than their own.
+- Known differences from the real Lozère station: the station building is a toy approximation of the real one (cream render
   with brick under a slate gable, after the photos); the entrances have validator pillars (as in the photos) rather
   than gates; the footbridges are open steel decks with bar railings; the south platform's long stone-clad wall
   building is the pipeline's generic box; the covered road's trench walls follow the LiDAR's banks and look rough at

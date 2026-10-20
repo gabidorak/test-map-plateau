@@ -165,6 +165,21 @@ func _lap_checks(lap: Dictionary) -> void:
 	_check(_races._circle_here() == 0 and "race alone" in prompt, "a car in the lap's start circle is offered to race: '%s'"
 			% prompt.replace("\n", " / "))
 	await _frames(30)
+	car.linear_velocity = car.global_basis.z * 10.0
+	_races.race_key()
+	_check(_races.state == _races.IDLE and "Stop" in _races.hud.flash_text(),
+			"driving through the circle at 10 m/s: the race key does not start")
+	car.linear_velocity = Vector3.ZERO
+	await _frames(10)
+	_races.race_key()
+	_check(_races.state == _races.COUNTDOWN, "stopped in the circle: the race key starts the countdown")
+	var out: Vector2 = Vector2(s["x"], s["y"]) + _dir(s).normalized() * (float(s["r"]) + 15.0)
+	_place(car, out.x, out.y, _dir(s))
+	var ended := await _wait_state([_races.IDLE], 400)
+	_check(ended and "jumped the start" in _races.hud.flash_text() and _races.boards.get("lap", []).is_empty(),
+			"out of the start circle at GO: disqualified for jumping the start ('%s')" % _races.hud.flash_text())
+	_place(car, s["x"], s["y"], _dir(s))
+	await _frames(30)
 	_races.race_key()
 	_check(_races.state == _races.COUNTDOWN, "the race key starts the countdown (solo)")
 	Input.action_press("throttle")
@@ -358,8 +373,16 @@ func _bot_run(d: Dictionary, model: String) -> void:
 	var bot := BusBot.new()
 	bot.setup(traffic, car, line, 0)
 	bot.may_glide = false
-	_main.add_bot_bus(car, bot.pose_at(bot.tail + 1.0), bot)
-	bot.put(0, bot.tail + 1.0)
+	# from in the start circle (the racer must be in it at GO), the route may start before it
+	var c0: Dictionary = d["start"]
+	var d0 := 0.0
+	for i in 200:
+		var m: Vector3 = bot.pose_at(d0) * car.extents_center
+		if Vector2(m.x - float(c0["x"]), -m.z - float(c0["y"])).length() < float(c0["r"]) - 1.0:
+			break
+		d0 += 1.0
+	_main.add_bot_bus(car, bot.pose_at(d0), bot)
+	bot.put(0, d0)
 	await _frames(5)
 	if _main.driving:
 		_main.exit_car()
