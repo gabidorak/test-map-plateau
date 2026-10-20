@@ -29,6 +29,12 @@ jobs:
             output: output/windows
             file: Plateau Map.exe
             launcher: launcher-windows.bin
+          # Windows on ARM laptops (Snapdragon X): runs natively instead of through x64 emulation.
+          - preset: Windows Desktop ARM64
+            artifact: plateau-map-windows-arm64
+            output: output/windows-arm64
+            file: Plateau Map.exe
+            launcher: launcher-windows-arm64.bin
           - preset: Linux
             artifact: plateau-map-linux
             output: output/linux
@@ -212,11 +218,13 @@ jobs:
         run: |
           mkdir release
           mv "artifacts/plateau-map-windows/Plateau Map.exe" release/plateau-map-windows.exe
+          mv "artifacts/plateau-map-windows-arm64/Plateau Map.exe" release/plateau-map-windows-arm64.exe
           tar xzf artifacts/plateau-map-linux/plateau-map-linux.tar.gz -C artifacts/plateau-map-linux
           mv "artifacts/plateau-map-linux/Plateau Map.x86_64" release/plateau-map-linux.x86_64
           mv "artifacts/plateau-map-macos/Plateau Map.zip" release/plateau-map-macos.zip
-          mv artifacts/plateau-map-windows-info/launcher-windows.bin artifacts/plateau-map-linux-info/launcher-linux.bin \
-              release/
+          mv artifacts/plateau-map-windows-info/launcher-windows.bin \
+              artifacts/plateau-map-windows-arm64-info/launcher-windows-arm64.bin \
+              artifacts/plateau-map-linux-info/launcher-linux.bin release/
           if [ "$GITHUB_REF_TYPE" = tag ]; then tag="$GITHUB_REF_NAME"; else tag="build-${GITHUB_RUN_NUMBER}"; fi
           info=artifacts/plateau-map-linux-info/info.json
           printf '{"tag": "%s", "run": %d, "commit": "%s", "launcher": "%s", "data": {"id": "%s"}}\n' "$tag" \
@@ -224,7 +232,7 @@ jobs:
               > release/update.json
           cat release/update.json
           # every platform must export the same data, else its players never find a patch path (full downloads)
-          for p in windows macos; do
+          for p in windows windows-arm64 macos; do
             id=$(jq -r .data "artifacts/plateau-map-$p-info/info.json")
             [ "$id" = "$(jq -r .data "$info")" ] \
                 || echo "::error::The $p data ($id) is not the Linux data: its players always get the full download"
