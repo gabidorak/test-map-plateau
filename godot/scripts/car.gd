@@ -963,7 +963,9 @@ void fragment() {
 							lens = AABB(xf * v, Vector3.ZERO) if lenses == 0 else lens.expand(xf * v)
 							lenses += 1
 	if lenses > 0:
-		_add_beam(Vector3(lens.get_center().x, lens.get_center().y, lens.end.z))
+		# ahead of the whole body, not just of the lenses: the beam's shadow (the driver's) would be cast by a badge or
+		# grille sticking out between them (the Zoe, the R8) and hide all of it
+		_add_beam(Vector3(lens.get_center().x, lens.get_center().y, maxf(lens.end.z, box.end.z)))
 	if interior.size != Vector3.ZERO:
 		_add_cabin_light(self, interior)
 	if trailer and trailer.interior.size != Vector3.ZERO:
