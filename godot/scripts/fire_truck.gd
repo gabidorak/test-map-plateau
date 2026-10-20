@@ -5,7 +5,9 @@ extends "res://scripts/car.gd"
 ## turning steering wheel and a passenger seat (car.gd _build_cab).
 ## The cannon aims where the driver looks: the point under the middle of the screen (the chase camera's line of sight,
 ## up to AIM_RANGE) is where the turret turns (YAW_RATE) and the barrel rises (PITCH_RATE) to drop the jet, allowing for
-## gravity and air drag (or at its longest reach); the fire action (left mouse button, held) sprays. game.gd draws a ring
+## gravity and air drag (or at its longest reach); the fire action (left mouse button, held) sprays, and while it does
+## (and AIM_HOLD s after) the view keeps its direction in the world (holds_aim, car.gd _update_camera), so the jet stays
+## on its target while the truck drives and turns, like a tank's turret. game.gd draws a ring
 ## where the jet as aimed would land (sight_point). The bell action (B) switches the siren and the beacons on and off.
 ## LAN games: net_state also carries the turret aim and the spray and siren switches (flags 32, 64); a remote copy
 ## turns its turret and sprays from them for show, the hits counting on the peer simulating the truck.
@@ -18,6 +20,7 @@ const PITCH_LIMITS := Vector2(-0.15, 1.0)   # rad, barrel down / up
 const LONGEST := 0.66                       # rad of barrel elevation that throws the jet furthest (with the drag)
 const AIM_RANGE := 150.0                    # m, how far the driver's line of sight is followed
 const AIM_MASK := Layers.SOLID | Layers.VEGETATION | Layers.PROPS | Layers.VEHICLES | Layers.DEBRIS
+const AIM_HOLD := 1.0                       # s after spraying the view keeps its direction (then car.gd LOOK_HOLD more)
 const FLASH := 0.7                          # s, the blue beacons' cycle: two quick flashes on each side in turn
 const FLAGS_SPRAY := 256                    # above car.gd's net_state flags
 const FLAGS_SIREN := 512
@@ -42,6 +45,7 @@ var _lit := [false, false, false]           # left blue, right blue, amber: as l
 var _sight := Vector3.INF                   # where the jet as aimed lands (global), INF: nowhere in reach
 var _solved := Vector3.INF                  # target the barrel pitch was last solved for (car frame)
 var _aim_query := PhysicsRayQueryParameters3D.new()
+var _aim_hold := 0.0                        # s the view still keeps its direction after spraying (holds_aim)
 
 
 func setup(model: String) -> void:
@@ -134,6 +138,7 @@ func _physics_process(delta: float) -> void:
 		cannon.firing = Input.is_action_pressed("fire")
 	else:
 		cannon.firing = false
+	_aim_hold = AIM_HOLD if cannon.firing else maxf(_aim_hold - delta, 0.0)
 	aim.x = move_toward(aim.x, _want.x, YAW_RATE * delta)
 	aim.y = move_toward(aim.y, _want.y, PITCH_RATE * delta)
 	_pose_turret()
@@ -282,6 +287,10 @@ func set_remote(on: bool) -> void:
 	super(on)
 	cannon.live = not on
 	cannon.firing = false
+
+
+func holds_aim() -> bool:
+	return _aim_hold > 0.0
 
 
 func dash_line() -> String:

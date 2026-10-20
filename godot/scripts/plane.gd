@@ -607,8 +607,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("toggle_view"):
 		set_cab_view(not cab_view)
 		get_viewport().set_input_as_handled()
-	elif not event is InputEventKey:
-		super(event)                        # mouse look and zoom
+	elif not event is InputEventKey or event.is_action("camera_mode"):
+		super(event)                        # mouse look, zoom and the camera mode
 
 
 func _physics_process(delta: float) -> void:
@@ -897,21 +897,40 @@ func _process(delta: float) -> void:
 		_trails[i].update(global_transform * _tips[i], moving > TRAIL_SPEED and is_visible_in_tree(), _trail_time, cam)
 
 
-## Chase camera: behind the plane, turning with it (rolls and loops too) once it flies; taxiing it stays level.
+## Chase camera: behind the plane, following its heading and its pitch (over the top of a loop too) once it flies,
+## but only part of its bank (horizon_basis): the horizon stays calm. Taxiing it stays level. The mouse looks around
+## as car.gd's auto camera does (eased back behind once it has rested); the free camera and the gunner (who aims with
+## it) keep the look offset, from the plane's direction. The look back key turns it half round, the cockpit view too.
 func _update_camera(delta: float) -> void:
+	_update_view_state(delta)
 	var b := global_basis.orthonormalized()
 	var level := Basis(Vector3.UP, atan2(b.z.x, b.z.z))
-	var target := Quaternion(level).slerp(Quaternion(b), smoothstep(6.0, 18.0, linear_velocity.length()))
+	var target := Quaternion(level).slerp(Quaternion(horizon_basis(b)), smoothstep(6.0, 18.0, linear_velocity.length()))
 	_cam_q = target if delta >= 1.0 else _cam_q.slerp(target, 1.0 - exp(-4.0 * delta))
 	var cb := Basis(_cam_q)
-	if linear_velocity.length() > 2.0 and not riding and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
-		_look_yaw = lerp_angle(_look_yaw, 0.0, 1.0 - exp(-1.5 * delta))     # (the gunner aims with it: no easing)
+	if not riding and not free_camera:
+		_look_yaw = lerp_angle(_look_yaw, 0.0, 1.0 - exp(-_recentre_rate(linear_velocity.length()) * delta))
+	var yaw := _look_yaw + (PI if _looking_back else 0.0)
 	_arm.spring_length = lerpf(_arm.spring_length, _cam_zoom, 1.0 - exp(-10.0 * delta))
 	_cam_pivot.global_position = to_global(Vector3(0.0, 1.3, -0.6)) + cb.y * _cam_height
-	_cam_pivot.global_basis = cb * Basis(Vector3.UP, PI) * Basis.from_euler(Vector3(_look_pitch, _look_yaw, 0.0))
-	_cab_camera.rotation = Vector3(clampf(_look_pitch + 0.12, -1.0, 0.8), PI + _look_yaw, 0.0)
+	_cam_pivot.global_basis = cb * Basis(Vector3.UP, PI) * Basis.from_euler(Vector3(_look_pitch, yaw, 0.0))
+	_cab_camera.rotation = Vector3(clampf(_look_pitch + 0.12, -1.0, 0.8), PI + yaw, 0.0)
 	if _turret_camera:
 		_turret_camera.rotation = Vector3(gun_look.y, PI + gun_look.x, 0.0)
+
+
+## The chase camera's frame for a plane in frame `b`: its heading and pitch, its bank lessened by ROLL_DAMP sin(bank)
+## (60° shows as ~25°, 90° as ~50°; none upside down, so a loop goes over the top smoothly). The bank is measured from
+## the world's up, and counts less as the nose points up or down (where it means nothing).
+const ROLL_DAMP := 0.7                      # rad
+
+static func horizon_basis(b: Basis) -> Basis:
+	var up := Vector3.UP - b.z * b.z.dot(Vector3.UP)      # the world's up across the nose
+	var w := up.length()
+	if w < 1e-4:
+		return b
+	var bank := (up / w).signed_angle_to(b.y, b.z)
+	return Basis(b.z.normalized(), -ROLL_DAMP * sin(bank) * w) * b
 
 
 ## Thin ribbon behind a wing tip: points dropped every STEP s while emitting, fading out and widening over LIFE s,

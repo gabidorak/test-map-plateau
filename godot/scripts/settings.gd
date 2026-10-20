@@ -40,6 +40,9 @@ const ACTIONS := [
 	["headlights", "Headlights (plane: landing light)", "Vehicles and plane", [KEY_L]],
 	["exit_vehicle", "Get out (bus: leave the seat)", "Vehicles and plane", [KEY_SPACE]],
 	["reset_vehicle", "Back on the wheels / level the wings", "Vehicles and plane", [KEY_R]],
+	["look_back", "Look back (held)", "Vehicles and plane", [KEY_Z]],
+	["camera_mode", "Camera free / auto (click: switches; held: only while held)", "Vehicles and plane",
+			[-MOUSE_BUTTON_RIGHT]],
 	["plane_nose_down", "Nose down", "Plane", [KEY_W, KEY_UP]],
 	["plane_nose_up", "Nose up", "Plane", [KEY_S, KEY_DOWN]],
 	["plane_roll_left", "Roll left (on the ground: steer)", "Plane", [KEY_A, KEY_LEFT]],
@@ -63,7 +66,7 @@ const ACTIONS := [
 ## Keys that cannot be changed, for the controls page.
 const FIXED := [["Esc", "Menu, close"], ["Enter", "Chat (LAN games)"], ["Tab (held)", "Players (LAN games)"],
 		["F11", "Fullscreen"], ["Mouse wheel", "Zoom (all the way in: first person, cab view)"],
-		["Right mouse (held)", "Look around (fly camera, vehicles)"]]
+		["Right mouse (held)", "Look around (fly camera)"]]
 
 ## Defaults of the other settings (section "settings" of the file).
 const DEFAULTS := {"quality": "auto", "fullscreen": false, "vsync": true, "scale_3d": 0.0, "ui_scale": 1.0,

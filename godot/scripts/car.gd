@@ -4,7 +4,8 @@ extends VehicleBody3D
 ## adding it to the tree. While `driving` (keys: the Settings actions, scripts/settings.gd; defaults on physical
 ## positions): W/S throttle and brake/reverse, A/D steer, Q/E turn signals (A/E on AZERTY), G (held) sounds the horn,
 ## X (held) drifts, B sounds a bus's RATP gong, R puts the car back on its wheels, the mouse orbits the chase camera
-## (it eases back behind the car while moving, in front of it while reversing; hold the right button to keep it).
+## (auto camera: it eases back behind the car once the mouse rests; the right button switches to the free camera, which
+## keeps its direction; Z, W on AZERTY, held looks back; see _update_camera).
 ## game.gd handles getting in (E) and out (Space). The models face +Z, which is also VehicleBody3D's
 ## forward; their left side is +X.
 ## Models with a layout file (the bus: assets/cars/bus_idfm.json, written by blender/vehicles/build_bus.py)
@@ -216,6 +217,9 @@ const DROWN_DEPTH := 0.45                   # share of the body's height under w
 @export var camera_distance := 7.5
 @export var zoom_step := 1.2                # chase camera distance factor per mouse wheel notch
 
+## The free camera (true) or the auto one, for every vehicle, until the game quits (the camera mode button switches it).
+static var free_camera := false
+
 var driving := false
 var model_name := ""
 var half_extents := Vector3.ONE             # of the body box, in the car frame (for getting out)
@@ -258,10 +262,13 @@ var _cab_file := {}                         # the spec's "cab" file: wheels, lam
 var _cam_zoom := 7.5                        # chase camera distance the arm eases to
 var _zoom_range := Vector2(3.0, 20.0)       # closest (zooming in past it: cab view) and furthest
 var _follow_yaw := 0.0
-var _look_yaw := 0.0                        # mouse offset around the car, eases back while moving
+var _look_yaw := 0.0                        # mouse offset from _follow_yaw (auto camera: eases back once the mouse rests)
 var _look_pitch := -0.22
-var _reverse_view := false                  # chase camera in front of the car, looking back while reversing
-var _reverse_t := 0.0                       # time the speed has been past the flip threshold
+var _look_idle := 0.0                       # s since the mouse last turned the view
+var _looking_back := false                  # the look back key held: the view turned half round
+var _mode_held := -1.0                      # s the camera mode button has been down (-1: up)
+var _was_free := false                      # the view kept its direction in the world last frame
+var _was_aim := false                       # ...because the vehicle aimed with it (holds_aim)
 var _force_scale := 1.0                     # engine and brakes, from the mass and the model's power
 var _cam_height := 2.2                      # camera pivot above the car origin
 var _blink_t := 0.0
@@ -1194,8 +1201,9 @@ func _update_passenger() -> void:
 func _reset_camera() -> void:
 	_follow_yaw = _heading()
 	_look_yaw = 0.0
-	_reverse_view = false
-	_reverse_t = 0.0
+	_look_idle = 0.0
+	_mode_held = -1.0
+	_was_free = _free_view()
 	_update_camera(1.0)
 	set_cab_view(cab_view)
 
@@ -1493,9 +1501,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		var look: Vector2 = event.screen_relative * sensitivity * Prefs.mouse_scale
 		_look_yaw -= look.x
 		_look_pitch = clampf(_look_pitch - look.y, -1.2, 0.4)
+		if look != Vector2.ZERO:
+			_look_idle = 0.0
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 		zoom((1.0 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1.0) * (event.factor if event.factor > 0.0 else 1.0))
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("camera_mode"):
+		_switch_camera()
+		_mode_held = 0.0
+		get_viewport().set_input_as_handled()
+	elif event.is_action_released("camera_mode"):
+		if _mode_held > MODE_HOLD:
+			_switch_camera()                    # held: switched only while held
+		_mode_held = -1.0
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("toggle_view"):
 		set_cab_view(not cab_view)
@@ -1775,27 +1794,77 @@ func _near_camera(d: float) -> bool:
 	return cam == null or cam.global_position.distance_squared_to(global_position) < d * d
 
 
-## Chase camera behind the car, or in front of it looking back while reversing: the flip waits for the speed to stay
-## past REVERSE_VIEW_SPEED for REVERSE_VIEW_DELAY, so it does not flicker around 0 km/h. Holding the right mouse
-## button keeps the view where the mouse puts it (no easing back, no flip).
-const REVERSE_VIEW_SPEED := 1.0             # m/s
-const REVERSE_VIEW_DELAY := 0.6             # s
+## Chase camera. Auto (the default): behind the car, the mouse turning the view around it; once the mouse has rested
+## LOOK_HOLD s the view eases back behind, the faster the faster the car goes (not at all at a walking pace), and
+## reversing never turns it round. Free (free_camera; the camera mode button, the right one: a click switches, held
+## longer than MODE_HOLD it switches only while held), and while the vehicle aims where the driver looks (holds_aim:
+## the fire truck spraying): the view keeps its direction in the world whatever the car does; back to auto it eases
+## back behind at once (switched by the button) or once the mouse has rested (done aiming). The look back key (held) turns the view half round at once, and back on
+## release. The cab view looks the same way as the chase camera.
+const LOOK_HOLD := 2.0                      # s the mouse rests before the auto camera eases back
+const LOOK_EASE := 0.6                      # s the easing back takes to reach its pace
+const RECENTRE_RATE := 1.5                  # 1/s, at full pace
+const RECENTRE_SPEEDS := Vector2(2.0, 10.0) # m/s: no easing back under the first, full pace over the second
+const MODE_HOLD := 0.35                     # s: the camera mode button held longer switches only while held
 
 func _update_camera(delta: float) -> void:
-	var v := speed()
-	var user_look := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
-	if not user_look and (v < -REVERSE_VIEW_SPEED if not _reverse_view else v > REVERSE_VIEW_SPEED):
-		_reverse_t += delta
-		if _reverse_t >= REVERSE_VIEW_DELAY:
-			_reverse_view = not _reverse_view
-			_reverse_t = 0.0
-	else:
-		_reverse_t = 0.0
-	_follow_yaw = lerp_angle(_follow_yaw, _heading() + (PI if _reverse_view else 0.0), 1.0 - exp(-4.0 * delta))
-	if absf(v) > 2.0 and not user_look:
-		_look_yaw = lerp_angle(_look_yaw, 0.0, 1.0 - exp(-1.5 * delta))
+	_update_view_state(delta)
+	var free := _free_view()
+	var h := _heading()
+	if _was_free and not free:              # the view stays where it is, now an offset from behind the car
+		_look_yaw = wrapf(_follow_yaw + _look_yaw - h, -PI, PI)
+		_follow_yaw = h
+		if _was_aim:                        # done aiming: eased back once the mouse has rested
+			_look_idle = 0.0
+	_was_free = free
+	_was_aim = holds_aim()
+	if not free:
+		_follow_yaw = lerp_angle(_follow_yaw, h, 1.0 - exp(-4.0 * delta))
+		_look_yaw = lerp_angle(_look_yaw, 0.0, 1.0 - exp(-_recentre_rate(absf(speed())) * delta))
+	var back := PI if _looking_back else 0.0
 	_arm.spring_length = lerpf(_arm.spring_length, _cam_zoom, 1.0 - exp(-10.0 * delta))
 	_cam_pivot.global_position = to_global(Vector3(0.0, 0.0, extents_center.z)) + Vector3.UP * _cam_height
-	_cam_pivot.global_rotation = Vector3(_look_pitch, _follow_yaw + _look_yaw, 0.0)
+	_cam_pivot.global_rotation = Vector3(_look_pitch, _follow_yaw + _look_yaw + back, 0.0)
 	if _cab_camera:
-		_cab_camera.rotation = Vector3(clampf(_look_pitch - 0.1 + _cab_pitch, -1.0, 0.6), PI + _look_yaw, 0.0)
+		# auto: the mouse offset from straight ahead (not the chase camera's lag in a turn); free: the same world direction
+		var yaw := wrapf(_follow_yaw + _look_yaw - h, -PI, PI) if free else _look_yaw
+		_cab_camera.rotation = Vector3(clampf(_look_pitch - 0.1 + _cab_pitch, -1.0, 0.6), PI + yaw + back, 0.0)
+
+
+## The camera mode button: free camera on or off; back to auto, the view eases back behind at once (no LOOK_HOLD wait).
+func _switch_camera() -> void:
+	free_camera = not free_camera
+	if not free_camera:
+		_look_idle = maxf(_look_idle, LOOK_HOLD)
+
+
+## The timers and switches of the view, every frame the camera is updated (the plane's too).
+func _update_view_state(delta: float) -> void:
+	_look_idle += delta
+	if _mode_held >= 0.0:
+		_mode_held += delta
+	_looking_back = controls and Input.is_action_pressed("look_back")
+
+
+## Easing back pace of the auto camera (1/s) at `v` m/s: none until the mouse has rested LOOK_HOLD s, then rising over
+## LOOK_EASE s.
+func _recentre_rate(v: float) -> float:
+	var ramp := clampf((_look_idle - LOOK_HOLD) / LOOK_EASE, 0.0, 1.0)
+	return RECENTRE_RATE * ramp * smoothstep(RECENTRE_SPEEDS.x, RECENTRE_SPEEDS.y, v)
+
+
+## True while the view keeps its direction in the world: the free camera, or the vehicle aiming with it.
+func _free_view() -> bool:
+	return free_camera or holds_aim()
+
+
+## True while the vehicle aims where the driver looks (the fire truck spraying); none by default.
+func holds_aim() -> bool:
+	return false
+
+
+## The camera mode for the dashboard: "" for the auto camera.
+func camera_label() -> String:
+	if free_camera:
+		return "FREE CAMERA"
+	return "CAMERA HELD (aiming)" if holds_aim() else ""
