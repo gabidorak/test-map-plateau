@@ -28,7 +28,7 @@ const SWIM_SPEED := 2.2                     # m/s
 const MASS := 500.0                         # kg
 const CANTER := 7.5                         # m/s with W...
 const GALLOP := 13.0                        # ...and with Shift too
-const BACK_SPEED := 0.9                     # m/s backing up: under car.gd REVERSE_VIEW_SPEED, the camera stays behind
+const BACK_SPEED := 0.9                     # m/s backing up
 const ACCEL := 4.0                          # m/s² speeding up...
 const DECEL := 8.0                          # ...and slowing down
 const SIDE_GRIP := 10.0                     # /s: sideways slip eased off this fast
@@ -393,8 +393,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("toggle_view"):
 		set_cab_view(not cab_view)
 		get_viewport().set_input_as_handled()
-	elif not event is InputEventKey:
-		super(event)                        # mouse look and zoom
+	elif not event is InputEventKey or event.is_action("camera_mode"):
+		super(event)                        # mouse look, zoom and the camera mode
 
 
 ## The rider's view (true) or the chase camera; the rider hides in the rider's view.

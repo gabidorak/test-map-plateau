@@ -477,6 +477,9 @@ func _process(delta: float) -> void:
 		if driving.dash_line() != "":
 			line += "\n" + driving.dash_line()
 		_dash.text = line
+	var seat: Car = driving if driving else riding
+	if _dash.visible and seat and seat.camera_label() != "":
+		_dash.text += "\n" + seat.camera_label()
 
 
 ## The armed plane's gunsight: a ring where its guns' rounds converge, on the screen; for the gunner of the two-seater,
@@ -1387,6 +1390,7 @@ func _update_help() -> void:
 	var common := "%s inspect · %s close · %s fly camera · Esc menu · %s hide help" % [k.call("inspect"),
 			k.call("inspect_close"), k.call("fly_camera"), k.call("toggle_help")]
 	var moves := _keys(["move_forward", "move_left", "move_back", "move_right"])
+	var look := "mouse look · %s camera free/auto · %s (held) look back" % [k.call("camera_mode"), k.call("look_back")]
 	if flying:
 		_help.text = "FLY CAMERA · hold right mouse to look · %s move · %s/%s down/up\n" % [moves, k.call("cam_down"),
 				k.call("cam_up")] + "%s faster · wheel speed · %s land the player here · %s inspect · %s close · " % [
@@ -1397,8 +1401,8 @@ func _update_help() -> void:
 				k.call("plane_throttle_up"), k.call("plane_throttle_down"), k.call("plane_nose_down"),
 				k.call("plane_nose_up"), k.call("plane_roll_left"), k.call("plane_roll_right"), k.call("plane_rudder_left"),
 				k.call("plane_rudder_right")]) + \
-				("%s at idle brakes · %s level the wings (on the ground: back on the wheels) · mouse look · " % [
-				k.call("plane_throttle_down"), k.call("reset_vehicle")]) + \
+				("%s at idle brakes · %s level the wings (on the ground: back on the wheels) · %s · " % [
+				k.call("plane_throttle_down"), k.call("reset_vehicle"), look]) + \
 				"wheel zoom (all the way in: cockpit) · %s cockpit\n" % k.call("toggle_view") + \
 				("%s (held) fire the guns · " % k.call("fire") if (driving as Biplane).armed else "") + \
 				"%s landing lights · " % k.call("headlights") + \
@@ -1408,7 +1412,7 @@ func _update_help() -> void:
 		_help.text = ("RIDE · %s go (canter), with %s gallop · %s stop, then back up · %s/%s turn · " % [k.call("throttle"),
 				k.call("run"), k.call("brake"), k.call("steer_left"), k.call("steer_right")]) + \
 				"%s jump (the faster, the higher: fences!) · %s neigh\n" % [k.call("jump"), k.call("horn")] + \
-				("mouse look · wheel zoom (all the way in: rider's view) · %s rider's view · %s back on its feet · " % [
+				("%s · wheel zoom (all the way in: rider's view) · %s rider's view · %s back on its feet · " % [look,
 				k.call("toggle_view"), k.call("reset_vehicle")]) + "%s get off · %s" % [k.call("interact"), common]
 	elif driving is JetSki:
 		_help.text = ("JET-SKI · %s throttle · %s slow down, then reverse · %s/%s steer (with the throttle) · %s horn\n" % [
@@ -1421,7 +1425,7 @@ func _update_help() -> void:
 				k.call("throttle"), k.call("brake"), k.call("steer_left"), k.call("steer_right"), k.call("signal_left"),
 				k.call("signal_right"), k.call("horn")]) + "%s headlights · %s (held) drift\n" % [k.call("headlights"),
 				k.call("drift")] + \
-				"mouse look · wheel zoom%s · %s back on wheels · %s%s %s · %s race (in a start circle)\n%s" % [
+				"%s · wheel zoom%s · %s back on wheels · %s%s %s · %s race (in a start circle)\n%s" % [look,
 				" (all the way in: cab view)" if driving.has_cab() else "", k.call("reset_vehicle"),
 				"%s doors · %s gong · %s cab view · " % [k.call("doors"), k.call("bell"), k.call("toggle_view")] \
 				if driving.has_doors else ("%s cab view · " % k.call("toggle_view") if driving.has_cab() else ""),
@@ -1436,8 +1440,8 @@ func _update_help() -> void:
 				roundi(rad_to_deg(ArmoredCar.PITCH_DOWN)), roundi(rad_to_deg(ArmoredCar.PITCH_UP)), k.call("fire")]) + "wheel zoom (all the way in: turret view) · %s turret view\n" % k.call("toggle_view") + \
 				"%s take the wheel (if nobody drives) · %s get out\n%s" % [k.call("interact"), k.call("exit_vehicle"), common]
 	elif riding:
-		_help.text = "PASSENGER · mouse look · wheel zoom (all the way in: cab view) · %s cab view · " % \
-				k.call("toggle_view") + "%s take the wheel (if nobody drives) · %s get out\n%s" % [k.call("interact"),
+		_help.text = "PASSENGER · %s · wheel zoom (all the way in: cab view) · %s cab view · " % [look,
+				k.call("toggle_view")] +"%s take the wheel (if nobody drives) · %s get out\n%s" % [k.call("interact"),
 				k.call("exit_vehicle"), common]
 	else:
 		_help.text = "WALK · click to capture the mouse · %s move · %s run · %s jump\n" % [moves, k.call("run"),
@@ -1448,7 +1452,8 @@ func _update_help() -> void:
 				"GAZ Tiger: from its right side, the roof gun)\n" + \
 				"%s park a car here · %s vehicle menu · %s" % [k.call("park_car"), k.call("vehicle_menu"), common]
 	if driving is FireTruck:
-		_help.text += "\n%s (held) water cannon, aimed where you look · %s siren and beacons" % [k.call("fire"), k.call("bell")]
+		_help.text += "\n%s (held) water cannon, aimed where you look (the view holds while it sprays) · %s siren and beacons" % [
+				k.call("fire"), k.call("bell")]
 	elif driving is PoliceCar:
 		_help.text += "\n%s siren and blue lights" % k.call("bell")
 	elif driving is ArmoredCar:
