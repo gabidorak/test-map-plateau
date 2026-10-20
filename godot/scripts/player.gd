@@ -28,7 +28,8 @@ const Water = preload("res://scripts/water.gd")
 @export var zoom_step := 1.2                # distance factor per mouse wheel notch
 @export var shoulder_offset := 0.6          # third person: camera right of the head so the crosshair is free
 @export var eye_height := 1.6
-@export var kill_depth := -80.0             # below this (Godot y) the player is put back
+@export var kill_depth := -80.0             # below this (Godot y) the player is put back (game.gd lowers it under the
+                                            # world's lowest ground)
 @export var step_height := 0.42
 @export var swim_speed := 1.8               # m/s swimming, Shift: swim_fast
 @export var swim_fast := 3.2

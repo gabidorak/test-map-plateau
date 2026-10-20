@@ -88,6 +88,7 @@ const Night = preload("res://scripts/night.gd")
 const Races = preload("res://scripts/races.gd")
 const WATER_SHOVE := 0.7                    # m/s a full-power water packet shoves a player along the jet
 const ENTER_RANGE := 3.0                    # metres from the car body
+const KILL_MARGIN := 20.0                   # m under the lowest ground where a falling player is put back
 const JET_SKI_REACH := 200.0                # m: the jet-ski is parked on water this near the player...
 const JET_SKI_ROOM := 4.0                   # ...with this much water round it...
 const JET_SKI_LAKE := 300.0                 # ...in a body of water this big (m²): no fountain basins
@@ -158,6 +159,10 @@ var _outdated_t := 0.0                      # dedicated server: s since a newer 
 
 
 func _ready() -> void:
+	# the map's valleys (Lozère, Massy) lie below the player's default fall-out depth: jumping there put it back
+	var ground_min: Variant = world_root.get_meta("world", {}).get("ground_min")
+	if ground_min != null:
+		player.kill_depth = minf(player.kill_depth, float(ground_min) - KILL_MARGIN)
 	picker = Picker.new()
 	picker.world_root = world_root
 	add_child(picker)

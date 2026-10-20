@@ -47,7 +47,12 @@ func build_and_save() -> Error:
 	var root := Node3D.new()
 	root.name = "Neighborhood"
 	var m: Dictionary = world["meta"]
-	root.set_meta("world", {"area": m["area"], "origin": m["origin"], "playable": m["playable"], "built_at": m["built_at"]})
+	# the lowest drawn ground (Godot y, the chunks' boxes): game.gd puts the player's fall-out depth under it
+	var ground_min := INF
+	for c: Dictionary in world["ground_mesh"]["chunks"]:
+		ground_min = minf(ground_min, float(c["aabb"][1]))
+	root.set_meta("world", {"area": m["area"], "origin": m["origin"], "playable": m["playable"], "built_at": m["built_at"],
+			"ground_min": ground_min})
 	# the lakes and ponds first: the ground, its collision and the far ground are dug out under them (scripts/water.gd)
 	var t: Dictionary = world["terrain"]
 	var water := Water.new()
