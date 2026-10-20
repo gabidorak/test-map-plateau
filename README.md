@@ -62,7 +62,9 @@ they ask GitHub for the latest release and, when it is another build, download i
 progress page, then restart on it by themselves. Esc skips: the download carries on in the background (the bottom of
 the welcome menu shows the progress), **Restart now** installs it, otherwise it is installed at the next start. When the game's folder is not writable (or on a macOS app still in Downloads), the menu links to the
 releases page instead. Runs from the editor and local exports never update (the release workflow stamps the build
-tag into `application/config/version`).
+tag into `application/config/version`). Windows on ARM laptops (Snapdragon X) take `plateau-map-windows-arm64.exe`,
+which runs natively and updates to the next ARM64 build; the x86_64 `plateau-map-windows.exe` also runs there, under
+emulation.
 
 To keep the download small, the release executables carry the game data as zstd chunks (the `... Packed` export
 presets, built by `.github/workflows/build.yml` with `godot/tools/prepare_packed.gd` and `godot/tools/pack_game.sh`):

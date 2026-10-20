@@ -25,9 +25,10 @@ const Delta = preload("res://scripts/delta.gd")
 const REPO := "gabidorak/test-map-plateau"
 const API := "https://api.github.com/repos/" + REPO + "/releases/latest"
 const STORE := "https://github.com/" + REPO + "/releases/download/store/"
-const ASSETS := {"Windows": "plateau-map-windows.exe", "Linux": "plateau-map-linux.x86_64",
-		"macOS": "plateau-map-macos.zip"}
-const LAUNCHER_ASSETS := {"Windows": "launcher-windows.bin", "Linux": "launcher-linux.bin"}
+const ASSETS := {"Windows": "plateau-map-windows.exe", "Windows arm64": "plateau-map-windows-arm64.exe",
+		"Linux": "plateau-map-linux.x86_64", "macOS": "plateau-map-macos.zip"}
+const LAUNCHER_ASSETS := {"Windows": "launcher-windows.bin", "Windows arm64": "launcher-windows-arm64.bin",
+		"Linux": "launcher-linux.bin"}
 const UPDATE_INFO := "update.json"
 const MAX_PATCH_SHARE := 0.6                # patches heavier than this share of the full download: the full one
 const STATE_FILE := "user://update.cfg"     # [update] tag and commit of the downloaded executable, [data] patches
@@ -80,7 +81,7 @@ func _ready() -> void:
 	if version != "":
 		ProjectSettings.set_setting("application/config/version", version)
 		ProjectSettings.set_setting("application/config/commit", _commit)
-	if _installed["launcher"] == "" or not OS.has_feature("template") or not ASSETS.has(OS.get_name()) \
+	if _installed["launcher"] == "" or not OS.has_feature("template") or not ASSETS.has(_platform()) \
 			or DisplayServer.get_name() == "headless":
 		return
 	var local := OS.get_environment("PLATEAU_UPDATE_URL")     # tests: a copy of the latest release's API answer and store
@@ -202,7 +203,7 @@ func _on_info(info: Dictionary) -> void:
 	_info = info
 	_latest_run = int(info.get("run", 0))
 	var launcher_changes: bool = str(info.get("launcher", "")) != _installed["launcher"]
-	if launcher_changes and not _assets.has(LAUNCHER_ASSETS.get(OS.get_name(), "-")):
+	if launcher_changes and not _assets.has(LAUNCHER_ASSETS.get(_platform(), "-")):
 		_download_full()
 		return
 	if str(info.get("data", {}).get("id", "")) == _installed["id"]:
@@ -232,7 +233,7 @@ func _on_chain(chain: Dictionary) -> void:
 		path.push_front(best)
 		total += int(best["size"])
 		cur = best["from"]
-	if total > MAX_PATCH_SHARE * int(_assets.get(ASSETS[OS.get_name()], [0, 1 << 40])[1]):
+	if total > MAX_PATCH_SHARE * int(_assets.get(ASSETS[_platform()], [0, 1 << 40])[1]):
 		_download_full()
 		return
 	_patches = path
@@ -246,13 +247,13 @@ func _start_delta() -> void:
 	for p: Dictionary in _patches:
 		_queue.append([_store + str(p["file"]), Delta.patch_dir().path_join(p["file"]), int(p["size"])])
 	if str(_info.get("launcher", "")) != _installed["launcher"]:
-		var asset: Array = _assets[LAUNCHER_ASSETS[OS.get_name()]]
+		var asset: Array = _assets[LAUNCHER_ASSETS[_platform()]]
 		_queue.append([asset[0], _hidden(".launcher"), asset[1]])
 	_start_downloads()
 
 
 func _download_full() -> void:
-	var asset: Variant = _assets.get(ASSETS[OS.get_name()])
+	var asset: Variant = _assets.get(ASSETS[_platform()])
 	var probe := FileAccess.open(_part(), FileAccess.WRITE)
 	if asset == null or probe == null:
 		_set_state(State.MANUAL)
@@ -454,6 +455,13 @@ func _get_json(url: String, done: Callable) -> void:
 			CONNECT_ONE_SHOT)
 	if _http.request(url, [USER_AGENT]) != OK:
 		_download_full()
+
+
+## This build's key in ASSETS and LAUNCHER_ASSETS: Windows builds come for x86_64 and for ARM64 (Snapdragon laptops).
+static func _platform() -> String:
+	if OS.get_name() == "Windows" and OS.has_feature("arm64"):
+		return "Windows arm64"
+	return OS.get_name()
 
 
 ## Puts the downloaded build in place of this one; "" when done, else why not (this one is then left as it was).
