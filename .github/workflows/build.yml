@@ -29,7 +29,8 @@ jobs:
             output: output/windows
             file: Plateau Map.exe
             launcher: launcher-windows.bin
-          # Windows on ARM laptops (Snapdragon X): runs natively instead of through x64 emulation.
+          # Windows on ARM laptops (Snapdragon X): runs natively instead of through x64 emulation, on Direct3D 12 (the
+          # Packed preset's windows_arm64 feature, project.godot: Adreno's Vulkan driver fails to submit frames).
           - preset: Windows Desktop ARM64
             artifact: plateau-map-windows-arm64
             output: output/windows-arm64
