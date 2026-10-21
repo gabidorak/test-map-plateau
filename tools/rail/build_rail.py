@@ -120,12 +120,14 @@ DWELL = 40.0                    # s planned at Lozère (the bots use 30-60 s)
 TRANSITION_MIN = 20.0           # m, shortest transition curve the fit may use
 CURVE_THRESHOLD = 1 / 2500.0    # 1/m: OSM stretches curving more than this become curves
 # extent
-X_WEST = -615.0                 # the alignment follows OSM from here (past Le Guichet, where the westbound trains end)...
+X_FAR_WEST = -1050.0            # the alignment follows OSM from here (~500 m south-west of where the line leaves the
+                                # map's west box, 2026-10-21: the trains start and end hidden there)...
+X_WEST = -615.0                 # (the first map's alignment began here, past Le Guichet, then the westbound terminus)
 X_EAST = 4030.0                 # ...to here, where the tracks start parting for Massy-Palaiseau's four platform tracks;
                                 # from there on the station yard (yard.py terms: each track its own line) takes over
 # the stations on the alignment (Lozère's platforms are OSM's outlines; the others have only nodes: side platforms by
 # rule, see rule_platforms) and the yard's (Massy-Palaiseau: OSM's island outlines)
-STATIONS = ["Lozère", "Palaiseau - Villebon", "Palaiseau", "Massy-Palaiseau"]
+STATIONS = ["Le Guichet", "Lozère", "Palaiseau - Villebon", "Palaiseau", "Massy-Palaiseau"]
 RULE_PLATFORM_WIDTH = 3.5       # m from the platform edge to its back where OSM draws no outline; assumed (LiDAR: the
                                 # raised ground runs ~2-6 m out from the track centre at both stations)
 RULE_PLATFORM_MARGIN = 5.0      # m beyond the trains' ends (both directions' 8-car trains stand on it)
@@ -159,16 +161,18 @@ def inside(x, y, margin: float = 0.0) -> np.ndarray:
 # ---------------------------------------------------------------- 1. OSM
 
 def load_osm() -> dict:
-    """osm_rail.json, and under it osm_rail_massy.json (the line on to Massy-Palaiseau) when there: the first file's
-    elements win, so the first stretch is built from exactly what it was."""
+    """osm_rail.json, and under it osm_rail_massy.json (the line on to Massy-Palaiseau) and osm_rail_west.json (the
+    line on through Le Guichet) when there: the first file's elements win, so the first stretch is built from exactly
+    what it was."""
     d = rg.load_json(rg.TOOLS / "osm_rail.json")
     elements = {(e["type"], e["id"]): e for e in d["elements"]}
     stamps = [d.get("osm3s", {}).get("timestamp_osm_base", "")]
-    if (rg.TOOLS / "osm_rail_massy.json").exists():
-        m = rg.load_json(rg.TOOLS / "osm_rail_massy.json")
-        for e in m["elements"]:
-            elements.setdefault((e["type"], e["id"]), e)
-        stamps.append(m.get("osm3s", {}).get("timestamp_osm_base", ""))
+    for extra in ("osm_rail_massy.json", "osm_rail_west.json"):
+        if (rg.TOOLS / extra).exists():
+            m = rg.load_json(rg.TOOLS / extra)
+            for e in m["elements"]:
+                elements.setdefault((e["type"], e["id"]), e)
+            stamps.append(m.get("osm3s", {}).get("timestamp_osm_base", ""))
     ways = {i: e for (t, i), e in elements.items() if t == "way"}
     nodes = {i: e for (t, i), e in elements.items() if t == "node"}
     rels = {i: e for (t, i), e in elements.items() if t == "relation"}
@@ -204,7 +208,7 @@ def chain_track(osm: dict, ref: str) -> tuple:
         else:
             break                       # pieces not connected to the rest (none on this line)
     pts = np.array(pts)
-    # keep the stretch running west -> east through the map (the tracks curve away beyond X_WEST / X_EAST)
+    # keep the stretch running west -> east through the map (the tracks curve away beyond X_FAR_WEST / X_EAST)
     if pts[0, 0] > pts[-1, 0]:
         pts = pts[::-1]
     return pts, sorted(ids)
@@ -340,13 +344,15 @@ class Fit:
 
 
 X_SECTIONS = [X_WEST, 2180.0, X_EAST]   # the alignment is fitted section by section: the first one is the first map's
-                                        # (X_WEST to 2180, unchanged since), each next one from the previous one's end
+                                        # (X_WEST to 2180, unchanged since), each next one from the previous one's end;
+                                        # then the west one (X_FAR_WEST to X_WEST) back from the first one's start
 
 
 def fit_alignment(t1: np.ndarray, t2: np.ndarray) -> dict:
     """The alignment section by section (X_SECTIONS: one fit over the whole line drifts into a poor local minimum
-    with this many curves), each next section starting where the previous one ends, with its heading and spacing.
-    Returns the sections' fits and the joined result (fit_section's keys, the stats over the map)."""
+    with this many curves), each next section starting where the previous one ends, with its heading and spacing,
+    and the west section (X_FAR_WEST..X_WEST) ending where the first one starts. Returns the sections' fits and the
+    joined result (fit_section's keys, the stats over the map)."""
     secs = []
     for x0, x1 in zip(X_SECTIONS[:-1], X_SECTIONS[1:]):
         start = None
@@ -355,14 +361,94 @@ def fit_alignment(t1: np.ndarray, t2: np.ndarray) -> dict:
             s_, P, th, k = prev["fit"].path(prev["p"])
             start = (P[-1], float(th[-1]), float(prev["p"][3]))
         secs.append(fit_section(t1, t2, x0, x1, start))
+    # the first section's free start sits on Le Guichet's curve, a little off OSM (it was off the map): the west
+    # section takes over up to the straight after that curve, where the first section is cut
+    first = secs[0]
+    c = first["fit"].elements(first["p"])[0]
+    cut = float(math.ceil(c[0] + c[1] + c[2] + c[3])) + WEST_JOIN_AFTER
+    secs[0] = {**first, "fit": TrimmedSection(first["fit"], first["p"], cut)}
+    secs.insert(0, fit_west(t1, t2, X_FAR_WEST, secs[0]))
     return {"sections": secs, "stats": joined_stats(secs), "fit": secs[0]["fit"], "p": secs[0]["p"]}
+
+
+class TrimmedSection:
+    """A fitted section from `cut` m on (the section before it takes over its start): the same calls."""
+
+    def __init__(self, inner, p: np.ndarray, cut: float):
+        self.inner, self.p0, self.cut = inner, p, cut
+        self.length = inner.length - cut
+
+    def path(self, p=None, s_end=None, step=None):
+        s, P, th, k = self.inner.path(self.p0, step=step)
+        keep = s >= self.cut - 1e-9
+        return s[keep] - self.cut, P[keep], th[keep], k[keep]
+
+    def elements(self, p=None) -> list:
+        return [(s0 - self.cut, L1, La, L2, kc) for s0, L1, La, L2, kc in self.inner.elements(self.p0)
+                if s0 + L1 + La + L2 > self.cut]
+
+
+class ReversedSection:
+    """A section fitted from its east end westwards (SplineSection from the next section's start, heading turned
+    round), seen west -> east like the others: the same calls (path, elements, length)."""
+
+    def __init__(self, inner: "SplineSection"):
+        self.inner = inner
+        self.length = inner.length
+
+    def path(self, p=None, s_end=None, step=1.0):
+        s, P, th, k = self.inner.path(step=step)
+        s = self.length - s[::-1]
+        return s, P[::-1].copy(), th[::-1] + math.pi, -k[::-1]
+
+    def elements(self, p=None) -> list:
+        return [(self.length - (s0 + L1 + La + L2), L2, La, L1, -kc) for s0, L1, La, L2, kc in self.inner.elements()]
+
+
+WEST_JOIN_AFTER = 10.0          # m past the end of the first section's first curve: the west section joins it there
+WEST_JOIN_GAP = 20.0            # m: the west section leaves out OSM's centreline this near the joint...
+WEST_PIN_WEIGHT = 2000.0        # ...and holds the joint's point and heading this hard
+
+
+def fit_west(t1: np.ndarray, t2: np.ndarray, x_from: float, nxt: dict) -> dict:
+    """The section west of the first one (the line on south-west through Le Guichet): the centreline between the
+    tracks from x_from to the first section's start, a smoothing spline from that start westwards (its point, heading
+    turned round and spacing kept; easing onto OSM over WEST_JOIN_GAP), seen west -> east."""
+    s_, P, th, k = nxt["fit"].path(nxt["p"])
+    spacing = float(nxt["p"][3])
+    x_to = float(P[0, 0])
+    a1 = crop_x(t1, x_from, x_to)
+    mids = [(p + nearest_on(p[None, :], t2)[0]) / 2 for p in rg.resample(a1, 1.0)]
+    centre = rg.resample(np.array(mids), 1.0)[::-1]           # east -> west
+    centre = np.vstack([P[0], centre[np.linalg.norm(centre - P[0], axis=1) > WEST_JOIN_GAP]])
+    sp = SplineSection(centre, (P[0], float(th[0]) + math.pi, spacing), pin_weight=WEST_PIN_WEIGHT)
+    fit = ReversedSection(sp)
+    s_w, P_w, th_w, k_w = fit.path()
+    n = np.c_[-np.sin(th_w), np.cos(th_w)]
+    from shapely.geometry import LineString, Point
+    res = []
+    for t, sg in ((t1, -1.0), (t2, 1.0)):
+        o = rg.resample(t, 2.0)
+        o = o[(o[:, 0] > x_from + 3) & (o[:, 0] < x_to - 3)]
+        ln = LineString(P_w + n * sg * spacing / 2)
+        r = np.array([ln.distance(Point(q)) for q in o])
+        res.append(r[inside(o[:, 0], o[:, 1])])
+    rb = np.concatenate(res)
+    stats = {"rms": float(np.sqrt(rb @ rb / len(rb))) if len(rb) else 0.0,
+             "max": float(np.abs(rb).max()) if len(rb) else 0.0,
+             "p95": float(np.percentile(np.abs(rb), 95)) if len(rb) else 0.0,
+             "all_max": float(np.abs(rb).max()) if len(rb) else 0.0, "osm_spacing_median": spacing}
+    log("alignment section x %.0f..%.0f (fitted westwards): smoothing spline, %d curves, %.0f m, OSM deviation in the "
+        "map rms %.2f m, p95 %.2f m, max %.2f m" % (x_from, x_to, len(fit.elements()), fit.length, stats["rms"],
+                                                    stats["p95"], stats["max"]))
+    return {"fit": fit, "p": np.r_[P_w[0, 0], P_w[0, 1], th_w[0], spacing], "stats": stats, "inbox": rb}
 
 
 def joined_stats(secs: list) -> dict:
     rb = np.concatenate([s["inbox"] for s in secs])
     out = {"rms": float(np.sqrt(rb @ rb / len(rb))), "max": float(np.abs(rb).max()),
            "p95": float(np.percentile(np.abs(rb), 95)), "all_max": max(s["stats"]["all_max"] for s in secs),
-           "osm_spacing_median": secs[0]["stats"]["osm_spacing_median"]}
+           "osm_spacing_median": secs[1]["stats"]["osm_spacing_median"]}
     log("alignment: %d sections, %d curves, OSM deviation in the map rms %.2f m, p95 %.2f m, max %.2f m"
         % (len(secs), sum(len(s["fit"].elements(s["p"])) for s in secs), out["rms"], out["p95"], out["max"]))
     return out
@@ -378,14 +464,14 @@ class SplineSection:
     SIGMA = 0.20                    # m, the OSM noise the spline smooths away (rms of the residuals it allows)
     PIN = 30.0                      # m of the previous section's tangent the spline is held to at its start
 
-    def __init__(self, centre: np.ndarray, start):
+    def __init__(self, centre: np.ndarray, start, pin_weight: float = 20.0):
         from scipy.interpolate import UnivariateSpline
         p0, th0 = np.asarray(start[0]), float(start[1])
         lead = p0 + np.c_[np.cos(th0), np.sin(th0)] * np.arange(-self.PIN, 0.0, 1.0)[:, None]
         pts = np.vstack([lead, centre])
         u = rg.cumlen(pts)
         w = np.ones(len(pts))
-        w[:len(lead) + 1] = 20.0            # the tangent held, the joint exact
+        w[:len(lead) + 1] = pin_weight      # the tangent held, the joint exact
         self.u0 = u[len(lead)]
         smooth = len(pts) * self.SIGMA ** 2
         self.sx = UnivariateSpline(u, pts[:, 0], w=w, k=5, s=smooth)
@@ -1761,11 +1847,13 @@ FENCE_HEIGHT = 2.0              # RATP-style welded mesh along the right of way;
 RAILING_HEIGHT = 1.1            # platform back railings; assumed (photos: white bar railings)
 
 
-def fences(ew: dict, A: rg.Alignment, world: dict, platforms: list, structures: dict, furniture_items: list) -> list:
+def fences(ew: dict, A: rg.Alignment, world: dict, platforms: list, structures: dict, furniture_items: list,
+           spans: list = ()) -> list:
     """Fences along the right of way, by rule, on both sides inside the map: beyond the slope (0.6 m past where it
     meets the ground), on top of a cutting wall, at the edge of the formation above an embankment wall, and railings
-    along the platforms' backs; not where an OSM fence or wall already runs within 2.5 m alongside, and open at the
-    stairs, stairwells, the road trench and the station's gates."""
+    along the platforms' backs; not where an OSM fence or wall already runs within 2.5 m alongside, open at the
+    stairs, stairwells, the road trench and the station's gates, and not over the line's bridges (`spans`: their
+    parapets; a fence there stood across the road under them)."""
     from shapely.geometry import LineString, Point
     from shapely.ops import unary_union
     existing = unary_union([LineString(f["pts"]).buffer(2.5) for f in world["fences"] if len(f["pts"]) > 1])
@@ -1803,6 +1891,8 @@ def fences(ew: dict, A: rg.Alignment, world: dict, platforms: list, structures: 
         pts = A.point(ss, sg * u)
         keep = np.array([not existing.contains(Point(q)) and not (gap is not None and gap.contains(Point(q)))
                          for q in pts])
+        for b in spans:
+            keep &= (ss < b["s0"] - 1.0) | (ss > b["s1"] + 1.0)
         # runs of one style, kept, at least 4 m long
         j = 0
         while j < n:
@@ -2191,17 +2281,13 @@ def yard_piece(tr: dict, s_start: float, reverse: bool) -> dict:
 
 def build_services(osm: dict, al: dict, A: rg.Alignment, cant: np.ndarray, spacing: float, limits: np.ndarray,
                    platforms: list, Y: dict, sigs: list, world: dict) -> list:
-    """Per direction: its track's route on the alignment and on through the yard (track 2 eastbound, out past the
-    map's north-east end; track 1 westbound, in from there), the stops at every station (the front on OSM's stop
-    position; 4-car trains centred on the platform), the signals facing it, the block sections, where it enters and
-    leaves the map, its departure phase (both directions meet at Lozère, as before)."""
+    """Per direction: its track's route on the alignment and on through the yard (track 2 eastbound, in from beyond the
+    map's south-west end and out past its north-east end; track 1 westbound, the other way), the stops at every
+    station (the front on OSM's stop position; 4-car trains centred on the platform), the signals facing it, the
+    block sections, where it enters and leaves the map, its departure phase (both directions meet at Lozère)."""
     import shapely
     from scipy.spatial import cKDTree
     stops = stop_nodes(osm)
-    for nd in osm["nodes"].values():                 # Le Guichet (west, the westbound trains' terminus)
-        t = nd.get("tags", {})
-        if t.get("railway") == "stop" and t.get("name") == "Le Guichet" and t.get("ref") in ("1", "2"):
-            stops[("Le Guichet", t["ref"])] = np.array(fwd(nd["lat"], nd["lon"]))
     mains = {t["ref"]: t for t in Y["tracks"] if t["main"]}
     L8 = TRAIN_LENGTHS["8"]
     services = []
@@ -2254,21 +2340,18 @@ def build_services(osm: dict, al: dict, A: rg.Alignment, cant: np.ndarray, spaci
                 continue
             stop_list.append({"name": name, "s": {"8": round(k8, 2), "4": round(c4 + TRAIN_LENGTHS["4"] / 2, 2)},
                               "side": side, "platform": pf_id, "dwell": DWELL})
-        guichet = stops.get(("Le Guichet", track))
-        guichet_s = at(guichet) if guichet is not None else None
         ins = shapely.contains_xy(DATA_AREA, pts[:, 0], pts[:, 1])     # on the map's ground (as the box was)
         in_idx = np.nonzero(ins)[0]
         r_in, r_out = int(in_idx[0]), int(in_idx[-1])
-        if direction == "eastbound":
-            start, start_speed = guichet_s, 0.0
-            end = min(r_out + 15.0 + L8 + 5.0, len(pts) - 3.0)
-            v = planned_speed(route, L8)
-        else:
-            start = max(r_in - 15.0, 0.0)
-            end = guichet_s
-            v = planned_speed(route, L8, end_stop=end)
-            start_speed = float(v[int(start)])
-            stop_list.append({"name": "Le Guichet", "s": {"8": round(guichet_s, 2)}, "side": "left", "terminus": True})
+        if r_in < 15.0 + L8 + 5.0:
+            raise SystemExit("%s: the route starts %.0f m before the map's ground, too close to hide a train"
+                             % (direction, r_in))
+        # in from out of sight at the planned speed (the front 15 m short of the ground, the rest of it behind), out
+        # until the tail is past it
+        start = r_in - 15.0
+        end = min(r_out + 15.0 + L8 + 5.0, len(pts) - 3.0)
+        v = planned_speed(route, L8)
+        start_speed = float(v[int(start)])
         stop_list.sort(key=lambda x: x["s"]["8"])
         # time from the start to the stop at Lozère, stopping on the way (the phase: both directions meet there)
         t_loz, cur, cur_v = 0.0, start, start_speed
@@ -2294,13 +2377,13 @@ def build_services(osm: dict, al: dict, A: rg.Alignment, cant: np.ndarray, spaci
                          "roll": R["roll"][:n_route], "v": v[:n_route], "s_centre": sc[:n_route],
                          "length": n_route - 1.0, "start": round(start, 2), "start_speed": round(start_speed, 2),
                          "end": round(end, 2), "enter": float(r_in), "exit": float(r_out) + L8,
-                         "stops": stop_list, "origin": "Le Guichet" if direction == "eastbound" else None,
+                         "stops": stop_list, "origin": None,
                          "signals": rsig, "blocks": blocks, "headway": HEADWAY, "run_to_lozere": round(t_loz, 1)})
     te = services[0]["run_to_lozere"]
     tw = services[1]["run_to_lozere"]
     services[0]["phase"] = 0.0
     services[1]["phase"] = round(((te + 20.0 - tw) % HEADWAY) / HEADWAY, 4)
-    log("services: eastbound reaches Lozère %.0f s after leaving Le Guichet, westbound %.0f s after entering; "
+    log("services: eastbound reaches Lozère %.0f s after entering, westbound %.0f s after entering; "
         "westbound phase %.2f of the %d s headway (they meet in the station)" % (te, tw, services[1]["phase"], HEADWAY))
     for sv in services:
         log("  %s: %.0f m, stops %s" % (sv["id"], sv["length"], ", ".join("%s %s at %.0f (%s)" % (
@@ -2390,6 +2473,8 @@ def main() -> None:
     cant = cant_profile(al, curves)
     groups = osm_structures(osm, A0, H)
     avoid = [(g["s"] - 12.0, g["s"] + 12.0) for g in groups if g["kind"] != "footbridge"]
+    # and the line's own bridges: the LiDAR there is the road under them (the N118 at Le Guichet, ~7 m down)
+    avoid += [(b["s0"] - 5.0, b["s1"] + 5.0) for b in rail_bridges(osm, A0, ids1 + ids2)]
     samples = lidar_profile(al, H, avoid)
     prof = fit_profile(samples, L)
     ballast_top = profile_z(prof, al["s"])
@@ -2466,7 +2551,7 @@ def main() -> None:
     furn["items"] += island_furniture(Y)
     yard_rer = unary_union([LineString(t["pts"]) for t in Y["tracks"] if t["rer"]])
     clear = clearance(world, A, design, soft, hard, spacing, platforms, yard_rer)
-    row_fences = fences(ew_json, A, world, platforms, structures, furn["items"])
+    row_fences = fences(ew_json, A, world, platforms, structures, furn["items"], spans)
     fenced = unary_union([soft] + [LineString(f["pts"]).buffer(1.0) for f in row_fences])
     ss_all = np.arange(0.0, A.length, 2.0)
     track_lines = unary_union([LineString(A.point(ss_all, np.full(len(ss_all), u))) for u in (-spacing / 2, spacing / 2)]

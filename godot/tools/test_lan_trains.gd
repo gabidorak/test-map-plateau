@@ -81,6 +81,8 @@ func _run_host() -> void:
 	bot.start()
 	tr.front = mark - 500.0
 	tr.speed = 18.0
+	while bot.stop_k < bot._stops.size() and bot._stops[bot.stop_k]["s"] < tr.front - 1.0:
+		bot.stop_k += 1                 # past Le Guichet's stop (a station before Lozère since the west box)
 	_write(RIDE_FILE, tr.net_id)
 	var arrived := false
 	var aboard := false

@@ -475,6 +475,8 @@ func _check_railway(world: Dictionary, rail: Dictionary) -> void:
 			if p.x < play[0] or p.x > play[2] or p.y < play[1] or p.y > play[3]:
 				last = NAN
 				continue
+			if s > float(a["length"]) - 1.0:
+				continue                        # the alignment's last metre: its cells straddle the yard's ground
 			var on_bridge := false              # the line's bridges: the ground under them is the road's
 			for rb: Dictionary in rail.get("rail_bridges", []):
 				if s >= float(rb["s0"]) - 3.0 and s <= float(rb["s1"]) + 3.0:     # the abutments' cells too
@@ -553,6 +555,12 @@ func _check_railway(world: Dictionary, rail: Dictionary) -> void:
 		var top: Array = pf["top"]
 		for k in range(2, top.size() - 2):     # the end metres' cells straddle the platform and what follows it
 			var s: float = float(pf["s0"]) + k
+			var on_bridge := false              # over the line's bridges the floor is the bridge's (rail_builder.gd)
+			for rb: Dictionary in rail.get("rail_bridges", []):
+				if s >= float(rb["s0"]) - 3.0 and s <= float(rb["s1"]) + 3.0:
+					on_bridge = true
+			if on_bridge:
+				continue
 			var on := _mesh_z(_along(a, s, side * (edge + 0.5)))
 			var below := _mesh_z(_along(a, s, side * (edge - 0.2)))
 			var rail_z := _rail_level(a, s)

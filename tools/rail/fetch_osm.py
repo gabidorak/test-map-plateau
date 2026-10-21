@@ -2,6 +2,7 @@
 
 python tools/rail/fetch_osm.py [--out tools/rail/osm_rail.json]
 python tools/rail/fetch_osm.py --massy [--out tools/rail/osm_rail_massy.json]
+python tools/rail/fetch_osm.py --west [--out tools/rail/osm_rail_west.json]
 
 The committed osm_rail.json is what build_rail.py reads, so the railway rebuilds the same way without the network;
 rerun this to take OSM edits in (then build_rail.py and patch_world.py). Overpass query (BOX: the line's corridor, the
@@ -14,6 +15,9 @@ map's data box x -250..1810 widened to x -600..2150 so the trains' routes start 
 build_rail.py reads under osm_rail.json (that one's elements win, so the first stretch stays as it was): BOX_MASSY,
 the tracks and every other railway track there (the decorative tracks: yards, the TGV line, the RER C), the platforms
 (ways and multipolygons) and railway nodes within 80 m of the tracks, and the same highways, buildings and barriers.
+--west: the line on south-west through Le Guichet out of the map's west box (2026-10-21), into osm_rail_west.json,
+read under the other two likewise: BOX_WEST, the tracks, their platforms (ways and multipolygons) and railway nodes
+within 80 m, and the same highways, buildings and barriers.
 Overpass answers 406 without a User-Agent, hence USER_AGENT. Data © OpenStreetMap contributors (ODbL).
 """
 import argparse
@@ -63,6 +67,24 @@ way["railway"="rail"]["name"="Ligne de Sceaux"]({bbox})->.tracks;
 );
 out body geom;
 """
+BOX_WEST = (-1150.0, -1700.0, -150.0, -650.0)
+QUERY_WEST = """[out:json][timeout:180];
+way["railway"="rail"]["name"="Ligne de Sceaux"]({bbox})->.tracks;
+(
+  .tracks;
+  way["railway"="platform"](around.tracks:80);
+  relation["railway"="platform"](around.tracks:80);
+  way["public_transport"="platform"](around.tracks:80);
+  relation["public_transport"="platform"](around.tracks:80);
+  node["railway"](around.tracks:80);
+  node["public_transport"](around.tracks:80);
+  way(around.tracks:{near})["highway"];
+  way(around.tracks:{near})["building"];
+  way(around.tracks:{near})["barrier"];
+  way(around.tracks:{near})["man_made"="bridge"];
+);
+out body geom;
+"""
 
 
 def bbox(box=BOX) -> str:
@@ -79,10 +101,13 @@ def bbox(box=BOX) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--massy", action="store_true", help="the extension to Massy-Palaiseau (osm_rail_massy.json)")
+    ap.add_argument("--west", action="store_true", help="the line on through Le Guichet (osm_rail_west.json)")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
-    a.out = a.out or str(Path(__file__).resolve().parent / ("osm_rail_massy.json" if a.massy else "osm_rail.json"))
-    query = QUERY_MASSY.format(bbox=bbox(BOX_MASSY), near=NEAR) if a.massy else QUERY.format(bbox=bbox(), near=NEAR)
+    name = "osm_rail_massy.json" if a.massy else "osm_rail_west.json" if a.west else "osm_rail.json"
+    a.out = a.out or str(Path(__file__).resolve().parent / name)
+    query = (QUERY_MASSY.format(bbox=bbox(BOX_MASSY), near=NEAR) if a.massy else
+             QUERY_WEST.format(bbox=bbox(BOX_WEST), near=NEAR) if a.west else QUERY.format(bbox=bbox(), near=NEAR))
     data = None
     for url in OVERPASS:
         req = urllib.request.Request(url, data=urllib.parse.urlencode({"data": query}).encode(),

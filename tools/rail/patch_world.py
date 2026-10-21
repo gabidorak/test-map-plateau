@@ -1392,10 +1392,14 @@ def main() -> None:
         m = shapely.contains_xy(p, xs.ravel(), ys.ravel()).reshape(xs.shape) & (lab < 0)
         ids[rr[m], cc[m]] = len(pieces)
     # the new pieces, in piece order
+    m_ = world["meta"]
+    ground_outline = Polygon(m_["data_area"][0], m_["data_area"][1:]) if m_.get("data_area") else box(*m_["bounds"])
     order = sorted(set(piece_of_zone.values()))
     new_entries = {}
     for pi in order:
-        geom = shapely.make_valid(shapely.set_precision(unary_union(hard_by_piece[pi]), 0.001))
+        # on the map's ground only (the line leaves the west box's south edge aslant: its first strips poked out)
+        geom = shapely.make_valid(shapely.set_precision(unary_union(hard_by_piece[pi]).intersection(ground_outline),
+                                                        0.001))
         polys = [p for p in getattr(geom, "geoms", [geom]) if p.geom_type == "Polygon" and p.area > 1e-3]
         pk, mat, src, nsrc = pieces[pi]
         entries = []
@@ -1543,6 +1547,8 @@ def main() -> None:
     index["palette"]["ground"] = palette
     index["cliffs"] = {"about": "2 m cells (node i, j as ground_heights.gd counts them) where the ground steps: the "
                                 "height there is not the drawn one, so no grass tufts", "cells": sorted([list(c) for c in all_cliffs])}
+    for g in world["ground"]:                   # nothing reads the pieces' triangles (the mesh is ground.bin): with the
+        g.pop("tris", None)                     # west box they would take world.json past GitHub's 100 MB
     (rg.WORLD / "world.json").write_text(json.dumps(world, ensure_ascii=False, separators=(",", ":")) + "\n",
                                          encoding="utf-8")
     (rg.WORLD / "ground_index.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")) + "\n",

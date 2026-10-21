@@ -7,8 +7,9 @@ extends RefCounted
 ## - stops: at Lozère the front stops on the 8-car stopping mark (within STOP_TOLERANCE), the doors open on the platform
 ##   side after OPEN_DELAY, stay open `dwell` s (rail.json: 40 s) and as long as a player stands in a doorway, then the
 ##   door warning sounds (CHIME s) and they shut; a player stepping into a doorway meanwhile opens them again (the
-##   bus's door hold) for HOLD_AGAIN s before the next warning. At Le Guichet (the westbound terminus, off the map) and
-##   at the end of the eastbound route the train is `done`: train_traffic.gd stows it.
+##   bus's door hold) for HOLD_AGAIN s before the next warning. At a terminus stop (rail.json stops "terminus"; none
+##   since the line runs on out of the map at both ends) and at the end of its route the train is `done`:
+##   train_traffic.gd stows it.
 ## - signals: block signalling on its service's signals (rail.json services blocks): the block beyond a signal is
 ##   occupied while a train ahead has any of its length in it; the train then stops SIGNAL_MARGIN short of the signal,
 ##   and never runs closer than SIGNAL_MARGIN behind the tail of the train ahead.

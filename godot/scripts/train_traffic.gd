@@ -3,8 +3,9 @@ extends Node
 ## - Departures (on the peer running the bots: solo, the host, a dedicated server): per direction (world/rail.json
 ##   services) a train sets off every `headway` s (rail.json: HEADWAY, a compressed game headway; PLATEAU_TRAIN_HEADWAY=s
 ##   overrides; the real B4 service at Lozère is every 10-15 min), offset by the service's phase so that the two
-##   directions meet in the station now and then. Eastbound trains start at rest at Le Guichet, off the map in the west;
-##   westbound ones come in at line speed from the east; both are out of sight when they appear and vanish (stowed,
+##   directions meet in the station now and then. Eastbound trains come in at line speed from beyond the map's
+##   south-west end (before Le Guichet), westbound ones from the north-east; both are out of sight when they appear
+##   and vanish (stowed,
 ##   kept for the next departure). At the start the line is filled as if it had been running: each train that would be
 ##   on its way is run from its start for its age (FILL_STEP s steps, the block signals respected).
 ## - Bots (scripts/train_bot.gd) drive them; this node gives each its look ahead: the other trains of its direction and

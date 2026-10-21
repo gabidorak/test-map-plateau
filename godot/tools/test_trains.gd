@@ -2,8 +2,8 @@ extends SceneTree
 ## Headless checks for the RER B trains (scripts/train.gd, scripts/train_bot.gd, scripts/train_traffic.gd;
 ## world/rail.json services), the bot buses and cars off:
 ## - departures: a train sets off in each direction every headway, both directions are out;
-## - entering the map: at the planned speed (westbound: the line speed; eastbound: still accelerating out of Le Guichet,
-##   the station just west of the map);
+## - entering the map: at the planned speed (both directions come in from out of sight: westbound in the north-east,
+##   eastbound in the south-west, before Le Guichet);
 ## - the stop at Lozère: the front within STOP of the 8-car mark, the doors open on the platform side only (the leaves
 ##   and the doorway boxes), shut again before it leaves;
 ## - the door hold: a player in a doorway keeps them open past the dwell, they shut once the player is in;
@@ -111,8 +111,8 @@ func _departures() -> void:
 	_check(sent.min() >= 1 and sent.max() <= 2, "a departure per direction in a headway (%s)" % [sent])
 
 
-## At the planned speed where they come into the map, or (eastbound, from rest at Le Guichet) as fast as the
-## traction gets it there.
+## At the planned speed where they come into the map, or (a service starting from rest) as fast as the traction gets
+## it there.
 func _entering() -> void:
 	for dir: String in ["westbound", "eastbound"]:
 		var k := _service(dir)
@@ -129,7 +129,7 @@ func _entering() -> void:
 		var reach := sqrt(2.0 * float(_tt.spec["accel"]) * (enter - float(svc["start"])) + pow(float(svc["start_speed"]), 2.0))
 		var expect := minf(planned, reach)
 		_check(v_in > 0.0 and absf(v_in - expect) < 0.12 * expect, "%s comes into the map at %.0f km/h (planned %.0f, %s %.0f km/h)" % [
-				dir, v_in * 3.6, planned * 3.6, "the most it can reach from rest at Le Guichet" if svc["start_speed"] == 0.0
+				dir, v_in * 3.6, planned * 3.6, "the most it can reach from rest" if svc["start_speed"] == 0.0
 				else "entering at speed:", expect * 3.6])
 		_tt._stow(tr)
 
@@ -324,7 +324,7 @@ func _obstacle() -> void:
 	var k := _service("westbound")
 	var svc: Dictionary = _tt.services[k]
 	for far: bool in [true, false]:
-		# west of Lozère, on the way to Le Guichet: no stop within reach (the line runs on east to Massy-Palaiseau)
+		# west of Lozère, on the way to Le Guichet: no stop within reach
 		var tr := _put(k, float(_lozere(svc)["s"]["8"]) + 120.0, 25.0)
 		var gap := 420.0 if far else 120.0
 		var spot: Vector3 = tr.route_point(tr.front + gap)
