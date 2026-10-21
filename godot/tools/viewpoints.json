@@ -40,9 +40,14 @@
     {"name": "rerb_underpass_359", "label": "Pedestrian underpass under the RER B at x 359", "eye": [345, -826, 3], "target": [359, -815, -1]},
     {"name": "rerb_cutting", "label": "RER B in a cutting (x 200)", "eye": [190, -798, 3], "target": [260, -814, -1]},
     {"name": "rerb_embankment", "label": "RER B on its embankment (x 1350), from the south", "eye": [1340.6, -879.6, 1.7], "target": [1362, -860, 3]},
-    {"name": "rerb_west_entry", "label": "RER B entering the map in the west (x -200)", "eye": [-170, -800, 4], "target": [-250, -813, 0]},
+    {"name": "rerb_west_entry", "label": "RER B at the first map's west edge (x -200), looking west towards Le Guichet", "eye": [-170, -800, 4], "target": [-250, -813, 0]},
     {"name": "rerb_east_entry", "label": "RER B leaving the map in the east (x 1760)", "eye": [1720, -860, 4], "target": [1810, -862, 0]},
     {"name": "rerb_track_close", "label": "RER B track close up (x 540): ballast, sleepers, rails", "eye": [531, -819.8, 1.6], "target": [556, -814.9, -0.3]},
-    {"name": "rerb_catenary", "label": "RER B catenary portal over both tracks, from the south platform", "eye": [946.8, -816.4, 1.7], "target": [965.7, -815.6, 6.5]}
+    {"name": "rerb_catenary", "label": "RER B catenary portal over both tracks, from the south platform", "eye": [946.8, -816.4, 1.7], "target": [965.7, -815.6, 6.5]},
+    {"name": "le_guichet_platform", "label": "Le Guichet, north platform (towards Massy), looking west over the N118 bridge", "eye": [-405.2, -809.8, 1.7], "target": [-572.9, -876.5, 1.5]},
+    {"name": "le_guichet_bridge", "label": "Le Guichet, the RER B bridge over the N118 and Rue Louise Weiss, from the south-east", "eye": [-505, -905, 2], "target": [-548, -862, 4]},
+    {"name": "west_campus", "label": "Paris-Saclay campus west: CentraleSupélec (Eiffel, Bouygues, Bréguet) from above", "eye": [-2250, -150, 40], "target": [-2450, -380, 5]},
+    {"name": "west_edge", "label": "The west edge of the map at 48°42'43.8\"N 2°09'17.1\"E (x -3307), looking west", "eye": [-3240, -70, 1.7], "target": [-3330, -70, 2]},
+    {"name": "overview_west", "label": "The west box from above its south edge (Moulon, the campus, Le Guichet)", "eye": [-1800, -1050, 450], "target": [-1800, -100, 0]}
   ]
 }

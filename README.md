@@ -1,6 +1,6 @@
 # Plateau map
 
-Real map of the Saclay plateau (2.1 × 1.74 km: Télécom Paris → École Polytechnique and its lake → ENSTA Paris and its Centre de l'Yvette, and south down the Lozère hillside to the Yvette valley) turned into a cartoon 3D scene for Godot 4.7, with two corridors east to Massy-Palaiseau station: along the 4606 bus (through Palaiseau) and along the RER B (through Palaiseau-Villebon and Palaiseau), 150 m walkable either side of the bus route and of the tracks (`meta.playable_area` in `godot/world/world.json`: the invisible walls follow it).
+Real map of the Saclay plateau (5.2 × 1.74 km: from Moulon and the Paris-Saclay campus in the west, 48°42'43.8"N 2°09'17.1"E, past Le Guichet, Télécom Paris → École Polytechnique and its lake → ENSTA Paris and its Centre de l'Yvette, and south down the hillsides to the Yvette valley) turned into a cartoon 3D scene for Godot 4.7, with two corridors east to Massy-Palaiseau station: along the 4606 bus (through Palaiseau) and along the RER B (through Palaiseau-Villebon and Palaiseau), 150 m walkable either side of the bus route and of the tracks (`meta.playable_area` in `godot/world/world.json`: the invisible walls follow it).
 
 ## Play
 
@@ -98,6 +98,7 @@ blender -b --factory-startup -P blender/vehicles/build_train.py -- --preview=$PW
 # RER B (see "RER B" below): python venv with numpy, shapely and Pillow
 .venv/Scripts/python tools/rail/fetch_osm.py      # optional: refetch the OSM extract tools/rail/osm_rail.json (Overpass)
 .venv/Scripts/python tools/rail/fetch_osm.py --massy   # optional: the same for the line on to Massy-Palaiseau (osm_rail_massy.json)
+.venv/Scripts/python tools/rail/fetch_osm.py --west    # optional: the same for the line on through Le Guichet (osm_rail_west.json)
 .venv/Scripts/python tools/rail/build_rail.py     # OSM + LiDAR -> godot/world/rail.json, tools/rail/review/*.png (~1 min)
 .venv/Scripts/python tools/rail/patch_world.py    # godot/world/base/ + rail.json -> godot/world/ (~25 min, ~6 GB RAM), then build_world.gd
 
@@ -383,9 +384,9 @@ block, glazed hall with a canopy) and `ensta-residences` (white panels, brick en
 
 ## RER B
 
-The RER B (Ligne de Sceaux, RATP, 1,500 V DC) crosses the south of the map where it really runs, with Gare de Lozère,
-and runs on east along its corridor through Palaiseau-Villebon and Palaiseau to Massy-Palaiseau; trains run on it both
-ways all the time and stop at all four stations. Since the map pipeline is not published, the railway is added after it by
+The RER B (Ligne de Sceaux, RATP, 1,500 V DC) crosses the south of the map where it really runs, from the map's
+south-west edge through Le Guichet and Gare de Lozère, and runs on east along its corridor through Palaiseau-Villebon
+and Palaiseau to Massy-Palaiseau; trains run on it both ways all the time and stop at all five stations. Since the map pipeline is not published, the railway is added after it by
 committed scripts that regenerate everything from data (commands above).
 
 - Data, `tools/rail/` (Python: numpy, shapely, Pillow in `.venv`): `fetch_osm.py` keeps the Overpass extract
@@ -419,6 +420,16 @@ committed scripts that regenerate everything from data (commands above).
   and between B and 2 are raised platforms (`island` zones) with their copings and furniture; tracks 1 and 2 carry the
   trains on out of the map. A building standing over a track trains run on, its roof well above them (Palaiseau's
   station hall over the cutting, Massy's footbridge halls), keeps only what is above 6.2 m over the rail.
+- The line on through Le Guichet (2026-10-21, the map's west box): `fetch_osm.py --west` keeps `osm_rail_west.json`
+  (read under the other two). A west section (`X_FAR_WEST` to `X_WEST`) is fitted backwards from the first stretch's
+  start (`ReversedSection`: the smoothing spline pinned to its start and heading), so the first stretch keeps its fit;
+  it runs ~500 m on beyond the map's south edge, where the trains start and end hidden. Le Guichet has only stop
+  positions in OSM: `rule_platforms` lays its side platforms, which run over the line's bridge across the N118 (as
+  in reality): `rail_builder.gd` lays the platform floor on that bridge's deck (the patch leaves the road's ground
+  under it). The line's bridges are left out of the LiDAR profile (the samples there are the road below), and
+  the right-of-way fences stop at them. The builder draws the bridges and platforms one mesh each, and the station
+  furniture, signal masts, kilometre posts and wall copings one mesh per far cell: a mesh along the whole line was
+  culled where it is drawn (Godot measures a visibility range from the mesh's centre).
 - The map, `patch_world.py`: from the pipeline's files kept in `godot/world/base/` (never from patched ones: running
   it twice gives the same bytes; `world.json` `meta.rail` holds the version and the inputs' SHA-1) it draws the
   railway's ground into the heightmap and the ground mesh (cliff cells keep each side's plane, with skirts; the mesh
@@ -438,11 +449,11 @@ committed scripts that regenerate everything from data (commands above).
   state is the front's distance along its route, the speed, the doors and the lamps, and every car is posed from it
   between its bogies on the rail curve, canted. `scripts/train_bot.gd` drives them (1.0 m/s² from rest, 0.7 m/s²
   service braking, 1.1 when it must, 1.15 m/s² emergency: en.wikipedia "MI 79"), stops them on the 8-car mark at
-  every station (Lozère, Palaiseau-Villebon, Palaiseau, Massy-Palaiseau), opens the platform-side doors for 40 s (longer while someone stands in a doorway), sounds the door warning,
+  every station (Le Guichet, Lozère, Palaiseau-Villebon, Palaiseau, Massy-Palaiseau), opens the platform-side doors for 40 s (longer while someone stands in a doorway), sounds the door warning,
   obeys the block signals, and sounds the horn and brakes, at the emergency rate if it must, for people and vehicles
   on the track (a train that cannot stop in time knocks a car aside and damages it). `scripts/train_traffic.gd` sends
-  a train each way every 120 s (`PLATEAU_TRAIN_HEADWAY`; the real B4 service is every 10-15 min), eastbound from rest
-  at Le Guichet just west of the map, westbound in at line speed from beyond Massy-Palaiseau, fills the line at the start, sets the
+  a train each way every 120 s (`PLATEAU_TRAIN_HEADWAY`; the real B4 service is every 10-15 min), eastbound in at line
+  speed from beyond the map's south-west edge, westbound in at line speed from beyond Massy-Palaiseau, fills the line at the start, sets the
   signals' aspects and the departure screens, and puts a player riding off the map down by the line. Sounds are
   synthesized (`vehicle_audio.gd`: traction whine, rail rumble, horn, door warning, brake squeal). In LAN games the
   host runs the trains and sends their states on the shared clock; the others pose them from the same routes.

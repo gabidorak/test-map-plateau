@@ -257,6 +257,21 @@ func _emit(parent: Node3D, name: String, m: Mesher, mat: Material, info: Diction
 	parent.add_child(mi)
 
 
+## The Mesher of the far cell holding map point p: a mesh along the whole line would be culled where it is drawn (its
+## visibility range is measured from its centre, kilometres away since the line runs on to Le Guichet and Massy).
+func _cell_mesher(cells: Dictionary, p: Vector2) -> Mesher:
+	var cell := Vector2i(floori(p.x / FAR_CELL), floori(p.y / FAR_CELL))
+	if not cells.has(cell):
+		cells[cell] = Mesher.new()
+	return cells[cell]
+
+
+## One mesh per far cell (_cell_mesher), named <name>_<x>_<y>.
+func _emit_cells(parent: Node3D, name: String, cells: Dictionary, mat: Material, info: Dictionary, range_end := 0.0) -> void:
+	for cell: Vector2i in cells:
+		_emit(parent, "%s_%d_%d" % [name, cell.x, cell.y], cells[cell], mat, info, range_end)
+
+
 func _shape_box(xf: Transform3D, size: Vector3, info: Dictionary) -> void:
 	var b := BoxShape3D.new()
 	b.size = size
@@ -981,10 +996,12 @@ func _sleepers(span: Vector2, tracks: Array, tr: Dictionary) -> Dictionary:
 
 ## The line's short bridges beyond the first box (rail.json rail_bridges: the ground under them is the road's): a
 ## concrete deck under the formation from one formation edge to the other, parapets along both edges; collision for
-## the deck top and the parapets (the ballast is the track's).
+## the deck top and the parapets (the ballast is the track's). Where a platform runs over one (Le Guichet's, over the
+## N118), the platform's floor is a slab on the deck (the patch leaves no platform ground over the road): from behind
+## its coping to the deck's edge, its wall under the coping, a railing along the edge.
 func _rail_bridges(node: Node3D) -> void:
-	var m := Mesher.new()
 	for k in (_rail.get("rail_bridges", []) as Array).size():
+		var m := Mesher.new()                   # one mesh each (see _cell_mesher)
 		var b: Dictionary = _rail["rail_bridges"][k]
 		var info := {"type": "rail_structure", "kind": "rail_bridge", "id": "rail_bridge:%d" % k, "osm": b.get("osm", [])}
 		var faces := PackedVector3Array()
@@ -992,6 +1009,7 @@ func _rail_bridges(node: Node3D) -> void:
 		var s1: float = b["s1"]
 		var n := maxi(1, ceili((s1 - s0) / 1.0))
 		var prev := []
+		var slab_prev := {}                     # platform id -> its slab's previous row
 		for i in n + 1:
 			var s := lerpf(s0, s1, float(i) / n)
 			var F := _ew_at(s, "formation")
@@ -1018,8 +1036,30 @@ func _rail_bridges(node: Node3D) -> void:
 					m.quad(a + h, c + h, c - o * 0.3 + h, a - o * 0.3 + h, Vector3.UP, CONCRETE)
 					faces.append_array([a - o * 0.3, c - o * 0.3, c - o * 0.3 + h, a - o * 0.3, c - o * 0.3 + h, a - o * 0.3 + h])
 			prev = cur
+			for pf: Dictionary in _rail.get("platforms", []):
+				var ends: Array = pf.get("ends", [float(pf["s0"]) - 0.5, float(pf["s1"]) + 0.5])
+				if s < float(ends[0]) or s > float(ends[1]):
+					slab_prev.erase(pf["id"])
+					continue
+				var side: float = pf["side"]
+				var top := _platform_top(pf, s)
+				var pi: Vector2 = _rm.point(s, side * (float(pf["wall"]) + COPING_BACK * 0.5))
+				var po: Vector2 = pl if side > 0.0 else pr
+				var row := [_g(pi.x, pi.y, top), _g(po.x, po.y, top), _g(pi.x, pi.y, F - 0.9), _g(po.x, po.y, F - 0.9),
+						pi, po, top]
+				var sp: Array = slab_prev.get(pf["id"], [])
+				if not sp.is_empty():
+					var along: Vector3 = (row[0] - sp[0]).normalized()
+					var outw := (Vector3.UP.cross(along).normalized() * -1.0) * side     # towards the deck's edge
+					m.quad(sp[0], sp[1], row[1], row[0], Vector3.UP, CONCRETE)             # the floor
+					m.quad(sp[0], row[0], row[2], sp[2], -outw, COPING_FACE)                # its wall over the track
+					m.quad(sp[1], row[1], row[3], sp[3], outw, CONCRETE_DARK)               # its outer face
+					faces.append_array([sp[0], sp[1], row[1], sp[0], row[1], row[0]])
+					faces.append_array([sp[0], row[0], row[2], sp[0], row[2], sp[2]])
+					_railing(m, sp[5], sp[6], row[5], top, RAILING_HEIGHT, true, info)
+				slab_prev[pf["id"]] = row
 		_shape_faces("RailBridge_%d" % k, faces, info)
-	_emit(node, "RailBridges", m, _mat_toy, {"type": "rail_structure", "id": "rail:bridges"}, PORTAL_RANGE)
+		_emit(node, "RailBridges_%d" % k, m, _mat_toy, {"type": "rail_structure", "id": "rail:bridges"}, PORTAL_RANGE)
 
 
 # ---------------------------------------------------------------- the yard (tools/rail/yard.py)
@@ -1184,8 +1224,8 @@ static func _platform_back(pf: Dictionary, s: float) -> float:
 ## Both platforms: the edge coping overhanging the wall (walkable: collision), the light band of the edge slabs and
 ## the tactile strip behind it, the yellow line along the south platform's edge (photos), bar railings across the ends.
 func _platforms(node: Node3D) -> void:
-	var m := Mesher.new()
 	for pf: Dictionary in _rail.get("platforms", []):
+		var m := Mesher.new()                   # one mesh each (see _cell_mesher)
 		var side: float = pf["side"]
 		var edge: float = pf["edge"]
 		var wall: float = pf["wall"]
@@ -1245,7 +1285,8 @@ func _platforms(node: Node3D) -> void:
 			var a: Vector2 = _rm.point(s, side * (edge + 0.35))
 			var b: Vector2 = _rm.point(s, side * _platform_back(pf, s))
 			_railing(m, a, z, b, z, RAILING_HEIGHT, true, info)
-	_emit(node, "Platforms", m, _mat_toy, {"type": "rail_platform", "id": "rail:platforms"}, STATION_RANGE)
+		_emit(node, "Platforms_" + String(pf["id"]).get_slice(":", 1) + "_" + String(pf["id"]).get_slice(":", 2),
+				m, _mat_toy, {"type": "rail_platform", "id": "rail:platforms"}, STATION_RANGE)
 
 
 func _track_offset(ref: String) -> float:
@@ -1262,11 +1303,13 @@ func _furniture(node: Node3D) -> void:
 	var station := Node3D.new()
 	station.name = "Station"
 	node.add_child(station)
-	var m := Mesher.new()
-	var glow := Mesher.new()
+	var cells := {}
+	var glow_cells := {}
 	var lights := PackedVector3Array()
 	var n_screen := 0
 	for f: Dictionary in _rail["station"].get("furniture", []):
+		var m := _cell_mesher(cells, Vector2(f["x"], f["y"]))
+		var glow := _cell_mesher(glow_cells, Vector2(f["x"], f["y"]))
 		var pf := _platform_of(f.get("platform", ""))
 		var side: float = pf.get("side", 1.0)
 		var s: float = f.get("s", 0.0)
@@ -1299,8 +1342,8 @@ func _furniture(node: Node3D) -> void:
 				_validators(m, f, int(f.get("count", 3)), info)
 			"canopy":
 				_canopy(m, xf, f["length"], f["depth"], info)
-	_emit(station, "Furniture", m, _mat_toy, {"type": "rail_furniture", "id": "rail:furniture"}, STATION_RANGE)
-	_emit(station, "Glow", glow, _mat_glow, {"type": "rail_furniture", "id": "rail:lamps"}, STATION_RANGE)
+	_emit_cells(station, "Furniture", cells, _mat_toy, {"type": "rail_furniture", "id": "rail:furniture"}, STATION_RANGE)
+	_emit_cells(station, "Glow", glow_cells, _mat_glow, {"type": "rail_furniture", "id": "rail:lamps"}, STATION_RANGE)
 	station.set_meta("lamp_lights", lights)          # night.gd lights the platforms from there
 
 
@@ -1488,12 +1531,14 @@ func _signals(node: Node3D) -> void:
 		mat.emission = LENS_COLOURS[aspect]
 		mat.emission_energy_multiplier = SIGNAL_GLOW
 		lit[aspect] = MeshUtils.save(mat, _mesh_dir + "rail_lens_%s.tres" % aspect.to_lower())
-	var m := Mesher.new()
+	var cells := {}
+	var m: Mesher
 	for sg: Dictionary in _rail.get("signals", []):
 		var s: float = sg["s"]
 		var p: Vector2 = _rm.point(s, float(sg["u"]))
 		if not _box.has_point(p) or sg["kind"] == "unknown":
 			continue
+		m = _cell_mesher(cells, p)
 		var facing: float = sg["facing"]
 		var th: float = _rm.heading(s)
 		var towards := Vector3(cos(th), 0.0, -sin(th)) * -facing      # the target faces the trains coming
@@ -1552,7 +1597,7 @@ func _signals(node: Node3D) -> void:
 		node3.set_meta("lit", lit)
 		node3.set_meta("off", lens_off)
 		_set_aspect(lamps, lit, lens_off, "VL" if "VL" in lamps else rows[0])
-	_emit(holder, "Masts", m, _mat_toy, {"type": "rail_signal", "id": "rail:signals"}, SIGNAL_RANGE)
+	_emit_cells(holder, "Masts", cells, _mat_toy, {"type": "rail_signal", "id": "rail:signals"}, SIGNAL_RANGE)
 
 
 func _lens(parent: Node3D, mesh: Mesh, off: Material, aspect: String, pos: Vector3) -> MeshInstance3D:
@@ -1581,7 +1626,7 @@ func _posts(node: Node3D) -> void:
 	var holder := Node3D.new()
 	holder.name = "Posts"
 	node.add_child(holder)
-	var m := Mesher.new()
+	var cells := {}
 	for post: Dictionary in _rail["pk"].get("posts", []):
 		var s: float = post["s"]
 		var side := signf(float(post["u"]))
@@ -1594,7 +1639,7 @@ func _posts(node: Node3D) -> void:
 		var basis := Basis(Vector3.UP, th + (PI * 0.5 if side > 0.0 else -PI * 0.5))
 		var xf := Transform3D(basis, _g(p.x, p.y, g))
 		var info := {"type": "rail_pk", "id": post["id"], "osm": post.get("osm", ""), "km": post["km"], "s": s}
-		m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.6, 0.0)), Vector3(0.3, 1.2, 0.12), WHITE)
+		_cell_mesher(cells, p).box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.6, 0.0)), Vector3(0.3, 1.2, 0.12), WHITE)
 		_shape_box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.6, 0.0)), Vector3(0.3, 1.2, 0.12), info)
 		var l := Node3D.new()
 		l.transform = xf
@@ -1616,12 +1661,12 @@ func _posts(node: Node3D) -> void:
 			var side := signf(float(mast[3]))
 			var face := Vector3(sin(th), 0.0, cos(th)) * side          # towards the track
 			var xf := Transform3D(Basis(face.cross(Vector3.UP) * -1.0, Vector3.UP, face), _g(p.x, p.y, float(mast[2]) + 2.2) + face * 0.2)
-			m.box(xf, Vector3(0.26, 0.16, 0.02), WHITE)
+			_cell_mesher(cells, p).box(xf, Vector3(0.26, 0.16, 0.02), WHITE)
 			var l := Node3D.new()
 			l.transform = xf
 			holder.add_child(l)
 			_label(l, "%.1f" % float(plate["km"]), Vector3(0.0, 0.0, 0.011), 48, Color.BLACK, 0.25)
-	_emit(holder, "PK", m, _mat_toy, {"type": "rail_pk", "id": "rail:pk"}, SIGNAL_RANGE)
+	_emit_cells(holder, "PK", cells, _mat_toy, {"type": "rail_pk", "id": "rail:pk"}, SIGNAL_RANGE)
 
 
 ## The catenary (rail.json catenary: portals by rule in build_rail.py): per support its two masts and the portal beam
@@ -1737,7 +1782,7 @@ static func _wire(m: Mesher, a: Vector3, b: Vector3, col: Color, r := WIRE_RADIU
 
 ## Concrete copings along the tops of the retaining walls (their faces are the patched ground's skirts).
 func _walls(node: Node3D) -> void:
-	var m := Mesher.new()
+	var cells := {}
 	for w: Dictionary in _rail["earthworks"].get("walls", []):
 		var pts: Array = w["pts"]
 		var top: Array = w["top"]
@@ -1748,8 +1793,8 @@ func _walls(node: Node3D) -> void:
 			if not _box.has_point(a):
 				continue
 			var bm := _beam(a, float(top[i]), b, float(top[i + 1]), WALL_CAP.x, 0.05, WALL_CAP.y - 0.05)
-			m.box(bm[0], bm[1], CONCRETE)
-	_emit(node, "WallCopings", m, _mat_toy, {"type": "rail_structure", "id": "rail:walls"}, PORTAL_RANGE)
+			_cell_mesher(cells, a).box(bm[0], bm[1], CONCRETE)
+	_emit_cells(node, "WallCopings", cells, _mat_toy, {"type": "rail_structure", "id": "rail:walls"}, PORTAL_RANGE)
 
 
 ## The gabled roofs patch_world.py asks for (world.json buildings[].rail_roof: the station building, whose body
