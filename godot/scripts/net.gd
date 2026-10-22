@@ -34,11 +34,14 @@ extends Node
 ##   net_state: front along its route, speed, doors, lamps) TRAIN_SEND_RATE times a second, stamped with its clock;
 ##   the others make the train on first sight and pose it from the same route, carried on at its speed for the time
 ##   the state took (the shared clock), so it reaches the platform at the same moment on every screen. A player
-##   standing in a train sends its position in that car's frame, like in a bus.
+##   standing in a train sends its position in that car's frame, like in a bus. With the host's bot traffic off the
+##   trains are stowed and their states go once a second.
 ## - Chat: a message goes to the host, which sends it to everyone with who said it. The host also sends everyone each
 ##   player's ping to it every PING_EVERY s (the player list, game.gd Tab).
-## - The host announces the game on the LAN (lan_discovery.gd) and sends newcomers the players, the vehicles, and the
-##   trees bent and props knocked down at that moment (breakables.gd net_snapshot).
+## - The host announces the game on the LAN (lan_discovery.gd), with its game mode, and sends newcomers the game mode
+##   (game.gd makes it as Main/Mode before anything of the mode's comes in), the players, the vehicles, and the trees
+##   bent and props knocked down at that moment (breakables.gd net_snapshot). A game mode's own messages
+##   (scripts/modes/game_mode.gd) go through its node, and only to welcomed players.
 
 const LanDiscovery = preload("res://scripts/lan_discovery.gd")
 const RemotePlayer = preload("res://scripts/remote_player.gd")
@@ -55,7 +58,7 @@ signal registered(id: int)                  # host: player `id` was let in (it h
 const PORT := 7777                          # the host tries the next ones when it is taken
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
-const PROTOCOL := 10                        # bump when the messages change (build_id: other builds are refused anyway)
+const PROTOCOL := 11                        # bump when the messages change (build_id: other builds are refused anyway)
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const TRAIN_SEND_RATE := 10.0               # RER B train states per second (host)
@@ -203,6 +206,11 @@ func avatars() -> Array:
 	return _remotes.values()
 
 
+## Player `id`'s avatar (remote_player.gd), or null (ourselves, or not in the game).
+func avatar(id: int) -> RemotePlayer:
+	return _remotes.get(id)
+
+
 ## Starts a server on `first_port` (or the next free port) and announces it on the LAN. Returns an error message, or "".
 ## `server_only`: a dedicated server, `nickname` names the game.
 func host(nickname: String, color: Color, first_port := PORT, server_only := false) -> String:
@@ -221,7 +229,7 @@ func host(nickname: String, color: Color, first_port := PORT, server_only := fal
 	active = true
 	discovery.start_beacon(func() -> Dictionary:
 		return {"port": port, "name": nickname, "players": players.size(), "max": MAX_PLAYERS,
-				"version": build_id()})
+				"version": build_id(), "mode": game.mode_id})
 	return ""
 
 
@@ -334,7 +342,7 @@ func _register(protocol: int, nickname: String, color: Color) -> void:
 	var snapshot := []
 	for net_id: String in cars:
 		snapshot.append([net_id, cars[net_id].model_name, owner_of[net_id], driver_of[net_id], cars[net_id].net_state()])
-	_welcome.rpc_id(id, players, snapshot, game.breakables.net_snapshot())
+	_welcome.rpc_id(id, players, snapshot, game.breakables.net_snapshot(), game.mode_id)
 	_signal_clock.rpc_id(id, clock())
 	_player_joined.rpc(id, players[id])
 	_add_remote(id)
@@ -349,9 +357,10 @@ func _refused(reason: String) -> void:
 			Updater.pretty(tag) if tag != "" else "an unversioned build"])
 
 
-## Client: the host's players, vehicles, and what is bent or knocked over there.
+## Client: the host's players, vehicles, what is bent or knocked over there, and its game mode.
 @rpc("authority", "call_remote", "reliable")
-func _welcome(all: Dictionary, snapshot: Array, broken: Array) -> void:
+func _welcome(all: Dictionary, snapshot: Array, broken: Array, mode_id: String) -> void:
+	game.set_game_mode(mode_id)             # Main/Mode first: the mode's own messages follow this one
 	players = all
 	for id: int in players:
 		if id != me():
@@ -834,10 +843,11 @@ func _send(delta: float) -> void:
 			_cars_state.rpc(t, states)
 	_send_water(delta)
 	_train_send_t += delta
-	if multiplayer.is_server() and _train_send_t >= 1.0 / TRAIN_SEND_RATE - 0.001:
+	var tt: Node = game.traffic.trains
+	var every := 1.0 / TRAIN_SEND_RATE if tt.running else 1.0   # stopped: the stowed states, for any peer that missed one
+	if multiplayer.is_server() and _train_send_t >= every - 0.001:
 		_train_send_t = 0.0
-		var tt: Node = game.traffic.trains
-		if tt.running and not tt.trains.is_empty():
+		if not tt.trains.is_empty():
 			var states := []
 			for tr: Node3D in tt.trains:
 				states.append([tr.net_id, tt.service_index(tr), tr.net_state()])

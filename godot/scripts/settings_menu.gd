@@ -1,8 +1,9 @@
 extends PanelContainer
 ## Settings page (scripts/settings.gd, the "Settings" autoload), opened from the welcome menu (main_menu.gd) and the
-## in-game menu (pause_menu.gd): a Graphics tab (display mode, quality, 3D resolution, vsync, UI scale, time of day) and
-## a Controls tab (mouse sensitivity, then every rebindable action with two bindings each). Click a binding, then press
-## the new key or mouse button (Esc cancels); right click clears it. Esc or Back closes the page.
+## in-game menu (pause_menu.gd): a Graphics tab (display mode, quality, 3D resolution, vsync, UI scale, time of day,
+## and a note that switching bot traffic off saves the most) and a Controls tab (mouse sensitivity, then every
+## rebindable action with two bindings each). Click a binding, then press the new key or mouse button (Esc cancels);
+## right click clears it. Esc or Back closes the page.
 
 const UiStyle = preload("res://scripts/ui_style.gd")
 const WIDTH := 820.0
@@ -126,10 +127,31 @@ func _build_graphics() -> Control:
 	_choice(grid, "Interface size", "ui_scale", [[0.75, "75 %"], [0.85, "85 %"], [1.0, "100 %"], [1.15, "115 %"],
 			[1.3, "130 %"], [1.5, "150 %"]])
 	_choice(grid, "Time of day", "night", [[false, "Day"], [true, "Night (moonlight, headlights)"]])
+	var page := VBoxContainer.new()
+	page.add_theme_constant_override("separation", 28)
+	page.add_child(grid)
+	page.add_child(_performance_note())
 	var c := CenterContainer.new()
 	c.custom_minimum_size.y = PAGE_HEIGHT
-	c.add_child(grid)
+	c.add_child(page)
 	return c
+
+
+## The Graphics tab's info block: the bots, not the graphics, cost the most (the host's in-game menu switches them).
+func _performance_note() -> Control:
+	var note := PanelContainer.new()
+	var style := UiStyle.panel(1.0, 8, 14)
+	style.bg_color = Color(0.16, 0.2, 0.3)
+	style.border_width_left = 4
+	style.border_color = Color(0.45, 0.65, 1.0)
+	note.add_theme_stylebox_override("panel", style)
+	var text := UiStyle.label("Lagging? The biggest performance win is to switch bot traffic off (bot buses, cars and " +
+			"RER B trains): Esc in game → \"Bot traffic: off\", when you play solo or host. \"Clear all vehicles\" " +
+			"also helps when the trains or the traffic have jammed.", 15, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
+	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text.custom_minimum_size.x = WIDTH - 80.0      # a wrapping label's height is per word until it has a width
+	note.add_child(text)
+	return note
 
 
 ## A row of `grid`: `title`, then ◀ value ▶ cycling setting `key` through `options` ([value, text]); `describe` may

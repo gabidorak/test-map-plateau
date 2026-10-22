@@ -123,6 +123,18 @@ func start() -> void:
 		_fill(k, phase)
 
 
+## Stops the trains run here (the host's bot traffic switch, game.gd): every one stowed (the other peers see it in the
+## next states, net.gd), the bots kept for the next start(); a player aboard is put down where they stand.
+func stop() -> void:
+	if not running:
+		return
+	running = false
+	for tr: Node3D in trains:
+		if not tr.stowed:
+			_stow(tr)
+	_land_riders()
+
+
 ## The trains of service k that would be on their way at time 0: departures at phase - n * headway.
 func _fill(k: int, phase: float) -> void:
 	var placed: Array = []
@@ -428,7 +440,9 @@ func _land_riders() -> void:
 		return
 	var p: Vector3 = game.player.global_position
 	var xy := Vector2(p.x, -p.z)
-	if _walkable(xy) and not c.train.stowed:
+	if _walkable(xy):
+		if c.train.stowed:                  # taken off the map here (bot traffic switched off): put down in place
+			game.player.set_carrier(null)
 		return
 	var spot := {}                          # the nearer end's landing spot
 	for key: String in _landing:

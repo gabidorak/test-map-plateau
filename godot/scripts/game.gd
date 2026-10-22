@@ -39,9 +39,9 @@ extends Node3D
 ## Vehicles bend thin trees and knock over sign poles, bollards and the like (scripts/breakables.gd).
 ## Bot buses and bot cars (scripts/traffic.gd, scripts/bus_bot.gd) drive their lines and routes when playing solo,
 ## hosting, or on a dedicated server: the player can ride the buses (in through the open doors at a stop) but drive
-## none of them. The host (or solo player) switches them off and on in the in-game menu (remembered, Settings "traffic";
-## --no-bots on the command line), and can clear the map of every vehicle there. Instanced by the tools they stay off
-## unless PLATEAU_BUSES=1. The traffic lights cycle on the game's shared clock (the same on every screen).
+## none of them. The host (or solo player) switches them and the RER B trains off and on in the in-game menu
+## (remembered, Settings "traffic"; --no-bots on the command line), and can clear the map of every vehicle there.
+## Instanced by the tools they stay off unless PLATEAU_BUSES=1. The traffic lights cycle on the game's shared clock (the same on every screen).
 ## The RER B trains (scripts/train_traffic.gd, scripts/train.gd) run both ways through Lozère likewise (PLATEAU_TRAINS=1
 ## for the tools): the player gets on at the station while the doors are open, walks through the cars of a unit and is
 ## carried like in a bus; riding one off the map puts them down by the line at that end.
@@ -59,6 +59,11 @@ extends Node3D
 ## host (or solo player, or dedicated server) parks their drivable display cars at start and again after clearing the
 ## map; their salesman (scripts/salesman.gd) follows the player around. Instanced by the tools, the display cars stay
 ## off unless PLATEAU_SHOWROOM=1.
+## Game modes (scripts/modes/modes.gd): the welcome menu picks the one hosted or played solo (--mode=ID on the command
+## line, PLATEAU_MODE for the tools; clients play the host's). game.gd makes it as Main/Mode (scripts/modes/game_mode.gd):
+## it says which of the features above stay on (allows), takes keys first and adds help lines. Sandbox
+## (scripts/modes/sandbox_mode.gd) is all of the above; Escape from Plateau (scripts/escape/escape_mode.gd) is a co-op
+## survival night: zombies, survivors to carry to a rescue helicopter, weapons.
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
@@ -86,6 +91,7 @@ const PlayerList = preload("res://scripts/player_list.gd")
 const Traffic = preload("res://scripts/traffic.gd")
 const Night = preload("res://scripts/night.gd")
 const Races = preload("res://scripts/races.gd")
+const Modes = preload("res://scripts/modes/modes.gd")
 const WATER_SHOVE := 0.7                    # m/s a full-power water packet shoves a player along the jet
 const ENTER_RANGE := 3.0                    # metres from the car body
 const KILL_MARGIN := 20.0                   # m under the lowest ground where a falling player is put back
@@ -132,6 +138,8 @@ var _menu_mouse := Input.MOUSE_MODE_VISIBLE # mouse mode to restore when the men
 var low_quality := false
 var _high := {}                             # the scene's own settings, restored by "high"
 var mode := ""                              # "solo", "host", "client", "server" (dedicated); "" in the welcome menu
+var mode_id := Modes.DEFAULT                # the game mode played (scripts/modes/modes.gd)
+var game_mode: Node                         # Main/Mode (scripts/modes/game_mode.gd), once a game started
 var net: Net
 var nickname := "Player"
 var color := MainMenu.COLORS[0]
@@ -191,6 +199,9 @@ func _ready() -> void:
 	races.game = self
 	add_child(races)
 	net.registered.connect(races.send_boards)
+	net.registered.connect(func(id: int) -> void:
+		if game_mode:
+			game_mode.player_registered(id))
 	pause = PauseMenu.new()
 	add_child(pause)
 	pause.resume.connect(set_pause_open.bind(false))
@@ -215,6 +226,9 @@ func _ready() -> void:
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		_args[kv[0]] = kv[1] if kv.size() > 1 else ""
 	var profile := MainMenu.saved_profile()
+	mode_id = _args.get("mode", OS.get_environment("PLATEAU_MODE") if get_tree().current_scene != self else profile[2])
+	if not Modes.valid(mode_id):
+		mode_id = Modes.DEFAULT
 	nickname = _args.get("name", profile[0])
 	color = MainMenu.COLORS[clampi(int(_args.get("color", profile[1])), 0, MainMenu.COLORS.size() - 1)]
 	# the tools instance the scene themselves: no menu for them, no bot buses unless asked
@@ -224,6 +238,7 @@ func _ready() -> void:
 		showroom_cars = OS.get_environment("PLATEAU_SHOWROOM") == "1"
 	else:
 		bus_bots = Settings.values["traffic"] and not _args.has("no-bots")
+		train_bots = bus_bots               # the host's bot traffic switch takes the trains too (set_bot_traffic)
 	for s in get_tree().get_nodes_in_group("showroom"):
 		s.game = self
 	var welcome := get_tree().current_scene == self and not (_args.has("solo") or _args.has("host") or _args.has("join") \
@@ -264,24 +279,71 @@ func _open_main_menu() -> void:
 	menu.host.connect(func() -> void: _take_profile(); start_host())
 	menu.join.connect(func(address: String, port: int) -> void: _take_profile(); start_join(address, port))
 	menu.quit.connect(get_tree().quit)
+	menu.mode_picked.connect(_preview_mode)
+	_preview_mode(menu.mode_id)
+
+
+## Welcome menu: the flight behind it under the night of the game mode picked (Escape from Plateau's dread).
+func _preview_mode(id: String) -> void:
+	night.set_dread(id == "escape")
+	if id != "escape":
+		night.set_night(Settings.night())
 
 
 func _take_profile() -> void:
 	nickname = menu.player_name()
 	color = menu.color()
+	mode_id = menu.mode_id
+
+
+## Makes `id` (scripts/modes/modes.gd) the game mode played: Main/Mode, in place of the one before. Clients get the
+## host's from net.gd's welcome.
+func set_game_mode(id: String) -> void:
+	if game_mode:
+		remove_child(game_mode)             # its name is free for the new one at once
+		game_mode.queue_free()
+	night.set_dread(false)                  # the player's own night (the welcome menu may have previewed another)
+	night.set_night(Settings.night())
+	mode_id = id if Modes.valid(id) else Modes.DEFAULT
+	game_mode = Modes.make(mode_id)
+	game_mode.game = self
+	add_child(game_mode)
+	races.set_enabled(allows("races"))
+	for s in get_tree().get_nodes_in_group("showroom"):
+		if s.salesman:
+			s.salesman.visible = allows("showrooms")
+			s.salesman.process_mode = Node.PROCESS_MODE_INHERIT if allows("showrooms") else Node.PROCESS_MODE_DISABLED
+	_update_help()
+
+
+## Whether the game mode keeps the game's feature `feature` (scripts/modes/game_mode.gd allows).
+func allows(feature: String) -> bool:
+	return game_mode == null or game_mode.allows(feature)
 
 
 func start_solo() -> void:
 	mode = "solo"
-	races.start_hosting()
+	set_game_mode(mode_id)
+	if allows("races"):
+		races.start_hosting()
 	_begin()
-	if debug_cars:
+	_start_world()
+	game_mode.begin()
+
+
+## Solo, hosting, dedicated server: the vehicles and trains this peer starts for everyone, as the game mode allows.
+func _start_world() -> void:
+	if debug_cars and allows("debug_cars"):
 		for i in 4:
 			spawn_car_near_player()
 	_stock_showrooms()
-	if bus_bots:
+	if bus_bots and allows("bot_traffic"):
 		traffic.start_bots()
-	if train_bots:
+	_start_trains()
+
+
+func _start_trains() -> void:
+	if train_bots and allows("trains"):
 		traffic.trains.start()
 
 
@@ -292,16 +354,12 @@ func start_host() -> void:
 		_on_join_failed(err)
 		return
 	mode = "host"
-	races.start_hosting()
+	set_game_mode(mode_id)
+	if allows("races"):
+		races.start_hosting()
 	_begin()
-	if debug_cars:
-		for i in 4:
-			spawn_car_near_player()
-	_stock_showrooms()
-	if bus_bots:
-		traffic.start_bots()
-	if train_bots:
-		traffic.trains.start()
+	_start_world()
+	game_mode.begin()
 
 
 ## A server without a player of its own (headless on a VPS): the player stays hidden at the spawn point, next to the
@@ -316,20 +374,16 @@ func start_dedicated() -> void:
 		get_tree().quit(1)
 		return
 	mode = "server"
-	races.start_hosting()
+	set_game_mode(mode_id)
+	if allows("races"):
+		races.start_hosting()
 	hud.visible = false
 	_set_player_enabled(false)
-	print("Dedicated server on UDP port %d (%s)" % [net.port, AutoUpdater.version if AutoUpdater.version != "" \
-			else "unversioned build: no update checks"])
+	print("Dedicated server on UDP port %d, %s (%s)" % [net.port, Modes.title(mode_id), AutoUpdater.version \
+			if AutoUpdater.version != "" else "unversioned build: no update checks"])
 	_update_poll_t = UPDATE_POLL
-	if debug_cars:
-		for i in 4:
-			spawn_car_near_player()
-	_stock_showrooms()
-	if bus_bots:
-		traffic.start_bots()
-	if train_bots:
-		traffic.trains.start()
+	_start_world()
+	game_mode.begin()
 
 
 ## Dedicated server: quits when a newer build is out, once nobody plays or after UPDATE_WAIT; its container restarts it
@@ -364,6 +418,9 @@ func _on_joined() -> void:
 	# a step aside per player, so newcomers do not all land in the same spot
 	spawn_at(spawn_xy + Vector2(1.2 * (net.me() % 5 - 2), 0.0), deg_to_rad(spawn_yaw_deg))
 	_show_toast("Joined %s's game" % net.player_name(1) if net.players.has(1) else "Joined the server")
+	if game_mode == null:                   # (a host of an older build would have been refused)
+		set_game_mode(Modes.DEFAULT)
+	game_mode.begin()
 
 
 func _on_join_failed(reason: String) -> void:
@@ -394,6 +451,11 @@ func _begin() -> void:
 	_host_label.visible = mode == "host"
 	_host_label_t = 1.0
 	_update_help()
+
+
+## The player in the world (shown, moving, colliding) or out of it (a game mode's dead player, scripts/modes/).
+func set_player_enabled(on: bool) -> void:
+	_set_player_enabled(on)
 
 
 func _set_player_enabled(on: bool) -> void:
@@ -588,7 +650,8 @@ func set_low_quality(on: bool) -> void:
 
 ## Settings page or F11: quality, night, and keys in the help lines.
 func _on_settings_changed() -> void:
-	night.set_night(Settings.night())
+	if allows("night_toggle"):
+		night.set_night(Settings.night())
 	if Settings.low_quality() != low_quality:
 		set_low_quality(Settings.low_quality())
 	else:
@@ -642,7 +705,7 @@ func spawn_car_near_player(model := "") -> Car:
 
 ## Host (or solo): the showrooms' display cars missing from their podiums (scripts/dealership.gd).
 func _stock_showrooms() -> void:
-	if not showroom_cars:
+	if not showroom_cars or not allows("showrooms"):
 		return
 	for s in get_tree().get_nodes_in_group("showroom"):
 		s.stock(self)
@@ -667,21 +730,25 @@ func add_bot_bus(car: Car, xf: Transform3D, bot: Object) -> void:
 	net.car_parked(car)
 
 
-## Host (or solo): bot traffic on (the lines filled afresh) or off (every bot vehicle off the map, on every peer).
+## Host (or solo): bot traffic on (the lines filled afresh) or off (every bot vehicle and RER B train off the map, on
+## every peer).
 func set_bot_traffic(on: bool) -> void:
-	if mode not in ["solo", "host", "server"] or on == bus_bots:
+	if mode not in ["solo", "host", "server"] or on == bus_bots or not allows("bot_traffic"):
 		return
 	bus_bots = on
+	train_bots = on
 	if get_tree().current_scene == self and mode != "server":
 		Settings.set_value("traffic", on)
 	if on:
 		traffic.start_bots()
+		_start_trains()
 	else:
 		remove_vehicles(traffic.stop_bots())
+		traffic.trains.stop()
 
 
 ## Host (or solo): every vehicle off the map, on every peer (the bots come back at once when bot traffic is on, the
-## showroom display cars too).
+## showroom display cars too, and the RER B line is filled afresh: no train left waiting behind another).
 ## Returns how many were cleared.
 func clear_vehicles() -> int:
 	if mode not in ["solo", "host", "server"]:
@@ -690,8 +757,11 @@ func clear_vehicles() -> int:
 	traffic.stop_bots()
 	remove_vehicles(cars.duplicate())
 	_stock_showrooms()
-	if bus_bots:
+	if bus_bots and allows("bot_traffic"):
 		traffic.start_bots()
+	if traffic.trains.running:
+		traffic.trains.stop()
+		_start_trains()
 	_show_toast("Cleared %d vehicles" % n)
 	return n
 
@@ -787,7 +857,9 @@ func _add_car(car: Car) -> void:
 
 ## A round of an armed plane simulated here hit something: a vehicle takes damage (on the peer simulating it), a
 ## breakable prop falls over.
-func _on_round_hit(collider: Object, shape: int, _point: Vector3, velocity: Vector3) -> void:
+func _on_round_hit(collider: Object, shape: int, point: Vector3, velocity: Vector3) -> void:
+	if game_mode and game_mode.round_hit(collider, point, velocity):
+		return
 	var node := collider as Node
 	if node and node.is_in_group("vehicles"):
 		var car := node as Car if node is Car else node.get("head") as Car
@@ -1086,7 +1158,7 @@ func set_pause_open(on: bool) -> void:
 		chat.close()
 		_pause_mouse = Input.mouse_mode
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		var info := "Exploring solo."
+		var info := "Exploring solo." if mode_id == Modes.DEFAULT else "Playing %s solo." % Modes.title(mode_id)
 		var players := []
 		if mode == "host":
 			info = "Hosting a LAN game: others join with %s.\nGoing back to the main menu ends it for everyone." % \
@@ -1097,7 +1169,11 @@ func set_pause_open(on: bool) -> void:
 		if net.active:
 			for id: int in net.players:
 				players.append([net.player_name(id) + (" (you)" if id == net.me() else ""), net.player_color(id)])
-		pause.open(info, players, "Back to main menu", mode == "solo" or mode == "host", bus_bots)
+		if game_mode and game_mode.pause_info() != "":
+			info = game_mode.pause_info() + "\n" + info
+		var hosting := mode == "solo" or mode == "host"
+		pause.open(info, players, "Back to main menu", hosting, bus_bots, allows("bot_traffic"), allows("clear_vehicles"),
+				game_mode.host_actions() if game_mode and hosting else [])
 	else:
 		pause.close()
 		Input.mouse_mode = _pause_mouse
@@ -1143,9 +1219,14 @@ func _update_player_list() -> void:
 	var rows := []
 	for id: int in ids:
 		rows.append([net.player_name(id), net.player_color(id), net.ping(id), id == net.me()])
-	var title := "%s · %d/%d players" % ["Your game" if mode == "host" else ("%s's game" % net.player_name(1) \
-			if net.players.has(1) else "Server %s" % net.host_address), ids.size(), Net.MAX_PLAYERS]
+	var title := "%s · %s · %d/%d players" % ["Your game" if mode == "host" else ("%s's game" % net.player_name(1) \
+			if net.players.has(1) else "Server %s" % net.host_address), Modes.title(mode_id), ids.size(), Net.MAX_PLAYERS]
 	_player_list.show_players(title, rows)
+
+
+## A line at the top of the screen for a few seconds (a game mode's news too).
+func toast(text: String) -> void:
+	_show_toast(text)
 
 
 func _show_toast(text: String) -> void:
@@ -1177,7 +1258,8 @@ func _input(event: InputEvent) -> void:
 			set_chat_open(false)
 			get_viewport().set_input_as_handled()
 		return
-	if event.is_action_pressed("vehicle_menu") and not pause.visible or (key == KEY_ESCAPE and _menu.visible):
+	if event.is_action_pressed("vehicle_menu") and not pause.visible and allows("vehicle_menu") \
+			or (key == KEY_ESCAPE and _menu.visible):
 		set_menu_open(not _menu.visible)
 		get_viewport().set_input_as_handled()
 	elif key == KEY_ESCAPE:
@@ -1188,13 +1270,16 @@ func _input(event: InputEvent) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if _menu.visible or pause.visible or chat.is_open() or mode == "":
 		return
+	if game_mode and game_mode.handle_input(event):
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not flying:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventKey and event.pressed and not event.echo \
 			and event.physical_keycode in [KEY_ENTER, KEY_KP_ENTER]:
 		set_chat_open(true)
 		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("fly_camera"):
+	elif event.is_action_pressed("fly_camera") and allows("fly_camera"):
 		set_flying(not flying)
 	elif event.is_action_pressed("interact") and not flying and not driving:
 		var car := riding if riding else car_to_enter()
@@ -1214,15 +1299,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		exit_car()
 	elif event.is_action_pressed("exit_vehicle") and riding:
 		leave_ride()
-	elif event.is_action_pressed("park_car") and not flying and not driving:
+	elif event.is_action_pressed("park_car") and not flying and not driving and allows("park_car"):
 		spawn_car_near_player()
-	elif event.is_action_pressed("inspect"):
+	elif event.is_action_pressed("inspect") and allows("inspect"):
 		picker.pick_and_show(get_viewport().get_camera_3d())
 	elif event.is_action_pressed("toggle_help"):
 		_help.visible = not _help.visible
 	elif event.is_action_pressed("toggle_quality"):
 		Settings.set_value("quality", "high" if low_quality else "low")
-	elif event.is_action_pressed("night"):
+	elif event.is_action_pressed("night") and allows("night_toggle"):
 		Settings.set_value("night", not night.on)
 	elif event.is_action_pressed("headlights") and driving:
 		driving.set_headlights(not driving.headlights)
@@ -1389,6 +1474,10 @@ func _update_help() -> void:
 	var k := Settings.key_text
 	var common := "%s inspect · %s close · %s fly camera · Esc menu · %s hide help" % [k.call("inspect"),
 			k.call("inspect_close"), k.call("fly_camera"), k.call("toggle_help")]
+	if not allows("inspect") or not allows("fly_camera"):
+		common = ("%s fly camera · " % k.call("fly_camera") if allows("fly_camera") else "") + \
+				"Esc menu · %s hide help" % k.call("toggle_help")
+	var mode_walk: String = game_mode.walk_help(k) if game_mode else ""
 	var moves := _keys(["move_forward", "move_left", "move_back", "move_right"])
 	var look := "mouse look · %s camera free/auto · %s (held) look back" % [k.call("camera_mode"), k.call("look_back")]
 	if flying:
@@ -1443,6 +1532,8 @@ func _update_help() -> void:
 		_help.text = "PASSENGER · %s · wheel zoom (all the way in: cab view) · %s cab view · " % [look,
 				k.call("toggle_view")] +"%s take the wheel (if nobody drives) · %s get out\n%s" % [k.call("interact"),
 				k.call("exit_vehicle"), common]
+	elif mode_walk != "":
+		_help.text = mode_walk + "\n" + common
 	else:
 		_help.text = "WALK · click to capture the mouse · %s move · %s run · %s jump\n" % [moves, k.call("run"),
 				k.call("jump")] + \
@@ -1458,9 +1549,12 @@ func _update_help() -> void:
 		_help.text += "\n%s siren and blue lights" % k.call("bell")
 	elif driving is ArmoredCar:
 		_help.text += "\nyour gunner boards from the right side and works the roof gun"
-	_help.text += "\n%s graphics: %s · %s %s · %s frame rate%s · F11 fullscreen" % [k.call("toggle_quality"),
-			"low" if low_quality else "high", k.call("night"), "day" if night and night.on else "night",
-			k.call("toggle_stats"), " and network" if net.active else ""]
+	var extra: String = game_mode.extra_help(k) if game_mode else ""
+	if extra != "":
+		_help.text += "\n" + extra
+	_help.text += "\n%s graphics: %s · %s%s frame rate%s · F11 fullscreen" % [k.call("toggle_quality"),
+			"low" if low_quality else "high", "%s %s · " % [k.call("night"), "day" if night and night.on else "night"] \
+			if allows("night_toggle") else "", k.call("toggle_stats"), " and network" if net.active else ""]
 	if net.active:
 		_help.text += " · Enter chat · Tab players"
 	if _menu_hint:

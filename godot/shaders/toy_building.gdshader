@@ -11,7 +11,8 @@
 // material pattern; everything fades to its average colour when a pixel covers several windows.
 // Landmarks (M9) add the podium ground floor, panel and shingle materials and window variants (thick frames,
 // pairs, staggered from floor to floor).
-// At night (global `night`, scripts/night.gd) the glass reflects a dark sky and about half the rooms are lit.
+// At night (global `night`, scripts/night.gd) the glass reflects a dark sky and about half the rooms are lit (fewer
+// in a power cut: global `power`).
 shader_type spatial;
 render_mode cull_back, diffuse_burley;
 
@@ -74,6 +75,7 @@ uniform float recess = 0.14;            // window recess depth (m)
 uniform vec4 room_light : source_color = vec4(1.0, 0.7, 0.38, 1.0);   // lit rooms at night
 uniform float lit_share = 0.4;          // of the rooms lit at night
 global uniform float night;
+global uniform float power;             // share of the rooms still lit (scripts/night.gd: a power cut leaves a few)
 
 varying vec3 wpos;
 varying vec3 wnrm;
@@ -381,7 +383,7 @@ void fragment() {
 					// blinds half down in some windows
 					float blind = step(0.86, wid) * step(gq.y, hh - fr) * step(hh - (0.3 + 0.6 * fract(wid * 7.0)) * hh * 2.0, gq.y);
 					room = mix(room, vec3(0.86, 0.82, 0.72), blind * 0.85);
-					float lit = night * step(1.0 - lit_share, fract(wid * 13.7 + 0.3));
+					float lit = night * step(1.0 - lit_share * power, fract(wid * 13.7 + 0.3));
 					vec3 lamp = room_light.rgb * (0.55 + 0.6 * fract(wid * 31.3)) * mix(1.0, 0.6, blind);
 					room = mix(room, lamp * 0.6, lit);
 					emis = lamp * lit * (1.0 - fres) * 1.1;
@@ -433,7 +435,7 @@ void fragment() {
 		float far = 1.0 - detail(min(bw, max(rect.z - rect.y, 0.4)), fw);
 		vec3 avg = mix(wall, mix(glass_deep_color.rgb, glass_sky_color.rgb, 0.45), coverage * 0.8);
 		outc = mix(outc, avg, far * step(0.001, rect.w));
-		emis = mix(emis, room_light.rgb * lit_share * coverage * 0.8 * night * 0.85, far * step(0.001, rect.w));
+		emis = mix(emis, room_light.rgb * lit_share * power * coverage * 0.8 * night * 0.85, far * step(0.001, rect.w));
 		col = outc;
 		// contact shadow at the foot of the walls
 		col *= mix(0.72, 1.0, smoothstep(-0.2, 0.6, h + 0.0 * c3.w));

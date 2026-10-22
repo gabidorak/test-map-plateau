@@ -14,18 +14,22 @@ godot --path .                       # play
 
 Opening `godot/project.godot` in the editor and pressing F5 works too.
 
-The game opens on a welcome menu over a flight around the campus: pick a nickname and a colour, then
-- **Explore solo**: the map on your own, as before.
+The game opens on a welcome menu over a flight around the campus: pick a nickname, a colour and a **game mode**
+(**Sandbox**: the plateau to explore, everything below; **Escape from Plateau**: a co-op survival night, see its section
+below), then
+- **Explore solo** (**Play solo** in Escape from Plateau): the map on your own.
 - **Host a game on LAN**: starts a server on this computer (UDP port 7777, or the next free one) and joins it; its address
   (`IP:port`) shows at the top right of the host's screen. The game is announced on the local network.
-- **Join a game**: lists the games announced on the network (click one), or type the host's address and port.
+- **Join a game**: lists the games announced on the network with their game mode (click one), or type the host's
+  address and port. You play the host's mode.
 
 In a LAN game everyone sees the other players (with their nickname and colour) and the vehicles they park and drive,
 and can walk in a bus someone else drives; vehicles stop against the other players. Trees bent and poles knocked down
 by one player bend and fall for all, also for those joining later. Esc
 opens the in-game menu (resume, back to the main menu, quit; it lists the players). The host's firewall must let UDP
 7777 in (Windows asks the first time); LAN discovery uses UDP broadcasts on port 7775. Command line options skip the
-menu: `godot --path . -- --host` / `-- --join=192.168.1.42[:7777]` / `-- --solo`, plus `--name=NICK --color=0..7`.
+menu: `godot --path . -- --host` / `-- --join=192.168.1.42[:7777]` / `-- --solo`, plus `--name=NICK --color=0..7`
+and `--mode=sandbox|escape` (solo, hosting, `--dedicated` too).
 
 Bot buses drive real lines: the 4606 across the plateau and down to the Massy-Palaiseau bus station (18 m buses; its
 TCSP busway crosses the RER B on a bridge) and the 4619, L and Z on the Lozère hillside
@@ -56,6 +60,46 @@ checkpoints (the next one bright, the one after dim, an arrow at the top of the 
 out of the vehicle, or T twice, gives up. At the end the racers see the results, and every player's chat says who won
 in what time. The host (the solo game, or the dedicated server) keeps each player's best time per leaderboard, by
 nickname, in `user://race_records.json`, and sends the top 10 to every player.
+
+## Escape from Plateau
+
+Night on the plateau, and something got out of the labs: the campus is cut off and the dead walk it. A few survivors
+are hiding in front of the doors of the campus's buildings (four or five a night, picked from twenty: a barista at the
+GUS, a nanotech researcher at the C2N, the night guard of Polytechnique, the agent of Lozère station, Jean-Claude
+locked in his showroom…). Find them, carry them to **Dragon 91**, the Sécurité Civile helicopter waiting on one of the
+fields (its column of light shows from afar), and get out before dawn (30 min). Co-op, 1 to 8 players
+(`scripts/escape/`, the spots in `godot/world/escape.json` from `tools/escape/escape_spots.py`).
+- The night: thick murky fog, a dim moon, a power cut (most street lamps dead, some flickering, few windows lit), and
+  scary sounds out in the fog: screams, a dog howling, the church bell of Lozère, glass breaking, a far siren, groans,
+  now and then a whisper behind you; a low drone swells as the zombies close in. All synthesized at runtime
+  (`scripts/escape/escape_audio.gd`). Day/night, the vehicle menu, bots, trains, races and the showroom are off.
+- Zombies (`scripts/escape/zombies.gd`, `zombie.gd`): toy figures with glowing red eyes, shamblers, fast runners and
+  big brutes. Some guard each hideout, more climb out of the ground round the players as dawn comes (and the more
+  players there are), hordes come for the helicopter. They sense you within ~30 m, further with your flashlight on,
+  running or driving, come to gunshots, chase, and swing at you.
+- Weapons and kit (`scripts/escape/arsenal.gd`): the crowbar and a pistol to start with; a shotgun and a submachine
+  gun lie about with ammunition, shells, bandages, medkits and flashlight batteries (`scripts/escape/loot.gd`: walk
+  over them). Head shots count double. The safehouse (in front of Télécom Paris, where you start and come back) tops
+  your 9 mm rounds up.
+- Survivors (`scripts/escape/survivors.gd`) cannot walk: E picks one up onto your shoulders (slower, no running, the
+  pistol only), G puts them down, or sits them in the vehicle next to you (3 in a car, 6 in a van or truck, 14 in the
+  bus; G there takes one out). Carried, or driven, into the helicopter's circle, they are rescued.
+- About fifteen abandoned vehicles (some damaged, the keys in them, a bus, the fire truck and the GAZ Tiger further
+  out): fast, they run zombies over, but the zombies batter them, and you once they are broken. The Tiger's roof gun
+  kills zombies too.
+- Down at 0 health: crawl, pistol only, 40 s to bleed out unless a teammate holds E by you, or you get up with a
+  medkit (Q held; Space held gives up). Dead: you watch a teammate and come back at the safehouse 15 s later while the
+  team has lives (2 plus one per player). Everyone dead with no life left: the mission is lost.
+- When everyone is rescued (or someone holds E in the circle to leave with fewer), Dragon 91 lifts off 60 s later
+  with whoever is in its circle, hordes coming. Dawn takes it away too. The host (or solo player) starts a new mission
+  from the Esc menu; a dedicated server starts one by itself.
+- In LAN games the host (or the dedicated server) runs the mission, the zombies, the survivors and the supplies; each
+  player's peer their health and weapons. Everyone sees the others' flashlight beams, guns, shots and knocked-down
+  players.
+
+Other game modes can be added: a script extending `scripts/modes/game_mode.gd` (which features of the game it keeps,
+its keys, help lines, in-game menu buttons; game.gd makes it as `Main/Mode` on every peer) and a row in
+`scripts/modes/modes.gd`. Sandbox is `scripts/modes/sandbox_mode.gd`.
 
 The builds on the [releases page](https://github.com/gabidorak/test-map-plateau/releases) update themselves: at start
 they ask GitHub for the latest release and, when it is another build, download it next to the game on a full-screen
@@ -94,6 +138,7 @@ blender -b --factory-startup -P blender/vehicles/build_car.py -- --preview=data/
 blender -b --factory-startup -P blender/vehicles/import_textured.py   # 1928 Mercedes from ref/mercedes_1928 (a textured OBJ) -> godot/assets/cars/mercedes_1928/: .gltf + .bin, textures (downscaled by car_textures.py in .venv: Pillow, numpy), .json (~10 s, then godot --headless --import)
 blender -b --factory-startup -P blender/building_kit/build_kit.py  # building kit -> godot/assets/building_kit/kit.glb (~1 s)
 blender -b --factory-startup -P blender/vehicles/build_train.py -- --preview=$PWD/data/review/mi79/mi79   # RER B MI 79 R cars -> mi79.glb + .json (~10 s, previews ~40 s; an absolute --preview path)
+.venv/Scripts/python tools/escape/escape_spots.py --plot=/tmp/escape.png   # Escape from Plateau's survivor hideouts, helicopter fields and supply spots -> godot/world/escape.json (~3 s; shapely, Pillow)
 
 # RER B (see "RER B" below): python venv with numpy, shapely and Pillow
 .venv/Scripts/python tools/rail/fetch_osm.py      # optional: refetch the OSM extract tools/rail/osm_rail.json (Overpass)
@@ -123,6 +168,8 @@ godot --headless --fixed-fps 60 --path . --script res://tools/test_water.gd  # w
 godot --headless --fixed-fps 60 --path . --script res://tools/test_bus_bots.gd  # bot buses: both directions out, a departure every headway, indicators and doors at a stop, a turn, a red light, overtaking a parked car (or waiting and honking where there is no room), giving way, not slowing for oncoming traffic in a junction, riding to the map edge, vanishing and coming back, gliding far away (PLATEAU_TEST_ONLY=check,... runs some)
 godot --headless --fixed-fps 60 --path . --script res://tools/test_car_bots.gd  # bot cars: spawned and moving, sent out again, passing an oncoming car without slowing, a head-on in one lane sorted out
 godot --headless --fixed-fps 60 --path . --script res://tools/test_host_options.gd  # host options: bot traffic off/on, clear all vehicles (the player out first)
+godot --headless --fixed-fps 60 --path . --script res://tools/test_escape.gd  # Escape from Plateau, solo: dread night, the mission (survivors, helicopter, supplies, vehicles, guards), zombies rising, pistol, crowbar, run-over, supplies, blows, down/dead/respawn, carrying and rescuing, extraction and win, dawn and wipe-out losses, back to Sandbox
+tools/test_lan_escape.sh   # Escape from Plateau in a LAN game: the client gets the mission, shoots a zombie dead, is hurt, carries a survivor to the helicopter, is knocked down and helped up by the host
 godot --headless --fixed-fps 60 --path . --script res://tools/probe_traffic.gd -- 10  # not a test: 10 simulated minutes of traffic, buses per direction, stalls and what held them, tick cost
 tools/test_lan.sh   # LAN game: a host and a client on this machine; riding in the host's bus, taking over a car, breakables, damage, leaving
 tools/test_lan_buses.sh   # LAN game with bot buses: the client gets them (no wheel for anyone), the lights on the host's clock, riding one from a stop, the host's bot traffic off/on and clear all vehicles
@@ -167,7 +214,10 @@ on a 4K screen; the first window fills 80 % of the screen.
 - F1: fly camera (hold right mouse to look, WASD + Q/E, Shift faster, wheel for speed). F1 again drops the player below the camera.
 - F2: graphics low/high (also in Settings). Low (no SSIL, SSAO or glow, FXAA instead of MSAA) is the default ("Auto") on an integrated GPU, high elsewhere; `PLATEAU_QUALITY=low|high` overrides until the quality is changed in the game. With the low settings, "Auto" 3D resolution renders at most 1920 pixels wide (FSR upscaling), for 4K laptops on an integrated GPU.
 - N: night / day (also in Settings, kept between sessions; `PLATEAU_NIGHT=1|0` overrides until it is switched in the game). At night (`scripts/night.gd`) the sun becomes a pale blue moonlight that still casts shadows, the sky turns dark blue with stars and a moon (`shaders/night_sky.gdshader`) over a faint glow of the towns around, about 40 % of the buildings' rooms are lit, the street and path lamps glow and light the ground under them (not while knocked over), and the bot buses and cars drive with their headlights on. L switches the headlights of the vehicle you drive (the biplanes' landing lights): a beam that lights the road ahead (and casts shadows for your own vehicle), glowing lamps, dim red tail lamps and the buses' cabin lights; they switch on by themselves when you get in at night. Other players see your headlights; each player chooses day or night for themselves.
-- F: identify what is under the crosshair: a building (number, OSM id, name, kind, height and source), a tree, a prop (kind, model, source, OSM id, bus stop lines, sign codes), a fence, the ground (piece kind, material, OSM source), or the RER B: a track (number, direction, kilometre point, speed limit, cant), a platform, a signal (type, ref, aspects), a structure, the catenary. The text is copied to the clipboard. X closes it, H hides the help.
+- Escape from Plateau (see its section): left mouse fires, right mouse (held) aims, 1-4 crowbar / pistol / shotgun /
+  submachine gun, R reloads, F flashlight, Q bandage or medkit, E picks a survivor up (or helps a teammate up, held),
+  G puts them down or in a vehicle. The keys are in Settings, under Escape from Plateau.
+- F: identify what is under the crosshair (Sandbox): a building (number, OSM id, name, kind, height and source), a tree, a prop (kind, model, source, OSM id, bus stop lines, sign codes), a fence, the ground (piece kind, material, OSM source), or the RER B: a track (number, direction, kilometre point, speed limit, cant), a platform, a signal (type, ref, aspects), a structure, the catenary. The text is copied to the clipboard. X closes it, H hides the help.
 
 Chunk streaming: `scripts/builder/far_builder.gd` splits the world into 192 m cells and gives each a cheap far version
 (ground on an 8 m grid with the ground shader, its buildings merged and simplified into one mesh, its trees as

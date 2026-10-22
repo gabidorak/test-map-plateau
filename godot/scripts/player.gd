@@ -11,6 +11,8 @@ extends CharacterBody3D
 ## In the lakes and ponds (scripts/water.gd) the player wades slower the deeper it gets, then swims with the head and
 ## shoulders out (float_depth): slower, Shift a little faster, Space kicks up to climb out over a bank; falling in
 ## splashes.
+## A game mode can slow the player (speed_scale: carrying someone), stop running or jumping, turn the body with the
+## view (face_aim: a gun in hand), lay it down crawling (set_crawling) and kick the view up (kick: recoil).
 
 const Layers = preload("res://scripts/physics_layers.gd")
 const Prefs = preload("res://scripts/settings.gd")
@@ -49,6 +51,11 @@ var wait_jump_release := false              # set on getting out of a car with S
 var carrier: Node3D                         # the vehicle the player stands in (car.gd), or null
 var swimming := false
 var water_depth := NAN                      # m of water over the feet (NAN out of the water)
+var speed_scale := 1.0                      # times the walking, running and swimming speeds
+var can_run := true
+var can_jump := true
+var face_aim := false                       # third person: the body faces where the camera looks, not where it walks
+var crawling := false                       # lying on the ground (set_crawling)
 
 var _yaw := 0.0
 var _pitch := -0.12
@@ -145,6 +152,33 @@ func body_yaw() -> float:
 	return _body.rotation.y
 
 
+## The view's pitch (radians, up positive).
+func view_pitch() -> float:
+	return _pitch
+
+
+## Collides with `layers` too (outside vehicles): Escape from Plateau's zombies.
+func collide_with(layers: int) -> void:
+	_world_mask |= layers
+	if not is_instance_valid(carrier):
+		collision_mask = _world_mask
+
+
+## Kicks the view up by `pitch` radians and aside by `yaw` (a gun's recoil).
+func kick(pitch: float, yaw := 0.0) -> void:
+	_pitch = clampf(_pitch + pitch, -1.45, 1.2)
+	_yaw += yaw
+	_pivot.rotation = Vector3(_pitch, _yaw, 0.0)
+
+
+## Lying on the ground, crawling (`on`: the eye low, the body flat) or up again.
+func set_crawling(on: bool) -> void:
+	crawling = on
+	_body.rotation.x = -PI * 0.5 if on else 0.0
+	_body.position.y = 0.33 if on else 0.0
+	_apply_view()
+
+
 func toggle_view() -> void:
 	set_first_person(not first_person)
 
@@ -173,7 +207,7 @@ func _apply_view() -> void:
 	if first_person:
 		_arm.spring_length = 0.0
 		_arm.position.x = 0.0
-	_pivot.position.y = eye_height if first_person else eye_height - 0.1
+	_pivot.position.y = _eye()
 	_body.visible = not first_person
 	_pivot.rotation = Vector3(_pitch, _yaw, 0.0)
 
@@ -186,8 +220,9 @@ func _process(delta: float) -> void:
 	_arm.position.x = shoulder_offset * clampf(_arm.spring_length / third_person_distance, 0.0, 1.0)
 	# the body fades out when the camera comes close (zoomed in, or pushed in by walls)
 	var fade := clampf((1.8 - _arm.get_hit_length()) / 0.8, 0.0, 0.8)
-	for mesh: GeometryInstance3D in _body.get_children():
-		mesh.transparency = fade
+	for mesh in _body.get_children():
+		if mesh is GeometryInstance3D:           # (not what a game mode put in its hand)
+			(mesh as GeometryInstance3D).transparency = fade
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -217,10 +252,10 @@ func _physics_process(delta: float) -> void:
 	_follow_carrier()
 	var scripted := scripted_input != null
 	var input := _move_input()
-	var running := scripted_run if scripted else (active and Input.is_action_pressed("run"))
+	var running := (scripted_run if scripted else (active and Input.is_action_pressed("run"))) and can_run
 	var space_down := Input.is_action_pressed("jump")
 	wait_jump_release = wait_jump_release and space_down
-	var jumping := scripted_jump if scripted else (active and space_down and not wait_jump_release)
+	var jumping := (scripted_jump if scripted else (active and space_down and not wait_jump_release)) and can_jump
 
 	var water_y := NAN if is_instance_valid(carrier) else Water.surface_at(global_position)
 	var was_wet := water_depth > 0.0
@@ -232,9 +267,9 @@ func _physics_process(delta: float) -> void:
 	_kick_t += delta
 
 	var dir := Basis(Vector3.UP, _yaw) * Vector3(input.x, 0.0, -input.y)
-	var target := dir * (run_speed if running else walk_speed) * (1.0 - 0.5 * wade)
+	var target := dir * (run_speed if running else walk_speed) * (1.0 - 0.5 * wade) * speed_scale
 	if swimming:
-		target = dir * (swim_fast if running else swim_speed)
+		target = dir * (swim_fast if running else swim_speed) * speed_scale
 	var rate := accel * (0.4 if swimming else 1.0 if is_on_floor() else air_control) * delta
 	var h := Vector2(velocity.x, velocity.z).lerp(Vector2(target.x, target.z), minf(rate, 1.0))
 	velocity.x = h.x
@@ -258,8 +293,8 @@ func _physics_process(delta: float) -> void:
 	if was_on_floor and target.length_squared() > 0.01:
 		_try_step(start, target * delta)
 	_step_offset = move_toward(_step_offset, 0.0, delta * 2.5)
-	_pivot.position.y = (eye_height if first_person else eye_height - 0.1) - _step_offset
-	_body.position.y = -_step_offset
+	_pivot.position.y = _eye() - _step_offset
+	_body.position.y = (0.33 if crawling else 0.0) - _step_offset
 
 	if is_on_floor():
 		_last_floor = global_position
@@ -267,10 +302,17 @@ func _physics_process(delta: float) -> void:
 		rescues += 1
 		teleport(_last_floor + Vector3.UP)
 
-	if first_person:
+	if first_person or face_aim:
 		_body.rotation.y = _yaw
 	elif dir.length_squared() > 0.01:
 		_body.rotation.y = lerp_angle(_body.rotation.y, atan2(-dir.x, -dir.z), minf(12.0 * delta, 1.0))
+
+
+## Height of the camera pivot: the eye in first person, a little lower in third, near the ground crawling.
+func _eye() -> float:
+	if crawling:
+		return 0.45
+	return eye_height if first_person else eye_height - 0.1
 
 
 ## After move_and_slide fell short of `motion` against a low obstacle: lifts the player onto it when there

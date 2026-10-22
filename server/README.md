@@ -11,7 +11,7 @@ nobody plays (or after 30 minutes regardless); Docker restarts it on the new bui
 git clone https://github.com/gabidorak/test-map-plateau.git   # or copy just this folder
 cd test-map-plateau/server
 docker compose up -d --build
-docker compose logs -f                                        # "Dedicated server on UDP port 7777 (build-N)"
+docker compose logs -f                                        # "Dedicated server on UDP port 7777, Sandbox (build-N)"
 ```
 
 - DNS: an `A` record for your domain pointing to the VPS (if it is on Cloudflare: **DNS only**, grey cloud; their
@@ -22,8 +22,9 @@ docker compose logs -f                                        # "Dedicated serve
 - Players: Join a game → address `your.domain`, port `7777`.
 - x86_64 VPS only (the release has no ARM build). It takes ~450 MB of RAM and a few % of a CPU core.
 
-Settings in `compose.yaml`: `SERVER_NAME`, and `PORT` (then change the port mapping to match). To force an update
-right away: `docker compose restart`.
+Settings in `compose.yaml`: `SERVER_NAME`, `GAME_MODE` (`sandbox`, or `escape` for Escape from Plateau: the server
+starts a mission for the first player to join it, and the next one 25 s after a mission ends), and `PORT` (then change
+the port mapping to match). To force an update right away: `docker compose restart`.
 
 ## Race records
 

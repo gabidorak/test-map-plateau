@@ -1,8 +1,9 @@
 extends CanvasLayer
 ## In-game menu (Esc, game.gd): Resume, Settings (scripts/settings_menu.gd, in place of the menu), Back to main menu
 ## (leaves the LAN game, or closes it for everyone when hosting), Quit. In a LAN game it also shows how to join and who is playing. The world keeps going behind it.
-## The host (or solo player) also gets Bot traffic on/off and Clear all vehicles (pressed twice: it takes every player's
-## vehicles off the map).
+## The host (or solo player) also gets Bot traffic on/off (bot buses, cars and RER B trains) and Clear all vehicles (pressed twice: it takes every player's
+## vehicles off the map), as far as the game mode keeps them, and the game mode's own buttons (game_mode.gd
+## host_actions: Escape from Plateau's new mission).
 
 const UiStyle = preload("res://scripts/ui_style.gd")
 const SettingsMenu = preload("res://scripts/settings_menu.gd")
@@ -24,12 +25,15 @@ var _traffic: Button
 var _clear: Button
 var _traffic_on := true
 var _clear_armed := false                   # Clear all vehicles pressed once: the next press clears
+var _actions: VBoxContainer                 # the game mode's buttons
+var _looks: Dictionary
 
 
 func _ready() -> void:
 	layer = 4
 	visible = false
 	var looks := UiStyle.button_looks()
+	_looks = looks
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", UiStyle.panel(0.9, 12, 24))
 	add_child(panel)
@@ -60,6 +64,7 @@ func _ready() -> void:
 	_host_box.add_theme_constant_override("separation", 12)
 	box.add_child(_host_box)
 	_traffic = UiStyle.button("", looks, Vector2(320, 40), 17)
+	_traffic.tooltip_text = "Bot buses, bot cars and RER B trains, for everyone in the game"
 	_traffic.pressed.connect(func() -> void:
 		_set_traffic(not _traffic_on)
 		traffic_toggled.emit(_traffic_on))
@@ -75,6 +80,9 @@ func _ready() -> void:
 	_clear.mouse_exited.connect(_disarm_clear)
 	_host_box.add_child(_centred(_traffic))
 	_host_box.add_child(_centred(_clear))
+	_actions = VBoxContainer.new()
+	_actions.add_theme_constant_override("separation", 12)
+	_host_box.add_child(_actions)
 	for b in [_leave, q]:
 		box.add_child(_centred(b))
 	box.add_child(UiStyle.label("Esc resume", 14, UiStyle.TEXT_DIM))
@@ -87,8 +95,11 @@ func _ready() -> void:
 
 
 ## Shows the menu: `info` says what game this is, `players` lists [nickname, colour] (empty when solo),
-## `leave_text` names what Back to main menu does; `host`: with the host's buttons, bot traffic `traffic_on`.
-func open(info: String, players: Array, leave_text: String, host := false, traffic_on := true) -> void:
+## `leave_text` names what Back to main menu does; `host`: with the host's buttons, bot traffic `traffic_on` (the
+## traffic and clear buttons only when `show_traffic` and `show_clear`), and the game mode's `actions` ([text, Callable]:
+## pressing one closes the menu).
+func open(info: String, players: Array, leave_text: String, host := false, traffic_on := true, show_traffic := true,
+		show_clear := true, actions: Array = []) -> void:
 	_info.text = info
 	_info.visible = info != ""
 	for c in _players.get_children():
@@ -97,7 +108,18 @@ func open(info: String, players: Array, leave_text: String, host := false, traff
 		_players.add_child(UiStyle.label("● " + p[0], 17, (p[1] as Color).lightened(0.3)))
 	_players.visible = not players.is_empty()
 	_leave.text = leave_text
-	_host_box.visible = host
+	_host_box.visible = host and (show_traffic or show_clear or not actions.is_empty())
+	_traffic.get_parent().visible = show_traffic
+	_clear.get_parent().visible = show_clear
+	for c in _actions.get_children():
+		c.free()
+	for a: Array in actions:
+		var b := UiStyle.button(a[0], _looks, Vector2(320, 40), 17)
+		var call: Callable = a[1]
+		b.pressed.connect(func() -> void:
+			resume.emit()
+			call.call())
+		_actions.add_child(_centred(b))
 	_set_traffic(traffic_on)
 	_disarm_clear()
 	_panel.visible = true

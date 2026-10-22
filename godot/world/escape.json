@@ -1,0 +1,703 @@
+{
+ "schema": 1,
+ "about": "Escape from Plateau spots: tools/escape/escape_spots.py from world.json (map x east, y north).",
+ "campus": [
+  -420.0,
+  -1080.0,
+  1720.0,
+  620.0
+ ],
+ "safehouse": {
+  "name": "Télécom Paris",
+  "x": -34.0,
+  "y": 55.0,
+  "yaw": 180.0,
+  "r": 9.0
+ },
+ "survivors": [
+  {
+   "id": "gus",
+   "who": "Léa, the barista of the GUS coffee shop",
+   "line": "I kept the espresso machine going all night. Get me out of here!",
+   "place": "Pavillon Réciproque (Coffee Shop GUS)",
+   "x": 67.08,
+   "y": 39.92,
+   "out": [
+    -0.178,
+    -0.984
+   ]
+  },
+  {
+   "id": "c2n",
+   "who": "Inès, a nanotech researcher at the C2N",
+   "line": "They came through the clean room doors... Thank you, thank you!",
+   "place": "Centre de Nanosciences et de Nanotechnologies Paris-Saclay",
+   "x": -215.04,
+   "y": -48.59,
+   "out": [
+    0.171,
+    0.985
+   ]
+  },
+  {
+   "id": "showroom",
+   "who": "Jean-Claude, the car salesman of Prestige Motors",
+   "line": "Finally, a customer! ...I mean: merci! Let us go, vite, vite!",
+   "interior": "osm:w140538734",
+   "place": "Prestige Motors",
+   "x": 237.73,
+   "y": 110.2,
+   "out": [
+    0.171,
+    0.985
+   ]
+  },
+  {
+   "id": "hacker-house",
+   "who": "Yanis, a student of the Hacker House",
+   "line": "My laptop died, then the zombies came. In that order, sadly.",
+   "place": "Résidence Hacker House",
+   "x": 201.57,
+   "y": -120.88,
+   "out": [
+    0.178,
+    0.984
+   ]
+  },
+  {
+   "id": "grand-hall",
+   "who": "Mireille, the night guard of Polytechnique",
+   "line": "Thirty years of night shifts and now this. Carry me, my knees are done.",
+   "place": "Grand Hall",
+   "x": 834.34,
+   "y": -55.26,
+   "out": [
+    0.998,
+    -0.06
+   ]
+  },
+  {
+   "id": "ensta",
+   "who": "Chloé, an ENSTA Paris student",
+   "line": "I hid in the robotics lab. The robots were the nice ones.",
+   "place": "ENSTA Paris",
+   "x": 1415.93,
+   "y": -306.88,
+   "out": [
+    0.966,
+    -0.26
+   ]
+  },
+  {
+   "id": "ensae",
+   "who": "Professor Dumont, a statistician at ENSAE",
+   "line": "The odds of you finding me were very low. I am delighted to be an outlier.",
+   "place": "ENSAE - Institut Polytechnique de Paris",
+   "x": 541.65,
+   "y": -220.61,
+   "out": [
+    -0.998,
+    0.06
+   ]
+  },
+  {
+   "id": "cea",
+   "who": "Karim, an engineer at CEA List",
+   "line": "It started in a lab near here. I will tell you everything... on the way.",
+   "place": "CEA LIST",
+   "x": -356.35,
+   "y": -132.53,
+   "out": [
+    -0.18,
+    -0.984
+   ]
+  },
+  {
+   "id": "edf",
+   "who": "Sophie, an intern at EDF",
+   "line": "The power went out at ten. I know, I know: keeping it on was my job.",
+   "place": "Campus EDF Paris-Saclay",
+   "x": -355.86,
+   "y": 273.72,
+   "out": [
+    -0.17,
+    -0.985
+   ]
+  },
+  {
+   "id": "lozere",
+   "who": "Bernard, the agent of Lozère station",
+   "line": "The last RER never came. Traffic disrupted, as usual... but zombies this time.",
+   "place": "Gare RER de Lozère",
+   "x": 876.49,
+   "y": -788.11,
+   "out": [
+    -0.99,
+    0.14
+   ]
+  },
+  {
+   "id": "gym-ensta",
+   "who": "Coach Lefèvre, from the ENSTA gym",
+   "line": "I held them off with volleyballs. Go on, I'll carry the whistle.",
+   "place": "Gymnase ENSTA Paris",
+   "x": 1069.16,
+   "y": -160.98,
+   "out": [
+    -0.052,
+    -0.999
+   ]
+  },
+  {
+   "id": "turing",
+   "who": "Ada, an AI researcher at the Alan Turing building",
+   "line": "My model predicted this. Nobody read my paper.",
+   "place": "Bâtiment Alan Turing",
+   "x": 431.94,
+   "y": 123.9,
+   "out": [
+    -0.174,
+    -0.985
+   ]
+  },
+  {
+   "id": "sous-prefecture",
+   "who": "Gérard, a clerk at the sous-préfecture",
+   "line": "Is there a form for this? Form 28-B: evacuation by helicopter.",
+   "place": "Sous-Préfecture",
+   "x": 243.22,
+   "y": 412.12,
+   "out": [
+    -0.983,
+    0.184
+   ]
+  },
+  {
+   "id": "maisons-hotes",
+   "who": "Professor Sato, visiting from Kyoto",
+   "line": "I came for a conference. This was not the keynote I expected.",
+   "place": "Maisons d'Hôtes de l'X",
+   "x": 896.71,
+   "y": 17.89,
+   "out": [
+    0.998,
+    -0.057
+   ]
+  },
+  {
+   "id": "church",
+   "who": "Father Antoine, of Notre-Dame-de-la-Nativité",
+   "line": "I rang the bell all night. It only brought more of them.",
+   "place": "Église Notre-Dame-de-la-Nativité",
+   "x": 1159.75,
+   "y": -885.08,
+   "out": [
+    0.048,
+    0.999
+   ]
+  },
+  {
+   "id": "alice-milliat",
+   "who": "Nadia, a sprinter of the Alice Milliat centre",
+   "line": "I can run... I just twisted my ankle running from them.",
+   "place": "Centre sportif AliceMillat",
+   "x": 188.98,
+   "y": -55.93,
+   "out": [
+    0.172,
+    0.985
+   ]
+  },
+  {
+   "id": "manege",
+   "who": "Capucine, from the riding club",
+   "line": "The horses ran off at the first scream. Smart horses.",
+   "place": "Manège",
+   "x": 453.17,
+   "y": -345.1,
+   "out": [
+    -0.998,
+    0.06
+   ]
+  },
+  {
+   "id": "sirta",
+   "who": "Hugo, a meteorologist at the SIRTA observatory",
+   "line": "Fog, visibility eighty metres, and the dead walking. Not in my forecast.",
+   "place": "Observatoire SIRTA 2020",
+   "x": 672.68,
+   "y": 439.57,
+   "out": [
+    -0.424,
+    -0.906
+   ]
+  },
+  {
+   "id": "chaufferie",
+   "who": "Rémi, the technician of the heating plant",
+   "line": "The boilers still work. The rest of the world, not so much.",
+   "place": "Chaufferie",
+   "x": 568.31,
+   "y": 200.44,
+   "out": [
+    -0.057,
+    -0.998
+   ]
+  }
+ ],
+ "evac": [
+  {
+   "id": "x-fields",
+   "name": "the Polytechnique sports fields",
+   "x": 1058.0,
+   "y": 229.0,
+   "r": 13.0
+  },
+  {
+   "id": "x-north",
+   "name": "the fields north of Polytechnique",
+   "x": 630.0,
+   "y": 520.0,
+   "r": 13.0
+  },
+  {
+   "id": "ensta-field",
+   "name": "the field by ENSTA Paris",
+   "x": 1480.0,
+   "y": -388.0,
+   "r": 13.0
+  },
+  {
+   "id": "x-east",
+   "name": "the east fields of Polytechnique",
+   "x": 1312.0,
+   "y": 44.0,
+   "r": 13.0
+  },
+  {
+   "id": "lake-parking",
+   "name": "the big parking by the Lac de l'X",
+   "x": 790.0,
+   "y": 166.0,
+   "r": 13.0
+  }
+ ],
+ "caches": [
+  [
+   725.25,
+   -74.94
+  ],
+  [
+   -72.13,
+   -740.45
+  ],
+  [
+   69.87,
+   -753.16
+  ],
+  [
+   -169.04,
+   -712.06
+  ],
+  [
+   9.39,
+   -755.33
+  ],
+  [
+   -58.81,
+   -726.96
+  ],
+  [
+   552.8,
+   -13.02
+  ],
+  [
+   1317.29,
+   -410.55
+  ],
+  [
+   975.79,
+   -841.78
+  ],
+  [
+   428.63,
+   -97.49
+  ],
+  [
+   809.11,
+   -126.98
+  ],
+  [
+   1066.88,
+   -256.79
+  ],
+  [
+   1638.67,
+   -505.23
+  ],
+  [
+   741.2,
+   10.46
+  ],
+  [
+   1041.25,
+   -302.58
+  ],
+  [
+   960.34,
+   -169.7
+  ],
+  [
+   487.56,
+   -163.82
+  ],
+  [
+   1271.98,
+   -411.56
+  ],
+  [
+   1076.15,
+   -304.79
+  ],
+  [
+   1101.84,
+   -167.0
+  ],
+  [
+   939.16,
+   -439.71
+  ],
+  [
+   957.84,
+   -256.81
+  ],
+  [
+   543.63,
+   114.42
+  ],
+  [
+   903.12,
+   -256.67
+  ],
+  [
+   806.58,
+   -179.55
+  ],
+  [
+   1087.04,
+   -404.45
+  ],
+  [
+   1708.29,
+   -424.18
+  ],
+  [
+   1561.35,
+   -530.36
+  ],
+  [
+   1045.98,
+   -232.97
+  ],
+  [
+   885.96,
+   -317.99
+  ],
+  [
+   921.52,
+   -311.18
+  ],
+  [
+   1331.08,
+   -445.8
+  ],
+  [
+   956.23,
+   -252.57
+  ],
+  [
+   1584.59,
+   -584.28
+  ],
+  [
+   1600.97,
+   -477.6
+  ],
+  [
+   862.46,
+   -66.88
+  ],
+  [
+   1046.96,
+   -158.87
+  ],
+  [
+   957.02,
+   -304.23
+  ],
+  [
+   1111.2,
+   -306.84
+  ],
+  [
+   964.38,
+   -208.34
+  ],
+  [
+   868.01,
+   -254.32
+  ],
+  [
+   1414.12,
+   -406.4
+  ],
+  [
+   416.31,
+   -91.83
+  ],
+  [
+   1051.95,
+   -239.45
+  ],
+  [
+   1382.69,
+   432.07
+  ],
+  [
+   750.87,
+   -258.64
+  ],
+  [
+   807.4,
+   -805.08
+  ],
+  [
+   488.23,
+   -111.76
+  ],
+  [
+   949.08,
+   -265.41
+  ],
+  [
+   720.85,
+   -249.88
+  ],
+  [
+   1026.06,
+   -400.67
+  ],
+  [
+   537.11,
+   -400.47
+  ],
+  [
+   928.71,
+   -74.84
+  ],
+  [
+   250.23,
+   333.69
+  ],
+  [
+   -108.46,
+   -139.26
+  ],
+  [
+   891.25,
+   -454.51
+  ],
+  [
+   1458.81,
+   -53.32
+  ],
+  [
+   651.06,
+   98.87
+  ],
+  [
+   577.59,
+   -136.7
+  ],
+  [
+   1690.37,
+   -564.74
+  ],
+  [
+   1563.89,
+   58.41
+  ],
+  [
+   188.68,
+   -22.32
+  ],
+  [
+   67.35,
+   -97.06
+  ],
+  [
+   1590.62,
+   -510.19
+  ],
+  [
+   -117.55,
+   325.57
+  ],
+  [
+   1583.06,
+   -565.73
+  ],
+  [
+   1638.75,
+   -597.51
+  ],
+  [
+   1590.38,
+   -585.66
+  ],
+  [
+   1590.69,
+   -540.32
+  ],
+  [
+   319.77,
+   -99.86
+  ],
+  [
+   968.16,
+   -154.43
+  ],
+  [
+   -128.31,
+   -45.82
+  ],
+  [
+   -101.07,
+   177.32
+  ],
+  [
+   580.37,
+   61.45
+  ],
+  [
+   549.39,
+   160.21
+  ],
+  [
+   1205.95,
+   -58.37
+  ],
+  [
+   572.79,
+   -48.37
+  ],
+  [
+   659.2,
+   -91.67
+  ],
+  [
+   116.87,
+   205.91
+  ],
+  [
+   1072.71,
+   -112.57
+  ],
+  [
+   -157.61,
+   287.3
+  ],
+  [
+   -220.67,
+   513.7
+  ],
+  [
+   834.94,
+   -33.28
+  ],
+  [
+   705.89,
+   -154.59
+  ],
+  [
+   750.24,
+   90.52
+  ],
+  [
+   1192.06,
+   -156.55
+  ],
+  [
+   1352.33,
+   -126.16
+  ],
+  [
+   1450.18,
+   -222.81
+  ],
+  [
+   1382.38,
+   -127.16
+  ],
+  [
+   1353.18,
+   -173.76
+  ],
+  [
+   1405.77,
+   -176.84
+  ],
+  [
+   -375.36,
+   -727.95
+  ],
+  [
+   -223.64,
+   -746.15
+  ],
+  [
+   -286.5,
+   -797.43
+  ],
+  [
+   -413.74,
+   -25.52
+  ],
+  [
+   -249.89,
+   -24.34
+  ],
+  [
+   -341.76,
+   47.25
+  ],
+  [
+   -298.52,
+   86.58
+  ],
+  [
+   -376.04,
+   167.85
+  ],
+  [
+   -289.64,
+   116.78
+  ],
+  [
+   -406.61,
+   171.12
+  ],
+  [
+   -335.04,
+   158.26
+  ],
+  [
+   -281.63,
+   156.24
+  ],
+  [
+   -233.96,
+   293.41
+  ]
+ ]
+}
