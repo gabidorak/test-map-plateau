@@ -7,6 +7,7 @@ services:
       - "7777:7777/udp"
     environment:
       SERVER_NAME: "Plateau server"
+      GAME_MODE: "sandbox"        # or "escape": Escape from Plateau
     volumes:
       - plateau-data:/data
 

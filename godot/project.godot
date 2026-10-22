@@ -44,6 +44,8 @@ enabled=PackedStringArray("res://addons/plateau_builder/plugin.cfg")
 3d_physics/layer_8="vehicle_inside"
 3d_physics/layer_9="breakable"
 3d_physics/layer_10="debris"
+3d_physics/layer_11="remote_player"
+3d_physics/layer_12="zombie"
 
 [physics]
 
@@ -65,4 +67,8 @@ signal_clock={
 night={
 "type": "float",
 "value": 0.0
+}
+power={
+"type": "float",
+"value": 1.0
 }

@@ -132,6 +132,18 @@ func update_collision(on: bool, in_car: Node3D, cars: Array) -> void:
 			_ignored.erase(car)
 
 
+## The body (feet at its origin: the capsule and nose), for what a game mode puts on it (scripts/escape/escape_mode.gd).
+func body() -> Node3D:
+	return _body
+
+
+## Lying on the ground (`on`: knocked down, Escape from Plateau) or standing.
+func set_lying(on: bool) -> void:
+	_body.rotation.x = -PI * 0.5 if on else 0.0
+	_body.position.y = 0.33 if on else 0.0
+	label.position.y = 1.0 if on else 2.15
+
+
 ## True when the vehicle bodies of `car` (car.gd) pass through this player.
 func ignores(car: Node3D) -> bool:
 	return _ignored.has(car)

@@ -136,6 +136,15 @@ func _ready() -> void:
 		settings.changed.connect(_refresh_boards)      # the start circles' signs name the race key
 
 
+## On or off (a game mode without races, scripts/modes/game_mode.gd): no start circles, leaderboards, offers or HUD.
+func set_enabled(on: bool) -> void:
+	process_mode = Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_DISABLED
+	for c in get_children():
+		if c is Node3D:
+			(c as Node3D).visible = on
+	hud.visible = on
+
+
 ## Solo, hosting, dedicated server: this peer runs the races, from its records file.
 func start_hosting() -> void:
 	hosting = true

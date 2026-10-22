@@ -8,6 +8,8 @@ extends Node
 ## player's on as they get in. Day puts the scene's own settings back, also when the scene goes (the environment and
 ## the prop materials are shared resources that a reloaded scene gets again). Each player's own: LAN games do not
 ## share it.
+## Dread (set_dread, Escape from Plateau, scripts/escape/escape_mode.gd): a night of thick murky fog under a dim moon,
+## and a power cut: DREAD_POWER of the rooms lit, most street lamps dead, a few flickering.
 
 const Car = preload("res://scripts/car.gd")
 const Train = preload("res://scripts/train.gd")
@@ -26,8 +28,18 @@ const LAMP_FADE := 150.0                    # m from the camera beyond which the
 const LAMPS := {"lamp_street": [5.0, 18.0, 70.0], "lamp_path": [1.6, 9.0, 0.0]}
 const RAIL_LAMP := [4.0, 14.0, 80.0]        # the RER B platform lamps (rail_builder.gd), as the street lamps
 const LAMP_CHECK := 0.3                     # s between looks for knocked-over lamps
+const DREAD_FOG := Color(0.035, 0.045, 0.045)
+const DREAD_FOG_DENSITY := 0.024            # ~1/e at 40 m: things fade out by 100 m
+const DREAD_FOG_SKY := 0.85                 # the sky drowned in the murk
+const DREAD_MOON := 0.3
+const DREAD_AMBIENT := 0.32
+const DREAD_SATURATION := 0.7
+const DREAD_POWER := 0.15                   # share of the rooms still lit (global shader `power`)
+const DREAD_DEAD := 0.72                    # share of the lamps out
+const DREAD_FLICKER := 0.12                 # share of the lamps flickering (the rest burn on)
 
 var on := false
+var dread := false
 var game: Node                              # game.gd: its cars and breakables
 var env: Environment
 var sun: DirectionalLight3D
@@ -40,10 +52,32 @@ var _lamps_built := false
 var _glow: Array[ShaderMaterial] = []
 var _glow_day: Array = []                   # their glow_energy by day
 var _check_t := 0.0
+var _lamp_mood := PackedByteArray()         # per lamp, in dread: 0 burns, 1 out, 2 flickers
+var _lamp_alive := PackedByteArray()        # per lamp: 1 standing (not knocked over)
+var _rng := RandomNumberGenerator.new()
 
 
 func _exit_tree() -> void:
+	set_dread(false)
 	set_night(false)
+
+
+## Dread on (forces night) or off (the plain night, if night is on).
+func set_dread(d: bool) -> void:
+	if d == dread:
+		return
+	dread = d
+	if d and not on:
+		set_night(true)
+	elif on:
+		_apply_night()
+	if d and _lamp_mood.size() != _lamps.size():
+		_rng.seed = 91
+		_lamp_mood.resize(_lamps.size())
+		for k in _lamps.size():
+			var r := _rng.randf()
+			_lamp_mood[k] = 1 if r < DREAD_DEAD else (2 if r < DREAD_DEAD + DREAD_FLICKER else 0)
+	_check_t = LAMP_CHECK
 
 
 func set_night(n: bool) -> void:
@@ -54,23 +88,10 @@ func set_night(n: bool) -> void:
 		_day = {"sky": env.sky.sky_material, "ambient": env.ambient_light_color,
 				"ambient_energy": env.ambient_light_energy, "sky_share": env.ambient_light_sky_contribution,
 				"fog": env.fog_enabled, "saturation": env.adjustment_saturation, "sun": sun.rotation,
-				"sun_color": sun.light_color, "sun_energy": sun.light_energy}
+				"sun_color": sun.light_color, "sun_energy": sun.light_energy, "fog_color": env.fog_light_color,
+				"fog_density": env.fog_density, "fog_sky": env.fog_sky_affect}
 	if n:
-		if _sky == null:
-			_sky = ShaderMaterial.new()
-			_sky.shader = load("res://shaders/night_sky.gdshader")
-		env.sky.sky_material = _sky
-		env.ambient_light_color = AMBIENT
-		env.ambient_light_energy = AMBIENT_ENERGY
-		env.ambient_light_sky_contribution = 0.15
-		env.fog_enabled = true
-		env.fog_light_color = FOG
-		env.fog_density = FOG_DENSITY
-		env.fog_sky_affect = 0.0
-		env.adjustment_saturation = SATURATION
-		sun.rotation_degrees = MOON
-		sun.light_color = MOON_COLOR
-		sun.light_energy = MOON_ENERGY
+		_apply_night()
 	else:
 		env.sky.sky_material = _day["sky"]
 		env.ambient_light_color = _day["ambient"]
@@ -81,6 +102,10 @@ func set_night(n: bool) -> void:
 		sun.rotation = _day["sun"]
 		sun.light_color = _day["sun_color"]
 		sun.light_energy = _day["sun_energy"]
+		env.fog_light_color = _day["fog_color"]
+		env.fog_density = _day["fog_density"]
+		env.fog_sky_affect = _day["fog_sky"]
+		RenderingServer.global_shader_parameter_set("power", 1.0)
 	RenderingServer.global_shader_parameter_set("night", 1.0 if n else 0.0)
 	Car.night = n
 	Train.night = n
@@ -92,9 +117,40 @@ func set_night(n: bool) -> void:
 		_build_lamps()
 	for k in _glow.size():
 		_glow[k].set_shader_parameter("glow_energy", GLOW_ENERGY if n else _glow_day[k])
-	for l: Array in _lamps:
-		(l[0] as Light3D).visible = n
+	_lamp_alive.resize(_lamps.size())
+	_lamp_alive.fill(1)
+	for k in _lamps.size():
+		(_lamps[k][0] as Light3D).visible = _lamp_shows(k)
 	_check_t = LAMP_CHECK
+
+
+## The night's (or dread's) environment, sky and moonlight.
+func _apply_night() -> void:
+	if _sky == null:
+		_sky = ShaderMaterial.new()
+		_sky.shader = load("res://shaders/night_sky.gdshader")
+	env.sky.sky_material = _sky
+	env.ambient_light_color = AMBIENT
+	env.ambient_light_energy = DREAD_AMBIENT if dread else AMBIENT_ENERGY
+	env.ambient_light_sky_contribution = 0.15
+	env.fog_enabled = true
+	env.fog_light_color = DREAD_FOG if dread else FOG
+	env.fog_density = DREAD_FOG_DENSITY if dread else FOG_DENSITY
+	env.fog_sky_affect = DREAD_FOG_SKY if dread else 0.0
+	env.adjustment_saturation = DREAD_SATURATION if dread else SATURATION
+	sun.rotation_degrees = MOON
+	sun.light_color = MOON_COLOR
+	sun.light_energy = DREAD_MOON if dread else MOON_ENERGY
+	RenderingServer.global_shader_parameter_set("power", DREAD_POWER if dread else 1.0)
+
+
+## Whether lamp k gives light now: at night, standing, and in dread neither out nor in a flicker's dark moment.
+func _lamp_shows(k: int) -> bool:
+	if not on or (k < _lamp_alive.size() and _lamp_alive[k] == 0):
+		return false
+	if not dread or k >= _lamp_mood.size():
+		return true
+	return _lamp_mood[k] == 0 or (_lamp_mood[k] == 2 and _rng.randf() < 0.75)
 
 
 ## A light under each street and path lamp, child of its MultiMesh (so it streams with it, world_streamer.gd), and the
@@ -192,10 +248,17 @@ func _instance(mm: MultiMesh, i: int) -> Transform3D:
 func _process(delta: float) -> void:
 	if not on or _lamps.is_empty():
 		return
+	if dread:                               # the flickering ones, a few times a second
+		for k in mini(_lamp_mood.size(), _lamps.size()):
+			if _lamp_mood[k] == 2 and _rng.randf() < delta * 8.0:
+				(_lamps[k][0] as Light3D).visible = _lamp_shows(k)
 	_check_t += delta
 	if _check_t < LAMP_CHECK:
 		return
 	_check_t = 0.0
-	for l: Array in _lamps:
+	for k in _lamps.size():
+		var l: Array = _lamps[k]
 		if l[1] != null:                    # the railway's lamps do not break
-			(l[0] as Light3D).visible = _instance(l[1], l[2]).basis.x.length_squared() > 1e-4
+			_lamp_alive[k] = 1 if _instance(l[1], l[2]).basis.x.length_squared() > 1e-4 else 0
+		if not (dread and k < _lamp_mood.size() and _lamp_mood[k] == 2):
+			(l[0] as Light3D).visible = _lamp_shows(k)

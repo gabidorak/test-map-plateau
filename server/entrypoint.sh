@@ -5,6 +5,7 @@ REPO="${REPO:-gabidorak/test-map-plateau}"
 ASSET=plateau-map-linux.x86_64
 PORT="${PORT:-7777}"
 NAME="${SERVER_NAME:-Plateau server}"
+MODE="${GAME_MODE:-sandbox}"   # sandbox or escape (Escape from Plateau)
 cd /data || exit 1
 
 # grep, not line matching: the API answers pretty-printed or compact JSON depending on the client
@@ -29,4 +30,4 @@ if [ "$tag" != "$(cat tag 2>/dev/null)" ]; then
 fi
 [ -x "$ASSET" ] || { echo "No build to run"; sleep 60; exit 1; }
 
-exec "./$ASSET" --headless -- --dedicated --port="$PORT" --name="$NAME"
+exec "./$ASSET" --headless -- --dedicated --port="$PORT" --name="$NAME" --mode="$MODE"
