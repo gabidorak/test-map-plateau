@@ -14,12 +14,24 @@ extends Node
 ##   on routes from the map edge to the map edge, picked at random (longer ones more often). Spread along their routes
 ##   at the start; one that vanished at the edge comes back on another route, mid-way where no player is within HIDDEN
 ##   m, else at its map edge.
+## - Physics budget: every RANK_EVERY s the bots are ranked by their distance to the nearest player; only the
+##   PHYSICS_BUDGET nearest (those players ride first) may drive with the physics within bus_bot.gd's NEAR, the others
+##   glide (bus_bot.gd physics_ok). A bus's walkable hulls are only in the physics with a player on foot within
+##   WALK_NEAR m or riding it (car.gd set_walkable).
+## - Load: while the physics ticks take over CROWDED_MS (Performance TIME_PHYSICS_PROCESS: the slowest of each second,
+##   smoothed over several seconds: a slow or throttled processor, not a hitch), no stowed bot is sent out again and no
+##   new bus is made, until it is back under CALM_MS for CALM_FOR s: the traffic thins out by itself.
+## - Far bots (bus_bot.gd far): drawn by traffic_proxies.gd (Main/Traffic/Proxies), driven from here (their vehicles
+##   sleep, car.gd set_dormant).
+## - Every tick a snapshot of the vehicles out (snap_*, with a grid of SNAP_CELL m cells: near()) serves the bots' looks
+##   around and the trains' (train_traffic.gd), instead of each going through every vehicle.
 ## The host can stop them (stop_bots: game.gd set_bot_traffic, the in-game menu) and start them again.
 ## Only the peer that hosts (or plays solo, or a dedicated server) runs the bots; the other peers get their vehicles as
 ## remote vehicles (net.gd), which they can ride in (buses) but not drive.
 
 const BusBot = preload("res://scripts/bus_bot.gd")
 const TrainTraffic = preload("res://scripts/train_traffic.gd")
+const TrafficProxies = preload("res://scripts/traffic_proxies.gd")
 const ROUTES := "res://world/bus_routes.json"
 const CAR_ROUTES := "res://world/car_routes.json"
 const CYCLE := 30.0                         # s, toy_prop.gdshader `cycle`
@@ -35,9 +47,19 @@ const TERMINUS_WAIT := 0.5                  # ...for this share of the headway a
 const HIDDEN := 180.0                       # m from every player a bot car may come back in mid-route
 const EDGE_SEEN := 60.0                     # m from every player it may come back in at the map edge
 const CAR_LOOK := 0.5                       # s between looks for a way back in for the stowed cars
+const RANK_EVERY := 0.25                    # s between rankings of the bots by distance to the players
+const PHYSICS_BUDGET := 24                  # bots driving with the physics at most
+const BUDGET_STICK := 30.0                  # m: a bot on the physics ranks as this much nearer (no flapping)
+const WALK_NEAR := 40.0                     # m from a player on foot a bus's walkable hulls are in the physics
+const CROWDED_MS := 10.0                    # ms, slowest physics tick of each second (smoothed) beyond which the traffic
+const CALM_MS := 7.0                        # stops growing, until it is under this...
+const CALM_FOR := 5.0                       # ...for this many seconds
+const LOAD_SMOOTH := 0.002                  # per tick: about 8 s, so that a hitch now and then does not count
+const SNAP_CELL := 32.0                     # m, the snapshot's grid cells (near())
 
 var game: Node3D                            # game.gd
 var trains: TrainTraffic                    # the RER B (scripts/train_traffic.gd), on every peer
+var proxies: TrafficProxies                 # the far bots' look (scripts/traffic_proxies.gd)
 var bots: Array = []                        # BusBot: the buses, then the cars
 var lines: Array = []                       # bus_routes.json "lines"
 var routes := {}                            # route id -> route (bus_routes.json, car_routes.json)
@@ -47,6 +69,9 @@ var departures: Array = []                  # [line, route index, s of the next 
 var time := 0.0                             # s since the bots started
 var departed := {}                          # route id -> buses that set off from its start (tests)
 var send_cars := true                       # stowed bot cars sent out again (tests turn it off)
+var crowded := false                        # the physics tick is too slow: no bot sent out (see the header)
+var adaptive := true                        # the load watch on (benchmarks turn it off to compare like with like)
+var load_ms := 0.0                          # slowest physics tick of each second, smoothed (ms)
 # the vehicles out (not stowed) as of this physics tick, for the bots' looks around: footprint centre (pipeline x/y),
 # velocity (BusBot.velocity_of), heading, half length
 var snap_cars: Array = []
@@ -55,14 +80,21 @@ var snap_vel := PackedVector2Array()
 var snap_fwd := PackedVector2Array()
 var snap_reach := PackedFloat32Array()
 var _snap_feet: Array = []                  # their footprints (snap_footprint), null until a bot looks at one
+var _snap_grid := {}                        # Vector2i cell -> Array of snapshot indices (near())
+var _snap_tick := -1                        # physics frame of the snapshot
 
 var _car_lengths := PackedFloat32Array()    # cumulative route lengths (picking routes by length)
 var _car_models: Array = []
 var _car_look := 0.0
+var _rank_t := 0.0
+var _calm_t := 0.0
 var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
+	proxies = TrafficProxies.new()
+	proxies.name = "Proxies"
+	add_child(proxies)
 	trains = TrainTraffic.new()
 	trains.name = "Trains"
 	trains.game = game
@@ -75,17 +107,25 @@ func _process(_delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	_snapshot()                             # (the trains look at the vehicles with or without bots)
 	if bots.is_empty():
 		return
 	time += delta
-	_snapshot()
+	_watch_load(delta)
+	_rank_t -= delta
+	if _rank_t <= 0.0:
+		_rank_t = RANK_EVERY
+		rank()
+	for b: Object in bots:
+		if b.far:
+			b.drive(delta)                  # (their vehicles sleep: car.gd does not ask)
 	for d: Array in departures:
 		if time >= d[2]:
 			var late: float = time - d[2]
 			if _depart(d[0], d[1], late) or late > float(d[0]["headway"]) * 0.9:
 				d[2] += float(d[0]["headway"])
 	_car_look -= delta
-	if _car_look <= 0.0 and send_cars:
+	if _car_look <= 0.0 and send_cars and not crowded:
 		_car_look = CAR_LOOK
 		var n := 0
 		for b: Object in bots:
@@ -94,22 +134,83 @@ func _physics_process(delta: float) -> void:
 				_send_car(b, false)
 
 
+## Ranks the bots by distance to the nearest player: their physics budget (physics_ok), their walkable hulls, and
+## player_d / ridden for bus_bot.gd's choice between the physics and gliding.
+func rank() -> void:
+	var spots: Array = game.player_spots()
+	var feet: Array = game.player_spots(true)
+	var order: Array = []                   # [distance as ranked, bot]
+	for b: Object in bots:
+		if b.state == BusBot.STOWED:
+			continue
+		var p: Vector3 = b.centre()
+		b.player_d = b._player_distance(p, spots) if not spots.is_empty() else INF
+		b.ridden = not b.far and game.riders(b.car) > 0
+		if b.car.inside and not b.far:
+			b.car.set_walkable(b.ridden or b._player_distance(p, feet) < WALK_NEAR if not feet.is_empty() else b.ridden)
+		order.append([-INF if b.ridden else b.player_d - (BUDGET_STICK if not b.gliding else 0.0), b])
+	order.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+	for k in order.size():
+		order[k][1].physics_ok = k < PHYSICS_BUDGET
+
+
+## The physics ticks' time, smoothed: `crowded` over CROWDED_MS, back to calm under CALM_MS for CALM_FOR s.
+func _watch_load(delta: float) -> void:
+	load_ms = lerpf(load_ms, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0, LOAD_SMOOTH)
+	if not adaptive:
+		crowded = false
+	elif load_ms > CROWDED_MS:
+		crowded = true
+		_calm_t = 0.0
+	elif crowded and load_ms < CALM_MS:
+		_calm_t += delta
+		crowded = _calm_t < CALM_FOR
+
+
 func _snapshot() -> void:
 	snap_cars.clear()
 	snap_pos.clear()
 	snap_vel.clear()
 	snap_fwd.clear()
 	snap_reach.clear()
+	_snap_grid.clear()
+	_snap_tick = Engine.get_physics_frames()
 	for c: Node3D in game.cars:
 		if c.stowed:
 			continue
+		var p := BusBot.flat(BusBot.centre_of(c))
+		var cell := Vector2i(floori(p.x / SNAP_CELL), floori(p.y / SNAP_CELL))
+		if not _snap_grid.has(cell):
+			_snap_grid[cell] = []
+		_snap_grid[cell].append(snap_cars.size())
 		snap_cars.append(c)
-		snap_pos.append(BusBot.flat(c.to_global(c.extents_center)))
+		snap_pos.append(p)
 		snap_vel.append(BusBot.velocity_of(c))
-		snap_fwd.append(BusBot.flat(c.global_basis.z).normalized())
+		snap_fwd.append(BusBot.flat((c.pilot.far_xf.basis if c.dormant else c.global_basis).z).normalized())
 		snap_reach.append(c.half_extents.z)
 	_snap_feet.clear()
 	_snap_feet.resize(snap_cars.size())
+
+
+## Indices into the snapshot of the vehicles whose middle may be within `r` m of `p` (pipeline x/y): those of the grid
+## cells the circle touches.
+func near(p: Vector2, r: float) -> Array:
+	var out: Array = []
+	var x0 := floori((p.x - r) / SNAP_CELL)
+	var x1 := floori((p.x + r) / SNAP_CELL)
+	var y0 := floori((p.y - r) / SNAP_CELL)
+	var y1 := floori((p.y + r) / SNAP_CELL)
+	for x in range(x0, x1 + 1):
+		for y in range(y0, y1 + 1):
+			var cell: Variant = _snap_grid.get(Vector2i(x, y))
+			if cell != null:
+				out.append_array(cell)
+	return out
+
+
+## True when the snapshot is this tick's (taken before the bots and the trains run).
+func snapshot_fresh() -> bool:
+	return _snap_tick == Engine.get_physics_frames()
 
 
 ## Footprint of snapshot vehicle k (BusBot.footprint), made once per tick however many bots look at it.
@@ -163,6 +264,8 @@ func stop_bots() -> Array:
 	snap_fwd.clear()
 	snap_reach.clear()
 	_snap_feet.clear()
+	_snap_grid.clear()
+	proxies.clear()
 	_car_lengths.clear()
 	_car_models = []
 	_car_look = 0.0
@@ -253,7 +356,7 @@ func _depart(line: Dictionary, r: int, late: float) -> bool:
 				bot = b
 	var route: Dictionary = routes[line["routes"][r]]
 	if bot == null:
-		if count >= MAX_BUSES:
+		if count >= MAX_BUSES or crowded:
 			return false
 		bot = _new_bot(line, line["model"])
 		bot._stow()
@@ -329,7 +432,7 @@ func way_clear(bot: Object, d: float) -> bool:
 	for c: Node3D in game.cars:
 		if c == bot.car or c.stowed:
 			continue
-		var p := BusBot.flat(c.to_global(c.extents_center))
+		var p := BusBot.flat(BusBot.centre_of(c))
 		if p.distance_to(tip) > bot.nose + SPAWN_CLEAR + WAY_BEHIND + c.half_extents.z:
 			continue
 		var reach: float = c.half_extents.z

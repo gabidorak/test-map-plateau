@@ -41,7 +41,7 @@ the next departure of its line. About 70 bot cars (`[cars]` in `pipeline/buses.t
 from edge to edge on the roads open to traffic, with the same driver as the buses; one that leaves the map comes back
 on another route, out of the players' sight. Bots pass vehicles coming the other way without slowing down, overtake a
 vehicle parked in their lane when there is room on the left, and two bots stuck face to face in one lane sort it out
-(one drives past the other). Far from every player they glide along their routes without the physics. In LAN games the host (or the dedicated server) drives them for everyone, and the traffic lights show
+(one drives past the other). Far from every player they glide along their routes without the physics, drawn as light batched stand-ins (beyond 240 m), and only the 24 nearest the players drive with the physics; while the processor cannot keep up, the traffic stops refilling until it can. In LAN games the host (or the dedicated server) drives them for everyone, and the traffic lights show
 the same colour on every screen (they run on the host's clock).
 
 Two races (`scripts/races.gd`, routes and checkpoints in `godot/world/races.json`), each starting in a glowing circle
@@ -213,7 +213,7 @@ on a 4K screen; the first window fills 80 % of the screen.
 - Like in Euro Truck Simulator 2, vehicles bend thin trees (trunk up to 10 cm, up to 8 m tall: ~1,500 of them) and knock over sign poles, bus stop poles, route markers, guideposts, bollards, bin poles, lamps, traffic lights, light barriers, bike racks, benches, picnic tables, wheelie bins, parking meters, post boxes, info boards and fire hydrants (`scripts/breakables.gd`; kiosks, shelters, concrete blocks and masts hold). A tree bends away from the bumper, stays flat while the vehicle is over it and springs back up behind it; a pole snaps off and flies on as debris, and comes back 20 s later once the camera is 60 m away. Faster than 7 km/h for props (0.5 m/s for trees); slower they hold like any other obstacle. The vehicle loses the momentum it gives them, and they make a sound (a metal clang, a swish of leaves). A knocked-over fire hydrant (or water tap) leaves a 10 m geyser of water (3 m for taps, `scripts/geyser.gd`) that roars and lifts whatever is parked over it; the pipe is repaired a minute later, in view or not, the water easing off over the last 3 s.
 - F1: fly camera (hold right mouse to look, WASD + Q/E, Shift faster, wheel for speed). F1 again drops the player below the camera.
 - F2: graphics low / medium / high (also in Settings). Low (no SSIL, SSAO or glow, FXAA instead of MSAA) is the default ("Auto") on an integrated GPU, high elsewhere; medium keeps the SSAO, glow and shadows but drops the SSIL and MSAA (FXAA), about a third less GPU time at 4K. `PLATEAU_QUALITY=low|medium|high` overrides until the quality is changed in the game.
-- Resolution (Settings): Auto, Native, 2160p, 1440p, 1080p, 900p or 720p, the height the 3D is drawn at, upscaled to the window with FSR 1 (the interface stays sharp; Godot cannot switch the screen's own mode). "Auto" draws at most 1080p: on a 4K laptop native 4K pulls the processor's clock down within minutes (the GPU and CPU share one power budget) and the bot traffic then drops to 25-40 fps, where 1080p holds 60. F3 shows the physics, scripts, render and GPU times, whether the frame waits on the CPU or the GPU, and the 3D size.
+- Resolution (Settings): Auto, Native, 2160p, 1440p, 1080p, 900p or 720p, the height the 3D is drawn at, upscaled to the window with FSR 1 (the interface stays sharp; Godot cannot switch the screen's own mode). "Auto" draws at most 1080p: on a 4K laptop native 4K pulls the processor's clock down within minutes (the GPU and CPU share one power budget) and the bot traffic then drops to 25-40 fps, where 1080p holds 60. F3 shows the physics, render CPU and GPU times per frame, whether the frame waits on the CPU or the GPU, and the 3D size.
 - N: night / day (also in Settings, kept between sessions; `PLATEAU_NIGHT=1|0` overrides until it is switched in the game). At night (`scripts/night.gd`) the sun becomes a pale blue moonlight that still casts shadows, the sky turns dark blue with stars and a moon (`shaders/night_sky.gdshader`) over a faint glow of the towns around, about 40 % of the buildings' rooms are lit, the street and path lamps glow and light the ground under them (not while knocked over), and the bot buses and cars drive with their headlights on. L switches the headlights of the vehicle you drive (the biplanes' landing lights): a beam that lights the road ahead (and casts shadows for your own vehicle), glowing lamps, dim red tail lamps and the buses' cabin lights; they switch on by themselves when you get in at night. Other players see your headlights; each player chooses day or night for themselves.
 - Escape from Plateau (see its section): left mouse fires, right mouse (held) aims, 1-4 crowbar / pistol / shotgun /
   submachine gun, R reloads, F flashlight, Q bandage or medkit, E picks a survivor up (or helps a teammate up, held),
@@ -309,7 +309,15 @@ right, turning left; with the arms traffic comes from) and its indicator stretch
 start as if they had been running), sends the bot cars out, and runs the lights' clock (shader global `signal_clock`,
 the same cycle as `shaders/toy_prop.gdshader`); `scripts/bus_bot.gd` drives each one through `car.gd`'s pedals and
 steering (pure pursuit from the middle of the vehicle, stops, lights, give-ways, vehicles ahead, overtaking), and glides
-it along its path far from the players (moving every third tick: about 6 ms a tick for 100 bots, headless).
+it along its path far from the players. Costs, by distance to the nearest player: within 200 m the physics, for the 24
+nearest only (`traffic.gd` PHYSICS_BUDGET; the others glide every tick, frozen bodies the other vehicles still run
+into); beyond 240 m the bot is `far`: its vehicle sleeps (`car.gd` set_dormant: hidden, out of the physics, not moved)
+and `scripts/traffic_proxies.gd` draws it in one MultiMesh per model (merged, simplified meshes, lamps lit at night),
+moving every third tick. A bus's walkable hulls only exist with a player on foot within 40 m. The bots look around
+through a per-tick snapshot of the vehicles with a 32 m grid (the trains use it too). About 3 ms a tick for ~130 bots
+(headless, editor build), against 7 before the stand-ins; with 20 players spread over the map, under 5 ms. While the
+physics ticks stay slow for several seconds (over 10 ms at the slowest each second: a slow or throttled processor) no
+bot is sent back in.
 
 Bot car routes: `plateau/car_traffic.py` (run with the bus routes) writes `godot/world/car_routes.json`: 60 routes from
 a road crossing into the map to another, each through a waypoint by the longest roads no route drives yet, as quickest

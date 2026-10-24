@@ -352,7 +352,7 @@ func _near_line() -> Array:
 	for p: Vector3 in _people():
 		_add_near(out, p, 0.0)
 	for car: Node3D in game.cars:
-		if is_instance_valid(car) and not car.stowed:
+		if is_instance_valid(car) and not car.stowed and not car.dormant:   # (a far bot: nobody near to see it)
 			_add_near(out, car.global_position, 1.0)
 	return out
 
@@ -430,9 +430,9 @@ func _knock_things(delta: float) -> void:
 			if rd != null and rd.x < tr.front + 1.0 and rd.x > tr.front - tr.length and absf(rd.y) < 1.7 \
 					and absf(p.y - tr.route_point(rd.x).y) < 2.5:
 				_push_aside(tr, k, rd)
-		# vehicles simulated here
-		for car: Node3D in game.cars:
-			if car.stowed or car.remote or _cleared.has(car) or car.global_position.distance_to(head) > 12.0:
+		# vehicles simulated here (those near its front only: traffic.gd's snapshot grid when it is this tick's)
+		for car: Node3D in _cars_near(head, 14.0):
+			if car.stowed or car.dormant or car.remote or _cleared.has(car) or car.global_position.distance_to(head) > 12.0:
 				continue
 			var cp: Vector3 = car.global_position
 			var rc: Variant = route_distance(k, Vector2(cp.x, -cp.z))
@@ -448,6 +448,17 @@ func _knock_things(delta: float) -> void:
 			_set_clear(car, true)
 			_cleared[car] = KNOCK_CLEAR
 			knocks += 1
+
+
+## The vehicles whose middle may be within `r` m of global point p.
+func _cars_near(p: Vector3, r: float) -> Array:
+	var traffic: Node = get_parent()
+	if not traffic.has_method("snapshot_fresh") or not traffic.snapshot_fresh():
+		return game.cars
+	var out: Array = []
+	for k: int in traffic.near(Vector2(p.x, -p.z), r + 10.0):
+		out.append(traffic.snap_cars[k])
+	return out
 
 
 ## This peer's player in the train's way: put beside the track on the side they were on, moving off it.

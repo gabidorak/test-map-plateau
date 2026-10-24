@@ -153,6 +153,7 @@ var _host_label: Label                      # top right while hosting: the addre
 var _host_label_t := 0.0
 var _toast: Label                           # "X joined the game"...
 var _toast_t := 0.0
+var test_spots: Array = []                  # tools: pretend players' positions (player_spots), e.g. a LAN game spread out
 var _stats: Label                           # F3: frame rate, CPU and GPU times, network timings (net.gd debug_text)
 var _stats_t := 0.0
 var _stats_frames := 0                      # frames since the last F3 update, and their summed times
@@ -855,6 +856,7 @@ func player_spots(on_foot := false) -> Array:
 	for r: RemotePlayer in net.avatars():
 		if r.visible:
 			out.append(r.global_position)
+	out.append_array(test_spots)
 	if not on_foot and net.active:
 		for id: String in net.driver_of:
 			if net.driver_of[id] != 0 and net.driver_of[id] != net.me() and net.cars.has(id):
