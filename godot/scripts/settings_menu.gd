@@ -1,7 +1,7 @@
 extends PanelContainer
 ## Settings page (scripts/settings.gd, the "Settings" autoload), opened from the welcome menu (main_menu.gd) and the
-## in-game menu (pause_menu.gd): a Graphics tab (display mode, quality, 3D resolution, vsync, UI scale, time of day,
-## and a note that switching bot traffic off saves the most) and a Controls tab (mouse sensitivity, then every
+## in-game menu (pause_menu.gd): a Graphics tab (display mode, quality, resolution, vsync, UI scale, time of day,
+## and a note on what saves the most) and a Controls tab (mouse sensitivity, then every
 ## rebindable action with two bindings each). Click a binding, then press the new key or mouse button (Esc cancels);
 ## right click clears it. Esc or Back closes the page.
 
@@ -116,13 +116,10 @@ func _build_graphics() -> Control:
 	grid.add_theme_constant_override("v_separation", 12)
 	_choice(grid, "Display", "fullscreen", [[false, "Window"], [true, "Fullscreen"]])
 	_choice(grid, "Graphics", "quality", [["auto", ""], ["low", "Low (fast, for integrated GPUs)"],
-			["high", "High (shadows, ambient occlusion, glow)"]],
+			["medium", "Medium (no indirect light, FXAA)"], ["high", "High (shadows, ambient occlusion, glow)"]],
 			func(v: Variant, text: String) -> String:
 				return text if v != "auto" else "Auto (%s)" % ("low: integrated GPU" if Settings.integrated_gpu() else "high"))
-	_choice(grid, "3D resolution", "scale_3d", [[0.0, ""], [1.0, "100 %"], [0.85, "85 %"], [0.75, "75 %"], [0.6, "60 %"],
-			[0.5, "50 %"]],
-			func(v: Variant, text: String) -> String:
-				return text if v != 0.0 else "Auto (%d %%)" % roundi(Settings.scale_3d() * 100.0))
+	_choice(grid, "Resolution", "resolution", Settings.RESOLUTIONS, _resolution_text)
 	_choice(grid, "Vertical sync", "vsync", [[true, "On"], [false, "Off"]])
 	_choice(grid, "Interface size", "ui_scale", [[0.75, "75 %"], [0.85, "85 %"], [1.0, "100 %"], [1.15, "115 %"],
 			[1.3, "130 %"], [1.5, "150 %"]])
@@ -137,7 +134,19 @@ func _build_graphics() -> Control:
 	return c
 
 
-## The Graphics tab's info block: the bots, not the graphics, cost the most (the host's in-game menu switches them).
+## A resolution preset as shown: its name (Auto: the height it picks here) and the size the 3D is drawn at.
+func _resolution_text(v: Variant, text: String) -> String:
+	var size := Settings.render_size()
+	var native := Settings.get_tree().root.size.y
+	if v == 0:
+		text = "Auto (%s)" % ("native" if size.y >= native else "%dp" % size.y)
+	elif v < 0 or v >= native:
+		text = (text + ", native here") if v > 0 else text
+	return "%s · %d × %d" % [text, size.x, size.y] if size.y > 0 else text
+
+
+## The Graphics tab's info block: on a large screen the resolution costs the most, then the bot traffic (the host's
+## in-game menu switches it).
 func _performance_note() -> Control:
 	var note := PanelContainer.new()
 	var style := UiStyle.panel(1.0, 8, 14)
@@ -145,9 +154,11 @@ func _performance_note() -> Control:
 	style.border_width_left = 4
 	style.border_color = Color(0.45, 0.65, 1.0)
 	note.add_theme_stylebox_override("panel", style)
-	var text := UiStyle.label("Lagging? The biggest performance win is to switch bot traffic off (bot buses, cars and " +
-			"RER B trains): Esc in game → \"Bot traffic: off\", when you play solo or host. \"Clear all vehicles\" " +
-			"also helps when the trains or the traffic have jammed.", 15, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
+	var text := UiStyle.label("Lagging? On a large screen, lower the resolution first: 1080p draws a quarter of the " +
+			"pixels of 4K, and on a laptop it leaves the processor the power it needs for the traffic. Medium graphics " +
+			"save a third more. Then switch bot traffic off (bot buses, cars and RER B trains): Esc in game → " +
+			"\"Bot traffic: off\", when you play solo or host. \"Clear all vehicles\" also helps when many are " +
+			"parked around.", 15, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
 	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	text.custom_minimum_size.x = WIDTH - 80.0      # a wrapping label's height is per word until it has a width
 	note.add_child(text)

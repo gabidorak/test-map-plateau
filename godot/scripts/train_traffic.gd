@@ -3,7 +3,10 @@ extends Node
 ## - Departures (on the peer running the bots: solo, the host, a dedicated server): per direction (world/rail.json
 ##   services) a train sets off every `headway` s (rail.json: HEADWAY, a compressed game headway; PLATEAU_TRAIN_HEADWAY=s
 ##   overrides; the real B4 service at Lozère is every 10-15 min), offset by the service's phase so that the two
-##   directions meet in the station now and then. Eastbound trains come in at line speed from beyond the map's
+##   directions meet in the station now and then. A departure waits while the previous train of its direction is still
+##   in the entry block (the line carries ~0.75 trains a minute per direction: on the clock, they would pile up at the
+##   start), and the next one is then a headway after it. A trip longer than MAX_TRIP is given up (stowed) unless the
+##   player rides it. Eastbound trains come in at line speed from beyond the map's
 ##   south-west end (before Le Guichet), westbound ones from the north-east; both are out of sight when they appear
 ##   and vanish (stowed,
 ##   kept for the next departure). At the start the line is filled as if it had been running: each train that would be
@@ -34,6 +37,8 @@ const SIGNAL_EVERY := 0.25                  # s between signal updates
 const SCREEN_EVERY := 1.0                   # s between departure screen updates
 const NEAR := 900.0                         # m: things farther from a train's front are not looked at
 const DOORWAY_PLAYERS := 6.0                # m: players this close to a train may hold its doors
+const POSE_NEAR := 600.0                    # m: a train farther than this from every player is posed every POSE_FAR_TICKS
+const POSE_FAR_TICKS := 3
 
 var game: Node3D                            # game.gd
 var services: Array = []                    # rail.json services
@@ -62,6 +67,7 @@ var _signal_t := 0.0
 var _screen_t := 0.0
 var _next_id := 0
 var _cleared := {}                          # car -> s left of its collision exceptions with the trains
+var _entry := PackedFloat32Array()          # per service: route distance of its first block signal after the start
 
 
 func _ready() -> void:
@@ -106,6 +112,11 @@ func _ready() -> void:
 			cum[i] = acc
 			acc += 1.0 / maxf(float(v[i]), 3.0)
 		_cum.append(cum)
+		var first := INF
+		for b in svc["blocks"]:
+			if float(b) > float(svc["start"]) + 1.0:
+				first = minf(first, float(b))
+		_entry.append(first if first < INF else float(svc["start"]) + 600.0)
 	departures.resize(services.size())
 	departed.resize(services.size())
 
@@ -217,6 +228,14 @@ func _depart(k: int) -> void:
 	departed[k] += 1
 
 
+## True when no train of service k has any of its length short of the entry block's end (its first block signal).
+func _entry_free(k: int) -> bool:
+	for tr: Node3D in trains:
+		if not tr.stowed and tr.service == services[k] and tr.front - tr.length < _entry[k]:
+			return false
+	return true
+
+
 func _stow(tr: Node3D) -> void:
 	tr.set_stowed(true)
 
@@ -229,8 +248,9 @@ func _physics_process(delta: float) -> void:
 	if running:
 		time += delta
 		for k in services.size():
-			if time >= departures[k]:
-				departures[k] += headway
+			if time >= departures[k] and _entry_free(k):
+				# on the clock, or held (entry block occupied): then a headway after this one
+				departures[k] = departures[k] + headway if time - departures[k] < 1.0 else time + headway
 				_depart(k)
 		var doorway := _doorway_players()
 		var near_line = null                # only looked for when some train runs (not at a stop)
@@ -245,8 +265,9 @@ func _physics_process(delta: float) -> void:
 					near_line = _near_line()
 				obstacles = _obstacles(tr, k, near_line)
 			bot.drive(delta, _same_service(tr), obstacles, doorway)
-			if bot.is_done():
+			if bot.is_done() or (bot.trip_t > MAX_TRIP and not _carries_player(tr)):
 				_stow(tr)
+	_set_pose_rates(_doorway_players())
 	_knock_things(delta)
 	_land_riders()
 	_signal_t += delta
@@ -257,6 +278,33 @@ func _physics_process(delta: float) -> void:
 	if _screen_t >= SCREEN_EVERY:
 		_screen_t = 0.0
 		_update_screens()
+
+
+## Trains far from every player (the camera too) are posed every POSE_FAR_TICKS ticks only: nobody sees them move,
+## and nothing simulated near them is in their way (bots far from the players glide through).
+func _set_pose_rates(players: Array) -> void:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	var eyes: Array = players.duplicate()
+	if cam:
+		eyes.append(cam.global_position)
+	for tr: Node3D in trains:
+		if tr.stowed or tr.cars.is_empty():
+			continue
+		var near := eyes.is_empty()         # a tool with no camera nor player: every tick
+		var mid: Vector3 = tr.route_point(tr.front - tr.length * 0.5)
+		for p: Vector3 in eyes:
+			if p.distance_squared_to(mid) < (POSE_NEAR + tr.length * 0.5) ** 2:
+				near = true
+				break
+		tr.pose_every = 1 if near else POSE_FAR_TICKS
+
+
+## True when this peer's player rides train `tr`.
+func _carries_player(tr: Node3D) -> bool:
+	if game == null or game.player == null or not is_instance_valid(game.player.carrier):
+		return false
+	var c: Node3D = game.player.carrier
+	return c is Train.TrainCar and c.train == tr
 
 
 func _same_service(tr: Node3D) -> Array:

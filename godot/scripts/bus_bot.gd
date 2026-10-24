@@ -619,7 +619,7 @@ func _look(v: float) -> void:
 		if (cq.y - _shift(cq.x - nose) < -ONCOMING_SIDE or gliding) and traffic.snap_fwd[k].dot(path_dir) < -0.5:
 			continue
 		var hit := INF
-		for p in _footprint(c):
+		for p in traffic.snap_footprint(k):
 			var q := project(p, front - 1.0, front + reach)
 			if q.x > front - 0.5 and q.x < front + reach and absf(q.y - _shift(q.x - nose)) < half_width + SIDE_MARGIN:
 				hit = minf(hit, q.x - front)
@@ -675,7 +675,7 @@ func _overtake(front: float) -> void:
 	var x0 := INF
 	var x1 := -INF
 	var leftmost := INF
-	for p in _footprint(c):
+	for p in footprint(c):
 		var q := project(p, front - 2.0, front + _obstacle + 30.0)
 		x0 = minf(x0, q.x)
 		x1 = maxf(x1, q.x)
@@ -780,7 +780,7 @@ func _deadlocked() -> bool:
 
 
 ## Footprint points (pipeline x/y) of a vehicle: the corners and middle of each section's body box.
-func _footprint(c: Node3D) -> PackedVector2Array:
+static func footprint(c: Node3D) -> PackedVector2Array:
 	var out := PackedVector2Array()
 	for b: Node3D in c.bodies():
 		for cs in b.get_children():

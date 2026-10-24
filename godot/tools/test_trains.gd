@@ -1,7 +1,8 @@
 extends SceneTree
 ## Headless checks for the RER B trains (scripts/train.gd, scripts/train_bot.gd, scripts/train_traffic.gd;
 ## world/rail.json services), the bot buses and cars off:
-## - departures: a train sets off in each direction every headway, both directions are out;
+## - departures: a train sets off in each direction every headway (later while the entry block is occupied, never on
+##   top of another), both directions are out;
 ## - entering the map: at the planned speed (both directions come in from out of sight: westbound in the north-east,
 ##   eastbound in the south-west, before Le Guichet);
 ## - the stop at Lozère: the front within STOP of the 8-car mark, the doors open on the platform side only (the leaves
@@ -93,7 +94,8 @@ func _service(direction: String) -> int:
 
 # ---------------------------------------------------------------- checks
 
-## A train sets off in each direction every headway.
+## A train sets off in each direction every headway, or as soon as the one before has left the entry block: within two
+## headways at least once and at most twice; never on top of another (no two trains of a direction overlapping).
 func _departures() -> void:
 	var before: PackedInt32Array = _tt.departed.duplicate()
 	var out := {}
@@ -103,12 +105,18 @@ func _departures() -> void:
 	_check(out.get("eastbound", 0) > 0 and out.get("westbound", 0) > 0,
 			"the line filled at the start, both directions out (%s, headway %.0f s)" % [out, _tt.headway])
 	var t0: float = _tt.time
-	while _tt.time < t0 + _tt.headway + 2.0:
+	var overlaps := 0
+	while _tt.time < t0 + _tt.headway * 2.0 + 2.0:
 		await physics_frame
+		for a: Node3D in _tt.trains:
+			for b: Node3D in _tt.trains:
+				if a != b and not a.stowed and not b.stowed and a.service == b.service and a.front >= b.front 						and a.front - a.length < b.front:
+					overlaps += 1
 	var sent := []
 	for k in _tt.services.size():
 		sent.append(_tt.departed[k] - before[k])
-	_check(sent.min() >= 1 and sent.max() <= 2, "a departure per direction in a headway (%s)" % [sent])
+	_check(sent.min() >= 1 and sent.max() <= 2, "departures per direction in two headways (%s)" % [sent])
+	_check(overlaps == 0, "no train set off on top of another (%d ticks with two overlapping)" % overlaps)
 
 
 ## At the planned speed where they come into the map, or (a service starting from rest) as fast as the traction gets

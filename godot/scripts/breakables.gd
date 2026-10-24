@@ -82,7 +82,8 @@ var _broken := {}                           # prop record -> true while its debr
 var _soaked := {}                           # prop record -> [N·s of water piled up, time of the last hit (s)]
 var _query := PhysicsShapeQueryParameters3D.new()
 var _box := BoxShape3D.new()
-var _boxes: Array = []                      # this frame: [vehicle body, box global transform, box size]
+var _boxes: Array = []                      # this frame: [vehicle body, box global transform, box size] (_vehicle_boxes)
+var _boxes_tick := -1                       # physics frame _boxes was made in
 var _clock := 0.0
 var _buffers := {}                          # MultiMesh -> PackedFloat32Array, our copy of its instance buffer
 var _dirty := {}                            # MultiMeshes to upload at the end of the frame
@@ -107,27 +108,38 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	_clock += delta
-	_boxes.clear()
 	for body: RigidBody3D in get_tree().get_nodes_in_group("vehicles"):
-		if not body.get_meta("knocks_props", true):     # the horse (scripts/horse.gd) goes round them
+		# remote vehicles (net.gd), parked or held ones are frozen: their own peer sweeps them, or they do not move
+		if body.freeze or body.linear_velocity.length_squared() < BEND_SPEED * BEND_SPEED 				or not body.get_meta("knocks_props", true):     # the horse (scripts/horse.gd) goes round them
 			continue
 		for c in body.get_children():
 			var cs := c as CollisionShape3D
 			if cs and not cs.disabled and cs.shape is BoxShape3D:
-				_boxes.append([body, body.global_transform * cs.transform, (cs.shape as BoxShape3D).size])
-	for b: Array in _boxes:
-		if not (b[0] as RigidBody3D).freeze:   # remote vehicles (net.gd): their own peer sweeps them
-			_sweep(b[0], b[1], b[2], delta)
+				_sweep(body, body.global_transform * cs.transform, (cs.shape as BoxShape3D).size, delta)
 	_update_trees(delta)
 	_update_geysers()
 	_restore_debris()
 	_flush()
 
 
-## Bends or breaks what the box (`xf`, `size`) of vehicle `body` reaches within LOOKAHEAD frames.
+## The collision boxes of every vehicle body this tick, made on first use (only bent trees and geysers need them).
+func _vehicle_boxes() -> Array:
+	if _boxes_tick == Engine.get_physics_frames():
+		return _boxes
+	_boxes_tick = Engine.get_physics_frames()
+	_boxes.clear()
+	for body: RigidBody3D in get_tree().get_nodes_in_group("vehicles"):
+		if not body.get_meta("knocks_props", true):
+			continue
+		for c in body.get_children():
+			var cs := c as CollisionShape3D
+			if cs and not cs.disabled and cs.shape is BoxShape3D:
+				_boxes.append([body, body.global_transform * cs.transform, (cs.shape as BoxShape3D).size])
+	return _boxes
+
+
+## Bends or breaks what the box (`xf`, `size`) of vehicle `body`, moving, reaches within LOOKAHEAD frames.
 func _sweep(body: RigidBody3D, xf: Transform3D, size: Vector3, delta: float) -> void:
-	if body.linear_velocity.length_squared() < BEND_SPEED * BEND_SPEED:
-		return
 	var travel := xf.basis.transposed() * body.linear_velocity * delta * LOOKAHEAD
 	_box.size = size + travel.abs() + Vector3.ONE * SWEEP_MARGIN * 2.0
 	_query.transform = xf.translated_local(travel / 2.0)
@@ -224,7 +236,7 @@ func _set_tree(b: Dictionary, xf: Transform3D) -> void:
 
 ## True when `p` (a tree foot, a prop spot) is under or right beside a vehicle box.
 func _under_vehicle(p: Vector3) -> bool:
-	for b: Array in _boxes:
+	for b: Array in _vehicle_boxes():
 		var local: Vector3 = (b[1] as Transform3D).affine_inverse() * p
 		var half: Vector3 = b[2] / 2.0
 		# the boxes start at the wheel centres: the ground is up to ~1.5 m below them
@@ -443,12 +455,13 @@ func _update_geysers() -> void:
 			continue
 		g.set_strength(clampf((REPAIR_AFTER - (_clock - d["time"])) / REPAIR_FADE, 0.0, 1.0))
 		var spot: Vector3 = d["spot"]
-		for b: Array in _boxes:
+		for b: Array in _vehicle_boxes():
 			var body: RigidBody3D = b[0]
 			var local: Vector3 = (b[1] as Transform3D).affine_inverse() * spot
 			var half: Vector3 = b[2] / 2.0
 			if not body.freeze and absf(local.x) < half.x and absf(local.z) < half.z and local.y < half.y \
 					and local.y > -half.y - g.height:
+				body.sleeping = false            # a parked car (car.gd _sleep_parked)
 				body.apply_force(Vector3.UP * GEYSER_LIFT * g.height, spot - body.global_position)
 
 
