@@ -71,6 +71,8 @@ var _step := 1.0
 var _gangways: Array = []                   # [StaticBody3D, car in front, car behind]
 var _beam: SpotLight3D
 var _posed_front := NAN                     # front when last posed: a standing train is not posed again
+var pose_every := 1                         # ticks between poses while it moves (train_traffic.gd: far from everyone)
+var _pose_wait := 0
 var _squealed := false
 var _heading := PackedFloat32Array()        # route heading per point, unwrapped (curvature for the flange squeal)
 var _joints := PackedFloat32Array()         # route distances of the insulated rail joints (the block signals)
@@ -352,7 +354,10 @@ func _physics_process(delta: float) -> void:
 		for car: TrainCar in cars:
 			car.pose_doors(door_t, doors_side * (-1 if car.turned else 1))
 	if front != _posed_front:
-		pose()
+		_pose_wait += 1
+		if _pose_wait >= pose_every:
+			_pose_wait = 0
+			pose()
 
 
 func _process(delta: float) -> void:

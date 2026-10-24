@@ -40,7 +40,8 @@ extends VehicleBody3D
 ## Bot drivers (scripts/bus_bot.gd, the bot buses of scripts/traffic.gd): a vehicle with a `pilot` takes its pedals,
 ## steering, horn and indicators from it instead of the keys (pilot.drive), on the peer simulating it; its states tell
 ## the others (bot_driven: the driver look-alike shows, nobody can take the wheel). A bot bus waiting to come back in
-## at the map edge is `stowed`: hidden, out of the physics, everywhere.
+## at the map edge is `stowed`: hidden, out of the physics, everywhere. A parked vehicle at rest sleeps (out of the
+## solver, its script idle) until something touches or pushes it, or someone gets in (_sleep_parked).
 ## Damage (the armed biplane's rounds, scripts/plane_guns.gd): each vehicle has `health` (HEALTH for a 1,200 kg car,
 ## more for heavier ones); hits only count on the peer simulating it (damage), the others follow its states. Under
 ## half of it, grey smoke comes out of the engine; at 0 it is `broken`: a boom and a ball of fire, the engine dies, the
@@ -189,6 +190,7 @@ const BELLOWS_SEEN := 100.0                 # m: farther from the camera, the be
 const HEALTH := 100.0                       # a 1,200 kg car's; heavier vehicles have more (with the square root of the mass)
 const DAMAGED := 0.5                        # share of the health under which the engine smokes grey
 const REPAIR_AFTER := 60.0                  # s a broken vehicle smokes before it is repaired
+const PARK_SLEEP := 3.0                     # s parked at rest before its bodies sleep (_sleep_parked)
 const EXTINGUISH := 2.0                     # s of the fire truck's water on a broken vehicle that put its fire out
 const HEADLIGHT := Color(1.0, 0.93, 0.8)    # beam colour, warm white
 const BEAM_RANGE := 60.0                    # m
@@ -327,6 +329,7 @@ var bot_driven := false                     # LAN, remote vehicle: a bot drives 
 var stowed := false                         # hidden and out of the physics (a bot bus off the map, set_stowed)
 var flooded := 0.0                          # 0 dry .. 1 full of water (_water_physics)
 var in_water := 0.0                         # share of the body's height under water now
+var _rest_t := 0.0                          # s parked at rest (_sleep_parked)
 var _braking := false                       # brake lamps on (the driver's or the pilot's pedal)
 var _stowed_layers := Vector2i.ZERO         # collision layer and mask of the bodies before stowing
 var headlights := false
@@ -1379,6 +1382,7 @@ func carrier_at(p: Vector3, margin := 0.0) -> Node3D:
 
 ## A hit (scripts/plane_guns.gd: game.gd, through net.gd on the peer simulating the vehicle) taking `amount` of health.
 func damage(amount: float) -> void:
+	wake()
 	if not broken:
 		set_health(health - amount)
 
@@ -1396,6 +1400,7 @@ func douse(seconds: float) -> void:
 ## The fire truck's water hit `body` (this car or its rear section) at `point` (global): pushed by `impulse` (N·s) and
 ## hosed for `seconds` (douse). Only on the peer simulating it (net.gd water_vehicle).
 func hose(body: RigidBody3D, impulse: Vector3, point: Vector3, seconds: float) -> void:
+	wake()
 	body.apply_impulse(impulse, point - body.global_position)
 	douse(seconds)
 
@@ -1560,6 +1565,10 @@ func _physics_process(delta: float) -> void:
 	if remote:
 		_remote_process(delta)
 		return
+	if _rest_t > PARK_SLEEP and pilot == null and not driving:
+		if _asleep():
+			return                              # parked: nothing moves until something wakes it
+		_rest_t = 0.0
 	var throttle := 0.0
 	var steer_in := 0.0
 	var piloted := pilot != null and not driving
@@ -1637,6 +1646,32 @@ func _physics_process(delta: float) -> void:
 	_update_doors(delta)
 	_update_damage(delta)
 	audio.update(v, throttle, max_speed, delta)
+	_sleep_parked(v, delta)
+
+
+## Parked (nobody at the wheel, no bot, engine off, dry, whole) at rest PARK_SLEEP s: its bodies sleep, out of the
+## solver and the wheels' ray casts, and _physics_process idles until something wakes them: a contact, a push
+## (wake: a hit, the water cannon), someone getting in (set_driving).
+func _sleep_parked(v: float, delta: float) -> void:
+	var idle := pilot == null and not driving and not riding and not broken and not audio.engine_on and indicator == 0 			and in_water == 0.0 and flooded == 0.0 and _door_t == (1.0 if doors_open else 0.0) and absf(v) < 0.1 			and angular_velocity.length_squared() < 0.01
+	_rest_t = _rest_t + delta if idle else 0.0
+	if _rest_t > PARK_SLEEP:
+		for b in bodies():
+			b.sleeping = true
+
+
+func _asleep() -> bool:
+	for b in bodies():
+		if not b.sleeping:
+			return false
+	return true
+
+
+## Out of its parked sleep (_sleep_parked).
+func wake() -> void:
+	_rest_t = 0.0
+	for b in bodies():
+		b.sleeping = false
 
 
 ## Buoyancy, drag and flooding in a lake (scripts/water.gd) for each section; true when the engine is drowned. Nothing

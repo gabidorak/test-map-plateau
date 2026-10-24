@@ -37,6 +37,7 @@ var service: Dictionary
 var state := "run"                          # "run", "stopped" (at a stop, doors to open), "dwell", "closing", "done"
 var stop_k := 0                             # the next stop (service stops)
 var t := 0.0                                # s in this state
+var trip_t := 0.0                           # s since start() (train_traffic.gd gives up a trip past MAX_TRIP)
 var accel := 1.0                            # m/s², rail.json train
 var service_brake := 0.7
 var max_brake := 1.1
@@ -76,6 +77,7 @@ func start() -> void:
 	state = "run"
 	stop_k = 0
 	t = 0.0
+	trip_t = 0.0
 	a = 0.0
 	emergency = false
 	train.front = service["start"]
@@ -96,6 +98,7 @@ func planned(d: float) -> float:
 ## hold the doors.
 func drive(delta: float, ahead: Array, obstacles: Array, doorway: Array) -> void:
 	t += delta
+	trip_t += delta
 	var d: float = train.front
 	var v: float = train.speed
 	match state:
@@ -138,7 +141,8 @@ func drive(delta: float, ahead: Array, obstacles: Array, doorway: Array) -> void
 	red_ahead = INF
 	var tail_gap := INF
 	for o: Node3D in ahead:
-		if o == train or o.stowed or o.front <= d:
+		# level with it (put on top of it): the older one goes first
+		if o == train or o.stowed or o.front < d or (o.front == d and o.get_instance_id() > train.get_instance_id()):
 			continue
 		tail_gap = minf(tail_gap, o.front - o.length - d)
 		for i in _blocks.size():

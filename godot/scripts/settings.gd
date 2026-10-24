@@ -1,6 +1,6 @@
 extends Node
 ## Player settings (autoload "Settings"), saved in user://settings.cfg next to main_menu.gd's profile: key bindings,
-## mouse sensitivity, graphics quality, display mode, vsync, 3D resolution, UI scale and day or night
+## mouse sensitivity, graphics quality, display mode, vsync, resolution, UI scale and day or night
 ## (scripts/settings_menu.gd edits them). F11 switches between a window and borderless fullscreen anywhere.
 ## Key bindings are InputMap actions (ACTIONS) on physical key positions, so the defaults are WASD on QWERTY and ZQSD on
 ## AZERTY; key_text() names a binding as the keyboard shows it. The UI scales with the window (project.godot: stretch
@@ -12,6 +12,14 @@ signal changed
 const FILE := "user://settings.cfg"
 const BASE_SIZE := Vector2(1600, 900)       # project.godot viewport size: the UI's design size
 const WINDOW_FILL := 0.8                    # first window: this much of the screen
+## Resolution presets: the height the 3D is drawn at (Godot cannot switch the screen's own mode), upscaled to the window
+## with FSR 1; the interface stays at the window's resolution. 0 is Auto, -1 Native.
+const RESOLUTIONS := [[0, ""], [-1, "Native"], [2160, "2160p (4K)"], [1440, "1440p"], [1080, "1080p (Full HD)"],
+		[900, "900p"], [720, "720p"]]
+## Auto: at most this height. A 4K laptop's GPU and CPU share one power budget: native 4K throttles the CPU within
+## minutes and the bot traffic then no longer fits in a frame, while 1080p holds 60 fps (PERFORMANCE_INVESTIGATION).
+const AUTO_HEIGHT := 1080
+const QUALITIES := ["low", "medium", "high"]
 
 ## Rebindable actions: [name, label, group, default bindings]. A binding is a KEY_* physical key position, or a negative
 ## mouse button (-MOUSE_BUTTON_LEFT).
@@ -78,7 +86,7 @@ const FIXED := [["Esc", "Menu, close"], ["Enter", "Chat (LAN games)"], ["Tab (he
 		["Right mouse (held)", "Look around (fly camera)"]]
 
 ## Defaults of the other settings (section "settings" of the file).
-const DEFAULTS := {"quality": "auto", "fullscreen": false, "vsync": true, "scale_3d": 0.0, "ui_scale": 1.0,
+const DEFAULTS := {"quality": "auto", "fullscreen": false, "vsync": true, "resolution": 0, "ui_scale": 1.0,
 		"mouse": 1.0, "night": false, "traffic": true}
 
 ## Mouse look factor (values["mouse"]) for car.gd, player.gd and fly_camera.gd: the tools preload those before the
@@ -96,7 +104,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_tool = "--script" in OS.get_cmdline_args() or "-s" in OS.get_cmdline_args()
 	var q := OS.get_environment("PLATEAU_QUALITY")
-	_env_quality = q if q in ["low", "high"] else ""
+	_env_quality = q if q in QUALITIES else ""
 	var n := OS.get_environment("PLATEAU_NIGHT")
 	_env_night = n if n in ["0", "1"] else ""
 	register_actions()
@@ -109,6 +117,8 @@ func _ready() -> void:
 		for k: String in DEFAULTS:
 			var v: Variant = cfg.get_value("settings", k, DEFAULTS[k])
 			values[k] = v if typeof(v) == typeof(DEFAULTS[k]) else DEFAULTS[k]
+		if not cfg.has_section_key("settings", "resolution"):
+			values["resolution"] = _resolution_from_scale(cfg.get_value("settings", "scale_3d", 0.0))
 	mouse_scale = values["mouse"]
 	for action: String in _bindings:
 		_apply_binding(action)
@@ -222,10 +232,16 @@ func set_value(key: String, value: Variant) -> void:
 	_save()
 
 
-## The low graphics settings (game.gd): asked for, or "auto" on an integrated GPU.
-func low_quality() -> bool:
+## The graphics level (game.gd): "low", "medium" or "high" as asked for, or "auto": low on an integrated GPU, else high.
+func quality() -> String:
 	var q: String = _env_quality if _env_quality != "" else values["quality"]
-	return q == "low" if q != "auto" else integrated_gpu()
+	if q in QUALITIES:
+		return q
+	return "low" if integrated_gpu() else "high"
+
+
+func low_quality() -> bool:
+	return quality() == "low"
 
 
 ## Night (game.gd, scripts/night.gd): the setting, or PLATEAU_NIGHT=1 / 0.
@@ -237,14 +253,34 @@ static func integrated_gpu() -> bool:
 	return RenderingServer.get_video_adapter_type() == RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU
 
 
-## The 3D resolution: the setting, or in "auto" with the low graphics settings, at most 1920 pixels wide (a 4K screen
-## on an integrated GPU).
+## The 3D resolution as a fraction of the window's: the preset's height (Auto: AUTO_HEIGHT) over the window's, never
+## above native.
 func scale_3d() -> float:
-	var s: float = values["scale_3d"]
-	if s > 0.0:
-		return s
-	var width := float(get_tree().root.size.x)
-	return clampf(1920.0 / width, 0.5, 1.0) if low_quality() and width > 0.0 else 1.0
+	var h := float(get_tree().root.size.y)
+	var r: int = values["resolution"]
+	if h <= 0.0 or r < 0:
+		return 1.0
+	return clampf(float(r if r > 0 else AUTO_HEIGHT) / h, 0.25, 1.0)
+
+
+## The size the 3D is drawn at (the settings page shows it).
+func render_size() -> Vector2i:
+	return Vector2i((Vector2(get_tree().root.size) * scale_3d()).round())
+
+
+## A saved 3D resolution of the old settings (a fraction of the window, 0 for auto) as the largest preset not above it
+## on this screen (never heavier than the player chose), at least the smallest.
+static func _resolution_from_scale(s: Variant) -> int:
+	if not (s is float or s is int) or s <= 0.0:
+		return 0
+	if s >= 0.99:
+		return -1
+	var h: float = float(DisplayServer.screen_get_size().y) * s if DisplayServer.get_name() != "headless" else 1080.0 * s
+	var best: int = RESOLUTIONS[-1][0]
+	for o: Array in RESOLUTIONS:
+		if o[0] > best and o[0] <= h + 1.0:
+			best = o[0]
+	return best
 
 
 func toggle_fullscreen() -> void:
@@ -304,6 +340,8 @@ func _save() -> void:
 	cfg.load(FILE)
 	for k: String in values:
 		cfg.set_value("settings", k, values[k])
+	if cfg.has_section_key("settings", "scale_3d"):     # replaced by "resolution"
+		cfg.erase_section_key("settings", "scale_3d")
 	for action: Array in ACTIONS:
 		var list: Array = _bindings[action[0]]
 		if list == action[3]:

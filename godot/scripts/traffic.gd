@@ -54,6 +54,7 @@ var snap_pos := PackedVector2Array()
 var snap_vel := PackedVector2Array()
 var snap_fwd := PackedVector2Array()
 var snap_reach := PackedFloat32Array()
+var _snap_feet: Array = []                  # their footprints (snap_footprint), null until a bot looks at one
 
 var _car_lengths := PackedFloat32Array()    # cumulative route lengths (picking routes by length)
 var _car_models: Array = []
@@ -107,6 +108,15 @@ func _snapshot() -> void:
 		snap_vel.append(BusBot.velocity_of(c))
 		snap_fwd.append(BusBot.flat(c.global_basis.z).normalized())
 		snap_reach.append(c.half_extents.z)
+	_snap_feet.clear()
+	_snap_feet.resize(snap_cars.size())
+
+
+## Footprint of snapshot vehicle k (BusBot.footprint), made once per tick however many bots look at it.
+func snap_footprint(k: int) -> PackedVector2Array:
+	if _snap_feet[k] == null:
+		_snap_feet[k] = BusBot.footprint(snap_cars[k])
+	return _snap_feet[k]
 
 
 ## Seconds on the game's shared clock (the lights' cycle runs on it).
@@ -152,6 +162,7 @@ func stop_bots() -> Array:
 	snap_vel.clear()
 	snap_fwd.clear()
 	snap_reach.clear()
+	_snap_feet.clear()
 	_car_lengths.clear()
 	_car_models = []
 	_car_look = 0.0

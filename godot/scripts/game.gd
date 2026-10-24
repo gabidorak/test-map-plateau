@@ -46,7 +46,8 @@ extends Node3D
 ## for the tools): the player gets on at the station while the doors are open, walks through the cars of a unit and is
 ## carried like in a bus; riding one off the map puts them down by the line at that end.
 ## Graphics: "low" (no SSIL/SSAO/glow, FXAA instead of MSAA) keeps 60 fps on an integrated GPU; it is
-## the default there, "high" elsewhere. PLATEAU_QUALITY=low|high overrides, F2 switches, the settings page
+## the default there, "high" elsewhere; "medium" keeps the SSAO, glow and shadows but drops the SSIL and MSAA (FXAA),
+## a third less GPU time at 4K. PLATEAU_QUALITY=low|medium|high overrides, F2 cycles them, the settings page
 ## (scripts/settings_menu.gd, from either menu) sets it. Keys are the Settings actions (scripts/settings.gd): the
 ## letters above are their defaults, on physical key positions, and the help lines show the current ones.
 ## N switches night and day (scripts/night.gd: moonlight, a starry sky, lit windows and street lamps; also on the
@@ -136,6 +137,7 @@ var _menu_status: Label
 var _menu_hint: Label
 var _menu_mouse := Input.MOUSE_MODE_VISIBLE # mouse mode to restore when the menu closes
 var low_quality := false
+var quality := "high"                       # "low", "medium" or "high" (set_quality)
 var _high := {}                             # the scene's own settings, restored by "high"
 var mode := ""                              # "solo", "host", "client", "server" (dedicated); "" in the welcome menu
 var mode_id := Modes.DEFAULT                # the game mode played (scripts/modes/modes.gd)
@@ -151,8 +153,10 @@ var _host_label: Label                      # top right while hosting: the addre
 var _host_label_t := 0.0
 var _toast: Label                           # "X joined the game"...
 var _toast_t := 0.0
-var _stats: Label                           # F3: frame rate and network timings (net.gd debug_text)
+var _stats: Label                           # F3: frame rate, CPU and GPU times, network timings (net.gd debug_text)
 var _stats_t := 0.0
+var _stats_frames := 0                      # frames since the last F3 update, and their summed times
+var _stats_sum := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])   # frame, physics tick, (first physics frame), GPU
 var chat: Chat                              # LAN games: Enter
 var _player_list: PlayerList                # LAN games: while Tab is held
 var _player_list_t := 1.0
@@ -212,7 +216,7 @@ func _ready() -> void:
 	var env: Environment = $WorldEnvironment.environment
 	_high = {"ssil": env.ssil_enabled, "ssao": env.ssao_enabled, "glow": env.glow_enabled,
 			"msaa": get_viewport().msaa_3d, "aa": get_viewport().screen_space_aa}
-	set_low_quality(Settings.low_quality())
+	set_quality(Settings.quality())
 	night = Night.new()
 	night.name = "Night"
 	night.game = self
@@ -498,10 +502,7 @@ func _process(delta: float) -> void:
 			_host_label_t = 0.0
 			_host_label.text = net.lan_label()
 	if _stats.visible:
-		_stats_t += delta
-		if _stats_t >= 0.25:
-			_stats_t = 0.0
-			_stats.text = net.debug_text()
+		_sample_stats(delta)
 	_player_list.visible = net.active and Input.is_physical_key_pressed(KEY_TAB) and not pause.visible
 	if _player_list.visible:
 		_player_list_t += delta
@@ -637,13 +638,20 @@ func set_flying(on: bool) -> void:
 
 ## Low (true) or high graphics settings (see the header).
 func set_low_quality(on: bool) -> void:
-	low_quality = on
+	set_quality("low" if on else "high")
+
+
+## "low", "medium" or "high" graphics settings (see the header).
+func set_quality(level: String) -> void:
+	quality = level if level in Settings.QUALITIES else "high"
+	low_quality = quality == "low"
+	var high := quality == "high"
 	var env: Environment = $WorldEnvironment.environment
-	env.ssil_enabled = _high["ssil"] and not on
-	env.ssao_enabled = _high["ssao"] and not on
-	env.glow_enabled = _high["glow"] and not on
-	get_viewport().msaa_3d = Viewport.MSAA_DISABLED if on else _high["msaa"]
-	get_viewport().screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if on else _high["aa"]
+	env.ssil_enabled = _high["ssil"] and high
+	env.ssao_enabled = _high["ssao"] and not low_quality
+	env.glow_enabled = _high["glow"] and not low_quality
+	get_viewport().msaa_3d = _high["msaa"] if high else Viewport.MSAA_DISABLED
+	get_viewport().screen_space_aa = _high["aa"] if high else Viewport.SCREEN_SPACE_AA_FXAA
 	if _help:
 		_update_help()
 
@@ -652,10 +660,46 @@ func set_low_quality(on: bool) -> void:
 func _on_settings_changed() -> void:
 	if allows("night_toggle"):
 		night.set_night(Settings.night())
-	if Settings.low_quality() != low_quality:
-		set_low_quality(Settings.low_quality())
+	if Settings.quality() != quality:
+		set_quality(Settings.quality())
 	else:
 		_update_help()
+
+
+## F3: the frame rate, then per frame (means over STATS_EVERY s) the physics ticks' time (bots, trains, vehicles), the
+## render's CPU and the GPU time, which of the two the frame waits on, the 3D resolution drawn and the quality; then the
+## network timings (net.gd).
+const STATS_EVERY := 0.5
+
+func _sample_stats(delta: float) -> void:
+	var vp := get_viewport().get_viewport_rid()
+	if _stats_frames == 0:
+		_stats_sum[2] = Engine.get_physics_frames()
+	_stats_sum[0] += delta * 1000.0
+	_stats_sum[1] += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0     # one tick
+	_stats_sum[3] += RenderingServer.viewport_get_measured_render_time_gpu(vp)
+	_stats_frames += 1
+	_stats_t += delta
+	if _stats_t < STATS_EVERY:
+		return
+	var n := float(_stats_frames)
+	var frame := _stats_sum[0] / n
+	var physics := _stats_sum[1] / n * (Engine.get_physics_frames() - _stats_sum[2]) / n       # per frame
+	var render := RenderingServer.viewport_get_measured_render_time_cpu(vp) + RenderingServer.get_frame_setup_time_cpu()
+	var gpu := _stats_sum[3] / n
+	var bound := "GPU-bound" if gpu > frame * 0.85 else ("CPU-bound" if physics + render > frame * 0.7 			else "waiting for vsync" if DisplayServer.window_get_vsync_mode() != DisplayServer.VSYNC_DISABLED else "")
+	var scale := get_viewport().scaling_3d_scale
+	var size := Vector2i((Vector2(get_viewport().size) * scale).round())
+	var net_text := net.debug_text()                # the frame rate, then a line per player
+	var fps := net_text.get_slice("
+", 0)
+	_stats.text = "
+".join(PackedStringArray([fps + " · %.1f ms%s" % [frame, " · " + bound if bound != "" else ""],
+			"physics %.1f · render CPU %.1f · GPU %.1f ms per frame" % [physics, render, gpu],
+			"3D %d × %d (%d %%) · %s · %d vehicles" % [size.x, size.y, roundi(scale * 100.0), quality, cars.size()]])) 			+ net_text.substr(fps.length())
+	_stats_t = 0.0
+	_stats_frames = 0
+	_stats_sum.fill(0.0)
 
 
 ## For tools/screenshot*.gd: fly camera, no HUD, no player.
@@ -1306,7 +1350,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("toggle_help"):
 		_help.visible = not _help.visible
 	elif event.is_action_pressed("toggle_quality"):
-		Settings.set_value("quality", "high" if low_quality else "low")
+		Settings.set_value("quality", Settings.QUALITIES[(Settings.QUALITIES.find(quality) + 1) % Settings.QUALITIES.size()])
 	elif event.is_action_pressed("night") and allows("night_toggle"):
 		Settings.set_value("night", not night.on)
 	elif event.is_action_pressed("headlights") and driving:
@@ -1314,6 +1358,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("toggle_stats"):
 		_stats.visible = not _stats.visible
 		_stats_t = 1.0
+		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), _stats.visible)
 	# not elif: X closes the inspection, and drifts too by default
 	if event.is_action_pressed("inspect_close"):
 		picker.hide_overlay()
@@ -1553,7 +1598,7 @@ func _update_help() -> void:
 	if extra != "":
 		_help.text += "\n" + extra
 	_help.text += "\n%s graphics: %s · %s%s frame rate%s · F11 fullscreen" % [k.call("toggle_quality"),
-			"low" if low_quality else "high", "%s %s · " % [k.call("night"), "day" if night and night.on else "night"] \
+			quality, "%s %s · " % [k.call("night"), "day" if night and night.on else "night"] \
 			if allows("night_toggle") else "", k.call("toggle_stats"), " and network" if net.active else ""]
 	if net.active:
 		_help.text += " · Enter chat · Tab players"
