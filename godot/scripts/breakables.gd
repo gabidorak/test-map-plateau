@@ -129,7 +129,7 @@ func _vehicle_boxes() -> Array:
 	_boxes_tick = Engine.get_physics_frames()
 	_boxes.clear()
 	for body: RigidBody3D in get_tree().get_nodes_in_group("vehicles"):
-		if not body.get_meta("knocks_props", true):
+		if not body.get_meta("knocks_props", true) or not body.is_visible_in_tree():   # (stowed, a far bot's)
 			continue
 		for c in body.get_children():
 			var cs := c as CollisionShape3D

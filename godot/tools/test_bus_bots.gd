@@ -208,11 +208,16 @@ func _board() -> void:
 	b.put(b.route_index, float(stop["s"]) - b.nose - 60.0)
 	var c: Node3D = b.car
 	var opened := false
+	var net: Node = _main.net
+	var c0: float = net.clock()
+	var t0: float = _main.traffic.time
 	for f in 60 * 60:
 		await physics_frame
+		net.clock_shift = c0 + _main.traffic.time - t0 - (net.clock() - net.clock_shift)   # lights at the simulated pace
 		if b.state == 1 and c.doors_open:
 			opened = true
 			break
+	net.clock_shift = 0.0
 	var dc: Vector3 = c.door_centres[0]
 	_main.player.teleport(c.to_global(dc + Vector3(signf(dc.x) * 1.5, 0.3, 0.0)))
 	var held := false

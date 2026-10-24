@@ -26,7 +26,11 @@ extends RefCounted
 ##   arriving every minute serves two at a time).
 ## - Indicators: before the turns of its route, into and out of the stops.
 ## - Far from every player (FAR m) it glides along its path instead (frozen, posed on the ground: cheap, and it can
-##   not get stuck where nobody sees it); a player coming within NEAR m hands it back to the physics.
+##   not get stuck where nobody sees it), moving every GLIDE_TICKS ticks; a player coming within NEAR m hands it back to
+##   the physics, if traffic.gd's physics budget has room for it (physics_ok: the bots nearest the players first): else
+##   it glides on, every tick (smooth to the eye), a frozen body the other vehicles still run into. Gliding beyond FAR
+##   (NEAR to come back) with nobody aboard it is `far`: its vehicle sleeps (car.gd set_dormant: hidden, out of the
+##   physics, not moved) and traffic_proxies.gd draws it at far_xf instead; traffic.gd drives it (car.gd does not).
 ## - Ends of routes: at a terminus inside the map it lays over (shorter with a bus waiting behind) and sets off on the
 ##   next route when that one starts where it stands; else it vanishes (car.gd set_stowed): at the map edge, or at a
 ##   terminus once no player is within WATCHED m (at once with a bus waiting behind). It first waits, doors open, while
@@ -103,6 +107,13 @@ var served := 0                             # stops served (tests)
 var idle := false                           # stowed, waiting for traffic.gd to send it out again
 var half_width := 1.3                       # m, half the vehicle's width
 var obstacle_car: Node3D                    # the vehicle in the way, or null
+var physics_ok := true                      # traffic.gd's physics budget has room for it (rank())
+var player_d := INF                         # m to the nearest player (traffic.gd rank(), every RANK_EVERY s)
+var ridden := false                         # players ride it (traffic.gd rank())
+var far := false                            # gliding far from every player: drawn by traffic_proxies.gd (see the header)
+var far_xf := Transform3D()                 # where it is while far (its vehicle stays where it went far)
+var far_rear_xf := Transform3D()            # its rear section's
+var proxy_index := -1                       # its instance in traffic_proxies.gd
 
 var _pts := PackedVector2Array()
 var _deck_z := PackedFloat32Array()         # per path point: the bridge deck's height (route "decks"), NAN on the ground
@@ -141,6 +152,7 @@ var _tick := 0
 var _tick_phase := 0                        # of GLIDE_TICKS: the tick it moves on (bots spread over them)
 var _skipped := 0.0                         # s of ticks skipped gliding
 var _pedals := [0.0, 1.0, 0.0]              # last drive()
+var _driven := -1                           # physics frame of the last drive() (traffic.gd drives the far ones)
 var _ignored := {}                          # vehicle -> s left driving past it as if it were not there (DEADLOCK)
 var _pass := {}                             # overtaking: "car", "lat" (m right of the path: < 0), "from", "to" (s), or {}
 var _room := PackedFloat32Array()           # m it may move left of the path, per path point
@@ -192,28 +204,40 @@ func _set_route(index: int) -> void:
 	route = traffic.routes[line["routes"][index]]
 	_step = float(route["step"])
 	_length = float(route["length"])
-	_pts = PackedVector2Array()
-	for p: Array in route["pts"]:
-		_pts.append(Vector2(p[0], p[1]))
-	_v = PackedFloat32Array(route["v"])
-	_deck_z = PackedFloat32Array()
-	if route.has("decks"):
-		_deck_z.resize(_pts.size())
-		_deck_z.fill(NAN)
-		for span: Array in route["decks"]:
-			var zs: Array = span[1]
-			for k in zs.size():
-				if int(span[0]) + k < _deck_z.size():
-					_deck_z[int(span[0]) + k] = zs[k]
-	_room = PackedFloat32Array()
-	for run: Array in route.get("room", []):
-		for k in int(run[0]):
-			_room.append(float(run[1]))
+	if not route.has("_packed"):
+		route["_packed"] = _pack(route)     # once per route: every bot on it shares them (never written to)
+	var packed: Array = route["_packed"]
+	_pts = packed[0]
+	_v = packed[1]
+	_deck_z = packed[2]
+	_room = packed[3]
 	_pass = {}
 	_next_stop = 0
 	_yield = -1
 	_stopped_at = -1
 	_assist_to = -INF
+
+
+## A route's path, planned speeds, bridge decks and room to the left as packed arrays: [_pts, _v, _deck_z, _room]
+## (thousands of points: a frame's worth of work to convert, a hitch whenever a bot changed route).
+static func _pack(r: Dictionary) -> Array:
+	var pts := PackedVector2Array()
+	for p: Array in r["pts"]:
+		pts.append(Vector2(p[0], p[1]))
+	var decks := PackedFloat32Array()
+	if r.has("decks"):
+		decks.resize(pts.size())
+		decks.fill(NAN)
+		for span: Array in r["decks"]:
+			var zs: Array = span[1]
+			for k in zs.size():
+				if int(span[0]) + k < decks.size():
+					decks[int(span[0]) + k] = zs[k]
+	var room := PackedFloat32Array()
+	for run: Array in r.get("room", []):
+		for k in int(run[0]):
+			room.append(float(run[1]))
+	return [pts, PackedFloat32Array(r["v"]), decks, room]
 
 
 # ---------------------------------------------------------------- path
@@ -308,9 +332,13 @@ func _trailer_pose(front: Transform3D, d: float) -> Transform3D:
 
 ## car.gd, each physics tick: [throttle 0..1, brake 0..1, steering -1..1 (left positive)] (and `horn`).
 func drive(delta: float) -> Array:
-	# gliding (far from every player), it only moves every GLIDE_TICKS ticks: a fraction of the cost
+	# once a tick (a far bot coming back is driven by traffic.gd, then asked by its vehicle again)
+	if _driven == Engine.get_physics_frames():
+		return _pedals
+	_driven = Engine.get_physics_frames()
+	# gliding far from every player, it only moves every GLIDE_TICKS ticks: a fraction of the cost
 	_tick += 1
-	if gliding and state != STOWED:
+	if gliding and state != STOWED and player_d >= NEAR:
 		_skipped += delta
 		if _tick % GLIDE_TICKS != _tick_phase:
 			return _pedals
@@ -334,13 +362,15 @@ func _drive(delta: float) -> Array:
 		_ride = lerpf(_ride, car.global_position.y - _surface(s, flat(car.global_position)), 0.02)
 	_look_t -= delta
 	if _look_t <= 0.0:
-		_look_t = GLIDE_LOOK_EVERY if gliding else LOOK_EVERY
+		# a little at random, so that the bots sent out together do not all look on the same tick
+		_look_t = (GLIDE_LOOK_EVERY if gliding else LOOK_EVERY) * _rng.randf_range(0.8, 1.2)
 		_look(v)
 	var target := _plan(v, delta)
 	if state == STOWED:
 		return [0.0, 1.0, 0.0]
 	target_speed = target
-	_indicators(delta)
+	if not far:
+		_indicators(delta)
 	_watch_stuck(v, target, delta)
 	if gliding:
 		return [0.0, 0.0, _glide(target, delta) / car.steer_limit(v)]
@@ -429,7 +459,7 @@ func _plan(v: float, delta: float) -> float:
 			_ignore_for(obstacle_car, PASS_TIME)
 		if _blocked_t > PASS_AFTER and _pass.is_empty():
 			_overtake(front)
-		if _blocked_t > GIVE_UP and not _player_within(car.global_position, GIVE_UP_SEEN):
+		if _blocked_t > GIVE_UP and not _player_within(centre(), GIVE_UP_SEEN):
 			_stow()
 			return 0.0
 		if _blocked_t > HORN_AFTER:
@@ -506,7 +536,7 @@ func _end_of_route() -> void:
 
 ## Doors open while players ride it; then, doors closed, it vanishes (at a terminus in the map, once no player is near).
 func _wait_at_terminus() -> void:
-	if traffic.game.riders(car) > 0:
+	if not far and traffic.game.riders(car) > 0:
 		_timer = 0.0
 		if not car.doors_open:
 			car.set_doors(true)
@@ -518,14 +548,14 @@ func _wait_at_terminus() -> void:
 	if _timer < car.DOOR_TIME + 0.5:
 		return
 	if route["end"] != "terminus" or _timer > WATCH_MAX or _queued_behind() \
-			or not _player_within(car.global_position, WATCHED):
+			or not _player_within(centre(), WATCHED):
 		_stow()
 
 
 ## On into the next route (from a terminus where it starts): on its path where the bus already is.
 func _next_route() -> void:
 	_set_route((route_index + 1) % line["routes"].size())
-	var p := project(flat(car.to_global(Vector3(0.0, 0.0, _ref_z))), 0.0, 80.0)
+	var p := project(flat(xf() * Vector3(0.0, 0.0, _ref_z)), 0.0, 80.0)
 	s = p.x
 	var stops: Array = route["stops"]
 	_next_stop = 0
@@ -535,6 +565,8 @@ func _next_route() -> void:
 
 ## Off the map (hidden, out of the physics) until traffic.gd sends it out again (put).
 func _stow() -> void:
+	if far:
+		_set_far(false)
 	state = STOWED
 	idle = true
 	_timer = 0.0
@@ -555,7 +587,7 @@ func _queued_behind() -> bool:
 	for b: Object in traffic.bots:
 		if b == self or b.state == STOWED or not is_same(b.line, line):
 			continue
-		var q := project(flat(b.car.to_global(b.car.extents_center)), back - QUEUE_REACH, back)
+		var q := project(flat(b.centre()), back - QUEUE_REACH, back)
 		if q.x > back - QUEUE_REACH and q.x < back and absf(q.y) < 2.0:
 			return true
 	return false
@@ -570,6 +602,8 @@ func _place(xf: Transform3D) -> void:
 ## Puts the bus on route `index` (into line["routes"]) with its reference point `d` m along it, driving at `speed`
 ## (traffic.gd sends it out with it; tests).
 func put(index: int, d: float, speed := 0.0) -> void:
+	if far:
+		_set_far(false)
 	_set_route(index)
 	s = d
 	state = DRIVE
@@ -605,7 +639,7 @@ func _look(v: float) -> void:
 	var tip := at(front)
 	obstacle_car = null
 	var cars: Array = traffic.snap_cars
-	for k in cars.size():
+	for k: int in traffic.near(tip, reach + 25.0):      # (the longest vehicle's half length is under 10 m)
 		var c: Node3D = cars[k]
 		if c == car or _ignored.has(c):
 			continue
@@ -620,7 +654,9 @@ func _look(v: float) -> void:
 			continue
 		var hit := INF
 		for p in traffic.snap_footprint(k):
-			var q := project(p, front - 1.0, front + reach)
+			# (its corners project within its half length of its middle: a narrower stretch of path to search)
+			var q := project(p, maxf(front - 1.0, cq.x - traffic.snap_reach[k] - 4.0),
+					minf(front + reach, cq.x + traffic.snap_reach[k] + 4.0))
 			if q.x > front - 0.5 and q.x < front + reach and absf(q.y - _shift(q.x - nose)) < half_width + SIDE_MARGIN:
 				hit = minf(hit, q.x - front)
 		if hit < _obstacle:
@@ -651,7 +687,7 @@ func _look(v: float) -> void:
 static func velocity_of(c: Node3D) -> Vector2:
 	var b: Object = c.pilot
 	if b != null and b.gliding:
-		return flat(c.global_basis.z) * float(b._speed)
+		return flat((b.far_xf.basis if b.far else c.global_basis).z) * float(b._speed)
 	return flat(c.linear_velocity)
 
 
@@ -782,16 +818,32 @@ func _deadlocked() -> bool:
 ## Footprint points (pipeline x/y) of a vehicle: the corners and middle of each section's body box.
 static func footprint(c: Node3D) -> PackedVector2Array:
 	var out := PackedVector2Array()
+	var bot: Object = c.pilot if c.dormant else null       # far: where its bot is, not its sleeping vehicle
 	for b: Node3D in c.bodies():
+		var bx: Transform3D = b.global_transform if bot == null else (bot.far_xf if b == c else bot.far_rear_xf)
 		for cs in b.get_children():
 			if cs is CollisionShape3D and cs.shape is BoxShape3D and not cs.disabled:
 				var h: Vector3 = cs.shape.size * 0.5
 				for k in [Vector3(h.x, 0, h.z), Vector3(-h.x, 0, h.z), Vector3(h.x, 0, -h.z), Vector3(-h.x, 0, -h.z),
 						Vector3(0, 0, h.z), Vector3(0, 0, -h.z), Vector3.ZERO]:
-					out.append(flat(b.global_transform * (cs.transform * k)))
+					out.append(flat(bx * (cs.transform * k)))
 	if out.is_empty():
-		out.append(flat(c.to_global(c.extents_center)))
+		out.append(flat(centre_of(c)))
 	return out
+
+
+## The middle of vehicle `c`'s extents (global): where its bot is while far.
+static func centre_of(c: Node3D) -> Vector3:
+	return c.pilot.far_xf * c.extents_center if c.dormant else c.to_global(c.extents_center)
+
+
+func centre() -> Vector3:
+	return far_xf * car.extents_center if far else car.to_global(car.extents_center)
+
+
+## Its front section's transform: its vehicle's, or far_xf while far.
+func xf() -> Transform3D:
+	return far_xf if far else car.global_transform
 
 
 ## True when a vehicle comes towards the junction of give-way `y` from one of its conflicting arms, soon, or moves in it.
@@ -799,7 +851,7 @@ func _junction_busy(y: Dictionary, front: float) -> bool:
 	var j := Vector2(y["x"], y["y"])
 	var r: float = y["r"]
 	var cars: Array = traffic.snap_cars
-	for k in cars.size():
+	for k: int in traffic.near(j, JUNCTION_REACH):
 		var c: Node3D = cars[k]
 		if c == car:
 			continue
@@ -861,9 +913,19 @@ func _player_within(p: Vector3, d: float) -> bool:
 	return false
 
 
+## m (on the map) from global point p to the nearest player (traffic.gd rank() hands it the spots).
+func _player_distance(p: Vector3, spots: Array = []) -> float:
+	var best := INF
+	for q: Vector3 in (spots if not spots.is_empty() else traffic.game.player_spots()):
+		best = minf(best, Vector2(q.x - p.x, q.z - p.z).length())
+	return best
+
+
 ## A player stands by one of the open doorways outside, about to get in, or inside in the doorway itself (one who got
 ## in and walks on does not keep the doors open: the bus leaves after its usual dwell).
 func _player_at_door() -> bool:
+	if far:
+		return false
 	var spots: Array = traffic.game.player_spots(true)
 	for b: Node3D in car.bodies():
 		for dc: Vector3 in b.door_centres:
@@ -879,11 +941,17 @@ func _player_at_door() -> bool:
 
 # ---------------------------------------------------------------- gliding far from the players
 
-## Glides when no player is within FAR m (NEAR m to stop gliding) and nobody rides it; `force` decides afresh.
+## Glides when no player is within FAR m (NEAR m to stop gliding) or the physics budget is full, unless players ride
+## it; `force` decides afresh, from where the players are now.
 func _update_glide(force := false) -> void:
-	var p: Vector3 = car.to_global(car.extents_center)
-	var near: bool = not may_glide or _player_within(p, NEAR if gliding else FAR) or traffic.game.riders(car) > 0
+	if force:
+		player_d = _player_distance(centre())
+		ridden = traffic.game.riders(car) > 0
+	var near: bool = not may_glide or ridden or (player_d < (NEAR if gliding else FAR) and physics_ok)
 	var want: bool = not near or s < _assist_to
+	var want_far: bool = want and may_glide and not ridden and s >= _assist_to and player_d >= (NEAR if far else FAR) 			and traffic.proxies != null
+	if want_far != far:
+		_set_far(want_far)
 	if want == gliding and not force:
 		return
 	if want and not gliding:
@@ -893,7 +961,26 @@ func _update_glide(force := false) -> void:
 			_pass = {}
 	gliding = want
 	_held = false
-	_freeze(want, _speed)
+	if not far:
+		_freeze(want, _speed)
+
+
+## Far (on): its vehicle sleeps where it is and traffic_proxies.gd draws the bot; back (off): its vehicle where the
+## bot got to, frozen (gliding; _update_glide lets it go on the physics).
+func _set_far(on: bool) -> void:
+	far = on
+	if on:
+		far_xf = car.global_transform
+		far_rear_xf = car.trailer.global_transform if car.trailer else Transform3D()
+		car.set_dormant(true)
+		traffic.proxies.add(self)
+	else:
+		traffic.proxies.remove(self)
+		car.set_dormant(false)
+		car.global_transform = far_xf
+		if car.trailer:
+			car.trailer.global_transform = far_rear_xf
+		car.set_indicator(car.indicator)
 
 
 ## Freezes the bodies in place (gliding, held) or lets them go at `speed` along the bus.
@@ -924,10 +1011,16 @@ func _hold(still: bool, target: float, delta: float) -> void:
 func _glide(target: float, delta: float) -> float:
 	_speed = move_toward(_speed, target, (GLIDE_ACCEL if target > _speed else HARD_BRAKE) * delta)
 	s += _speed * delta
-	var xf := pose_at(s)
-	car.global_transform = xf
+	var pose := pose_at(s)
+	if far:
+		far_xf = pose
+		if car.trailer:
+			far_rear_xf = _trailer_pose(pose, s)
+		traffic.proxies.moved(self)
+		return 0.0                          # (nobody sees its wheels)
+	car.global_transform = pose
 	if car.trailer:
-		car.trailer.global_transform = _trailer_pose(xf, s)
+		car.trailer.global_transform = _trailer_pose(pose, s)
 	return _pursue(at(s + wheelbase))
 
 

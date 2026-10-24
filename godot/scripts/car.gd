@@ -41,7 +41,8 @@ extends VehicleBody3D
 ## steering, horn and indicators from it instead of the keys (pilot.drive), on the peer simulating it; its states tell
 ## the others (bot_driven: the driver look-alike shows, nobody can take the wheel). A bot bus waiting to come back in
 ## at the map edge is `stowed`: hidden, out of the physics, everywhere. A parked vehicle at rest sleeps (out of the
-## solver, its script idle) until something touches or pushes it, or someone gets in (_sleep_parked).
+## solver, its script idle) until something touches or pushes it, or someone gets in (_sleep_parked). A bot far from
+## every player is `dormant` (set_dormant): hidden, out of the physics and idle, traffic_proxies.gd drawing it.
 ## Damage (the armed biplane's rounds, scripts/plane_guns.gd): each vehicle has `health` (HEALTH for a 1,200 kg car,
 ## more for heavier ones); hits only count on the peer simulating it (damage), the others follow its states. Under
 ## half of it, grey smoke comes out of the engine; at 0 it is `broken`: a boom and a ball of fire, the engine dies, the
@@ -327,9 +328,11 @@ var _net_seen := false                      # LAN, remote vehicle: a state came 
 var pilot: Object                           # bot driver (scripts/bus_bot.gd) on the peer simulating it, or null
 var bot_driven := false                     # LAN, remote vehicle: a bot drives it (its states say so)
 var stowed := false                         # hidden and out of the physics (a bot bus off the map, set_stowed)
+var dormant := false                        # a bot far from every player: hidden, out of the physics, idle (set_dormant)
 var flooded := 0.0                          # 0 dry .. 1 full of water (_water_physics)
 var in_water := 0.0                         # share of the body's height under water now
 var _rest_t := 0.0                          # s parked at rest (_sleep_parked)
+var _walkable := true                       # walkable hulls in the physics, unless stowed (set_walkable)
 var _braking := false                       # brake lamps on (the driver's or the pilot's pedal)
 var _stowed_layers := Vector2i.ZERO         # collision layer and mask of the bodies before stowing
 var headlights := false
@@ -1213,6 +1216,22 @@ func _reset_camera() -> void:
 	set_cab_view(cab_view)
 
 
+## A bot far from every player (bus_bot.gd far): hidden, its bodies frozen and out of the physics (their processing off:
+## CollisionObject3D DISABLE_MODE_REMOVE), its scripts, sounds and lamps idle, and not moved: traffic_proxies.gd draws
+## it where its bot is. Back (off): as it was, frozen; the bot places it and lets it go.
+func set_dormant(on: bool) -> void:
+	if on == dormant:
+		return
+	dormant = on
+	visible = not on
+	for b in bodies():
+		b.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		b.freeze = true
+	process_mode = Node.PROCESS_MODE_DISABLED if on else Node.PROCESS_MODE_INHERIT
+	if on:
+		audio.hush()
+
+
 ## LAN games: someone on another peer drives (on) or nobody does: shows the driver look-alike in `color`.
 func show_driver(on: bool, color := Color(1, 0.55, 0.2)) -> void:
 	set_driver_color(BOT_COLOR if is_bot() else color)
@@ -1254,12 +1273,24 @@ func set_stowed(on: bool) -> void:
 		b.freeze = on or remote
 		b.visible = not on
 	# the walkable hulls too (a stowed bot stays where it vanished, where the next bus pulls up)
-	for hull: StaticBody3D in [inside, trailer.inside if trailer else null, _bellows_hull]:
-		if hull:
-			hull.process_mode = Node.PROCESS_MODE_DISABLED if on else Node.PROCESS_MODE_INHERIT
+	_update_hulls()
 	audio.engine_on = not on and (is_bot() or driving or has_doors) and not broken
 	if on:
 		audio.hush()                            # it gets no audio.update() while stowed
+
+
+## The walkable hulls in the physics (on) or out of it: traffic.gd keeps a bot bus's out while no player is near, as
+## they cost every time the bus moves.
+func set_walkable(on: bool) -> void:
+	if on != _walkable:
+		_walkable = on
+		_update_hulls()
+
+
+func _update_hulls() -> void:
+	for hull: StaticBody3D in [inside, trailer.inside if trailer else null, _bellows_hull]:
+		if hull:
+			hull.process_mode = Node.PROCESS_MODE_INHERIT if _walkable and not stowed else Node.PROCESS_MODE_DISABLED
 
 
 func set_driver_color(color: Color) -> void:
@@ -1292,6 +1323,8 @@ func net_state() -> Array:
 	var flags := (1 if doors_open else 0) | (2 if driving or pilot else 0) | (4 if _braking else 0) \
 			| (8 if audio.horn else 0) | (16 if bells & 1 else 0) | (32 if pilot else 0) | (64 if stowed else 0) \
 			| (128 if headlights else 0)
+	if dormant:                             # where its bot is
+		return [pilot.far_xf, pilot.far_rear_xf, steering, _throttle, flags, indicator, health]
 	return [global_transform, trailer.global_transform if trailer else Transform3D(), steering, _throttle, flags, indicator,
 			health]
 
@@ -1488,7 +1521,8 @@ func set_doors(open: bool) -> void:
 	if not has_doors or open == doors_open:
 		return
 	doors_open = open
-	audio.play("door_open" if open else "door_close")
+	if not dormant:                         # (a sleeping player would play it on waking)
+		audio.play("door_open" if open else "door_close")
 
 
 ## Forward speed in m/s (negative when reversing).
