@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Plateau Map"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/loading.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 run/flush_stdout_on_print=true
 run/main_scene.packed="res://scenes/boot.tscn"

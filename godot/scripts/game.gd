@@ -3,12 +3,16 @@ extends Node3D
 ## fly camera (F1), owns the HUD and the debug picker (F). Click captures the mouse; Esc opens the in-game menu
 ## (scripts/pause_menu.gd: resume, back to the main menu, quit), which frees it.
 ## Launched as the main scene it first shows the welcome menu (scripts/main_menu.gd) over a slow flight around the
-## campus: Explore solo, Host a game on LAN (the host's address shows at the top right), Join a game. LAN games are
-## scripts/net.gd's: the other players show as scripts/remote_player.gd, vehicles are simulated by whoever drives
-## them, and a player can walk in a bus another one drives; holding Tab lists the players and their ping, Enter opens the
-## chat (scripts/chat.gd, scripts/player_list.gd). Command line (after `--`): --solo, --host, --join=IP[:PORT],
-## --name=NICK, --color=N skip the menu. --dedicated [--port=N] [--name=GAME] runs a server without a player (headless,
-## server/ at the repository root): it quits once a newer release is out and nobody plays (or UPDATE_WAIT s on). Instanced by the tools, it starts solo at once as before.
+## campus: Explore solo, Host a game on LAN (the host's address shows at the top right), Join a game. Hosting or joining
+## puts the loading overlay (scripts/loading_screen.gd) over the menu while the server, the world's vehicles and bots,
+## or the host's snapshot, are prepared; the startup scene (scripts/loading_scene.gd) loads this whole scene behind the
+## same screen, and leaving for the welcome menu shows it while the scene reloads. LAN games are scripts/net.gd's:
+## the other players show as scripts/remote_player.gd, vehicles are
+## simulated by whoever drives them, and a player can walk in a bus another one drives; holding Tab lists the players
+## and their ping, Enter opens the chat (scripts/chat.gd, scripts/player_list.gd). Command line (after `--`): --solo,
+## --host, --join=IP[:PORT], --name=NICK, --color=N skip the menu. --dedicated [--port=N] [--name=GAME] runs a server
+## without a player (headless, server/ at the repository root): it quits once a newer release is out and nobody plays
+## (or UPDATE_WAIT s on). Instanced by the tools, it starts solo at once as before.
 ## Debug cars (scripts/car.gd) are parked next to the spawn point; C parks another one next to the
 ## player, E gets into the nearest car and Space gets out. U opens the vehicle menu, which parks any model (Car.MODELS)
 ## next to the player. The bus is walkable: the player standing in it
@@ -93,9 +97,11 @@ const Traffic = preload("res://scripts/traffic.gd")
 const Night = preload("res://scripts/night.gd")
 const Races = preload("res://scripts/races.gd")
 const Modes = preload("res://scripts/modes/modes.gd")
+const LoadingScreen = preload("res://scripts/loading_screen.gd")
 const WATER_SHOVE := 0.7                    # m/s a full-power water packet shoves a player along the jet
 const ENTER_RANGE := 3.0                    # metres from the car body
 const KILL_MARGIN := 20.0                   # m under the lowest ground where a falling player is put back
+const LOAD_MIN_SHOW := 0.7                  # s the loading overlay stays up, even when hosting starts at once
 const JET_SKI_REACH := 200.0                # m: the jet-ski is parked on water this near the player...
 const JET_SKI_ROOM := 4.0                   # ...with this much water round it...
 const JET_SKI_LAKE := 300.0                 # ...in a body of water this big (m²): no fountain basins
@@ -147,6 +153,10 @@ var nickname := "Player"
 var color := MainMenu.COLORS[0]
 var menu: MainMenu                          # welcome menu, while it is up
 var pause: PauseMenu
+var loading: LoadingScreen                  # full-screen overlay while a LAN game starts or the menu is rebuilt
+var _loading_started := 0.0                 # Time.get_ticks_msec() / 1000.0 when the overlay went up
+var _loading_menu_shown := false            # the overlay hid the welcome menu; show it again on failure
+var _returning_to_menu := false             # back_to_menu is under way (pause menu and the host's exit can coincide)
 var _pause_mouse := Input.MOUSE_MODE_VISIBLE
 var _args := {}                             # command line options after "--"
 var _host_label: Label                      # top right while hosting: the address to join
@@ -300,6 +310,72 @@ func _take_profile() -> void:
 	mode_id = menu.mode_id
 
 
+## Whether a loading overlay makes sense here: the game runs as the current scene (the menu or a command line start).
+## The tools instantiate the scene themselves to test the game; they should not wait for a screen.
+func _loading_wanted() -> bool:
+	return get_tree().current_scene == self
+
+
+## Puts the full-screen loading overlay (scripts/loading_screen.gd) above the menu, hiding the menu so it cannot take
+## clicks or keys while a LAN game starts. `fraction` is the bar's first figure (0..1).
+func _show_loading(status: String, fraction := 0.0) -> void:
+	if loading:
+		loading.set_status(status)
+		loading.set_progress(fraction)
+		return
+	var layer := CanvasLayer.new()
+	layer.name = "Loading"
+	layer.layer = 50
+	add_child(layer)
+	loading = LoadingScreen.new()
+	loading.fade_in = false                 # opaque at once: the step that follows can block for a moment
+	layer.add_child(loading)
+	_loading_started = Time.get_ticks_msec() / 1000.0
+	loading.set_status(status)
+	loading.set_progress(fraction)
+	if menu and menu.visible:
+		menu.visible = false
+		_loading_menu_shown = true
+	# A hidden menu button can keep the GUI focus: Enter or Space would press it again while the game starts.
+	var focus := get_viewport().gui_get_focus_owner()
+	if focus:
+		focus.release_focus()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+## What the overlay says now; `fraction` < 0 keeps the bar where it is.
+func _update_loading(status: String, fraction := -1.0) -> void:
+	if loading == null:
+		return
+	loading.set_status(status)
+	if fraction >= 0.0:
+		loading.set_progress(fraction)
+
+
+## Keeps the overlay up for at least LOAD_MIN_SHOW (no flash), then fades it out and frees it.
+func _finish_loading() -> void:
+	if loading == null:
+		return
+	var left := LOAD_MIN_SHOW - (Time.get_ticks_msec() / 1000.0 - _loading_started)
+	if left > 0.0:
+		await get_tree().create_timer(left).timeout
+	if loading == null:
+		return
+	var gone := loading
+	loading = null
+	var layer := gone.get_parent() as CanvasLayer
+	gone.close()
+	if layer:
+		gone.tree_exited.connect(layer.queue_free)   # the screen frees itself after its fade; its layer goes too
+
+
+## After a failed host or join: the menu comes back under the fading overlay.
+func _reveal_menu() -> void:
+	if menu and _loading_menu_shown:
+		menu.visible = true
+		_loading_menu_shown = false
+
+
 ## Makes `id` (scripts/modes/modes.gd) the game mode played: Main/Mode, in place of the one before. Clients get the
 ## host's from net.gd's welcome.
 func set_game_mode(id: String) -> void:
@@ -351,19 +427,33 @@ func _start_trains() -> void:
 		traffic.trains.start()
 
 
-## Starts a LAN game hosted here: the server first, so the cars parked at start get their network ids.
+## Starts a LAN game hosted here: the server first, so the cars parked at start get their network ids. The loading
+## overlay covers the menu while the server starts and the world's vehicles, bots and trains are put in.
 func start_host() -> void:
+	var overlay := _loading_wanted()
+	if overlay:
+		_show_loading("Starting the game on your network…", 0.1)
+		await get_tree().process_frame
 	var err := net.host(nickname, color, int(_args.get("port", Net.PORT)))
 	if err != "":
 		_on_join_failed(err)
 		return
 	mode = "host"
+	if overlay:
+		_update_loading("Preparing the world…", 0.35)
+		await get_tree().process_frame
 	set_game_mode(mode_id)
 	if allows("races"):
 		races.start_hosting()
 	_begin()
+	if overlay:
+		_update_loading("Waking the traffic up…", 0.6)
+		await get_tree().process_frame
 	_start_world()
 	game_mode.begin()
+	if overlay:
+		_update_loading("Ready", 1.0)
+		await _finish_loading()
 
 
 ## A server without a player of its own (headless on a VPS): the player stays hidden at the spawn point, next to the
@@ -406,18 +496,28 @@ func _watch_updates(delta: float) -> void:
 		get_tree().quit()
 
 
-## Connects to a LAN game; _on_joined starts playing once the host has sent its players and vehicles.
+## Connects to a LAN game; _on_joined starts playing once the host has sent its players and vehicles. The loading
+## overlay stays up from the click until the host's world is here, covering the wait and the snapshot it sends.
 func start_join(address: String, port: int) -> void:
+	var overlay := _loading_wanted()
+	if overlay:
+		_show_loading("Connecting to %s:%d…" % [address, port], 0.15)
+		await get_tree().process_frame
 	var err := net.join(address, port, nickname, color)
 	if err != "":
 		_on_join_failed(err)
-	elif menu:
+		return
+	if overlay:
+		_update_loading("Waiting for the host to send the world…", 0.45)
+	if menu:
 		menu.set_status("Connecting to %s:%d…" % [address, port], false, true)
 
 
 func _on_joined() -> void:
 	net.discovery.stop()
 	mode = "client"
+	if loading:
+		_update_loading("Joining the game…", 0.8)
 	_begin()
 	# a step aside per player, so newcomers do not all land in the same spot
 	spawn_at(spawn_xy + Vector2(1.2 * (net.me() % 5 - 2), 0.0), deg_to_rad(spawn_yaw_deg))
@@ -425,21 +525,43 @@ func _on_joined() -> void:
 	if game_mode == null:                   # (a host of an older build would have been refused)
 		set_game_mode(Modes.DEFAULT)
 	game_mode.begin()
+	if loading:
+		_update_loading("Ready", 1.0)
+		_finish_loading()
 
 
 func _on_join_failed(reason: String) -> void:
+	var had_loading := loading != null
 	if menu:
+		_reveal_menu()
 		menu.set_status(reason, true)
+		if had_loading:
+			await _finish_loading()
+		menu.focus_default()
 	else:
+		if had_loading:
+			await _finish_loading()
 		back_to_menu(reason)
 
 
 ## Leaves the game (closing it for everyone when hosting) and restarts the scene on the welcome menu, showing
-## `reason` there.
+## `reason` there. The loading overlay covers the scene reload (the menu's flight over the world has to be set up
+## again); the reason waits in MainMenu.notice, which survives the reload.
 func back_to_menu(reason := "") -> void:
+	if _returning_to_menu:
+		return
+	_returning_to_menu = true
 	MainMenu.notice = reason
 	net.leave()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if not _loading_wanted():
+		get_tree().reload_current_scene()  # instanced by a tool: no screen, as before
+		return
+	_show_loading("Back to the main menu…", 0.0)
+	if loading:
+		loading.set_indeterminate()        # the reload reports no progress
+	await get_tree().process_frame
+	await get_tree().process_frame         # the overlay has been drawn before the reload takes the main thread
 	get_tree().reload_current_scene()
 
 
@@ -1305,7 +1427,7 @@ func _spawn_from_menu(model: String) -> void:
 ## The vehicle menu key, Tab and Esc are caught before the GUI: with a menu button focused, Tab would only move the focus. Tab (held) shows
 ## the player list (_process). While typing in the chat, only Esc (close it) is caught.
 func _input(event: InputEvent) -> void:
-	if not (event is InputEventKey or event is InputEventMouseButton) or mode == "":
+	if loading or not (event is InputEventKey or event is InputEventMouseButton) or mode == "":
 		return
 	var key := (event as InputEventKey).physical_keycode if event is InputEventKey else KEY_NONE
 	if key == KEY_TAB:
@@ -1328,7 +1450,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _menu.visible or pause.visible or chat.is_open() or mode == "":
+	if loading or _menu.visible or pause.visible or chat.is_open() or mode == "":
 		return
 	if game_mode and game_mode.handle_input(event):
 		get_viewport().set_input_as_handled()
