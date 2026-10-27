@@ -5,7 +5,9 @@ extends SceneTree
 ## - two of them meeting on a two-way road (one on its route, the other coming the other way in the other lane, both
 ##   with the physics) pass each other without slowing down for it, without touching;
 ## - two meeting head-on in one lane wait, then one drives past the other (no collision between them meanwhile), and
-##   both go on.
+##   both go on;
+## - under a heavy load (traffic.gd tick_load held high) the traffic thins out a level at a time (the gliding bots move
+##   half as often, then fewer cars out, stowed out of sight) and fills up again once it is gone.
 ## godot --headless --fixed-fps 60 --path godot --script res://tools/test_car_bots.gd
 
 const MIN_PASS_SPEED := 3.0                 # m/s: slower than this while passing the oncoming car is slowing down for it
@@ -83,6 +85,8 @@ func _run() -> void:
 	_check(out >= cars.size() * 0.85 and moving >= out * 0.5 and speed / maxf(out, 1) > 3.0,
 			"a minute later %d out, %d moving (mean %.1f m/s), %d sent out again" % [out, moving, speed / maxf(out, 1), runs])
 
+	await _thin_out()
+
 	# the rest with two cars alone
 	traffic.send_cars = false
 	traffic.departures.clear()
@@ -94,6 +98,53 @@ func _run() -> void:
 	await _oncoming(cars[0], cars[1], true)
 	print("%d failures" % _failures.size())
 	quit(1 if _failures.size() > 0 else 0)
+
+
+## The load held over LOAD_HIGH until the thinnest level, then under LOAD_LOW for a level back (traffic.gd _adapt); then
+## the full traffic again.
+func _thin_out() -> void:
+	var traffic: Node = _main.traffic
+	traffic.adaptive = true
+	var levels: Array = traffic.LEVELS
+	var t0: float = traffic.time
+	while traffic.load_level < levels.size() - 1 and traffic.time < t0 + levels.size() * (traffic.LOAD_AFTER + 1.0):
+		await physics_frame
+		traffic.tick_load = 0.9
+	var thinnest: int = traffic.load_level
+	var target := roundi(_cars().size() * float(levels[-1][1]))
+	var t1: float = traffic.time
+	var out := 0
+	var physics := 0
+	while traffic.time < t1 + 10.0:
+		await physics_frame
+		traffic.tick_load = 0.9
+		out = 0
+		physics = 0
+		for b: Object in _cars():
+			if not b.idle:
+				out += 1
+				physics += 0 if b.gliding else 1
+		if out <= target + physics:
+			break
+	_check(thinnest == levels.size() - 1 and traffic.glide_scale == levels[-1][0] and out <= target + physics,
+			"under load it thins out to level %d (gliding bots every %d× the ticks, %d cars out for a target of %d, %d of them near the player)" % [
+			thinnest, traffic.glide_scale, out, target, physics])
+	var t2: float = traffic.time
+	while traffic.load_level == thinnest and traffic.time < t2 + traffic.LOAD_RELAX + 2.0:
+		await physics_frame
+		traffic.tick_load = 0.05
+	var relaxed: int = traffic.load_level
+	traffic.adaptive = false
+	traffic.set_load_level(0)
+	var t3: float = traffic.time
+	while traffic.time < t3 + 15.0:
+		await physics_frame
+	out = 0
+	for b: Object in _cars():
+		out += 0 if b.idle else 1
+	_check(relaxed == thinnest - 1 and out >= _cars().size() * 0.85,
+			"the load gone, a level back after %.0f s (level %d), and the cars out again at the full level (%d of %d)" % [
+			traffic.LOAD_RELAX, relaxed, out, _cars().size()])
 
 
 ## Car `a` on a straight two-way stretch of its route and car `b` 90 m ahead coming the other way, on a route made

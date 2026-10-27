@@ -14,24 +14,20 @@ extends Node
 ##   on routes from the map edge to the map edge, picked at random (longer ones more often). Spread along their routes
 ##   at the start; one that vanished at the edge comes back on another route, mid-way where no player is within HIDDEN
 ##   m, else at its map edge.
-## - Physics budget: every RANK_EVERY s the bots are ranked by their distance to the nearest player; only the
-##   PHYSICS_BUDGET nearest (those players ride first) may drive with the physics within bus_bot.gd's NEAR, the others
-##   glide (bus_bot.gd physics_ok). A bus's walkable hulls are only in the physics with a player on foot within
-##   WALK_NEAR m or riding it (car.gd set_walkable).
-## - Load: while the physics ticks take over CROWDED_MS (Performance TIME_PHYSICS_PROCESS: the slowest of each second,
-##   smoothed over several seconds: a slow or throttled processor, not a hitch), no stowed bot is sent out again and no
-##   new bus is made, until it is back under CALM_MS for CALM_FOR s: the traffic thins out by itself.
-## - Far bots (bus_bot.gd far): drawn by traffic_proxies.gd (Main/Traffic/Proxies), driven from here (their vehicles
-##   sleep, car.gd set_dormant).
-## - Every tick a snapshot of the vehicles out (snap_*, with a grid of SNAP_CELL m cells: near()) serves the bots' looks
-##   around and the trains' (train_traffic.gd), instead of each going through every vehicle.
+## - Each tick: a snapshot of the vehicles out (positions on a grid of CELL m cells, near()) and of the players (where
+##   they are, what they ride) for the bots' looks around; then the gliding bots due this tick move on (BusBot
+##   glide_step: GLIDE_SLOTS slots of the ticks to come), the others are moved by their car.gd.
+## - Load: the share of each tick the physics scripts take (`tick_load`, from this node, first, to TickEnd, last). In
+##   the game (not the tools; PLATEAU_ADAPTIVE=1|0 overrides) the traffic thins out a level (LEVELS: gliding bots move
+##   half as often, then fewer bot cars out) after LOAD_AFTER s over LOAD_HIGH, and fills up again a level after
+##   LOAD_RELAX s under LOAD_LOW: a slow computer (a laptop on battery) stays playable instead of the physics falling
+##   behind.
 ## The host can stop them (stop_bots: game.gd set_bot_traffic, the in-game menu) and start them again.
 ## Only the peer that hosts (or plays solo, or a dedicated server) runs the bots; the other peers get their vehicles as
 ## remote vehicles (net.gd), which they can ride in (buses) but not drive.
 
 const BusBot = preload("res://scripts/bus_bot.gd")
 const TrainTraffic = preload("res://scripts/train_traffic.gd")
-const TrafficProxies = preload("res://scripts/traffic_proxies.gd")
 const ROUTES := "res://world/bus_routes.json"
 const CAR_ROUTES := "res://world/car_routes.json"
 const CYCLE := 30.0                         # s, toy_prop.gdshader `cycle`
@@ -47,19 +43,19 @@ const TERMINUS_WAIT := 0.5                  # ...for this share of the headway a
 const HIDDEN := 180.0                       # m from every player a bot car may come back in mid-route
 const EDGE_SEEN := 60.0                     # m from every player it may come back in at the map edge
 const CAR_LOOK := 0.5                       # s between looks for a way back in for the stowed cars
-const RANK_EVERY := 0.25                    # s between rankings of the bots by distance to the players
-const PHYSICS_BUDGET := 24                  # bots driving with the physics at most
-const BUDGET_STICK := 30.0                  # m: a bot on the physics ranks as this much nearer (no flapping)
-const WALK_NEAR := 40.0                     # m from a player on foot a bus's walkable hulls are in the physics
-const CROWDED_MS := 10.0                    # ms, slowest physics tick of each second (smoothed) beyond which the traffic
-const CALM_MS := 7.0                        # stops growing, until it is under this...
-const CALM_FOR := 5.0                       # ...for this many seconds
-const LOAD_SMOOTH := 0.002                  # per tick: about 8 s, so that a hitch now and then does not count
-const SNAP_CELL := 32.0                     # m, the snapshot's grid cells (near())
+const CELL := 50.0                          # m, the snapshot's grid (near())
+const CELL_KEY := 65536                     # grid key: x cell * CELL_KEY + y cell
+const GLIDE_SLOTS := 32                     # ticks ahead a glide step may be due (> GLIDE_TICKS_FAR × glide_scale)
+const LOAD_HIGH := 0.45                     # share of the tick the physics scripts may take...
+const LOAD_AFTER := 4.0                     # ...for this many s before the traffic thins out a level
+const LOAD_LOW := 0.2                       # under this share of the tick...
+const LOAD_RELAX := 30.0                    # ...for this many s it fills up again a level
+const LOAD_SETTLE := 10.0                   # s after the bots start before the load counts (spawns, first looks)
+const LOAD_SMOOTH := 0.02                   # per tick, of the load's moving average
+const LEVELS := [[1, 1.0], [2, 1.0], [2, 0.6], [2, 0.3]]    # [glide_scale, share of the bot cars out] per level
 
 var game: Node3D                            # game.gd
 var trains: TrainTraffic                    # the RER B (scripts/train_traffic.gd), on every peer
-var proxies: TrafficProxies                 # the far bots' look (scripts/traffic_proxies.gd)
 var bots: Array = []                        # BusBot: the buses, then the cars
 var lines: Array = []                       # bus_routes.json "lines"
 var routes := {}                            # route id -> route (bus_routes.json, car_routes.json)
@@ -69,9 +65,6 @@ var departures: Array = []                  # [line, route index, s of the next 
 var time := 0.0                             # s since the bots started
 var departed := {}                          # route id -> buses that set off from its start (tests)
 var send_cars := true                       # stowed bot cars sent out again (tests turn it off)
-var crowded := false                        # the physics tick is too slow: no bot sent out (see the header)
-var adaptive := true                        # the load watch on (benchmarks turn it off to compare like with like)
-var load_ms := 0.0                          # slowest physics tick of each second, smoothed (ms)
 # the vehicles out (not stowed) as of this physics tick, for the bots' looks around: footprint centre (pipeline x/y),
 # velocity (BusBot.velocity_of), heading, half length
 var snap_cars: Array = []
@@ -79,26 +72,54 @@ var snap_pos := PackedVector2Array()
 var snap_vel := PackedVector2Array()
 var snap_fwd := PackedVector2Array()
 var snap_reach := PackedFloat32Array()
+var snap_reach_max := 0.0                   # the longest half length among them
 var _snap_feet: Array = []                  # their footprints (snap_footprint), null until a bot looks at one
-var _snap_grid := {}                        # Vector2i cell -> Array of snapshot indices (near())
-var _snap_tick := -1                        # physics frame of the snapshot
+var _cells := {}                            # grid key -> Array of snapshot indices (near())
+# the players as of this physics tick (_players): game.player_spots(), the same and the camera, sections ridden
+var _players_frame := -1
+var _spots: Array = []
+var _eyes: Array = []
+var _ridden := {}                           # section -> players riding it (game.gd ridden_sections)
+var _glide_slots: Array = []                # per tick to come (physics frame % GLIDE_SLOTS): the gliding bots due then
+var tick_load := 0.0                        # share of the tick the physics scripts take, moving average (F3)
+var load_level := 0                         # index into LEVELS: 0 the full traffic
+var glide_scale := 1                        # BusBot glide intervals times this (LEVELS)
+var adaptive := false                       # thins out under load (see the header)
+var _tick_start := 0                        # usec, this tick's physics scripts started (0: not measured)
+var _over_t := 0.0                          # s with the load over LOAD_HIGH
+var _under_t := 0.0                         # s with it under LOAD_LOW
+var _car_count := 0                         # bot cars made (out or stowed)
 
 var _car_lengths := PackedFloat32Array()    # cumulative route lengths (picking routes by length)
 var _car_models: Array = []
 var _car_look := 0.0
-var _rank_t := 0.0
-var _calm_t := 0.0
 var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
-	proxies = TrafficProxies.new()
-	proxies.name = "Proxies"
-	add_child(proxies)
+	process_physics_priority = -1000000     # first of the physics scripts, TickEnd last: the load
 	trains = TrainTraffic.new()
 	trains.name = "Trains"
 	trains.game = game
 	add_child(trains)
+	var end := TickEnd.new()
+	end.name = "TickEnd"
+	end.traffic = self
+	end.process_physics_priority = 1000000
+	add_child(end)
+	_glide_slots.resize(GLIDE_SLOTS)
+	for k in GLIDE_SLOTS:
+		_glide_slots[k] = []
+	var env := OS.get_environment("PLATEAU_ADAPTIVE")
+	adaptive = env == "1" if env != "" else get_tree().current_scene == game
+
+
+## The last physics script of each tick: the load (see the header).
+class TickEnd extends Node:
+	var traffic: Node
+
+	func _physics_process(_delta: float) -> void:
+		traffic.tick_ended()
 
 
 func _process(_delta: float) -> void:
@@ -107,64 +128,98 @@ func _process(_delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	_snapshot()                             # (the trains look at the vehicles with or without bots)
 	if bots.is_empty():
+		_glide_due(delta)                   # a bot of its own (tools/test_races.gd) gliding over a stall
 		return
+	_tick_start = Time.get_ticks_usec()
 	time += delta
-	_watch_load(delta)
-	_rank_t -= delta
-	if _rank_t <= 0.0:
-		_rank_t = RANK_EVERY
-		rank()
-	for b: Object in bots:
-		if b.far:
-			b.drive(delta)                  # (their vehicles sleep: car.gd does not ask)
+	_snapshot()
 	for d: Array in departures:
 		if time >= d[2]:
 			var late: float = time - d[2]
 			if _depart(d[0], d[1], late) or late > float(d[0]["headway"]) * 0.9:
 				d[2] += float(d[0]["headway"])
 	_car_look -= delta
-	if _car_look <= 0.0 and send_cars and not crowded:
+	if _car_look <= 0.0:
 		_car_look = CAR_LOOK
-		var n := 0
-		for b: Object in bots:
-			if b.idle and is_same(b.line, car_line) and n < 4:
-				n += 1
-				_send_car(b, false)
+		_balance_cars()
+	_glide_due(delta)
+	if adaptive:
+		_adapt(delta)
 
 
-## Ranks the bots by distance to the nearest player: their physics budget (physics_ok), their walkable hulls, and
-## player_d / ridden for bus_bot.gd's choice between the physics and gliding.
-func rank() -> void:
-	var spots: Array = game.player_spots()
-	var feet: Array = game.player_spots(true)
-	var order: Array = []                   # [distance as ranked, bot]
+## Moves on the gliding bots due this tick (or before it: ticks the tree was paused for), BusBot glide_step.
+func _glide_due(delta: float) -> void:
+	var now := Engine.get_physics_frames()
+	var slot: Array = _glide_slots[now % GLIDE_SLOTS]
+	if slot.is_empty():
+		return
+	_glide_slots[now % GLIDE_SLOTS] = []
+	for b: Object in slot:
+		if b._due >= 0 and b._due <= now and is_instance_valid(b.car):
+			b.glide_step(delta)
+
+
+## TickEnd: this tick's share of the tick taken by the physics scripts, into the load.
+func tick_ended() -> void:
+	if _tick_start == 0:
+		return
+	var used := float(Time.get_ticks_usec() - _tick_start) / 1e6 * Engine.physics_ticks_per_second
+	_tick_start = 0
+	if time > LOAD_SETTLE:
+		tick_load = lerpf(tick_load, used, LOAD_SMOOTH)
+
+
+## A level thinner after LOAD_AFTER s over LOAD_HIGH, a level fuller after LOAD_RELAX s under LOAD_LOW (see the header).
+func _adapt(delta: float) -> void:
+	_over_t = _over_t + delta if tick_load > LOAD_HIGH else 0.0
+	_under_t = _under_t + delta if tick_load < LOAD_LOW else 0.0
+	var level := load_level
+	if _over_t > LOAD_AFTER and level < LEVELS.size() - 1:
+		level += 1
+	elif _under_t > LOAD_RELAX and level > 0:
+		level -= 1
+	if level != load_level:
+		_over_t = 0.0
+		_under_t = 0.0
+		set_load_level(level)
+
+
+## Traffic level `level` (index into LEVELS): how often the gliding bots move, how many bot cars are out
+## (_balance_cars).
+func set_load_level(level: int) -> void:
+	load_level = clampi(level, 0, LEVELS.size() - 1)
+	glide_scale = LEVELS[load_level][0]
+
+
+## Sends stowed bot cars out again (up to 4 tries at a time) while fewer than the traffic level allows are out; past
+## that, takes gliding ones nobody rides off the map (gliding: no player is near).
+func _balance_cars() -> void:
+	var out := 0
 	for b: Object in bots:
-		if b.state == BusBot.STOWED:
+		if not b.idle and is_same(b.line, car_line):
+			out += 1
+	var target := roundi(_car_count * float(LEVELS[load_level][1]))
+	var n := 0
+	for b: Object in bots:
+		if n >= 4 or out == target:
+			break
+		if not is_same(b.line, car_line):
 			continue
-		var p: Vector3 = b.centre()
-		b.player_d = b._player_distance(p, spots) if not spots.is_empty() else INF
-		b.ridden = not b.far and game.riders(b.car) > 0
-		if b.car.inside and not b.far:
-			b.car.set_walkable(b.ridden or b._player_distance(p, feet) < WALK_NEAR if not feet.is_empty() else b.ridden)
-		order.append([-INF if b.ridden else b.player_d - (BUDGET_STICK if not b.gliding else 0.0), b])
-	order.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
-	for k in order.size():
-		order[k][1].physics_ok = k < PHYSICS_BUDGET
+		if out < target and b.idle and send_cars:
+			n += 1
+			_send_car(b, false)
+			if not b.idle:
+				out += 1
+		elif out > target and not b.idle and b.gliding and riders(b.car) == 0:
+			n += 1
+			b._stow()
+			out -= 1
 
 
-## The physics ticks' time, smoothed: `crowded` over CROWDED_MS, back to calm under CALM_MS for CALM_FOR s.
-func _watch_load(delta: float) -> void:
-	load_ms = lerpf(load_ms, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0, LOAD_SMOOTH)
-	if not adaptive:
-		crowded = false
-	elif load_ms > CROWDED_MS:
-		crowded = true
-		_calm_t = 0.0
-	elif crowded and load_ms < CALM_MS:
-		_calm_t += delta
-		crowded = _calm_t < CALM_FOR
+## A gliding bot's next glide step, on physics frame `tick` (BusBot._schedule).
+func schedule_glide(bot: Object, tick: int) -> void:
+	_glide_slots[tick % GLIDE_SLOTS].append(bot)
 
 
 func _snapshot() -> void:
@@ -173,44 +228,86 @@ func _snapshot() -> void:
 	snap_vel.clear()
 	snap_fwd.clear()
 	snap_reach.clear()
-	_snap_grid.clear()
-	_snap_tick = Engine.get_physics_frames()
+	snap_reach_max = 0.0
+	_cells.clear()
 	for c: Node3D in game.cars:
 		if c.stowed:
 			continue
-		var p := BusBot.flat(BusBot.centre_of(c))
-		var cell := Vector2i(floori(p.x / SNAP_CELL), floori(p.y / SNAP_CELL))
-		if not _snap_grid.has(cell):
-			_snap_grid[cell] = []
-		_snap_grid[cell].append(snap_cars.size())
+		var xf: Transform3D = c.global_transform
+		var p := BusBot.flat(xf * c.extents_center)
+		var key := floori(p.x / CELL) * CELL_KEY + floori(p.y / CELL)
+		var cell: Array = _cells.get(key, [])
+		if cell.is_empty():
+			_cells[key] = cell
+		cell.append(snap_cars.size())
 		snap_cars.append(c)
 		snap_pos.append(p)
 		snap_vel.append(BusBot.velocity_of(c))
-		snap_fwd.append(BusBot.flat((c.pilot.far_xf.basis if c.dormant else c.global_basis).z).normalized())
+		snap_fwd.append(BusBot.flat(xf.basis.z).normalized())
 		snap_reach.append(c.half_extents.z)
+		snap_reach_max = maxf(snap_reach_max, c.half_extents.z)
 	_snap_feet.clear()
 	_snap_feet.resize(snap_cars.size())
 
 
-## Indices into the snapshot of the vehicles whose middle may be within `r` m of `p` (pipeline x/y): those of the grid
-## cells the circle touches.
+## Indices into the snapshot of the vehicles whose footprint centre may be within `r` m of `p` (pipeline x/y): those
+## in the grid cells the square around it touches.
 func near(p: Vector2, r: float) -> Array:
-	var out: Array = []
-	var x0 := floori((p.x - r) / SNAP_CELL)
-	var x1 := floori((p.x + r) / SNAP_CELL)
-	var y0 := floori((p.y - r) / SNAP_CELL)
-	var y1 := floori((p.y + r) / SNAP_CELL)
-	for x in range(x0, x1 + 1):
-		for y in range(y0, y1 + 1):
-			var cell: Variant = _snap_grid.get(Vector2i(x, y))
+	var out := []
+	for x in range(floori((p.x - r) / CELL), floori((p.x + r) / CELL) + 1):
+		for y in range(floori((p.y - r) / CELL), floori((p.y + r) / CELL) + 1):
+			var cell: Variant = _cells.get(x * CELL_KEY + y)
 			if cell != null:
 				out.append_array(cell)
 	return out
 
 
-## True when the snapshot is this tick's (taken before the bots and the trains run).
-func snapshot_fresh() -> bool:
-	return _snap_tick == Engine.get_physics_frames()
+## The players as of this physics tick, for every bot (_spots, _eyes, _ridden).
+func _players() -> void:
+	if _players_frame == Engine.get_physics_frames():
+		return
+	_players_frame = Engine.get_physics_frames()
+	_spots = game.player_spots()
+	_eyes = _spots.duplicate()
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() and game.mode != "server" else null
+	if cam:
+		_eyes.append(cam.global_position)
+	_ridden = game.ridden_sections()
+
+
+## True when a player (game.gd player_spots) is within `d` m of `p` (on the map, heights aside).
+func player_within(p: Vector3, d: float) -> bool:
+	_players()
+	for q: Vector3 in _spots:
+		if Vector2(q.x - p.x, q.z - p.z).length() < d:
+			return true
+	return false
+
+
+## Square of the distance on the map from `p` to the nearest player or the camera (INF with neither).
+func eye_distance_squared(p: Vector3) -> float:
+	_players()
+	var best := INF
+	for q: Vector3 in _eyes:
+		best = minf(best, Vector2(q.x - p.x, q.z - p.z).length_squared())
+	return best
+
+
+## The players riding vehicle `c` (game.gd riders), as of this physics tick.
+func riders(c: Node3D) -> int:
+	_players()
+	var n: int = _ridden.get(c, 0)
+	if c.trailer:
+		n += _ridden.get(c.trailer, 0)
+	return n
+
+
+## F3 (game.gd): the physics scripts' share of the tick, and the traffic level when thinned out; "" without bots.
+func stats_text() -> String:
+	if bots.is_empty():
+		return ""
+	return "scripts %d %% of the tick%s" % [roundi(tick_load * 100.0),
+			" · traffic thinned (level %d)" % load_level if load_level > 0 else ""]
 
 
 ## Footprint of snapshot vehicle k (BusBot.footprint), made once per tick however many bots look at it.
@@ -264,11 +361,18 @@ func stop_bots() -> Array:
 	snap_fwd.clear()
 	snap_reach.clear()
 	_snap_feet.clear()
-	_snap_grid.clear()
-	proxies.clear()
+	_cells.clear()
+	for k in GLIDE_SLOTS:
+		_glide_slots[k] = []
 	_car_lengths.clear()
 	_car_models = []
 	_car_look = 0.0
+	_car_count = 0
+	tick_load = 0.0
+	_tick_start = 0
+	_over_t = 0.0
+	_under_t = 0.0
+	set_load_level(0)
 	return out
 
 
@@ -356,7 +460,7 @@ func _depart(line: Dictionary, r: int, late: float) -> bool:
 				bot = b
 	var route: Dictionary = routes[line["routes"][r]]
 	if bot == null:
-		if count >= MAX_BUSES or crowded:
+		if count >= MAX_BUSES:
 			return false
 		bot = _new_bot(line, line["model"])
 		bot._stow()
@@ -389,6 +493,7 @@ func _start_cars(data: Dictionary) -> void:
 	car_line = {"ref": "car", "model": "", "routes": ids}
 	_car_models = data["models"]
 	var n := int(OS.get_environment("PLATEAU_CARS")) if OS.get_environment("PLATEAU_CARS") != "" else int(data["cars"])
+	_car_count = n
 	for k in n:
 		var bot := _new_bot(car_line, _car_models[_rng.randi() % _car_models.size()])
 		bot._stow()
@@ -432,7 +537,7 @@ func way_clear(bot: Object, d: float) -> bool:
 	for c: Node3D in game.cars:
 		if c == bot.car or c.stowed:
 			continue
-		var p := BusBot.flat(BusBot.centre_of(c))
+		var p := BusBot.flat(c.to_global(c.extents_center))
 		if p.distance_to(tip) > bot.nose + SPAWN_CLEAR + WAY_BEHIND + c.half_extents.z:
 			continue
 		var reach: float = c.half_extents.z
@@ -444,7 +549,4 @@ func way_clear(bot: Object, d: float) -> bool:
 
 
 func _player_within(p: Vector3, d: float) -> bool:
-	for q: Vector3 in game.player_spots():
-		if Vector2(q.x - p.x, q.z - p.z).length() < d:
-			return true
-	return false
+	return player_within(p, d)

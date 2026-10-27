@@ -153,7 +153,6 @@ var _host_label: Label                      # top right while hosting: the addre
 var _host_label_t := 0.0
 var _toast: Label                           # "X joined the game"...
 var _toast_t := 0.0
-var test_spots: Array = []                  # tools: pretend players' positions (player_spots), e.g. a LAN game spread out
 var _stats: Label                           # F3: frame rate, CPU and GPU times, network timings (net.gd debug_text)
 var _stats_t := 0.0
 var _stats_frames := 0                      # frames since the last F3 update, and their summed times
@@ -692,12 +691,13 @@ func _sample_stats(delta: float) -> void:
 	var scale := get_viewport().scaling_3d_scale
 	var size := Vector2i((Vector2(get_viewport().size) * scale).round())
 	var net_text := net.debug_text()                # the frame rate, then a line per player
+	var traffic_line := [traffic.stats_text()] if traffic.stats_text() != "" else []     # the bots' load
 	var fps := net_text.get_slice("
 ", 0)
 	_stats.text = "
 ".join(PackedStringArray([fps + " · %.1f ms%s" % [frame, " · " + bound if bound != "" else ""],
 			"physics %.1f · render CPU %.1f · GPU %.1f ms per frame" % [physics, render, gpu],
-			"3D %d × %d (%d %%) · %s · %d vehicles" % [size.x, size.y, roundi(scale * 100.0), quality, cars.size()]])) 			+ net_text.substr(fps.length())
+			"3D %d × %d (%d %%) · %s · %d vehicles" % [size.x, size.y, roundi(scale * 100.0), quality, cars.size()]] + traffic_line)) 			+ net_text.substr(fps.length())
 	_stats_t = 0.0
 	_stats_frames = 0
 	_stats_sum.fill(0.0)
@@ -842,6 +842,21 @@ func riders(car: Car) -> int:
 	return n
 
 
+## The sections players ride (a car, its rear section, an RER B car) with how many on each: riders() for every vehicle
+## at once (scripts/traffic.gd, each tick).
+func ridden_sections() -> Dictionary:
+	var out := {}
+	if mode != "server":
+		var mine: Node3D = riding if riding else player.carrier if is_instance_valid(player.carrier) else null
+		if mine:
+			out[mine] = 1
+	for r: RemotePlayer in net.avatars():
+		var s: Node3D = r.riding_in() if r.visible else null
+		if s:
+			out[s] = out.get(s, 0) + 1
+	return out
+
+
 ## Where the players are (global): on foot, or the vehicles they drive or sit in (`on_foot`: those on foot only). The
 ## player of a dedicated server does not count.
 func player_spots(on_foot := false) -> Array:
@@ -856,7 +871,6 @@ func player_spots(on_foot := false) -> Array:
 	for r: RemotePlayer in net.avatars():
 		if r.visible:
 			out.append(r.global_position)
-	out.append_array(test_spots)
 	if not on_foot and net.active:
 		for id: String in net.driver_of:
 			if net.driver_of[id] != 0 and net.driver_of[id] != net.me() and net.cars.has(id):

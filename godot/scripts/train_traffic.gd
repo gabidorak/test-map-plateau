@@ -13,7 +13,9 @@ extends Node
 ##   on its way is run from its start for its age (FILL_STEP s steps, the block signals respected).
 ## - Bots (scripts/train_bot.gd) drive them; this node gives each its look ahead: the other trains of its direction and
 ##   what is on the track (the players on foot, every vehicle out, projected on its route: distance along, offset from
-##   the track centre, height above the rails).
+##   the track centre, height above the rails). What is near the line is listed once a tick (_near_line, from
+##   traffic.gd's snapshot where it runs the bots) for every train's look and knocks. A train far from every player
+##   and the camera is posed every few ticks (POSE_NEAR, POSE_FAR).
 ## - Every peer: the lineside signals show the blocks' occupancy (S or the carré's two reds for an occupied block, A for
 ##   the one after, else VL: scripts/builder/rail_builder.gd's lamps); the departure screens at Lozère list the next two
 ##   trains of their platform; a train running into something this peer simulates knocks it aside (its own player:
@@ -39,6 +41,8 @@ const NEAR := 900.0                         # m: things farther from a train's f
 const DOORWAY_PLAYERS := 6.0                # m: players this close to a train may hold its doors
 const POSE_NEAR := 600.0                    # m: a train farther than this from every player is posed every POSE_FAR_TICKS
 const POSE_FAR_TICKS := 3
+const POSE_FAR := 1200.0                    # m: ...and farther than this every POSE_FARTHEST_TICKS
+const POSE_FARTHEST_TICKS := 12
 
 var game: Node3D                            # game.gd
 var services: Array = []                    # rail.json services
@@ -245,6 +249,7 @@ func _stow(tr: Node3D) -> void:
 func _physics_process(delta: float) -> void:
 	if services.is_empty():
 		return
+	var near_line = null                    # what is near the line (_near_line): made once a train runs or moves
 	if running:
 		time += delta
 		for k in services.size():
@@ -253,7 +258,6 @@ func _physics_process(delta: float) -> void:
 				departures[k] = departures[k] + headway if time - departures[k] < 1.0 else time + headway
 				_depart(k)
 		var doorway := _doorway_players()
-		var near_line = null                # only looked for when some train runs (not at a stop)
 		for tr: Node3D in trains:
 			if tr.stowed or not bots.has(tr):
 				continue
@@ -268,7 +272,7 @@ func _physics_process(delta: float) -> void:
 			if bot.is_done() or (bot.trip_t > MAX_TRIP and not _carries_player(tr)):
 				_stow(tr)
 	_set_pose_rates(_doorway_players())
-	_knock_things(delta)
+	_knock_things(delta, near_line)
 	_land_riders()
 	_signal_t += delta
 	if _signal_t >= SIGNAL_EVERY:
@@ -280,8 +284,9 @@ func _physics_process(delta: float) -> void:
 		_update_screens()
 
 
-## Trains far from every player (the camera too) are posed every POSE_FAR_TICKS ticks only: nobody sees them move,
-## and nothing simulated near them is in their way (bots far from the players glide through).
+## Trains far from every player (the camera too) are posed every POSE_FAR_TICKS ticks only (POSE_FARTHEST_TICKS farther
+## still): nobody sees them move, and nothing simulated near them is in their way (bots far from the players glide
+## through).
 func _set_pose_rates(players: Array) -> void:
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
 	var eyes: Array = players.duplicate()
@@ -290,13 +295,12 @@ func _set_pose_rates(players: Array) -> void:
 	for tr: Node3D in trains:
 		if tr.stowed or tr.cars.is_empty():
 			continue
-		var near := eyes.is_empty()         # a tool with no camera nor player: every tick
 		var mid: Vector3 = tr.route_point(tr.front - tr.length * 0.5)
+		var d2 := 0.0 if eyes.is_empty() else INF  # a tool with no camera nor player: every tick
 		for p: Vector3 in eyes:
-			if p.distance_squared_to(mid) < (POSE_NEAR + tr.length * 0.5) ** 2:
-				near = true
-				break
-		tr.pose_every = 1 if near else POSE_FAR_TICKS
+			d2 = minf(d2, p.distance_squared_to(mid))
+		tr.pose_every = 1 if d2 < (POSE_NEAR + tr.length * 0.5) ** 2 \
+				else POSE_FAR_TICKS if d2 < (POSE_FAR + tr.length * 0.5) ** 2 else POSE_FARTHEST_TICKS
 
 
 ## True when this peer's player rides train `tr`.
@@ -345,22 +349,34 @@ func _route_distance_su(k: int, su: Vector2) -> Variant:
 
 ## The players on foot and the vehicles near the line this tick: [global position, (s, u) on the centreline, half
 ## width]. Projected once per tick for every train; most vehicles are far from the line and cost one lookup.
+## The players on foot and the vehicles out near the line: [global position, (s, u) on the centreline (rail_map.gd
+## project()), half width, the vehicle or null]. The vehicles from traffic.gd's snapshot where it runs the bots (taken
+## this tick, their map positions at hand: one grid lookup each for those far from the line), else from game.cars.
 func _near_line() -> Array:
 	var out: Array = []
 	if game == null:
 		return out
 	for p: Vector3 in _people():
-		_add_near(out, p, 0.0)
+		_add_near(out, p, 0.0, null)
+	var traffic: Node = get_parent()
+	if not traffic.bots.is_empty():
+		var pos: PackedVector2Array = traffic.snap_pos
+		for k in pos.size():
+			if _rm.near(pos[k]):
+				var car: Node3D = traffic.snap_cars[k]
+				if is_instance_valid(car):
+					_add_near(out, car.global_position, 1.0, car)
+		return out
 	for car: Node3D in game.cars:
-		if is_instance_valid(car) and not car.stowed and not car.dormant:   # (a far bot: nobody near to see it)
-			_add_near(out, car.global_position, 1.0)
+		if is_instance_valid(car) and not car.stowed:
+			_add_near(out, car.global_position, 1.0, car)
 	return out
 
 
-func _add_near(out: Array, p: Vector3, half: float) -> void:
+func _add_near(out: Array, p: Vector3, half: float, car: Node3D) -> void:
 	var su: Vector2 = _rm.project(Vector2(p.x, -p.z))
 	if not is_nan(su.x):
-		out.append([p, su, half])
+		out.append([p, su, half, car])
 
 
 ## What is near the track ahead of `tr`, from `near_line` (_near_line()): [route distance, offset from the track
@@ -407,8 +423,9 @@ func _doorway_players() -> Array:
 	return out
 
 
-## A moving train running into this peer's player or a vehicle it simulates knocks it aside (see the header).
-func _knock_things(delta: float) -> void:
+## A moving train running into this peer's player or a vehicle it simulates knocks it aside (see the header). The
+## vehicles from `near_line` (_near_line(), made here if no train looked this tick).
+func _knock_things(delta: float, near_line: Variant) -> void:
 	for car: Node3D in _cleared.keys():
 		_cleared[car] -= delta
 		if _cleared[car] <= 0.0 or not is_instance_valid(car):
@@ -430,11 +447,14 @@ func _knock_things(delta: float) -> void:
 			if rd != null and rd.x < tr.front + 1.0 and rd.x > tr.front - tr.length and absf(rd.y) < 1.7 \
 					and absf(p.y - tr.route_point(rd.x).y) < 2.5:
 				_push_aside(tr, k, rd)
-		# vehicles simulated here (those near its front only: traffic.gd's snapshot grid when it is this tick's)
-		for car: Node3D in _cars_near(head, 14.0):
-			if car.stowed or car.dormant or car.remote or _cleared.has(car) or car.global_position.distance_to(head) > 12.0:
+		# vehicles simulated here
+		if near_line == null:
+			near_line = _near_line()
+		for n: Array in near_line:
+			var car: Node3D = n[3]
+			if car == null or car.stowed or car.remote or _cleared.has(car) or (n[0] as Vector3).distance_to(head) > 12.0:
 				continue
-			var cp: Vector3 = car.global_position
+			var cp: Vector3 = n[0]
 			var rc: Variant = route_distance(k, Vector2(cp.x, -cp.z))
 			if rc == null or rc.x > tr.front + 2.5 or rc.x < tr.front - 6.0 or absf(rc.y) > 2.6 \
 					or absf(cp.y - tr.route_point(rc.x).y) > 3.0:
@@ -448,17 +468,6 @@ func _knock_things(delta: float) -> void:
 			_set_clear(car, true)
 			_cleared[car] = KNOCK_CLEAR
 			knocks += 1
-
-
-## The vehicles whose middle may be within `r` m of global point p.
-func _cars_near(p: Vector3, r: float) -> Array:
-	var traffic: Node = get_parent()
-	if not traffic.has_method("snapshot_fresh") or not traffic.snapshot_fresh():
-		return game.cars
-	var out: Array = []
-	for k: int in traffic.near(Vector2(p.x, -p.z), r + 10.0):
-		out.append(traffic.snap_cars[k])
-	return out
 
 
 ## This peer's player in the train's way: put beside the track on the side they were on, moving off it.
