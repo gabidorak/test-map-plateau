@@ -64,6 +64,7 @@ const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const TRAIN_SEND_RATE := 10.0               # RER B train states per second (host)
 const IDLE_SEND_EVERY := 0.5                # s, states of vehicles at rest
 const FAR_SEND_EVERY := 3                   # vehicle sends between two of a bot gliding far from every player
+const REMOTE_SLEEP_EVERY := 3               # ticks between poses of a remote vehicle asleep far from the camera (car.gd)
 const MIN_DELAY := 0.02                     # s, bounds of the playback delay (Track.delay)
 const MAX_DELAY := 0.15
 const DELAY_MARGIN := 0.005                 # s
@@ -861,11 +862,18 @@ func _send(delta: float) -> void:
 func _play_back() -> void:
 	var now := _now()
 	var dt := get_physics_process_delta_time()
+	var cam := get_viewport().get_camera_3d()
+	var eye: Vector3 = cam.global_position if cam else game.player.global_position
+	var tick := Engine.get_physics_frames()
 	for net_id: String in _car_tracks:
 		var track: Track = _car_tracks[net_id]
 		if not track.is_empty():
+			var car := cars[net_id] as Car
+			car.update_remote_lod(eye)      # far from the eye: frozen STATIC, no cosmetic tick (car.gd)
+			if car.is_remote_asleep() and (tick + car.get_instance_id()) % REMOTE_SLEEP_EVERY != 0:
+				continue                    # asleep and far: it moves every REMOTE_SLEEP_EVERY ticks, like a gliding bot
 			var s := track.at(_playback_time(track, owner_of[net_id], now, dt))
-			(cars[net_id] as Car).apply_net_state(s[0], s[1], s[2])
+			car.apply_net_state(s[0], s[1], s[2])
 	for id: int in _player_tracks:
 		var track: Track = _player_tracks[id]
 		if not track.is_empty():

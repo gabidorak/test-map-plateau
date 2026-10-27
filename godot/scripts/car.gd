@@ -201,6 +201,8 @@ const BEAM_TILT := 0.04                     # rad down
 const BEAM_ENERGY := 14.0
 const BEAM_FADE := 140.0                    # m from the camera beyond which the beams fade out
 const FAR_DETAIL := 120.0                   # m from the camera beyond which a section is drawn as one mesh (_build_far)
+const REMOTE_SLEEP := 180.0                 # m from the eye beyond which a remote copy is frozen STATIC, runs nothing
+const REMOTE_WAKE := 140.0                  # m it must come back within to wake (hysteresis: no toggling at the edge)
 const CABIN_LIGHT := Color(0.88, 0.93, 1.0)      # a bus's cabin lights, cool white
 const FLOAT_BUOYANCY := 1.6                 # a dry hull's buoyancy fully under water, times its weight...
 const SUNK_BUOYANCY := 0.3                  # ...and once full of water
@@ -247,6 +249,7 @@ var rear_offset := Vector3.ZERO             # the rear section's origin in the c
 var extents_center := Vector3.ZERO          # centre of the half_extents box in the car frame (x, z)
 var net_id := ""                            # LAN games: the vehicle's id on every peer
 var remote := false                         # LAN games: simulated by another peer (set_remote)
+var _remote_asleep := false                 # LAN, remote: far from the eye, frozen STATIC and not ticked (update_remote_lod)
 var bells := 0                              # bell strikes so far (LAN: its parity tells the peers to ring)
 var controls := true                        # false while a menu is open: the driver's keys do nothing
 var hold := false                           # held still at a race start (scripts/races.gd): brakes on, no throttle
@@ -1454,9 +1457,8 @@ func set_stowed(on: bool) -> void:
 		else:
 			b.collision_layer = _stowed_layers.x
 			b.collision_mask = _stowed_layers.y
-		b.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
-		b.freeze = on or remote
 		b.visible = not on
+	_apply_remote_freeze()
 	# the walkable hulls too (a stowed bot stays where it vanished, where the next bus pulls up)
 	for hull: StaticBody3D in [inside, trailer.inside if trailer else null, _bellows_hull]:
 		if hull:
@@ -1477,6 +1479,7 @@ func set_remote(on: bool) -> void:
 	if on == remote:
 		return
 	remote = on
+	_remote_asleep = false
 	_net_bell = bells & 1 if on else -1
 	for b in bodies():
 		var lv := b.linear_velocity
@@ -1487,6 +1490,46 @@ func set_remote(on: bool) -> void:
 		if not on:
 			b.linear_velocity = lv
 			b.angular_velocity = av
+
+
+## LAN games, remote vehicle: puts it to sleep beyond REMOTE_SLEEP m of `eye` (the camera, or the player when there is
+## none), wakes it under REMOTE_WAKE m. Asleep: frozen STATIC (no wheel or contact callbacks), no cosmetic tick, no
+## hull transform forcing; apply_net_state still moves it, so it does not pop when it wakes. Called each tick before
+## posing it (net.gd _play_back).
+func update_remote_lod(eye: Vector3) -> void:
+	if not remote:
+		return
+	var d := eye.distance_squared_to(global_position)
+	if _remote_asleep:
+		if d < REMOTE_WAKE * REMOTE_WAKE:
+			_set_remote_asleep(false)
+	elif d > REMOTE_SLEEP * REMOTE_SLEEP:
+		_set_remote_asleep(true)
+
+
+func _set_remote_asleep(on: bool) -> void:
+	if on == _remote_asleep:
+		return
+	_remote_asleep = on
+	_net_pos = global_position                  # no speed spike from the gap the sleep left
+	_apply_remote_freeze()
+	if on:
+		audio.hush()
+
+
+## True while a remote copy is asleep (far from the eye: see update_remote_lod).
+func is_remote_asleep() -> bool:
+	return _remote_asleep
+
+
+## The bodies' freeze the way this copy needs it: STATIC asleep (cheap), KINEMATIC awake (posed by apply_net_state),
+## unfrozen when we simulate it (stowed still freezes it).
+func _apply_remote_freeze() -> void:
+	var mode := RigidBody3D.FREEZE_MODE_STATIC if _remote_asleep else RigidBody3D.FREEZE_MODE_KINEMATIC
+	for b in bodies():
+		b.freeze_mode = mode
+		b.freeze = remote or stowed
+		b.sleeping = false
 
 
 ## LAN games: this vehicle's state for the other peers: [pose, rear section pose, steering, pedal, flags (1 doors
@@ -1506,12 +1549,15 @@ func apply_net_state(a: Array, b: Array, w: float) -> void:
 	global_transform = _net_pose(a[0], b[0], w)
 	if trailer:
 		trailer.global_transform = _net_pose(a[1], b[1], w)
-		_update_bellows()
+		if not _remote_asleep:
+			_update_bellows()
 	# a moved node's children reach the physics server only once this tick's physics callbacks are over: the player
-	# following the vehicle (posed here first, net.gd) would walk against its walkable hulls a step behind
-	for hull: StaticBody3D in [inside, trailer.inside if trailer else null, _bellows_hull]:
-		if hull:
-			hull.force_update_transform()
+	# following the vehicle (posed here first, net.gd) would walk against its walkable hulls a step behind (nothing
+	# stands in a copy asleep far from every camera)
+	if not _remote_asleep:
+		for hull: StaticBody3D in [inside, trailer.inside if trailer else null, _bellows_hull]:
+			if hull:
+				hull.force_update_transform()
 	steering = lerpf(a[2], b[2], minf(w, 1.0))
 	_throttle = b[3]
 	var flags: int = b[4]
@@ -1928,6 +1974,8 @@ func _update_drift(drifting: bool, v: float, delta: float) -> void:
 
 ## Remote vehicle (net.gd poses it, bellows included): lamps, steering wheel, doors and engine sound from its states.
 func _remote_process(delta: float) -> void:
+	if _remote_asleep:
+		return                              # far from every camera: lamps, doors and sound can wait
 	_update_indicator(delta)
 	_set_brake_lamps(_remote_braking)
 	var along := (global_position - _net_pos).dot(global_basis.z)     # the pedal back and not rolling forwards
