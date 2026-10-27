@@ -8,11 +8,11 @@ extends Control
 ## unpacked at the first start of each build (scripts/delta.gd, Delta.installed()); the packs no launcher uses any more
 ## are deleted. While the updater updates in the foreground (its own full-screen page), nothing is unpacked or loaded:
 ## the game restarts on the new build, or carries on once the update is skipped. Editor runs and the other exports start
-## main.tscn directly.
+## loading.tscn directly, which loads main.tscn behind its loading screen.
 
 const Delta = preload("res://scripts/delta.gd")
 const UiStyle = preload("res://scripts/ui_style.gd")
-const GAME := "res://scenes/main.tscn"
+const GAME := "res://scenes/loading.tscn"
 
 var _data: Dictionary                       # Delta.installed()
 var _thread: Thread

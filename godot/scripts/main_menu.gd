@@ -320,6 +320,14 @@ func _save() -> void:
 	cfg.save(SETTINGS)
 
 
+## Gives the keyboard back to the menu (game.gd hid it while a LAN game started, then the join or host failed).
+func focus_default() -> void:
+	if _join_page.visible:
+		(_address if _address.text == "" else _join_button).grab_focus()
+	else:
+		_solo_button.grab_focus()
+
+
 func _show_join_page(on: bool) -> void:
 	if _busy:
 		return
@@ -398,6 +406,8 @@ func set_status(text: String, warn := false, busy := false) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if not visible or _busy:
+		return
 	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_ESCAPE \
 			and _join_page.visible:
 		_show_join_page(false)
