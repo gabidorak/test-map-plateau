@@ -41,8 +41,7 @@ extends VehicleBody3D
 ## steering, horn and indicators from it instead of the keys (pilot.drive), on the peer simulating it; its states tell
 ## the others (bot_driven: the driver look-alike shows, nobody can take the wheel). A bot bus waiting to come back in
 ## at the map edge is `stowed`: hidden, out of the physics, everywhere. A parked vehicle at rest sleeps (out of the
-## solver, its script idle) until something touches or pushes it, or someone gets in (_sleep_parked). A bot far from
-## every player is `dormant` (set_dormant): hidden, out of the physics and idle, traffic_proxies.gd drawing it.
+## solver, its script idle) until something touches or pushes it, or someone gets in (_sleep_parked).
 ## Damage (the armed biplane's rounds, scripts/plane_guns.gd): each vehicle has `health` (HEALTH for a 1,200 kg car,
 ## more for heavier ones); hits only count on the peer simulating it (damage), the others follow its states. Under
 ## half of it, grey smoke comes out of the engine; at 0 it is `broken`: a boom and a ball of fire, the engine dies, the
@@ -51,6 +50,8 @@ extends VehicleBody3D
 ## Headlights (set_headlights; L for the driver, game.gd): a spot light for the beam (casting shadows from the vehicle
 ## the player drives), glowing lamps, the tail lamps dimly lit and a walkable vehicle's cabin lights. Bots drive with
 ## them on at night (`night`, scripts/night.gd).
+## Far from the camera (FAR_DETAIL m) each section is drawn as one mesh of one material instead of its dozens of
+## surfaces (_build_far): the doors shut and the wheels still, the head and tail lamps glowing with the headlights.
 ## Water (scripts/water.gd, _water_physics): a vehicle driven or fallen into a lake splashes, floats nose down a moment
 ## (its hull's buoyancy is more than its weight while dry), fills over FLOOD_TIME and settles on the bed; the water drags
 ## on it, and its engine drowns (no drive) once the water is half way up its body. It drains again on land.
@@ -199,6 +200,7 @@ const BEAM_ANGLE := 32.0                    # degrees from the axis to the edge 
 const BEAM_TILT := 0.04                     # rad down
 const BEAM_ENERGY := 14.0
 const BEAM_FADE := 140.0                    # m from the camera beyond which the beams fade out
+const FAR_DETAIL := 120.0                   # m from the camera beyond which a section is drawn as one mesh (_build_far)
 const CABIN_LIGHT := Color(0.88, 0.93, 1.0)      # a bus's cabin lights, cool white
 const FLOAT_BUOYANCY := 1.6                 # a dry hull's buoyancy fully under water, times its weight...
 const SUNK_BUOYANCY := 0.3                  # ...and once full of water
@@ -328,11 +330,9 @@ var _net_seen := false                      # LAN, remote vehicle: a state came 
 var pilot: Object                           # bot driver (scripts/bus_bot.gd) on the peer simulating it, or null
 var bot_driven := false                     # LAN, remote vehicle: a bot drives it (its states say so)
 var stowed := false                         # hidden and out of the physics (a bot bus off the map, set_stowed)
-var dormant := false                        # a bot far from every player: hidden, out of the physics, idle (set_dormant)
 var flooded := 0.0                          # 0 dry .. 1 full of water (_water_physics)
 var in_water := 0.0                         # share of the body's height under water now
 var _rest_t := 0.0                          # s parked at rest (_sleep_parked)
-var _walkable := true                       # walkable hulls in the physics, unless stowed (set_walkable)
 var _braking := false                       # brake lamps on (the driver's or the pilot's pedal)
 var _stowed_layers := Vector2i.ZERO         # collision layer and mask of the bodies before stowing
 var headlights := false
@@ -345,6 +345,10 @@ const BOT_COLOR := Color(0.16, 0.3, 0.55)   # the bot drivers' uniform
 static var _soot: StandardMaterial3D        # drawn over a broken vehicle's meshes
 static var night := false                   # scripts/night.gd: bots drive with their headlights on
 static var _lamp_shader: Shader             # the model's own lamp surfaces, lit (_build_headlights)
+static var _far_meshes := {}                # model (+ "/rear") -> its sections' far mesh, shared (null: none)
+static var _far_material: ShaderMaterial
+static var _far_images := {}                # albedo texture -> its Image, decompressed, while merging (_far_colours)
+var _far: Array[MeshInstance3D] = []        # the sections' far meshes (_build_far)
 
 
 ## Name of `model` for menus: its spec's label, else the model name capitalized ("sedan" -> "Sedan").
@@ -435,6 +439,7 @@ func setup(model: String) -> void:
 	add_child(audio)
 
 	_build_chase_camera(maxf(camera_distance, half_extents.z * 2.1), box.end.y + 0.5)
+	_build_far()
 
 
 ## Chase camera: a top-level pivot `height` above the car origin, with a spring arm `length` long (the mouse wheel
@@ -1054,6 +1059,8 @@ func set_headlights(on: bool) -> void:
 		lamp.material_override = _lamp_mats["head"][1 if on else 0]
 	for e: Array in _lit_surfaces:
 		(e[0] as MeshInstance3D).set_surface_override_material(e[1], e[2] if on else null)
+	for far in _far:
+		far.set_instance_shader_parameter("lit", on)
 	_set_brake_lamps(_braking or _remote_braking)
 
 
@@ -1085,18 +1092,212 @@ func _lamp_box(p: Vector3, size: Vector3) -> MeshInstance3D:
 	bm.size = size
 	mi.mesh = bm
 	mi.position = p + Vector3(0.0, 0.0, signf(p.z) * 0.01)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # flush with the body
 	add_child(mi)
 	return mi
 
 
 ## Transform of `n` in the car's frame (the car is not in the tree yet, so no global transforms).
 func _in_car(n: Node3D) -> Transform3D:
+	return _in_frame(n, self)
+
+
+## Transform of `n` in the frame of its ancestor `root`.
+static func _in_frame(n: Node3D, root: Node3D) -> Transform3D:
 	var t := n.transform
 	var p := n.get_parent() as Node3D
-	while p and p != self:
+	while p and p != root:
 		t = p.transform * t
 		p = p.get_parent() as Node3D
 	return t
+
+
+## Each section's far mesh: shown from FAR_DETAIL m from the camera, where the section's own meshes (its `details`:
+## their visibility parent) hide. One surface and one material (a draw, and one per shadow split) instead of up to
+## ~100 for a bus: every visible mesh of the section merged as it is posed now (doors shut, wheels at rest), coloured
+## per vertex from its surfaces' materials and textures; the head and tail lamps glow with the headlights (the
+## instance uniform `lit`). Made once per model. Not on a headless peer, which draws nothing. Meshes added after setup
+## (a subclass's beacons) stay as they are.
+func _build_far() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	for body in bodies():
+		var details := _far_details(body)
+		var key := model_name + ("/rear" if body != self else "")
+		if not _far_meshes.has(key):
+			_far_meshes[key] = _merge_far(body, details)
+		if _far_meshes[key] == null:
+			continue
+		var far := MeshInstance3D.new()
+		far.name = "Far"
+		far.mesh = _far_meshes[key]
+		far.material_override = _far_shader()
+		far.visibility_range_begin = FAR_DETAIL
+		far.visibility_range_begin_margin = 5.0
+		body.add_child(far)
+		_far.append(far)
+		for g in details:
+			g.visibility_parent = g.get_path_to(far)
+	_far_images.clear()                     # (decompressed textures: only needed while merging)
+
+
+## The meshes of section `body` that the far mesh stands in for: all but the bellows (it bends) and those of the other
+## section or under a top-level node.
+func _far_details(body: VehicleBody3D) -> Array[GeometryInstance3D]:
+	var out: Array[GeometryInstance3D] = []
+	for g: GeometryInstance3D in body.find_children("*", "GeometryInstance3D", true, false):
+		if not (g is MeshInstance3D) or (g as MeshInstance3D).mesh == _bellows_mesh:
+			continue
+		var n: Node = g
+		while n != body and not (n as Node3D).top_level:
+			n = n.get_parent()
+		if n == body:
+			out.append(g)
+	return out
+
+
+## The far mesh of section `body` from its `details` (see _build_far): the visible ones but the driver and passenger
+## look-alikes, the steering wheel and the indicators; null when no mesh could be read. The vertex colour's alpha tells
+## the surface: 1 paint, 0 a headlight, 0.5 a tail or brake lamp.
+func _merge_far(body: VehicleBody3D, details: Array[GeometryInstance3D]) -> ArrayMesh:
+	var skip := {}
+	for n in [_driver_dummy, _passenger, _steering_wheel]:
+		if n:
+			skip[n] = true
+	for lamp in _lamps[1] + _lamps[-1]:
+		skip[lamp] = true
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colours := PackedColorArray()
+	var indices := PackedInt32Array()
+	for g in details:
+		var mi := g as MeshInstance3D
+		if mi.mesh == null or not _shown_in(mi, body, skip):
+			continue
+		var xf := _in_frame(mi, body)
+		var nxf := Transform3D(xf.basis.inverse().transposed(), Vector3.ZERO)
+		for k in mi.mesh.get_surface_count():
+			if mi.mesh is ArrayMesh and (mi.mesh as ArrayMesh).surface_get_primitive_type(k) != Mesh.PRIMITIVE_TRIANGLES:
+				continue                    # (a PrimitiveMesh: triangles)
+			var arrays := mi.mesh.surface_get_arrays(k)
+			var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			if v.is_empty():
+				continue
+			var base := verts.size()
+			verts.append_array(xf * v)
+			var n: Variant = arrays[Mesh.ARRAY_NORMAL]
+			if n is PackedVector3Array and (n as PackedVector3Array).size() == v.size():
+				normals.append_array(nxf * (n as PackedVector3Array))
+			else:
+				var up := PackedVector3Array()
+				up.resize(v.size())
+				up.fill(Vector3.UP)
+				normals.append_array(up)
+			var mat := mi.get_active_material(k)
+			var kind := 1.0
+			if mi in _head_lamps or (mat and mat.resource_name == "headlight"):
+				kind = 0.0
+			elif mi in _brake_lamps or (mat and mat.resource_name == "taillight"):
+				kind = 0.5
+			colours.append_array(_far_colours(mat, arrays[Mesh.ARRAY_TEX_UV], v.size(), kind))
+			var ind: Variant = arrays[Mesh.ARRAY_INDEX]
+			if ind is PackedInt32Array and not (ind as PackedInt32Array).is_empty():
+				for i: int in ind:
+					indices.append(base + i)
+			else:
+				for i in v.size():
+					indices.append(base + i)
+	if verts.is_empty():
+		return null
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_COLOR] = colours
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+## True when `mi` shows in section `body` (it and its parents visible, none of them in `skip`).
+static func _shown_in(mi: Node3D, body: Node3D, skip: Dictionary) -> bool:
+	var n: Node = mi
+	while n != body:
+		if skip.has(n) or not (n as Node3D).visible:
+			return false
+		n = n.get_parent()
+	return true
+
+
+## Linear vertex colours for a surface of `count` vertices with material `mat` and texture coordinates `uv`: its albedo
+## colour times its texture there (the toy models' colours are in their palette textures), glass darkened; alpha `kind`.
+static func _far_colours(mat: Material, uv: Variant, count: int, kind: float) -> PackedColorArray:
+	var out := PackedColorArray()
+	out.resize(count)
+	var c := Color(0.6, 0.6, 0.6)
+	var img: Image = null
+	var bm := mat as BaseMaterial3D
+	if bm:
+		c = bm.albedo_color
+		if bm.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
+			c = c.darkened(0.5)
+		if bm.albedo_texture and uv is PackedVector2Array and (uv as PackedVector2Array).size() == count:
+			img = _far_image(bm.albedo_texture)
+	elif mat is ShaderMaterial and (mat as ShaderMaterial).get_shader_parameter("albedo") is Color:
+		c = (mat as ShaderMaterial).get_shader_parameter("albedo")
+	c.a = 1.0
+	if img == null:
+		var lin := c.srgb_to_linear()
+		lin.a = kind
+		out.fill(lin)
+		return out
+	var size := Vector2(img.get_size())
+	var uvs: PackedVector2Array = uv
+	for i in count:
+		var t := uvs[i]
+		var px := Vector2i(int(fposmod(t.x, 1.0) * size.x), int(fposmod(t.y, 1.0) * size.y)).clamp(Vector2i.ZERO,
+				Vector2i(size) - Vector2i.ONE)
+		var lin := (img.get_pixelv(px) * c).srgb_to_linear()
+		lin.a = kind
+		out[i] = lin
+	return out
+
+
+## The image of texture `tex`, decompressed, for sampling colours (null when it can not be read).
+static func _far_image(tex: Texture2D) -> Image:
+	if not _far_images.has(tex):
+		var img := tex.get_image()
+		if img and img.is_compressed() and img.decompress() != OK:
+			img = null
+		if img and img.has_mipmaps():
+			img.clear_mipmaps()
+		_far_images[tex] = img
+	return _far_images[tex]
+
+
+## The far meshes' material: vertex colours, the lamps glowing when the instance's `lit` is on.
+static func _far_shader() -> ShaderMaterial:
+	if _far_material == null:
+		var shader := Shader.new()
+		shader.code = """shader_type spatial;
+render_mode cull_disabled;
+uniform vec4 head : source_color;
+uniform vec4 tail : source_color;
+instance uniform bool lit = false;
+void fragment() {
+	ALBEDO = COLOR.rgb;
+	ROUGHNESS = 0.55;
+	if (lit && COLOR.a < 0.75) {
+		EMISSION = COLOR.a < 0.25 ? head.rgb * 5.0 : tail.rgb * 1.5;
+	}
+}
+"""
+		_far_material = ShaderMaterial.new()
+		_far_material.shader = shader
+		_far_material.set_shader_parameter("head", HEADLIGHT)
+		_far_material.set_shader_parameter("tail", Color(0.9, 0.05, 0.05))
+	return _far_material
 
 
 func _ready() -> void:
@@ -1216,22 +1417,6 @@ func _reset_camera() -> void:
 	set_cab_view(cab_view)
 
 
-## A bot far from every player (bus_bot.gd far): hidden, its bodies frozen and out of the physics (their processing off:
-## CollisionObject3D DISABLE_MODE_REMOVE), its scripts, sounds and lamps idle, and not moved: traffic_proxies.gd draws
-## it where its bot is. Back (off): as it was, frozen; the bot places it and lets it go.
-func set_dormant(on: bool) -> void:
-	if on == dormant:
-		return
-	dormant = on
-	visible = not on
-	for b in bodies():
-		b.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
-		b.freeze = true
-	process_mode = Node.PROCESS_MODE_DISABLED if on else Node.PROCESS_MODE_INHERIT
-	if on:
-		audio.hush()
-
-
 ## LAN games: someone on another peer drives (on) or nobody does: shows the driver look-alike in `color`.
 func show_driver(on: bool, color := Color(1, 0.55, 0.2)) -> void:
 	set_driver_color(BOT_COLOR if is_bot() else color)
@@ -1273,24 +1458,12 @@ func set_stowed(on: bool) -> void:
 		b.freeze = on or remote
 		b.visible = not on
 	# the walkable hulls too (a stowed bot stays where it vanished, where the next bus pulls up)
-	_update_hulls()
+	for hull: StaticBody3D in [inside, trailer.inside if trailer else null, _bellows_hull]:
+		if hull:
+			hull.process_mode = Node.PROCESS_MODE_DISABLED if on else Node.PROCESS_MODE_INHERIT
 	audio.engine_on = not on and (is_bot() or driving or has_doors) and not broken
 	if on:
 		audio.hush()                            # it gets no audio.update() while stowed
-
-
-## The walkable hulls in the physics (on) or out of it: traffic.gd keeps a bot bus's out while no player is near, as
-## they cost every time the bus moves.
-func set_walkable(on: bool) -> void:
-	if on != _walkable:
-		_walkable = on
-		_update_hulls()
-
-
-func _update_hulls() -> void:
-	for hull: StaticBody3D in [inside, trailer.inside if trailer else null, _bellows_hull]:
-		if hull:
-			hull.process_mode = Node.PROCESS_MODE_INHERIT if _walkable and not stowed else Node.PROCESS_MODE_DISABLED
 
 
 func set_driver_color(color: Color) -> void:
@@ -1323,8 +1496,6 @@ func net_state() -> Array:
 	var flags := (1 if doors_open else 0) | (2 if driving or pilot else 0) | (4 if _braking else 0) \
 			| (8 if audio.horn else 0) | (16 if bells & 1 else 0) | (32 if pilot else 0) | (64 if stowed else 0) \
 			| (128 if headlights else 0)
-	if dormant:                             # where its bot is
-		return [pilot.far_xf, pilot.far_rear_xf, steering, _throttle, flags, indicator, health]
 	return [global_transform, trailer.global_transform if trailer else Transform3D(), steering, _throttle, flags, indicator,
 			health]
 
@@ -1521,8 +1692,7 @@ func set_doors(open: bool) -> void:
 	if not has_doors or open == doors_open:
 		return
 	doors_open = open
-	if not dormant:                         # (a sleeping player would play it on waking)
-		audio.play("door_open" if open else "door_close")
+	audio.play("door_open" if open else "door_close")
 
 
 ## Forward speed in m/s (negative when reversing).

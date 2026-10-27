@@ -172,6 +172,50 @@ Measured, before (HEAD 41b598f, in a worktree) and after, run back to back. Prob
 
 The RER B now adds ~0.6 ms per tick (performance), against ~2.2 ms before. In power-saver the tick still uses more than half the 60 Hz budget, so C5, C4 and C2 remain the next levers.
 
+### 2.4 Bot traffic in power-saver, 2026-10-24
+
+After commit 73ebfcb, turning bot traffic on in GNOME *power-saver* still gave **15–16 fps** in the real game (126 bots now that the map has grown, plus the RER B). The tick was split with temporary timers, headless and in the real game.
+
+**Where the time went (power-saver, headless, 73ebfcb): 14.4 ms per tick.**
+
+| Part | ms |
+|---|---:|
+| Wheel ray casts and suspension of the ~120 gliding bots (frozen KINEMATIC bodies still run VehicleBody3D's per-tick callback) | 5.7 |
+| Bot scripts: looks ahead 1.3, glide poses 1.0, speed plans 0.5, glide checks 0.4, the rest 1.0 | 4.2 |
+| RER B scripts (every moving train looped over every vehicle for knocks; every vehicle projected on the line each tick) | 1.9 |
+| Jolt step, snapshot and the rest | 2.6 |
+
+In the real game the scripts cost ~1.3× more (the CPU shares its power budget with the GPU; there the RER B alone took 3.0 ms per tick), and the bots added 3–5 ms of render CPU per frame: 21 meshes per bot (84 surfaces for a 12 m bus), none of them with a visibility range. At ~14 ms per tick, Godot runs the maximum 3 ticks per frame and the frame takes ~50 ms.
+
+**What was done** (numbered as proposed to the user):
+1. Gliding bots are frozen STATIC instead of KINEMATIC (`bus_bot.gd _freeze`): no wheel or contact physics. Bots held still near a player stay kinematic.
+2. A gliding bot moves every 3 ticks within 450 m of every player and the camera, every 6 within 900 m, every 12 beyond (`GLIDE_MID`, `GLIDE_FAR`). A step never runs past the next place it must stop at (stop, red light, give-way line, end of route, the vehicle ahead; `_hold_at`), and the vehicle ahead is dead-reckoned between looks.
+3. RER B: what is near the line is listed once a tick from traffic.gd's snapshot (one grid lookup per vehicle, `rail_map.near()`), and the knock checks use that list instead of looping over every vehicle for every train. Trains beyond 1.2 km from every player and the camera are posed every 12 ticks (`POSE_FAR`).
+4. Bot looks: the snapshot puts the vehicles on a 50 m grid (`traffic.near()`), used by the look ahead and the junction check. A vehicle's footprint is projected only around where its centre projects (it is skipped when that is out of reach).
+5. Gliding bots are off the per-node tick: `traffic.gd` keeps 32 slots of the ticks to come and moves only the bots due (`BusBot.glide_step`); car.gd runs only for bots on the physics. The players' spots, the camera and the ridden sections are worked out once per tick (`traffic.player_within`, `eye_distance_squared`, `riders`; `game.ridden_sections()`).
+6. Far meshes (`car.gd _build_far`): beyond 120 m from the camera each section is one merged mesh with one material (vertex colours sampled from each surface's material and texture), the detailed meshes hiding behind it as their visibility parent; the head and tail lamps glow at night through an instance uniform. Built once per model, not on headless peers. Lamp boxes no longer cast shadows.
+7. Safety net (`traffic.gd _adapt`): the physics scripts' share of the tick (`tick_load`, timed from Traffic, first by priority, to TickEnd, last) drives a traffic level. After 4 s over 45 % it thins out a level (far bots move half as often, then 60 %, then 30 % of the bot cars out, stowed out of sight); after 30 s under 20 % it fills up a level. On in the game and the dedicated server, off in the tools (`PLATEAU_ADAPTIVE=1|0`). F3 shows the share and the level.
+
+**Measured**, before (73ebfcb in a worktree) and after, back to back:
+
+| | 73ebfcb | now |
+|---|---:|---:|
+| headless tick, performance (126 bots + RER B) | 6.07 ms | **2.23 ms** |
+| headless tick, power-saver | 14.1 ms | **5.75 ms** |
+| real game `--solo`, power-saver, fps (user's settings, Low, windowed) | 15.7 | **82–84** |
+| render CPU per frame, same runs | ~7.5 ms | 3–4 ms |
+| draw calls of 6 vehicles at 128 m (windowed check) | 720 | 18 |
+
+In the real game in power-saver the scripts now take ~40 % of the tick, under the 45 % that thins the traffic out, so the full traffic stays. The steps alone, measured on the way (performance, headless): STATIC freeze 6.3 → 3.8 ms; then glide rate by distance −0.9 ms; narrower footprint projection −0.3 ms.
+
+**Tradeoffs:** far bots (450 m+) visibly move at 10 or 5 Hz if watched through the fly camera; vehicles beyond 120 m lose their wheel spin, open doors, blinking indicators and material detail (one draw instead of up to ~100); a static glider does not push a physics vehicle at the 200–240 m hand-over edge. Merging a model's far mesh costs ~3 ms for a toy car and 15–24 ms for a bus (~75 ms for all the bot models, while they load), and 16–110 ms the first time a realistic car or truck is spawned (once per model per session); the biplanes, the horse and the jet ski have no far mesh.
+
+**Not done:**
+- Parallel bot decisions (`WorkerThreadPool`): the remaining bot scripts are ~1 ms of the power-saver tick. It would need a snapshot → decide → apply split, because Godot's thread guards forbid reading other nodes' transforms off the main thread. Gain ~0.5–1 ms.
+- LAN clients still pose every remote vehicle as a frozen KINEMATIC body each tick, which probably runs the same wheel callbacks (unmeasured).
+- With players spread over the map (dedicated server, LAN) fewer bots glide, so 1, 2 and 6 help less there. The thinning still applies.
+- F3's "physics" figure multiplies `TIME_PHYSICS_PROCESS` (Godot's worst tick of the last second) by the ticks per frame, so it can read more than the whole frame. The new "scripts % of the tick" line is a mean.
+
 ---
 
 ## 3. GPU (Iris Xe, Low, 1080p)
@@ -421,7 +465,7 @@ It is worth a look with a debug build of the engine, in case the real game can r
 ## 7. Suggested order
 
 1. **C1, C3, C6, C7, C10, C8.** Small changes, no visible tradeoff. They target the power-saver collapse and help the VPS server. Re-measure with `probe_traffic.gd` in both power profiles. **Done 2026-10-17, see 2.3.**
-2. **C5, then C4.** The remaining per-tick scans.
+2. **C5, then C4.** The remaining per-tick scans. **Done 2026-10-24, with C2 (c) and G6, see 2.4.**
 3. **G1, G2, G3a, G3b.** Low preset and catalogue flags: about 5–8 ms on the iGPU in the worst views (est., not measured together).
 4. **H1 + H2** (preset choice), then **C2** (traffic density) if weak CPUs still struggle.
 5. Bigger jobs, as needed: G4 (kit LOD), G3c (far super-cells), G5 (merging or occlusion culling), G6 (vehicle far shells), loading and VRAM.

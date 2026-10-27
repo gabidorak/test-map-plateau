@@ -113,6 +113,11 @@ func rail_top(s: float, u: float, track_offset: float) -> float:
 	return level(s) + maxf(0.0, c * side)
 
 
+## False when map point p is too far from the line for project() to find it (one grid lookup).
+func near(p: Vector2) -> bool:
+	return _reach.has(Vector2i(floori(p.x / BUCKET), floori(p.y / BUCKET)))
+
+
 ## (s, u) of map point p: distance along the centreline and offset to its left. s is clamped to the line.
 func project(p: Vector2) -> Vector2:
 	var key := Vector2i(floori(p.x / BUCKET), floori(p.y / BUCKET))
