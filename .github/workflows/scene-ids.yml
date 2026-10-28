@@ -1,0 +1,18 @@
+name: Scene ids
+
+# The "Scene ids" check of build.yml on every other branch, so a scene that would break the delta updates shows before
+# the pull request (tools/check_scene_ids.py). main, tags and pull requests run it in build.yml, before the exports.
+on:
+  push:
+    branches-ignore: [main]
+
+jobs:
+  scene-ids:
+    name: Scene ids
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check scene ids
+        working-directory: godot
+        run: python3 tools/check_scene_ids.py .

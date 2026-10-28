@@ -17,56 +17,22 @@ env:
   GODOT_RELEASE: stable
 
 jobs:
-  # Scene ids: the delta updates (scripts/delta.gd) need every scene to export the same bytes twice, the game.pck on
-  # one export and the patch (--export-patch, a second one) on the next. A node without a unique_id gets a random one
-  # at each export, and the patch then does not rebuild the data (build 46: scenes/loading.tscn without ids, no patch
-  # published, every player downloaded the full file). tools/check_scene_ids.py checks the sources' ids, then runs
-  # the two exports here and compares the scenes' conversions: appended to the export jobs, it would break their
-  # cache of the project's imported assets (the export then leaves pack/ alone).
+  # Scene ids: a .tscn node without unique_id gets a random id at each export, so --export-patch (a second export, the
+  # "Data patch" step) converts it to other bytes than this build's game.pck and the patch fails its check (build 46:
+  # hand-written scenes/loading.tscn). Seconds of Python, so the exports wait for it.
   scene-ids:
     name: Scene ids
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Godot and export templates
-        run: |
-          base="https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}"
-          name="Godot_v${GODOT_VERSION}-${GODOT_RELEASE}"
-          curl -fsSL -o godot.zip "$base/${name}_linux.x86_64.zip"
-          curl -fsSL -o templates.tpz "$base/${name}_export_templates.tpz"
-          unzip -q godot.zip
-          sudo install -m 755 "${name}_linux.x86_64" /usr/local/bin/godot
-          dir="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}"
-          mkdir -p "$dir"
-          unzip -q templates.tpz -d templates
-          mv templates/templates/* "$dir/"
-          rm -rf godot.zip templates.tpz templates
-
-      - name: Cache import data
-        uses: actions/cache@v4
-        with:
-          path: godot/.godot
-          key: godot-import-${{ env.GODOT_VERSION }}-${{ hashFiles('godot/assets/**', 'godot/project.godot') }}
-          restore-keys: godot-import-${{ env.GODOT_VERSION }}-
-
-      # The id check first: it needs nothing imported, and names the .tscn to fix when one node has no id.
       - name: Check scene ids
         working-directory: godot
         run: python3 tools/check_scene_ids.py .
 
-      - name: Import project
-        working-directory: godot
-        run: godot --headless --path . --import
-
-      # The "Data patch" step exports the game a second time (--export-patch) and shipped build 46 a patch that
-      # this build's data did not match, so every player downloaded the full file. Two exports here, compared.
-      - name: Export the game twice and compare the scenes
-        working-directory: godot
-        run: python3 tools/check_scene_ids.py --export .
-
   export:
     name: Export (${{ matrix.preset }})
+    needs: scene-ids
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -178,20 +144,31 @@ jobs:
       # the latest release's data, unpacked from its Linux executable. Published on the "store" release, but only when
       # it turns that data into exactly this build's game.pck (tools/verify_patch.gd): --export-patch exports the game
       # a second time, and pack/ (the packed executables' manifest and launcher id by now) is no game data.
-      # The scenes must be the same in both (tools/check_scene_ids.py --patch) before the patch is worth checking:
-      # one that differs sends players to the full download, which this stops at the patch that would do it.
+      # No patch means every player downloads the whole game, so this fails the build (nothing is released) unless the
+      # push's last commit message says "[full update]" (an engine upgrade, say): then the release goes out without one.
       - name: Data patch
         if: github.event_name == 'push' && matrix.preset == 'Linux'
         working-directory: godot
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          FULL_UPDATE: ${{ contains(github.event.head_commit.message, '[full update]') }}
         run: |
+          fail() {
+            if [ "$FULL_UPDATE" = true ]; then
+              echo "::warning::$1 (\"[full update]\" in the commit message: released without a patch)"
+              exit 0
+            fi
+            echo "::error::$1: not released, players would get the full download (\"[full update]\" in a commit message releases anyway)"
+            exit 1
+          }
           prev=$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name || true)
-          if [ -z "$prev" ] || ! gh release download "$prev" -p plateau-map-linux.x86_64 -D "$RUNNER_TEMP/prev"; then
+          if [ -z "$prev" ]; then
             echo "No previous release to patch from"
             exit 0
           fi
+          gh release download "$prev" -p plateau-map-linux.x86_64 -D "$RUNNER_TEMP/prev" \
+              || fail "Could not download $prev's Linux executable to patch from"
           python3 -I tools/pck_tool.py unpack-exe "$RUNNER_TEMP/prev/plateau-map-linux.x86_64" "$RUNNER_TEMP/prev.pck"
           from=$(python3 -I tools/pck_tool.py content-id "$RUNNER_TEMP/prev.pck")
           to=$(python3 -I tools/pck_tool.py content-id "$RUNNER_TEMP/game.pck")
@@ -200,17 +177,14 @@ jobs:
             exit 0
           fi
           mv pack "$RUNNER_TEMP/pack-aside"
-          godot --headless --path . --export-patch Linux "$RUNNER_TEMP/patch.pck" --patches "$RUNNER_TEMP/prev.pck"
+          exported=true
+          godot --headless --path . --export-patch Linux "$RUNNER_TEMP/patch.pck" --patches "$RUNNER_TEMP/prev.pck" \
+              || exported=false
           mv "$RUNNER_TEMP/pack-aside" pack
-          if ! python3 tools/check_scene_ids.py --patch "$RUNNER_TEMP/game.pck" "$RUNNER_TEMP/patch.pck"; then
-            echo "::error::The patch's scenes differ from the game's: not published, players would get the full download"
-            exit 0
-          fi
-          if ! godot --headless --path . --script res://tools/verify_patch.gd -- "$RUNNER_TEMP/prev.pck" \
-              "$RUNNER_TEMP/patch.pck" "$RUNNER_TEMP/game.pck" "$RUNNER_TEMP/merged.pck"; then
-            echo "::error::The data patch does not rebuild this build's data: not published, players get the full download"
-            exit 0
-          fi
+          $exported || fail "The data patch export failed"
+          godot --headless --path . --script res://tools/verify_patch.gd -- "$RUNNER_TEMP/prev.pck" \
+              "$RUNNER_TEMP/patch.pck" "$RUNNER_TEMP/game.pck" "$RUNNER_TEMP/merged.pck" \
+              || fail "The data patch does not rebuild this build's data from $prev's"
           mv "$RUNNER_TEMP/patch.pck" "$RUNNER_TEMP/info/patch.pck"
           echo "{\"from\": \"$from\", \"to\": \"$to\", \"prev\": \"$prev\"}" > "$RUNNER_TEMP/info/patch.json"
           ls -l "$RUNNER_TEMP/info"
@@ -239,9 +213,7 @@ jobs:
 
   release:
     name: Release
-    # A scene whose nodes lack their unique_id publishes no data patch: its players would all download the full file.
-    # Releasing waits for the check (it runs beside the exports), so a regression blocks the next build instead.
-    needs: [export, scene-ids]
+    needs: export
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -272,6 +244,8 @@ jobs:
 
       - name: Collect release assets
         if: steps.guard.outputs.skip != '1'
+        env:
+          FULL_UPDATE: ${{ contains(github.event.head_commit.message, '[full update]') }}
         run: |
           mkdir release
           mv "artifacts/plateau-map-windows/Plateau Map.exe" release/plateau-map-windows.exe
@@ -288,11 +262,17 @@ jobs:
               "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$(jq -r .launcher "$info")" "$(jq -r .data "$info")" \
               > release/update.json
           cat release/update.json
-          # every platform must export the same data, else its players never find a patch path (full downloads)
+          # every platform must export the same data, else its players never find a patch path (full downloads):
+          # not released then, as in the "Data patch" step, unless the commit message says "[full update]"
           for p in windows windows-arm64 macos; do
             id=$(jq -r .data "artifacts/plateau-map-$p-info/info.json")
-            [ "$id" = "$(jq -r .data "$info")" ] \
-                || echo "::error::The $p data ($id) is not the Linux data: its players always get the full download"
+            [ "$id" = "$(jq -r .data "$info")" ] && continue
+            if [ "$FULL_UPDATE" = true ]; then
+              echo "::warning::The $p data ($id) is not the Linux data: its players get the full download"
+            else
+              echo "::error::The $p data ($id) is not the Linux data: not released, its players would get the full download"
+              exit 1
+            fi
           done
           ls -l release
 
