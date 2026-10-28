@@ -112,6 +112,7 @@ func setup(model: String) -> void:
 	name = "Horse_" + model.replace("-", "_")
 	mass = MASS
 	max_speed = GALLOP
+	pose_asleep = true                      # LAN: its gait follows how fast its pose moves (_measure_motion)
 	camera_distance = 6.0
 	_configure_body(self)
 	set_meta("knocks_props", false)
