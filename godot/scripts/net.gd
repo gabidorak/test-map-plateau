@@ -110,6 +110,7 @@ var _train_send_t := 0.0                    # s since the last train states (hos
 var _idle_t := 0.0
 var _pending_drive := ""                    # net id of the vehicle we asked to drive
 var _connect_t := -1.0                      # s since connecting, -1 when not waiting
+var _welcome_left := {}                     # client, while joining: net id -> the host's snapshot entry not made yet
 var _pings := {}                            # client: peer id -> its round trip to the host (ms), from the host
 var _ping_t := 0.0
 var _water_out := {}                        # "net id|section" -> [owner, impulse, weighted offset, weight, seconds]
@@ -257,6 +258,7 @@ func leave() -> void:
 	active = false
 	_connect_t = -1.0
 	_pending_drive = ""
+	_welcome_left.clear()
 	_clock_offset = NAN
 	for id: int in _remotes.keys():
 		_remove_remote(id)
@@ -358,7 +360,9 @@ func _refused(reason: String) -> void:
 			Updater.pretty(tag) if tag != "" else "an unversioned build"])
 
 
-## Client: the host's players, vehicles, what is bent or knocked over there, and its game mode.
+## Client: the host's players, vehicles, what is bent or knocked over there, and its game mode. Under game.gd's
+## loading overlay the vehicles are made a few per frame (a hundred bots froze the window for a second or more); the
+## game is on meanwhile, so the vehicles parked, taken off or changing hands then are kept track of (_welcome_left).
 @rpc("authority", "call_remote", "reliable")
 func _welcome(all: Dictionary, snapshot: Array, broken: Array, mode_id: String) -> void:
 	game.set_game_mode(mode_id)             # Main/Mode first: the mode's own messages follow this one
@@ -366,11 +370,23 @@ func _welcome(all: Dictionary, snapshot: Array, broken: Array, mode_id: String) 
 	for id: int in players:
 		if id != me():
 			_add_remote(id)
-	for c: Array in snapshot:
-		_make_car(c[0], c[1], c[2], c[3], c[4])
 	game.breakables.apply_net_snapshot(broken)
 	active = true
 	_connect_t = -1.0
+	var pacer: RefCounted = game.loading_pacer("Parking the host's vehicles…", 0.75, 0.95)
+	_welcome_left.clear()
+	for c: Array in snapshot:
+		_welcome_left[c[0]] = c
+	for c: Array in snapshot:
+		if not _welcome_left.has(c[0]):
+			continue                        # taken off the map meanwhile
+		c = _welcome_left[c[0]]
+		_welcome_left.erase(c[0])
+		_make_car(c[0], c[1], c[2], c[3], c[4])
+		if pacer and pacer.due():
+			await pacer.wait()
+			if not active:
+				return                      # left meanwhile
 	joined.emit()
 
 
@@ -602,6 +618,7 @@ func forget_car(car: Car) -> void:
 func _remove_cars(ids: PackedStringArray) -> void:
 	var gone := []
 	for id in ids:
+		_welcome_left.erase(id)
 		if cars.has(id):
 			gone.append(cars[id])
 	game.remove_vehicles(gone)
@@ -672,6 +689,9 @@ func _drive_refused(net_id: String, driver_id: int) -> void:
 func _car_control(net_id: String, owner_id: int, driver_id: int) -> void:
 	var car: Car = cars.get(net_id)
 	if car == null:
+		if _welcome_left.has(net_id):       # not made yet (joining): made with its new owner and driver
+			_welcome_left[net_id][2] = owner_id
+			_welcome_left[net_id][3] = driver_id
 		return
 	owner_of[net_id] = owner_id
 	driver_of[net_id] = driver_id

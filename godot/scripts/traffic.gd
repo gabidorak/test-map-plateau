@@ -328,18 +328,19 @@ static func light(t: float, phase: float) -> int:
 	return 0 if c < GREEN else (1 if c < AMBER else 2)
 
 
-## Starts the bot buses and cars (solo, host, dedicated server).
-func start_bots() -> void:
+## Starts the bot buses and cars (solo, host, dedicated server); with `pacer` (scripts/pacer.gd) a few per frame,
+## under game.gd's loading overlay.
+func start_bots(pacer: RefCounted = null) -> void:
 	_rng.randomize()
 	var data: Variant = _read(ROUTES)
 	if data != null:
 		lines = data["lines"]
 		routes = data["routes"]
 		for line: Dictionary in lines:
-			_start_line(line)
+			await _start_line(line, true, pacer)
 	var cars: Variant = _read(CAR_ROUTES)
 	if cars != null:
-		_start_cars(cars)
+		await _start_cars(cars, pacer)
 
 
 ## Stops the bots: returns their vehicles, for game.gd to take off the map (on every peer). start_bots starts afresh.
@@ -390,7 +391,7 @@ static func _read(path: String) -> Variant:
 # ---------------------------------------------------------------- buses
 
 ## The line's departures, and (`fill`) its buses on the way as if it had been running for a while.
-func _start_line(line: Dictionary, fill := true) -> void:
+func _start_line(line: Dictionary, fill := true, pacer: RefCounted = null) -> void:
 	var ids: Array = line["routes"]
 	var h := float(line["headway"])
 	var first := fposmod(float(line.get("phase", 0.0)), 1.0) * h      # the next departure, s from now
@@ -406,6 +407,8 @@ func _start_line(line: Dictionary, fill := true) -> void:
 				break
 			_spawn_bus(line, at[0], at[1])
 			k += 1
+			if pacer and pacer.due():
+				await pacer.wait()
 
 
 ## Where a bus that left the start of route `r` `elapsed` s ago is: [route index, s], or [] once off the map.
@@ -479,7 +482,7 @@ func _depart(line: Dictionary, r: int, late: float) -> bool:
 
 # ---------------------------------------------------------------- cars
 
-func _start_cars(data: Dictionary) -> void:
+func _start_cars(data: Dictionary, pacer: RefCounted = null) -> void:
 	var ids: Array = data["routes"].keys()
 	var total := 0.0
 	for id: String in ids:
@@ -498,6 +501,8 @@ func _start_cars(data: Dictionary) -> void:
 		var bot := _new_bot(car_line, _car_models[_rng.randi() % _car_models.size()])
 		bot._stow()
 		_send_car(bot, true)
+		if pacer and pacer.due():
+			await pacer.wait()
 
 
 ## Sends stowed car `bot` out on a random route: mid-way out of the players' sight (anywhere at the start), else at
