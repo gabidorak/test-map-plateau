@@ -70,6 +70,9 @@ extends Node3D
 ## (scripts/modes/sandbox_mode.gd) is all of the above; Escape from Plateau (scripts/escape/escape_mode.gd) is a co-op
 ## survival night: zombies, survivors to carry to a rescue helicopter, weapons.
 
+signal world_staged                         # the loader has put the whole world in the tree (see `staged`)
+signal set_up                               # _ready has done all but placing the player: the loader lets it run
+
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const WorldQuery = preload("res://scripts/world_query.gd")
@@ -98,10 +101,13 @@ const Night = preload("res://scripts/night.gd")
 const Races = preload("res://scripts/races.gd")
 const Modes = preload("res://scripts/modes/modes.gd")
 const LoadingScreen = preload("res://scripts/loading_screen.gd")
+const Loader = preload("res://scripts/loading_scene.gd")
+const Pacer = preload("res://scripts/pacer.gd")
 const WATER_SHOVE := 0.7                    # m/s a full-power water packet shoves a player along the jet
 const ENTER_RANGE := 3.0                    # metres from the car body
 const KILL_MARGIN := 20.0                   # m under the lowest ground where a falling player is put back
 const LOAD_MIN_SHOW := 0.7                  # s the loading overlay stays up, even when hosting starts at once
+const LOAD_BUDGET_MS := 12.0                # ms of vehicle setting up per frame while the overlay is up (Pacer)
 const JET_SKI_REACH := 200.0                # m: the jet-ski is parked on water this near the player...
 const JET_SKI_ROOM := 4.0                   # ...with this much water round it...
 const JET_SKI_LAKE := 300.0                 # ...in a body of water this big (m²): no fountain basins
@@ -153,9 +159,11 @@ var nickname := "Player"
 var color := MainMenu.COLORS[0]
 var menu: MainMenu                          # welcome menu, while it is up
 var pause: PauseMenu
-var loading: LoadingScreen                  # full-screen overlay while a LAN game starts or the menu is rebuilt
+var loading: LoadingScreen                  # full-screen overlay while a game starts
+var staged := false                         # in the tree before its world (the loader): _ready waits for world_staged
 var _loading_started := 0.0                 # Time.get_ticks_msec() / 1000.0 when the overlay went up
 var _loading_menu_shown := false            # the overlay hid the welcome menu; show it again on failure
+var _loading_hid_3d := false                # the overlay turned the 3D view off (scripts/loading_scene.gd _hide_3d)
 var _returning_to_menu := false             # back_to_menu is under way (pause menu and the host's exit can coincide)
 var _pause_mouse := Input.MOUSE_MODE_VISIBLE
 var _args := {}                             # command line options after "--"
@@ -181,6 +189,8 @@ var _outdated_t := 0.0                      # dedicated server: s since a newer 
 
 
 func _ready() -> void:
+	if staged:
+		await world_staged
 	# the map's valleys (Lozère, Massy) lie below the player's default fall-out depth: jumping there put it back
 	var ground_min: Variant = world_root.get_meta("world", {}).get("ground_min")
 	if ground_min != null:
@@ -200,6 +210,8 @@ func _ready() -> void:
 	traffic.name = "Traffic"
 	traffic.game = self
 	add_child(traffic)
+	if staged:
+		await get_tree().process_frame      # (the loader's screen moves on: the trains have read the whole line)
 	net.message.connect(_show_toast)
 	net.message.connect(func(text: String) -> void: chat.add("", Color.WHITE, text))
 	net.chat.connect(_on_chat)
@@ -262,6 +274,7 @@ func _ready() -> void:
 		_open_main_menu()
 	else:
 		player.camera.current = true
+	set_up.emit()
 	await get_tree().physics_frame
 	spawn_at(spawn_xy, deg_to_rad(spawn_yaw_deg))
 	if welcome:
@@ -316,46 +329,71 @@ func _loading_wanted() -> bool:
 	return get_tree().current_scene == self
 
 
-## Puts the full-screen loading overlay (scripts/loading_screen.gd) above the menu, hiding the menu so it cannot take
-## clicks or keys while a LAN game starts. `fraction` is the bar's first figure (0..1).
-func _show_loading(status: String, fraction := 0.0) -> void:
+## Fades the full-screen loading overlay (scripts/loading_screen.gd) in over the menu, which takes no click (the
+## overlay stops the mouse) nor key (the focus is taken from it) meanwhile, and is hidden once the overlay is opaque,
+## when this returns. `fraction` is the bar's first figure (0..1), `up_to` where it may creep to until the next one.
+func _show_loading(status: String, fraction := 0.0, up_to := -1.0) -> void:
 	if loading:
-		loading.set_status(status)
-		loading.set_progress(fraction)
+		_update_loading(status, fraction, up_to)
 		return
 	var layer := CanvasLayer.new()
 	layer.name = "Loading"
 	layer.layer = 50
 	add_child(layer)
 	loading = LoadingScreen.new()
-	loading.fade_in = false                 # opaque at once: the step that follows can block for a moment
 	layer.add_child(loading)
 	_loading_started = Time.get_ticks_msec() / 1000.0
-	loading.set_status(status)
-	loading.set_progress(fraction)
-	if menu and menu.visible:
-		menu.visible = false
-		_loading_menu_shown = true
-	# A hidden menu button can keep the GUI focus: Enter or Space would press it again while the game starts.
+	_update_loading(status, fraction, up_to)
+	# A menu button keeping the GUI focus: Enter or Space would press it again while the game starts.
 	var focus := get_viewport().gui_get_focus_owner()
 	if focus:
 		focus.release_focus()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	await get_tree().create_timer(LoadingScreen.FADE_TIME).timeout
+	if loading and menu and menu.visible:
+		menu.visible = false
+		_loading_menu_shown = true
+	if loading and not get_viewport().disable_3d:
+		get_viewport().disable_3d = true    # nothing drawn under it: shorter frames, the work done sooner
+		_loading_hid_3d = true
 
 
 ## What the overlay says now; `fraction` < 0 keeps the bar where it is.
-func _update_loading(status: String, fraction := -1.0) -> void:
+func _update_loading(status: String, fraction := -1.0, up_to := -1.0) -> void:
 	if loading == null:
 		return
 	loading.set_status(status)
 	if fraction >= 0.0:
-		loading.set_progress(fraction)
+		loading.set_progress(fraction, up_to)
 
 
-## Keeps the overlay up for at least LOAD_MIN_SHOW (no flash), then fades it out and frees it.
+## The overlay over the menu while this peer sets its vehicles up, and the Pacer spreading that over frames (the
+## overlay keeps moving); null when the scene is not the game played (the tools): all at once, as before.
+func _start_pacer(status: String) -> Pacer:
+	if not _loading_wanted():
+		return null
+	await _show_loading(status, 0.05, 0.12)
+	return Pacer.new(get_tree(), LOAD_BUDGET_MS)
+
+
+## net.gd, joining: a Pacer for the host's vehicles while the overlay says `status`, or null (all at once) without it.
+func loading_pacer(status: String, fraction: float, up_to: float) -> Pacer:
+	if loading == null:
+		return null
+	_update_loading(status, fraction, up_to)
+	return Pacer.new(get_tree(), LOAD_BUDGET_MS)
+
+
+## Keeps the overlay up for at least LOAD_MIN_SHOW (no flash) and a few frames of the game drawn behind it (the
+## first ones compile the shaders of what just came in), then fades it out and frees it.
 func _finish_loading() -> void:
 	if loading == null:
 		return
+	if _loading_hid_3d:
+		get_viewport().disable_3d = false   # the shaders of what came in compile under the overlay
+		_loading_hid_3d = false
+	for i in 3:
+		await get_tree().process_frame
 	var left := LOAD_MIN_SHOW - (Time.get_ticks_msec() / 1000.0 - _loading_started)
 	if left > 0.0:
 		await get_tree().create_timer(left).timeout
@@ -401,57 +439,62 @@ func allows(feature: String) -> bool:
 	return game_mode == null or game_mode.allows(feature)
 
 
+## Plays alone. The loading overlay covers the menu while the world's vehicles, bots and trains are put in, a few
+## per frame (it took seconds in one go, with the window frozen on the menu).
 func start_solo() -> void:
+	var pacer: Pacer = await _start_pacer("Getting the plateau ready…")
 	mode = "solo"
 	set_game_mode(mode_id)
 	if allows("races"):
 		races.start_hosting()
 	_begin()
-	_start_world()
+	await _start_world(pacer)
 	game_mode.begin()
+	if pacer:
+		_update_loading("Ready", 1.0)
+		await _finish_loading()
 
 
-## Solo, hosting, dedicated server: the vehicles and trains this peer starts for everyone, as the game mode allows.
-func _start_world() -> void:
+## Solo, hosting, dedicated server: the vehicles and trains this peer starts for everyone, as the game mode allows;
+## with `pacer`, spread over frames under the loading overlay.
+func _start_world(pacer: Pacer = null) -> void:
 	if debug_cars and allows("debug_cars"):
+		_update_loading("Parking a few cars next to you…", 0.08, 0.15)
 		for i in 4:
 			spawn_car_near_player()
-	_stock_showrooms()
+			if pacer and pacer.due():
+				await pacer.wait()
+	_update_loading("Polishing the showroom cars…", 0.15, 0.3)
+	await _stock_showrooms(pacer)
 	if bus_bots and allows("bot_traffic"):
-		traffic.start_bots()
-	_start_trains()
-
-
-func _start_trains() -> void:
+		_update_loading("Sending the buses and cars out…", 0.3, 0.8)
+		await traffic.start_bots(pacer)
 	if train_bots and allows("trains"):
-		traffic.trains.start()
+		_update_loading("Running the RER B…", 0.8, 0.97)
+	await _start_trains(pacer)
+
+
+func _start_trains(pacer: Pacer = null) -> void:
+	if train_bots and allows("trains"):
+		await traffic.trains.start(pacer)
 
 
 ## Starts a LAN game hosted here: the server first, so the cars parked at start get their network ids. The loading
-## overlay covers the menu while the server starts and the world's vehicles, bots and trains are put in.
+## overlay covers the menu while the server starts and the world's vehicles, bots and trains are put in (as solo).
 func start_host() -> void:
-	var overlay := _loading_wanted()
-	if overlay:
-		_show_loading("Starting the game on your network…", 0.1)
-		await get_tree().process_frame
+	var pacer: Pacer = await _start_pacer("Starting the game on your network…")
 	var err := net.host(nickname, color, int(_args.get("port", Net.PORT)))
 	if err != "":
 		_on_join_failed(err)
 		return
 	mode = "host"
-	if overlay:
-		_update_loading("Preparing the world…", 0.35)
-		await get_tree().process_frame
 	set_game_mode(mode_id)
 	if allows("races"):
 		races.start_hosting()
 	_begin()
-	if overlay:
-		_update_loading("Waking the traffic up…", 0.6)
-		await get_tree().process_frame
-	_start_world()
+	await _start_world(pacer)
 	game_mode.begin()
-	if overlay:
+	if pacer:
 		_update_loading("Ready", 1.0)
 		await _finish_loading()
 
@@ -499,16 +542,13 @@ func _watch_updates(delta: float) -> void:
 ## Connects to a LAN game; _on_joined starts playing once the host has sent its players and vehicles. The loading
 ## overlay stays up from the click until the host's world is here, covering the wait and the snapshot it sends.
 func start_join(address: String, port: int) -> void:
-	var overlay := _loading_wanted()
-	if overlay:
-		_show_loading("Connecting to %s:%d…" % [address, port], 0.15)
-		await get_tree().process_frame
+	if _loading_wanted():
+		await _show_loading("Connecting to %s:%d…" % [address, port], 0.1, 0.4)
 	var err := net.join(address, port, nickname, color)
 	if err != "":
 		_on_join_failed(err)
 		return
-	if overlay:
-		_update_loading("Waiting for the host to send the world…", 0.45)
+	_update_loading("Waiting for the host to send the world…", 0.4, 0.75)
 	if menu:
 		menu.set_status("Connecting to %s:%d…" % [address, port], false, true)
 
@@ -516,8 +556,7 @@ func start_join(address: String, port: int) -> void:
 func _on_joined() -> void:
 	net.discovery.stop()
 	mode = "client"
-	if loading:
-		_update_loading("Joining the game…", 0.8)
+	_update_loading("Joining the game…", 0.95, 0.99)
 	_begin()
 	# a step aside per player, so newcomers do not all land in the same spot
 	spawn_at(spawn_xy + Vector2(1.2 * (net.me() % 5 - 2), 0.0), deg_to_rad(spawn_yaw_deg))
@@ -544,9 +583,10 @@ func _on_join_failed(reason: String) -> void:
 		back_to_menu(reason)
 
 
-## Leaves the game (closing it for everyone when hosting) and restarts the scene on the welcome menu, showing
-## `reason` there. The loading overlay covers the scene reload (the menu's flight over the world has to be set up
-## again); the reason waits in MainMenu.notice, which survives the reload.
+## Leaves the game (closing it for everyone when hosting) and starts the scene again on the welcome menu, showing
+## `reason` there. The loader (scripts/loading_scene.gd) does it behind its screen, a slice per frame: this scene
+## freed, a new one put in the tree (a plain reload froze the window for seconds). The reason waits in
+## MainMenu.notice, which outlives the scene.
 func back_to_menu(reason := "") -> void:
 	if _returning_to_menu:
 		return
@@ -557,12 +597,9 @@ func back_to_menu(reason := "") -> void:
 	if not _loading_wanted():
 		get_tree().reload_current_scene()  # instanced by a tool: no screen, as before
 		return
-	_show_loading("Back to the main menu…", 0.0)
-	if loading:
-		loading.set_indeterminate()        # the reload reports no progress
-	await get_tree().process_frame
-	await get_tree().process_frame         # the overlay has been drawn before the reload takes the main thread
-	get_tree().reload_current_scene()
+	var loader := Loader.new()
+	loader.old_scene = self
+	get_tree().root.add_child(loader)
 
 
 ## From the welcome menu into the game.
@@ -871,11 +908,11 @@ func spawn_car_near_player(model := "") -> Car:
 
 
 ## Host (or solo): the showrooms' display cars missing from their podiums (scripts/dealership.gd).
-func _stock_showrooms() -> void:
+func _stock_showrooms(pacer: Pacer = null) -> void:
 	if not showroom_cars or not allows("showrooms"):
 		return
 	for s in get_tree().get_nodes_in_group("showroom"):
-		s.stock(self)
+		await s.stock(self, pacer)
 
 
 ## `model` parked at `xf` (+Z forward, on the ground: a showroom podium), the footprint centred there.

@@ -23,12 +23,14 @@ below), then
 - **Join a game**: lists the games announced on the network with their game mode (click one), or type the host's
   address and port. You play the host's mode.
 
-A loading screen covers the start of the game, the moment a LAN game is hosted or joined, and the return to the main
-menu: the generated world is large, and the vehicles, bots, trains and the host's snapshot take a moment to set up,
-which used to freeze the window with nothing on it. It shows the game's name, what is happening, a progress bar where
-the loader can report one, and a changing tip; the orbit keeps moving while a long read reports no new progress. A
-failed start leaves its error and a Try again button on it; a host that cannot be reached returns to the menu with the
-reason.
+A loading screen covers the start of the game, a game started solo, hosted or joined, and the return to the main menu:
+the plateau drawn as a transit map from the game's own routes (the bot cars' roads, the RER B and the four bus lines with
+their stops and stations), with buses and trains running along it, what is happening, a progress bar and a changing tip.
+The work behind it never holds the window for long: the world goes into the scene a slice per frame (its bodies' shapes
+enabled by batches, the ground map read on a worker thread), the old game is freed a slice per frame on the way back to
+the menu, and the vehicles, bots, trains and the host's vehicles (when joining) are set up a few per frame. The steps
+still slower than a frame can be listed with `PLATEAU_LOAD_TRACE=1`. A failed start leaves its error and a Try again
+button on it; a host that cannot be reached returns to the menu with the reason.
 
 In a LAN game everyone sees the other players (with their nickname and colour) and the vehicles they park and drive,
 and can walk in a bus someone else drives; vehicles stop against the other players. Trees bent and poles knocked down
@@ -162,7 +164,7 @@ cd godot
 godot --headless --path . --import
 godot --headless --path . --script res://tools/build_world.gd     # godot/world/ -> scenes/generated/neighborhood.tscn
 godot --headless --path . --script res://tools/check_world.gd   # no satellite image, no hole in the ground mesh
-godot --headless --path . --script res://tools/test_loading.gd  # the loading screen: status, progress, error and Try again, close
+godot --headless --path . --script res://tools/test_loading.gd  # the loading screen, its map, the pacer; the loader puts the game in the tree by slices and back to the menu
 godot --headless --fixed-fps 60 --path . --script res://tools/test_play.gd  # picker, walking, walls, boundary, kerbs
 godot --headless --fixed-fps 60 --path . --script res://tools/test_cars.gd  # debug cars: park, get in, drive, get out; bus doors, signals, walking inside while it moves; articulated bus turning, reversing, walking through the joint
 godot --headless --fixed-fps 60 --path . --script res://tools/test_breakables.gd  # a car bends a thin tree and knocks over a sign pole, lamp, gate, hydrant, bench, bike rack; a hydrant geyser and its repair

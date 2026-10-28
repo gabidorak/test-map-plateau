@@ -60,7 +60,7 @@ func _process(delta: float) -> void:
 
 
 ## Parks the display cars missing from their podiums (never parked, or cleared off the map): game.gd, host side.
-func stock(g: Node) -> void:
+func stock(g: Node, pacer: RefCounted = null) -> void:
 	game = g
 	parked.resize(cars.size())
 	for k in cars.size():
@@ -68,6 +68,8 @@ func stock(g: Node) -> void:
 			continue
 		var c: Dictionary = cars[k]
 		parked[k] = g.park_vehicle(c["model"], c["xf"])
+		if pacer and pacer.due():           # scripts/pacer.gd: a game starting under the loading overlay
+			await pacer.wait()
 
 
 ## True when `p` (Godot) is in the showroom: inside its glass walls, between its floor and ceiling.

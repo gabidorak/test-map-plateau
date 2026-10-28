@@ -125,8 +125,9 @@ func _ready() -> void:
 	departed.resize(services.size())
 
 
-## Runs the trains here (solo, the host, a dedicated server): fills the line and schedules the departures.
-func start() -> void:
+## Runs the trains here (solo, the host, a dedicated server): fills the line and schedules the departures; with
+## `pacer` (scripts/pacer.gd) a few trains per frame, under game.gd's loading overlay.
+func start(pacer: RefCounted = null) -> void:
 	if services.is_empty() or running:
 		return
 	running = true
@@ -135,7 +136,7 @@ func start() -> void:
 	for k in services.size():
 		var phase: float = float(services[k].get("phase", 0.0)) * headway
 		departures[k] = phase
-		_fill(k, phase)
+		await _fill(k, phase, pacer)
 
 
 ## Stops the trains run here (the host's bot traffic switch, game.gd): every one stowed (the other peers see it in the
@@ -151,7 +152,7 @@ func stop() -> void:
 
 
 ## The trains of service k that would be on their way at time 0: departures at phase - n * headway.
-func _fill(k: int, phase: float) -> void:
+func _fill(k: int, phase: float, pacer: RefCounted = null) -> void:
 	var placed: Array = []
 	var ages: Array = []
 	var n := 1
@@ -175,6 +176,8 @@ func _fill(k: int, phase: float) -> void:
 				car.pose_doors(tr.door_t, tr.doors_side * (-1 if car.turned else 1))
 		tr.pose()
 		placed.append(tr)
+		if pacer and pacer.due():           # scripts/pacer.gd: between two whole trains (each one driven to its place)
+			await pacer.wait()
 
 
 ## A train for service k: a stowed one of the service if any, else a new one.
