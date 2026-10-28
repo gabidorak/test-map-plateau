@@ -66,6 +66,7 @@ func setup(model: String) -> void:
 	name = "JetSki_" + model.replace("-", "_")
 	mass = MASS
 	max_speed = TOP_SPEED
+	pose_asleep = true                      # LAN: its speed is how fast its pose moves (_measure_motion)
 	camera_distance = 5.5
 	_configure_body(self)
 	set_meta("plateau", {"type": "car", "id": "%s vehicle (%s)" % [model, spec.get("credit", "")]})
@@ -308,7 +309,8 @@ func _physics_process(delta: float) -> void:
 	_measure_motion(delta)
 	if remote:
 		_update_spray()
-		audio.update(_engine_speed(_throttle), _throttle, max_speed, delta)
+		if not is_remote_asleep():          # far from the eye: hushed (car.gd)
+			audio.update(_engine_speed(_throttle), _throttle, max_speed, delta)
 		return
 	var throttle := 0.0
 	var steer_in := 0.0

@@ -115,6 +115,7 @@ func setup(model: String) -> void:
 	name = "Plane_" + model.replace("-", "_")
 	mass = MASS
 	max_speed = PROP_MAX
+	pose_asleep = true                      # LAN: shot at and watched from afar (car.gd)
 	camera_distance = 11.0
 	_configure_body(self)
 	angular_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
@@ -824,6 +825,8 @@ func _measure_height() -> void:
 
 
 func _remote_process(delta: float) -> void:
+	if is_remote_asleep():
+		return                              # far from the eye: hushed (car.gd)
 	audio.update(_rpm() * max_speed, lever, max_speed, delta)
 
 

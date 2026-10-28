@@ -250,6 +250,7 @@ var extents_center := Vector3.ZERO          # centre of the half_extents box in 
 var net_id := ""                            # LAN games: the vehicle's id on every peer
 var remote := false                         # LAN games: simulated by another peer (set_remote)
 var _remote_asleep := false                 # LAN, remote: far from the eye, frozen STATIC and not ticked (update_remote_lod)
+var pose_asleep := false                    # LAN, remote: posed every tick even asleep (net.gd _play_back)
 var bells := 0                              # bell strikes so far (LAN: its parity tells the peers to ring)
 var controls := true                        # false while a menu is open: the driver's keys do nothing
 var hold := false                           # held still at a race start (scripts/races.gd): brakes on, no throttle
@@ -1492,14 +1493,13 @@ func set_remote(on: bool) -> void:
 			b.angular_velocity = av
 
 
-## LAN games, remote vehicle: puts it to sleep beyond REMOTE_SLEEP m of `eye` (the camera, or the player when there is
-## none), wakes it under REMOTE_WAKE m. Asleep: frozen STATIC (no wheel or contact callbacks), no cosmetic tick, no
-## hull transform forcing; apply_net_state still moves it, so it does not pop when it wakes. Called each tick before
-## posing it (net.gd _play_back).
-func update_remote_lod(eye: Vector3) -> void:
+## LAN games, remote vehicle: puts it to sleep beyond REMOTE_SLEEP m of the eye (`d`: the square of the distance to
+## it, net.gd _play_back), wakes it under REMOTE_WAKE m. Asleep: frozen STATIC (no wheel or contact callbacks), no
+## cosmetic tick, no hull transform forcing; apply_net_state still moves it, so it does not pop when it wakes. Called
+## each tick before posing it.
+func update_remote_lod(d: float) -> void:
 	if not remote:
 		return
-	var d := eye.distance_squared_to(global_position)
 	if _remote_asleep:
 		if d < REMOTE_WAKE * REMOTE_WAKE:
 			_set_remote_asleep(false)
