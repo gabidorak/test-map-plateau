@@ -17,6 +17,54 @@ env:
   GODOT_RELEASE: stable
 
 jobs:
+  # Scene ids: the delta updates (scripts/delta.gd) need every scene to export the same bytes twice, the game.pck on
+  # one export and the patch (--export-patch, a second one) on the next. A node without a unique_id gets a random one
+  # at each export, and the patch then does not rebuild the data (build 46: scenes/loading.tscn without ids, no patch
+  # published, every player downloaded the full file). tools/check_scene_ids.py checks the sources' ids, then runs
+  # the two exports here and compares the scenes' conversions: appended to the export jobs, it would break their
+  # cache of the project's imported assets (the export then leaves pack/ alone).
+  scene-ids:
+    name: Scene ids
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot and export templates
+        run: |
+          base="https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}"
+          name="Godot_v${GODOT_VERSION}-${GODOT_RELEASE}"
+          curl -fsSL -o godot.zip "$base/${name}_linux.x86_64.zip"
+          curl -fsSL -o templates.tpz "$base/${name}_export_templates.tpz"
+          unzip -q godot.zip
+          sudo install -m 755 "${name}_linux.x86_64" /usr/local/bin/godot
+          dir="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}"
+          mkdir -p "$dir"
+          unzip -q templates.tpz -d templates
+          mv templates/templates/* "$dir/"
+          rm -rf godot.zip templates.tpz templates
+
+      - name: Cache import data
+        uses: actions/cache@v4
+        with:
+          path: godot/.godot
+          key: godot-import-${{ env.GODOT_VERSION }}-${{ hashFiles('godot/assets/**', 'godot/project.godot') }}
+          restore-keys: godot-import-${{ env.GODOT_VERSION }}-
+
+      # The id check first: it needs nothing imported, and names the .tscn to fix when one node has no id.
+      - name: Check scene ids
+        working-directory: godot
+        run: python3 tools/check_scene_ids.py .
+
+      - name: Import project
+        working-directory: godot
+        run: godot --headless --path . --import
+
+      # The "Data patch" step exports the game a second time (--export-patch) and shipped build 46 a patch that
+      # this build's data did not match, so every player downloaded the full file. Two exports here, compared.
+      - name: Export the game twice and compare the scenes
+        working-directory: godot
+        run: python3 tools/check_scene_ids.py --export .
+
   export:
     name: Export (${{ matrix.preset }})
     runs-on: ubuntu-latest
@@ -130,6 +178,8 @@ jobs:
       # the latest release's data, unpacked from its Linux executable. Published on the "store" release, but only when
       # it turns that data into exactly this build's game.pck (tools/verify_patch.gd): --export-patch exports the game
       # a second time, and pack/ (the packed executables' manifest and launcher id by now) is no game data.
+      # The scenes must be the same in both (tools/check_scene_ids.py --patch) before the patch is worth checking:
+      # one that differs sends players to the full download, which this stops at the patch that would do it.
       - name: Data patch
         if: github.event_name == 'push' && matrix.preset == 'Linux'
         working-directory: godot
@@ -152,6 +202,10 @@ jobs:
           mv pack "$RUNNER_TEMP/pack-aside"
           godot --headless --path . --export-patch Linux "$RUNNER_TEMP/patch.pck" --patches "$RUNNER_TEMP/prev.pck"
           mv "$RUNNER_TEMP/pack-aside" pack
+          if ! python3 tools/check_scene_ids.py --patch "$RUNNER_TEMP/game.pck" "$RUNNER_TEMP/patch.pck"; then
+            echo "::error::The patch's scenes differ from the game's: not published, players would get the full download"
+            exit 0
+          fi
           if ! godot --headless --path . --script res://tools/verify_patch.gd -- "$RUNNER_TEMP/prev.pck" \
               "$RUNNER_TEMP/patch.pck" "$RUNNER_TEMP/game.pck" "$RUNNER_TEMP/merged.pck"; then
             echo "::error::The data patch does not rebuild this build's data: not published, players get the full download"
@@ -185,7 +239,9 @@ jobs:
 
   release:
     name: Release
-    needs: export
+    # A scene whose nodes lack their unique_id publishes no data patch: its players would all download the full file.
+    # Releasing waits for the check (it runs beside the exports), so a regression blocks the next build instead.
+    needs: [export, scene-ids]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
