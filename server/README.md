@@ -3,7 +3,9 @@
 Runs the game 24/7 as a headless server (`godot/scripts/game.gd --dedicated`): no player of its own, LAN-style
 ENet over **UDP 7777**. The image holds no game: at each start `entrypoint.sh` downloads the latest GitHub release
 (skipped when it already has it). The server checks for a new release every 5 minutes and quits once one is out and
-nobody plays (or after 30 minutes regardless); Docker restarts it on the new build.
+nobody plays (or after 30 minutes regardless); Docker restarts it on the new build. Each build unpacks a 1-2 GB game
+pack into the volume: `entrypoint.sh` deletes the older builds' packs, so the volume needs about 3 GB free for an update
+(new download + current pack). Check with `sudo df -h "$(docker info --format '{{.DockerRootDir}}')"`.
 
 ## On the VPS
 

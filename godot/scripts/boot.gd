@@ -77,7 +77,7 @@ func _unpack_done(err: String) -> void:
 
 
 func _mount() -> void:
-	Delta.cleanup(_data["path"])
+	Delta.cleanup(_data["path"], int(_data["run"]))
 	if not ProjectSettings.load_resource_pack(_data["path"]):
 		DirAccess.remove_absolute(_data["path"])
 		_fail("cannot load %s, start the game again to unpack it again" % _data["path"])

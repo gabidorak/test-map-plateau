@@ -66,14 +66,15 @@ static func pointer(launcher: String) -> String:
 	return data_dir().path_join("current-%s.json" % (launcher if launcher != "" else "local"))
 
 
-## Says that `launcher` runs the data at `path` (written to a temporary file first, then renamed).
+## Says that `launcher` runs the data at `path` (written to a temporary file first, then renamed). `exe`: the executable
+## that runs it, this one (the updater swaps a rebuilt launcher in at the same path), for cleanup().
 static func write_pointer(launcher: String, path: String, id: String, tag: String, run: int, commit: String) -> bool:
 	var tmp := pointer(launcher) + ".%d.tmp" % OS.get_process_id()
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:
 		return false
 	f.store_string(JSON.stringify({"id": id, "tag": tag, "run": run, "commit": commit, "file": path.get_file(),
-			"size": FileAccess.get_size(path)}, " "))
+			"size": FileAccess.get_size(path), "exe": OS.get_executable_path()}, " "))
 	f.close()
 	DirAccess.remove_absolute(pointer(launcher))
 	return DirAccess.rename_absolute(tmp, pointer(launcher)) == OK
@@ -230,14 +231,21 @@ static func launcher(exe: String, delta: String, out: String) -> String:
 	return err
 
 
-## Packs in the data folder that no launcher uses any more (and leftovers of interrupted writes), but `keep`; the packs
-## of the cache folder older builds unpacked to. Windows can't delete a pack another instance has open: next time then.
-static func cleanup(keep: String) -> void:
+## Packs in the data folder that no launcher uses any more (and leftovers of interrupted writes), but `keep` (the data of
+## this executable, build `run`); the packs of the cache folder older builds unpacked to. Windows can't delete a pack
+## another instance has open: next time then. Each new launcher id writes a pointer of its own, so the pointers of the
+## launchers gone since are dropped too (stale()), else every one of them keeps a 1-2 GB pack.
+static func cleanup(keep: String, run: int) -> void:
 	var dir := data_dir()
+	var own := pointer(str(read_json(LAUNCHER).get("id", ""))).get_file()
 	var used := {keep.get_file(): true}
 	for name in DirAccess.get_files_at(dir):
 		if name.begins_with("current-") and name.ends_with(".json"):
-			used[str(read_json(dir.path_join(name)).get("file", ""))] = true
+			var p := read_json(dir.path_join(name))
+			if name != own and stale(p, run):
+				DirAccess.remove_absolute(dir.path_join(name))
+			else:
+				used[str(p.get("file", ""))] = true
 	for name in DirAccess.get_files_at(dir):
 		if name.begins_with("game-") and not used.has(name):
 			DirAccess.remove_absolute(dir.path_join(name))
@@ -246,3 +254,13 @@ static func cleanup(keep: String) -> void:
 		for name in DirAccess.get_files_at(old):
 			DirAccess.remove_absolute(old.path_join(name))
 		DirAccess.remove_absolute(old)
+
+
+## Another launcher's pointer `p` whose launcher is gone, seen from this executable (build `run`): its executable is
+## deleted, or it was this one before an update replaced it (an older build at this path). Pointers from before "exe"
+## was recorded: any older build. A copy of the game kept elsewhere loses its data then, and takes the full download.
+static func stale(p: Dictionary, run: int) -> bool:
+	var exe := str(p.get("exe", ""))
+	if exe != "" and not FileAccess.file_exists(exe):
+		return true
+	return int(p.get("run", 0)) < run and (exe == "" or exe == OS.get_executable_path())
