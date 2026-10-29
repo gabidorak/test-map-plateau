@@ -147,7 +147,7 @@ var _resupplied := -INF                     # when the safehouse last topped us 
 
 func allows(feature: String) -> bool:
 	return feature not in ["debug_cars", "showrooms", "bot_traffic", "trains", "races", "vehicle_menu", "park_car",
-			"clear_vehicles", "night_toggle", "inspect", "fly_camera"]
+			"clear_vehicles", "night_toggle", "inspect", "fly_camera", "map"]
 
 
 func _ready() -> void:

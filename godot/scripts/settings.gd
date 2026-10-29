@@ -79,6 +79,8 @@ const ACTIONS := [
 	["toggle_quality", "Graphics low / high", "General", [KEY_F2]],
 	["night", "Day / night", "General", [KEY_N]],
 	["toggle_stats", "Frame rate and network", "General", [KEY_F3]],
+	["world_map", "Map (click on it: waypoint)", "General", [KEY_M, KEY_SEMICOLON]],   # M on QWERTY and on AZERTY
+	["minimap", "Minimap on / off", "General", [KEY_K]],
 ]
 ## Keys that cannot be changed, for the controls page.
 const FIXED := [["Esc", "Menu, close"], ["Enter", "Chat (LAN games)"], ["Tab (held)", "Players (LAN games)"],
@@ -87,7 +89,7 @@ const FIXED := [["Esc", "Menu, close"], ["Enter", "Chat (LAN games)"], ["Tab (he
 
 ## Defaults of the other settings (section "settings" of the file).
 const DEFAULTS := {"quality": "auto", "fullscreen": false, "vsync": true, "resolution": 0, "ui_scale": 1.0,
-		"mouse": 1.0, "night": false, "traffic": true}
+		"mouse": 1.0, "night": false, "traffic": true, "minimap": true}
 
 ## Mouse look factor (values["mouse"]) for car.gd, player.gd and fly_camera.gd: the tools preload those before the
 ## autoload's name exists, so they read it here (preload this script) instead of through "Settings".
