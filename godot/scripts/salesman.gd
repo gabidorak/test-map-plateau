@@ -4,6 +4,7 @@ extends Node3D
 ## around the podiums, columns and furniture) and talks in a speech bubble: the car on the podium they stand by (its
 ## name, price and pitch), small talk, a word when they take a display car for a test drive, and a cry when they drive
 ## off with it. Back to his post once they have left. Nothing collides with him. Built at runtime, local to each peer.
+## In PTA Online his small talk sends the player to the catalogue (ONLINE_TALK; E by him: scripts/online/shop.gd).
 
 const KEEP := 2.2                           # m he stays from the player on foot
 const KEEP_DRIVING := 5.5                   # m from a car the player drives in the showroom
@@ -33,6 +34,15 @@ const SMALL_TALK := [
 	"Test drives are free. The keys are in every car, just hop in.",
 	"This building used to be a school, you know. Now it teaches people about luxury.",
 	"Sit in one, you will see. The leather alone is worth the price.",
+]
+const ONLINE_TALK := [                     # PTA Online: the display cars stay, the catalogue sells (scripts/online/shop.gd)
+	"Press E by me or at a price stand, and I show you the catalogue.",
+	"A car bought here waits outside, on our bays by the door. Polished, of course.",
+	"A first car? The little hatchback. I can do you a very good price on it.",
+	"Wrecked it already? Any garage terminal repairs it. For a small fee, naturellement.",
+	"A new colour? Any garage terminal paints it. Racing red is very à la mode this season.",
+	"The display cars stay on their podiums. Yours comes out outside, with its own red carpet.",
+	"Mind the golden R8. Solid gold. Well... plated.",
 ]
 const TEST_DRIVE := [
 	"Excellent choice! The keys are in it. Gently on the marble, please.",
@@ -143,7 +153,8 @@ func _chat(p: Vector3, delta: float) -> void:
 	_idle_t -= delta
 	if _idle_t <= 0.0:
 		_idle_t = IDLE_EVERY
-		_say(SMALL_TALK[_small % SMALL_TALK.size()])
+		var talk: Array = ONLINE_TALK if showroom.game and showroom.game.mode_id == "online" else SMALL_TALK
+		_say(talk[_small % talk.size()])
 		_small += 1
 
 

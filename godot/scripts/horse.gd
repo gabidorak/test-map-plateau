@@ -106,6 +106,11 @@ var _clock := 0.0
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 
 
+## PTA Online's repaints (car.gd set_paint): the coat in `c` (null: its own colour).
+func _repaint(c: Variant) -> void:
+	(_mats["coat"] as StandardMaterial3D).albedo_color = c if c != null else COLORS["coat"]
+
+
 func setup(model: String) -> void:
 	var spec: Dictionary = SPECS[model]
 	model_name = model

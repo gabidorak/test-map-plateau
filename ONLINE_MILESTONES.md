@@ -99,7 +99,8 @@ checked before calling it finished.
 
 **Goal:** buy vehicles in person, repair them, paint them.
 
-- `godot/data/prices.toml`: price per model (tiers of ONLINE_MODE.md 4.1), repair = 3 % of the price.
+- `godot/data/prices.json` (not TOML: see ONLINE_MODE.md 4): price per model (tiers of ONLINE_MODE.md 4.1), repair =
+  3 % of the price.
 - **Prestige Motors** (existing dealership): talk to Jean-Claude (E) or use a podium terminal → catalogue of cars,
   planes, horse, jet-ski; buying adds the vehicle and spawns it outside.
 - **Bus depot / fire station** terminals sell their work vehicles.
@@ -109,10 +110,10 @@ checked before calling it finished.
 - All purchases go through `charge` (server side); the client only shows the result.
 
 **Done when:**
-- [ ] `tools/test_online_shop.sh` (port 7798): buy the cheapest car with the starting 5 000 €, too poor for the next
+- [x] `tools/test_online_shop.sh` (port 7798): buy the cheapest car with the starting 5 000 €, too poor for the next
       one, wreck → repair charged, repaint visible on the other client, forged buy RPC from a non-official client
       refused.
-- [ ] Shots of the catalogue, a repainted car.
+- [x] Shots of the catalogue, a repainted car.
 
 ## O5 — Bus job
 
@@ -186,7 +187,7 @@ a real fire station building at #1289.
 | O1 Accounts service | ✅ | `server/accounts/` (71 pytest), compose + Caddyfile, arm64 cross-build without emulation. |
 | O2 Login + menu | ✅ | Account page, `accounts.gd`, `economy.gd` (`--official`), test_online_login.sh green. Addresses in `data/online.json` still empty. |
 | O3 Rules + garages | ✅ | `online_mode.gd`, `online/garages.gd` + panel, `garages.json` (9 public + depot + fire station), map badges, `add-vehicle` admin. test_online_rules.sh green. |
-| O4 Shop, repairs, colours | ⬜ | |
+| O4 Shop, repairs, colours | ✅ | `online/shop.gd` + `prices.gd`, `paint.gd` (`car.gd` set_paint, crash damage online), delivery bays `prestige-motors`, PROTOCOL 14. test_online_shop.sh green (107 checks). |
 | O5 Bus job | ⬜ | |
 | O6 Stunts | ⬜ | |
 | O7 Fires + firefighter job | ⬜ | |

@@ -1,0 +1,23 @@
+{
+	"about": "PTA Online's prices in euros (ONLINE_MODE.md 4.1; scripts/online/prices.gd reads it on the official server, which charges them, and on the players' games, which show them). Tiers in catalogue order; `at` is where a tier is sold: prestige (Prestige Motors), depot (the bus depot), fire (the fire station). A model not listed is not sold. Repair: `repair` x the price; repaint: `repaint` x the price, at least `repaint_min`; both rounded to 10 euros.",
+	"start": 5000,
+	"repair": 0.03,
+	"repaint": 0.02,
+	"repaint_min": 200,
+	"tiers": [
+		{"tier": "Starter", "at": "prestige", "models": {
+			"kaykit-hatchback": 5000, "horse": 6000, "compact-hatchback": 6500, "sedan": 7500}},
+		{"tier": "Everyday", "at": "prestige", "models": {
+			"taxi": 12000, "van": 14000, "delivery": 15000, "suv": 16000, "renault-zoe": 18000, "family-suv": 22000}},
+		{"tier": "Fun", "at": "prestige", "models": {
+			"jet-ski": 30000, "mercedes-1928": 45000, "volvo-fh16": 50000, "volvo-fh16-trailer": 58000, "biplane": 60000}},
+		{"tier": "Sports", "at": "prestige", "models": {
+			"hatchback-sports": 75000, "sedan-sports": 85000, "suv-luxury": 100000}},
+		{"tier": "Super", "at": "prestige", "models": {
+			"bmw-m4": 120000, "audi-rs6": 135000, "audi-r8": 150000}},
+		{"tier": "Work", "at": "depot", "models": {
+			"bus-idfm": 40000, "bus-idfm-artic": 60000}},
+		{"tier": "Work", "at": "fire", "models": {
+			"fire-truck": 80000}}
+	]
+}

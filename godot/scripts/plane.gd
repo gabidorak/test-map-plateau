@@ -109,6 +109,11 @@ var _turret_camera: Camera3D
 var _turret_query := PhysicsRayQueryParameters3D.new()
 
 
+## PTA Online's repaints (car.gd set_paint): the fuselage in `c` (null: its own colour).
+func _repaint(c: Variant) -> void:
+	(_mats["body"] as StandardMaterial3D).albedo_color = c if c != null else COLORS["body"]
+
+
 func setup(model: String) -> void:
 	var spec: Dictionary = SPECS[model]
 	model_name = model

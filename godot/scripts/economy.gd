@@ -84,6 +84,21 @@ func refresh(id: int) -> bool:
 	return true
 
 
+## Server: changes a vehicle of account `account_id` through the accounts service, charging `change["price"]` € in the
+## same go (`change`: action add / repair / wreck / colour, vehicle, model, colour, price: server/accounts VehicleChange).
+## The answer as accounts.gd's ({"ok", "error", "message", "data": {"vehicle", "balance", "vehicles"}}); a logged-in
+## player of that account sees their wallet follow.
+func vehicle_change(account_id: int, change: Dictionary) -> Dictionary:
+	var r: Dictionary = await accounts.server_post("/v1/server/vehicle", change.merged({"account": account_id}), secret)
+	if r["ok"]:
+		for id: int in _logged:
+			if _logged[id]["account"] == account_id:
+				_logged[id]["balance"] = int(r["data"]["balance"])
+				_logged[id]["vehicles"] = r["data"]["vehicles"]
+				_wallet.rpc_id(id, _logged[id]["balance"])
+	return r
+
+
 func _on_registered(id: int) -> void:
 	if official:
 		_waiting[id] = 0.0
