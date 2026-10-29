@@ -198,6 +198,57 @@ func _put(car: Node, bot: Object, r: int, front: float, fresh := true) -> void:
 		d.vel = Vector2.ZERO
 
 
+## Slides the duty's bus (frozen) along the line's way back through its next traffic light that has no stop or other
+## light near it, the lights `red` or green, and checks the fine.
+func _red_light(clock: Node, car: Node, line: Dictionary, d: Object, red: bool) -> void:
+	var route: Dictionary = _routes[line["routes"][1]]
+	var light := {}
+	for l: Dictionary in route["lights"]:
+		var clear: bool = float(l["s"]) > d.s + 30.0
+		for o: Dictionary in route["stops"] + route["lights"]:
+			clear = clear and (o == l or absf(float(o["s"]) - float(l["s"])) > 45.0)
+		if clear:
+			light = l
+			break
+	if light.is_empty():
+		_check(false, "a traffic light on the 4606 with nothing near it")
+		return
+	var bot := _bot(car, line)
+	d.state = "start"                       # found again on the route where it's put
+	d.s = 0.0
+	d.next = 0
+	_put(car, bot, 1, float(light["s"]) - 12.0)
+	car.set_pilot(null)
+	car.hold = true
+	await _drive_until(func() -> bool: return d.state == "route" and d.r == 1 and absf(d.s - float(light["s"]) + 12.0) < 5.0, 0.2)
+	var phase := float(light["phase"])
+	var c := (0.6 if red else 0.1) - phase
+	clock.t = (fposmod(c, 1.0) + 2.0) * 30.0
+	await physics_frame
+	var debt: int = d.debt
+	var combo: float = d.combo
+	var fines := _events(d, "red_light").size()
+	for b in car.bodies():
+		b.freeze = true
+	var fwd: Vector3 = car.global_transform.basis.z
+	fwd.y = 0.0
+	for i in 180:                           # 9 m/s for 3 s
+		for b in car.bodies():
+			b.global_position += fwd.normalized() * 0.15
+		await physics_frame
+	for b in car.bodies():
+		b.freeze = false
+	car.hold = false
+	var fined := _events(d, "red_light").size() - fines
+	if red:
+		_check(fined == 1 and d.debt == debt + int(_job.pay["red_light_fine"]) and d.combo == combo and d.state == "route",
+				"through a red light at %.0f m: fined %d €, the combo kept ×%.1f (%d fines, %s)" % [float(light["s"]),
+				d.debt - debt, d.combo, fined, d.state])
+	else:
+		_check(fined == 0 and d.debt == debt and d.state == "route", "through a green light at %.0f m: no fine (%d, %s)" % [
+				float(light["s"]), fined, d.state])
+
+
 func _events(d: Object, kind: String) -> Array:
 	return d.events.filter(func(e: Array) -> bool: return e[0] == kind)
 
@@ -228,6 +279,10 @@ func _solo() -> void:
 	var rows := _rows()
 	for ref: String in _lines:
 		_check(("Duty_" + ref) in rows, "the depot offers duty on line %s" % ref)
+	_check(rows.find("Heading_duty") == 0 and "Heading_out" in rows and "Heading_buy" in rows,
+			"the depot's list comes in parts (bus job, just a bus, for sale): %s" % str(rows))
+	var note: String = (_mode._panel.rows.get_node("Duty_4606").get_child(1) as Label).text
+	_check(note.contains("lent articulated"), "the 4606's row says a lent 18 m bus comes with it: %s" % note)
 	var r := await _click(_job, "Duty_4606", "Duty")
 	var d: Object = _job.duties.get(me)
 	var car: Node = _mode.car_of(_mode.mine)
@@ -239,6 +294,7 @@ func _solo() -> void:
 	_check(_job.hud_text().contains("4606") and _job.hud_text().contains("Drive to the line"),
 			"the HUD shows the line: %s" % _job.hud_text().replace("\n", " | "))
 	_check(_main.waypoint != null, "the waypoint is on the line")
+	_check(_job.hint_text().contains("Get in your bus"), "the hint says to get in the bus: %s" % _job.hint_text())
 	await _stand_at("fire-station")
 	r = await _ask_duty("bus-depot", "Z")
 	_check(not r[0] and r[1].contains("Walk up"), "duty refused away from the depot: %s" % r[1])
@@ -257,8 +313,15 @@ func _solo() -> void:
 	var t0: float = _job.time
 	var route0: Dictionary = _routes[line["routes"][0]]
 	var t_real := Time.get_ticks_msec()
-	var through := await _drive_until(func() -> bool: return d.r == 1 or d.served >= route0["stops"].size() and \
-			bot.state != BusBot.DRIVE and bot.state != BusBot.DWELL, 40.0)
+	var hints := {}
+	var through := await _drive_until(func() -> bool:
+		var h: String = _job.hint_text()
+		for k: String in ["pull into its bay", "stop the bus", "Open the doors", "boarding", "Close the doors", "Drive on",
+				"Follow the waypoint"]:
+			if h.contains(k):
+				hints[k] = true
+		return d.r == 1 or d.served >= route0["stops"].size() and bot.state != BusBot.DRIVE \
+				and bot.state != BusBot.DWELL, 40.0)
 	var hours: float = (_job.time - t0) / 3600.0
 	var rate: float = d.earned / maxf(hours, 1e-6)
 	var bonuses := {}
@@ -268,8 +331,10 @@ func _solo() -> void:
 			hours * 60.0, (Time.get_ticks_msec() - t_real) / 1000, roundi(rate), bonuses, _mode.test_money])
 	_check(through and d.served == route0["stops"].size(), "a bot drives the whole 4606 on duty: %d/%d stops served" % [
 			d.served, route0["stops"].size()])
+	_check(hints.has("pull into its bay") and hints.has("boarding") and hints.has("Close the doors"),
+			"the hints say what to do at the stops: %s" % str(hints.keys()))
 	_check(_events(d, "skip").is_empty() and _events(d, "off_route").is_empty() and _events(d, "crash").is_empty()
-			and _events(d, "void").is_empty(), "no penalty, nothing refused: %s" % str(d.events.filter(func(e: Array) \
+			and _events(d, "void").is_empty() and _events(d, "red_light").is_empty(), "no penalty, nothing refused: %s" % str(d.events.filter(func(e: Array) \
 			-> bool: return e[1] <= 0 and e[0] != "info")))
 	_check(rate >= PAY_BAND.x and rate <= PAY_BAND.y, "pays %d €/h, within %d-%d €/h" % [roundi(rate), PAY_BAND.x,
 			PAY_BAND.y])
@@ -282,6 +347,14 @@ func _solo() -> void:
 			print("     %s" % str(e))
 	if OS.get_environment("PLATEAU_TEST_ONLY") == "line":
 		return
+
+	# red lights: slid through one at red (a small fine, the combo kept), then one at green (nothing)
+	await _red_light(clock, car, line, d, true)
+	await _red_light(clock, car, line, d, false)
+	d.state = "start"
+	d.s = 0.0
+	d.next = 0
+	d.debt = 0
 
 	# skipped stops: a bot that doesn't stop drives the other way's first stops
 	var route1: Dictionary = _routes[line["routes"][1]].duplicate()

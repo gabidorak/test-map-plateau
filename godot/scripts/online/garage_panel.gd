@@ -133,7 +133,14 @@ func show_entries(list: Array, message: String) -> void:
 	_title.text = _title.text.trim_prefix("Paint · ")
 	_parts(["rows"])
 	_clear_rows()
+	var sections := list.any(func(e: Dictionary) -> bool: return e.has("duty") or int(e.get("buy", 0)) > 0)
+	var section := ""
 	for e: Dictionary in list:
+		if sections:
+			var now := "duty" if e.has("duty") else ("buy" if int(e.get("buy", 0)) > 0 else "out")
+			if now != section:
+				section = now
+				_heading(now, list)
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 10)
 		if e.has("duty"):
@@ -172,7 +179,7 @@ func show_entries(list: Array, message: String) -> void:
 			p.pressed.connect(func() -> void: open_palette(e))
 			row.add_child(p)
 		rows.add_child(row)
-	_scroll.custom_minimum_size.y = minf(list.size() * 48.0, 360.0)
+	_scroll.custom_minimum_size.y = minf(rows.get_child_count() * 46.0, 420.0)
 	_status.text = message
 	_hint.text = "click: get it out on a free bay · %s / Esc close" % _close_keys
 	var first := _first_enabled()
@@ -180,13 +187,33 @@ func show_entries(list: Array, message: String) -> void:
 		first.grab_focus()
 
 
-## A bus line's row at the depot: {"duty": its ref ("" off duty), "label", "note"}.
+## The heading of a part of a garage's list (`part`: "duty" the bus lines, "out" the vehicles to get out, "buy" those
+## on sale), in the garages whose list has more than one part (the bus depot, the fire station).
+func _heading(part: String, list: Array) -> void:
+	var depot := list.any(func(e: Dictionary) -> bool: return e.has("duty"))
+	var head: String = {"duty": "BUS JOB · pick a line: you are on duty, and a bus comes with it",
+			"out": "Or just take a bus out (no job, no pay)" if depot else "Take one out",
+			"buy": "For sale (your own pays ×1.5 on the job)" if depot else "For sale"}[part]
+	var l := UiStyle.label(head, 17, Color(1.0, 0.86, 0.5), HORIZONTAL_ALIGNMENT_LEFT)
+	l.name = "Heading_" + part
+	rows.add_child(l)
+	if part == "duty":
+		var how := UiStyle.label("Then follow the waypoint to the line, stop in each stop's bay, open the doors (%s) " %
+				Settings.key_text("doors") + "until the pay pops in. Any bus does any line.", 14, UiStyle.TEXT_DIM,
+				HORIZONTAL_ALIGNMENT_LEFT)
+		how.name = "Heading_how"
+		how.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		how.custom_minimum_size.x = 560
+		rows.add_child(how)
+
+
+## A bus line's row at the depot: {"duty": its ref ("" off duty), "label", "note", "on" (our duty now)}.
 func _duty_row(row: HBoxContainer, e: Dictionary) -> void:
 	var ref := str(e["duty"])
 	row.name = "Duty_" + (ref if ref != "" else "off")
-	var b := UiStyle.button(str(e["label"]), _looks, Vector2(400, 40), 16)
+	var b := UiStyle.button(str(e["label"]), _looks, Vector2(330, 40), 15)
 	b.name = "Duty"
-	b.disabled = str(e["note"]) == "On duty"
+	b.disabled = e.get("on", false)
 	b.pressed.connect(func() -> void: duty.emit(ref))
 	row.add_child(b)
 	var note := UiStyle.label(str(e["note"]), 15, UiStyle.TEXT_DIM, HORIZONTAL_ALIGNMENT_LEFT)
