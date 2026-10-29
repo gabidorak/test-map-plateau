@@ -2,9 +2,10 @@ extends Control
 ## The full-screen map (M; Esc or M closes it): the ground from above, north up (scripts/map_ground.gd), with the
 ## RER B and its stations, the schools and the lakes (world/map_labels.json, pipeline/plateau/map_labels.py), the bus
 ## stops (world/bus_routes.json, through the loading screen's map: scripts/loading_map.gd), the players and the
-## waypoint. Drag to move, wheel to zoom about the pointer, click to put the waypoint (game.gd set_waypoint: a beam
+## waypoint, and game.gd's map_places (Prestige Motors, PTA Online's garages, bus depot and fire station: badges with
+## their names). Drag to move, wheel to zoom about the pointer, click to put the waypoint (game.gd set_waypoint: a beam
 ## in the world, a marker on the screen), right click to take it away.
-## Not to crowd it: the big schools, the lakes and the stations show at every zoom, the other schools and the ponds
+## Not to crowd it: the big schools, the lakes, the stations and the places show at every zoom, the other schools and the ponds
 ## from SHOW_TIER1, the bus stops from SHOW_STOPS and their names from SHOW_STOP_NAMES; and a name that would overlap
 ## one already placed is left out (they are placed most important first).
 
@@ -36,6 +37,7 @@ var _labels: Array = []                     # [name, kind, tier, Vector2]
 var _press := Vector2.INF                   # where the left button went down, while it is down
 var _dragged := false
 var _placed: Array[Rect2] = []              # the names drawn this frame, most important first
+var _places: Array = []                     # game.map_places() (read when it opens)
 
 
 func _ready() -> void:
@@ -74,6 +76,7 @@ func open() -> void:
 	_centre = Vector2(eye.x, -eye.z)
 	_zoom = ZOOM_OPEN
 	_press = Vector2.INF
+	_places = game.map_places()
 	visible = true
 
 
@@ -169,6 +172,12 @@ func _draw_marks() -> void:
 			_placed.append(Rect2(p - Vector2(10, 10), Vector2(20, 20)))
 			ops.append(_station.bind(p))
 			_label(ops, font, p + Vector2(13, 6), st[0], 16, Color.WHITE, INK)
+	for place: Array in _places:
+		var p := _to_px(place[2])
+		if screen.has_point(p):
+			_placed.append(Rect2(p - Vector2(11, 11), Vector2(22, 22)))
+			ops.append(Minimap.draw_place.bind(_marks, font, p, place[1], 9.0))
+			_label(ops, font, p + Vector2(14, 6), place[0], 15, Color.WHITE, INK)
 	for tier in 2:
 		if tier == 1 and _zoom < SHOW_TIER1:
 			break

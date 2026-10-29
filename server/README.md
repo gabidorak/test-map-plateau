@@ -68,7 +68,8 @@ Always Free instances that stay idle (CPU, network and memory use under 20 % ove
 reclaimed by Oracle; a Pay As You Go account keeps the free allowance without that rule.
 
 Settings in `compose.yaml`: `SERVER_NAME`, `GAME_MODE` (`sandbox`, or `escape` for Escape from Plateau: the server
-starts a mission for the first player to join it, and the next one 25 s after a mission ends), and `PORT` (then change
+starts a mission for the first player to join it, and the next one 25 s after a mission ends; the official server,
+`OFFICIAL=1`, plays PTA Online whatever it says), and `PORT` (then change
 the port mapping to match). To force an update right away: `docker compose restart`.
 
 ## Race records
@@ -143,6 +144,7 @@ docker compose exec accounts plateau-admin reset-password <user>        # prints
 docker compose exec accounts plateau-admin rename <user> <new name>     # any time (players: once every 30 days)
 docker compose exec accounts plateau-admin ban <user>                   # and unban; a ban logs them out everywhere
 docker compose exec accounts plateau-admin give <user> <€> [reason]     # and take
+docker compose exec accounts plateau-admin add-vehicle <user> <model>   # free, in their garage (models: Car.MODELS in godot/scripts/car.gd)
 ```
 
 Backups: once a day the service copies the live database (SQLite's online backup) to `server/backups/
@@ -153,4 +155,5 @@ accounts-YYYY-MM-DD.db` on the host, outside the Docker volume, and keeps the la
 
 The image builds without running anything for the target (dependencies' wheels are fetched for it), so an ARM64 image
 can be built on an x86 machine too: `docker buildx build --platform linux/arm64 accounts`. Tests:
-`cd accounts && python -m pytest -q` (with `requirements.txt` and `httpx` installed), and `godot/tools/test_online_login.sh`.
+`cd accounts && python -m pytest -q` (with `requirements.txt` and `httpx` installed), `godot/tools/test_online_login.sh` and
+`godot/tools/test_online_rules.sh`.

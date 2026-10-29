@@ -5,6 +5,7 @@
     docker compose exec accounts plateau-admin rename <user> <new name>               (any time, no 30-day wait)
     docker compose exec accounts plateau-admin ban <user> | unban <user>              (ban logs them out everywhere)
     docker compose exec accounts plateau-admin give <user> <€> [reason] | take <user> <€> [reason]
+    docker compose exec accounts plateau-admin add-vehicle <user> <model> [colour]    (free; models: godot/scripts/car.gd)
 """
 
 import argparse
@@ -84,6 +85,12 @@ def give(c, a) -> None:
     print(f"{row['username']}: {after} €")
 
 
+def add_vehicle(c, a) -> None:
+    row = _row(c, a.user)
+    done = db.vehicle_change(c, row["id"], "add", 0, model=a.model, colour=a.colour)
+    print(f"{row['username']}: {a.model} #{done['vehicle']} added")
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="plateau-admin", description="PTA Online accounts admin")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -108,6 +115,11 @@ def main(argv: list[str] | None = None) -> None:
         s.add_argument("amount", type=int)
         s.add_argument("reason", nargs="?", default=f"admin {name}")
         s.set_defaults(fn=give)
+    s = sub.add_parser("add-vehicle", help="a vehicle in their garage, free (PTA Online's game models)")
+    s.add_argument("user")
+    s.add_argument("model")
+    s.add_argument("colour", nargs="?", default="")
+    s.set_defaults(fn=add_vehicle)
     a = p.parse_args(argv)
     c = db.connect()
     db.init(c)

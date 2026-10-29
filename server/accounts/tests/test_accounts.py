@@ -348,6 +348,11 @@ def test_admin(client, capsys):
     assert client.post("/v1/login", json={"username": "Gaby", "password": "a new password"}).status_code == 403
     admin.main(["unban", "Gaby"])
     assert client.post("/v1/login", json={"username": "Gaby", "password": "a new password"}).status_code == 200
+    admin.main(["add-vehicle", "gaby", "audi-r8"])
+    c = db.connect()
+    row = db.find(c, "Gaby")
+    assert [v["model"] for v in db.vehicles(c, row["id"])] == ["audi-r8"]
+    assert db.balance(c, row["id"]) == 5500     # free
     with pytest.raises(SystemExit):
         admin.main(["show", "nobody"])
 

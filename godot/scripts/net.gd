@@ -42,6 +42,8 @@ extends Node
 ##   (game.gd makes it as Main/Mode before anything of the mode's comes in), the players, the vehicles, and the trees
 ##   bent and props knocked down at that moment (breakables.gd net_snapshot). A game mode's own messages
 ##   (scripts/modes/game_mode.gd) go through its node, and only to welcomed players.
+## - In a game mode where players don't park vehicles themselves (PTA Online: its garages, the host's), a vehicle a
+##   client parks is ignored everywhere; and the mode may refuse a player the wheel (refuse_drive: a locked vehicle).
 
 const LanDiscovery = preload("res://scripts/lan_discovery.gd")
 const RemotePlayer = preload("res://scripts/remote_player.gd")
@@ -59,7 +61,7 @@ signal welcomed                             # client: the host's welcome came in
 const PORT := 7777                          # the host tries the next ones when it is taken
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
-const PROTOCOL := 12                        # bump when the messages change (build_id: other builds are refused anyway)
+const PROTOCOL := 13                        # bump when the messages change (build_id: other builds are refused anyway)
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const TRAIN_SEND_RATE := 10.0               # RER B train states per second (host)
@@ -503,6 +505,22 @@ func _pose_remote(id: int, a: Array, b: Array, w: float) -> void:
 	r.update_collision(shown, car, game.cars)
 
 
+## Where player `id` is (global) by the newest state they sent, not played back yet: on foot, or the vehicle they're
+## in; null when none came yet.
+func player_position(id: int) -> Variant:
+	var track: Track = _player_tracks.get(id)
+	if track == null or track.is_empty():
+		return null
+	var s: Array = track.latest()
+	if s[0] == "":
+		return s[2]
+	var car: Node3D = cars.get(s[0])
+	if car:
+		return car.global_position
+	var r: Node3D = _remotes.get(id)
+	return r.global_position if r else null
+
+
 ## Round trip from player `id` to the host in ms (0 for the host itself), -1 when not known yet.
 func ping(id: int) -> int:
 	var peer := multiplayer.multiplayer_peer as ENetMultiplayerPeer
@@ -584,10 +602,13 @@ func car_parked(car: Car) -> void:
 	_spawn_car.rpc(car.net_id, car.model_name, car.net_state())
 
 
+## (In a game mode where players don't park vehicles themselves, PTA Online's garages, only the host's count: a
+## patched client parking an armed plane is ignored everywhere.)
 @rpc("any_peer", "call_remote", "reliable")
 func _spawn_car(net_id: String, model: String, state: Array) -> void:
-	if active:
-		_make_car(net_id, model, multiplayer.get_remote_sender_id(), 0, state)
+	var from := multiplayer.get_remote_sender_id()
+	if active and (from == 1 or game.allows("park_car") or game.allows("vehicle_menu")):
+		_make_car(net_id, model, from, 0, state)
 
 
 func _make_car(net_id: String, model: String, owner_id: int, driver_id: int, state: Array) -> void:
@@ -685,6 +706,12 @@ func _ask_drive(net_id: String) -> void:
 		else:
 			_drive_refused.rpc_id(id, net_id, d)
 		return
+	if game.game_mode and game.game_mode.refuse_drive(net_id, id):   # (it says why: -1, no message here)
+		if id == me():
+			_drive_refused(net_id, -1)
+		else:
+			_drive_refused.rpc_id(id, net_id, -1)
+		return
 	_car_control.rpc(net_id, id, id)
 
 
@@ -698,7 +725,8 @@ func _release(net_id: String) -> void:
 func _drive_refused(net_id: String, driver_id: int) -> void:
 	if _pending_drive == net_id:
 		_pending_drive = ""
-		message.emit("A bot drives it" if driver_id == 0 else "%s is driving it" % player_name(driver_id))
+		if driver_id >= 0:
+			message.emit("A bot drives it" if driver_id == 0 else "%s is driving it" % player_name(driver_id))
 
 
 ## Everyone: who simulates and who drives vehicle `net_id` now.

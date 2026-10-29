@@ -2,7 +2,8 @@ extends Control
 ## The HUD's minimap (top left, K on / off): a round map of the ground around the player (scripts/map_ground.gd),
 ## seen from above and turned with the view (straight ahead is up, a red N on the rim points north), the player an
 ## arrow in the middle, the other players dots of their colour and the waypoint a gold diamond (both held on the rim
-## when out of reach). It zooms out with speed.
+## when out of reach), and the places of game.gd map_places (Prestige Motors, PTA Online's garages) as small badges
+## when in reach. It zooms out with speed.
 
 const MapGround = preload("res://scripts/map_ground.gd")
 const SIZE := 210.0                         # px across
@@ -12,6 +13,13 @@ const ZOOM_FAST := 0.35                     # ...and from FAST on (cars, the pla
 const FAST := 45.0                          # m/s
 const WAYPOINT := Color(1.0, 0.8, 0.25)
 const INK := Color(0.05, 0.05, 0.07, 0.92)
+## The places' badges (game.gd map_places), by kind: their colour and glyph.
+const PLACES := {
+	"garage": {"colour": Color("#2f6fd6"), "glyph": "P"},
+	"depot": {"colour": Color("#2e9d57"), "glyph": "bus"},
+	"fire": {"colour": Color("#d23b2f"), "glyph": "flame"},
+	"shop": {"colour": Color("#c9a043"), "glyph": "€"},
+}
 
 var game: Node                              # game.gd
 var _map_rect: ColorRect
@@ -22,6 +30,9 @@ var _last := Vector3.INF                    # the eye's last position, for its s
 var _speed := 0.0
 var _forward := Vector2.UP                  # the view's heading (pipeline x east, y north)
 var _eye := Vector2.ZERO                    # pipeline (x, y) under the middle
+var _places: Array = []                     # game.map_places(), read again every PLACES_EVERY s
+var _places_t := 0.0
+const PLACES_EVERY := 2.0
 
 
 func _ready() -> void:
@@ -68,6 +79,10 @@ func _process(delta: float) -> void:
 	if f.length() > 0.05:                   # (looking straight down: keep the last heading)
 		_forward = f.normalized()
 	_eye = Vector2(eye.x, -eye.z)
+	_places_t -= delta
+	if _places_t <= 0.0:
+		_places_t = PLACES_EVERY
+		_places = game.map_places()
 	var half := SIZE * 0.5 / _zoom
 	MapGround.view(_mat, _eye, _forward, Vector2(half, half))
 	_marks.queue_redraw()
@@ -95,6 +110,12 @@ func _draw_marks() -> void:
 	var radius := SIZE * 0.5
 	_marks.draw_arc(mid, radius - 1.0, 0.0, TAU, 64, INK, 3.0, true)
 	_marks.draw_arc(mid, radius - 1.0, 0.0, TAU, 64, Color(1, 1, 1, 0.55), 1.2, true)
+	# The places in reach.
+	var font := get_theme_default_font()
+	for place: Array in _places:
+		var p := _to_px(place[2])
+		if p.distance_to(mid) < radius - 10.0:
+			draw_place(_marks, font, p, place[1], 6.5)
 	# The other players (LAN games): dots.
 	var net: Node = game.net
 	if net and net.active:
@@ -123,6 +144,28 @@ static func draw_player(canvas: CanvasItem, p: Vector2, angle: float) -> void:
 	canvas.draw_colored_polygon(arrow, Color.WHITE)
 	arrow.append(arrow[0])
 	canvas.draw_polyline(arrow, INK, 1.6, true)
+
+
+## A place's badge (PLACES) of kind `kind` at `p`, `r` px its radius: a disc of its colour with its glyph in white.
+static func draw_place(canvas: CanvasItem, font: Font, p: Vector2, kind: String, r: float) -> void:
+	var look: Dictionary = PLACES.get(kind, PLACES["garage"])
+	canvas.draw_circle(p, r + 2.0, INK)
+	canvas.draw_circle(p, r, look["colour"])
+	match look["glyph"]:
+		"bus":
+			canvas.draw_rect(Rect2(p + Vector2(-0.62, -0.5) * r, Vector2(1.24, 0.8) * r), Color.WHITE)
+			canvas.draw_rect(Rect2(p + Vector2(-0.48, -0.36) * r, Vector2(0.96, 0.3) * r), look["colour"])
+			for x: float in [-0.35, 0.35]:
+				canvas.draw_circle(p + Vector2(x, 0.38) * r, 0.17 * r, Color.WHITE)
+		"flame":
+			canvas.draw_colored_polygon(PackedVector2Array([p + Vector2(0.0, -0.72) * r, p + Vector2(0.45, -0.05) * r,
+					p + Vector2(0.4, 0.38) * r, p + Vector2(0.0, 0.62) * r, p + Vector2(-0.4, 0.38) * r,
+					p + Vector2(-0.45, 0.0) * r, p + Vector2(-0.18, -0.25) * r]), Color.WHITE)
+		_:
+			var fs := roundi(r * 1.55)
+			var w := font.get_string_size(look["glyph"], HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			canvas.draw_string(font, p + Vector2(-w.x * 0.5, fs * 0.36), look["glyph"], HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
+					Color.WHITE)
 
 
 ## The waypoint's gold diamond at `p`, `r` px from its middle to a corner.
