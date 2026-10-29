@@ -22,6 +22,11 @@ extends Node
 ##   half as often, then fewer bot cars out) after LOAD_AFTER s over LOAD_HIGH, and fills up again a level after
 ##   LOAD_RELAX s under LOAD_LOW: a slow computer (a laptop on battery) stays playable instead of the physics falling
 ##   behind.
+## - PTA Online's bus job (scripts/online/bus_job.gd): a player going on duty on a line takes one of its bot buses off the
+##   map (hold_bus) for as long as they drive it. The bus held still runs its timetable unseen (`holds`: its trip on
+##   the planned speeds, as _after places the buses at the start), taking the departure it would have made at the end
+##   of its trip: the line runs one bus fewer all along. Off duty (release_bus) it comes back where it would be by then,
+##   out of the players' sight (RELEASE_SEEN), or at its next departure.
 ## The host can stop them (stop_bots: game.gd set_bot_traffic, the in-game menu) and start them again.
 ## Only the peer that hosts (or plays solo, or a dedicated server) runs the bots; the other peers get their vehicles as
 ## remote vehicles (net.gd), which they can ride in (buses) but not drive.
@@ -53,6 +58,7 @@ const LOAD_RELAX := 30.0                    # ...for this many s it fills up aga
 const LOAD_SETTLE := 10.0                   # s after the bots start before the load counts (spawns, first looks)
 const LOAD_SMOOTH := 0.02                   # per tick, of the load's moving average
 const LEVELS := [[1, 1.0], [2, 1.0], [2, 0.6], [2, 0.3]]    # [glide_scale, share of the bot cars out] per level
+const RELEASE_SEEN := 150.0                 # m from every player a bus held for a player on duty may come back in
 
 var game: Node3D                            # game.gd
 var trains: TrainTraffic                    # the RER B (scripts/train_traffic.gd), on every peer
@@ -65,6 +71,9 @@ var departures: Array = []                  # [line, route index, s of the next 
 var time := 0.0                             # s since the bots started
 var departed := {}                          # route id -> buses that set off from its start (tests)
 var send_cars := true                       # stowed bot cars sent out again (tests turn it off)
+var holds: Array = []                       # buses held off the map for players on duty (hold_bus): {"bot", "line", "r"
+											# (route its trip started on), "elapsed" (s since), "trip" (s it takes),
+											# "waiting" (its trip is over: it takes the line's next departure)}
 # the vehicles out (not stowed) as of this physics tick, for the bots' looks around: footprint centre (pipeline x/y),
 # velocity (BusBot.velocity_of), heading, half length
 var snap_cars: Array = []
@@ -134,10 +143,13 @@ func _physics_process(delta: float) -> void:
 	_tick_start = Time.get_ticks_usec()
 	time += delta
 	_snapshot()
+	for h: Dictionary in holds:
+		h["elapsed"] += delta
+		h["waiting"] = h["waiting"] or h["elapsed"] > h["trip"]
 	for d: Array in departures:
 		if time >= d[2]:
 			var late: float = time - d[2]
-			if _depart(d[0], d[1], late) or late > float(d[0]["headway"]) * 0.9:
+			if _held_departure(d[0], d[1], late) or _depart(d[0], d[1], late) or late > float(d[0]["headway"]) * 0.9:
 				d[2] += float(d[0]["headway"])
 	_car_look -= delta
 	if _car_look <= 0.0:
@@ -350,6 +362,7 @@ func stop_bots() -> Array:
 		if is_instance_valid(b.car):
 			out.append(b.car)
 	bots.clear()
+	holds.clear()
 	lines = []
 	routes = {}
 	car_line = {}
@@ -459,7 +472,7 @@ func _depart(line: Dictionary, r: int, late: float) -> bool:
 	for b: Object in bots:
 		if is_same(b.line, line):
 			count += 1
-			if b.idle and bot == null:
+			if b.idle and bot == null and not held(b):
 				bot = b
 	var route: Dictionary = routes[line["routes"][r]]
 	if bot == null:
@@ -478,6 +491,109 @@ func _depart(line: Dictionary, r: int, late: float) -> bool:
 	bot.put(r, s0, 0.0 if route["start"] == "terminus" else minf(bot._planned(s0 + bot.nose), 8.0))
 	departed[line["routes"][r]] = departed.get(line["routes"][r], 0) + 1
 	return true
+
+
+## The line of `ref` ("4606"...), {} when there is none.
+func line_of(ref: String) -> Dictionary:
+	for line: Dictionary in lines:
+		if line["ref"] == ref:
+			return line
+	return {}
+
+
+## Takes a bot bus of line `ref` off the map for a player on duty (PTA Online's bus job): one out that nobody rides,
+## gliding (out of every player's sight) and nearest to `near` first, else one waiting for its departure. Returns it, or
+## null when the line has none to give.
+func hold_bus(ref: String, near: Vector3) -> Object:
+	var line := line_of(ref)
+	var best: Object = null
+	var best_d := INF
+	for b: Object in bots:
+		if not is_same(b.line, line) or held(b) or (not b.idle and riders(b.car) > 0):
+			continue
+		var d: float = 1e12 if b.idle else b.car.global_position.distance_to(near) + (0.0 if b.gliding else 1e6)
+		if d < best_d:
+			best_d = d
+			best = b
+	if best == null:
+		return null
+	var h := {"bot": best, "line": line, "r": best.route_index, "elapsed": 0.0, "trip": 0.0, "waiting": best.idle}
+	if not best.idle:
+		h["elapsed"] = _elapsed(line, best.route_index, best.s + best.nose)
+		h["trip"] = _trip(line, best.route_index)
+		best._stow()
+	holds.append(h)
+	return best
+
+
+## Lets bus `bot` (hold_bus) run again: back on its route where its timetable has it now when no player is within
+## RELEASE_SEEN m of there and the way is clear, else at its line's next departure. "map", "departure", or "" when it
+## was not held.
+func release_bus(bot: Object) -> String:
+	for h: Dictionary in holds:
+		if h["bot"] != bot:
+			continue
+		holds.erase(h)
+		if h["waiting"] or not is_instance_valid(bot.car):
+			return "departure"
+		var at := _after(h["line"], h["r"], h["elapsed"])
+		if at.is_empty():
+			return "departure"
+		var route: Dictionary = routes[h["line"]["routes"][at[0]]]
+		bot._set_route(at[0])
+		var s0 := clampf(float(at[1]) - bot.nose, bot.tail + 1.0, float(route["length"]) - bot.nose - 1.0)
+		for k in 12:
+			if way_clear(bot, s0) and not _player_within(bot.pose_at(s0).origin, RELEASE_SEEN):
+				bot.put(at[0], s0, bot._planned(s0 + bot.nose) * 0.8)
+				return "map"
+			s0 += 25.0
+			if s0 > float(route["length"]) - bot.nose - 1.0:
+				break
+		return "departure"
+	return ""
+
+
+## Whether bot `bot` is held off the map for a player on duty.
+func held(bot: Object) -> bool:
+	for h: Dictionary in holds:
+		if h["bot"] == bot:
+			return true
+	return false
+
+
+## A held bus whose trip is over takes line `line`'s departure from route `r` (made `late` s after its time): true.
+func _held_departure(line: Dictionary, r: int, late: float) -> bool:
+	for h: Dictionary in holds:
+		if h["waiting"] and is_same(h["line"], line):
+			h.merge({"r": r, "elapsed": late, "trip": _trip(line, r), "waiting": false}, true)
+			return true
+	return false
+
+
+## s a bus of `line` takes from the start of route `r` to its front `d` m along it (_after's planned trip).
+func _elapsed(line: Dictionary, r: int, d: float) -> float:
+	var route: Dictionary = routes[line["routes"][r]]
+	var v: Array = route["v"]
+	var step := float(route["step"])
+	var t := 0.0
+	for st: Dictionary in route["stops"]:
+		t += STOP_COST if float(st["s"]) <= d else 0.0
+	for i in mini(ceili(d / step), v.size()):
+		t += step / maxf(float(v[i]), 2.0)
+	return t
+
+
+## s a bus of `line` takes from the start of route `r` until it leaves the map (the routes it runs on into, too).
+func _trip(line: Dictionary, r: int) -> float:
+	var ids: Array = line["routes"]
+	var t := 0.0
+	for hop in ids.size():
+		var route: Dictionary = routes[ids[r]]
+		t += _elapsed(line, r, float(route["length"]) + 1.0)
+		if route["then"] != "continue":
+			break
+		r = (r + 1) % ids.size()
+	return t
 
 
 # ---------------------------------------------------------------- cars

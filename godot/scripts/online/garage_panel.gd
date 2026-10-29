@@ -5,11 +5,12 @@ extends PanelContainer
 ##   back as a status line). Those it can't get out stay listed, greyed, with the reason (not allowed online, too big
 ##   for this garage, kept at the bus depot, wrecked...). Beside each of the player's own: "Repair" (a wrecked one, its
 ##   price) and "Paint" (the palette view: one swatch per colour, the price of a coat). The bus depot and the fire
-##   station also sell their work vehicles ("Buy" rows);
+##   station also sell their work vehicles ("Buy" rows), and the depot lists the bus lines to go on duty on (the bus
+##   job, scripts/online/bus_job.gd: "Duty" rows, and "Go off duty" while on duty);
 ## - Prestige Motors' catalogue (E by Jean-Claude or a podium terminal): the vehicles it sells by tier, their prices,
 ##   how many of each the player has; one click buys it;
 ## - the player's vehicle's (U): what and where it is, lock / unlock (locked: others ride along, never drive), send it
-##   back to the garage.
+##   back to the garage, and off duty while on duty.
 
 const UiStyle = preload("res://scripts/ui_style.gd")
 const Paint = preload("res://scripts/paint.gd")
@@ -22,6 +23,7 @@ signal repair(vehicle: int)                 # garage: repair this wrecked vehicl
 signal repaint(vehicle: int, colour: String)    # garage, palette view: paint it ("" its own colour)
 signal lock(on: bool)                       # vehicle: lock or unlock it
 signal send_back                            # vehicle: back to the garage
+signal duty(line: String)                   # garage (the bus depot): on duty on this line ("": off duty); vehicle: off
 
 var kind := ""                              # "garage", "catalogue" or "vehicle" while shown
 var view := ""                              # garage: "list" or "paint"
@@ -37,6 +39,7 @@ var _scroll: ScrollContainer
 var _looks: Dictionary
 var _lock: Button
 var _back: Button
+var _off: Button
 var _to_list: Button
 var _locked := true
 var _close_keys := ""
@@ -78,6 +81,9 @@ func _ready() -> void:
 	_back = UiStyle.button("Send it back to the garage", _looks, Vector2(300, 40), 17)
 	_back.pressed.connect(func() -> void: send_back.emit())
 	box.add_child(_centred(_back))
+	_off = UiStyle.button("Go off duty", _looks, Vector2(300, 40), 17)
+	_off.pressed.connect(func() -> void: duty.emit(""))
+	box.add_child(_centred(_off))
 	_status = UiStyle.label("", 16, UiStyle.TEXT_WARN)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_status)
@@ -99,6 +105,7 @@ func _parts(parts: Array) -> void:
 	_to_list.get_parent().visible = "to_list" in parts
 	_lock.get_parent().visible = "vehicle" in parts
 	_back.get_parent().visible = "vehicle" in parts
+	_off.get_parent().visible = "duty" in parts
 
 
 ## A garage terminal's panel while its list comes from the server.
@@ -129,6 +136,10 @@ func show_entries(list: Array, message: String) -> void:
 	for e: Dictionary in list:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 10)
+		if e.has("duty"):
+			_duty_row(row, e)
+			rows.add_child(row)
+			continue
 		var buying := int(e.get("buy", 0)) > 0
 		row.name = "Buy_%s" % e["model"] if buying else "Vehicle_%d_%s" % [int(e["vehicle"]), str(e["model"])]
 		var b := UiStyle.button("%s · %s" % [e["label"], Economy.money(int(e["buy"]))] if buying else str(e["label"]),
@@ -167,6 +178,21 @@ func show_entries(list: Array, message: String) -> void:
 	var first := _first_enabled()
 	if first:
 		first.grab_focus()
+
+
+## A bus line's row at the depot: {"duty": its ref ("" off duty), "label", "note"}.
+func _duty_row(row: HBoxContainer, e: Dictionary) -> void:
+	var ref := str(e["duty"])
+	row.name = "Duty_" + (ref if ref != "" else "off")
+	var b := UiStyle.button(str(e["label"]), _looks, Vector2(400, 40), 16)
+	b.name = "Duty"
+	b.disabled = str(e["note"]) == "On duty"
+	b.pressed.connect(func() -> void: duty.emit(ref))
+	row.add_child(b)
+	var note := UiStyle.label(str(e["note"]), 15, UiStyle.TEXT_DIM, HORIZONTAL_ALIGNMENT_LEFT)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(note)
 
 
 ## The palette view of garage entry `e` (one of the player's own vehicles).
@@ -253,8 +279,9 @@ func show_catalogue(list: Array, balance: int, message: String) -> void:
 		first.grab_focus()
 
 
-## The player's vehicle's panel: `what` says which and where; `locked` its lock (null: no vehicle out).
-func open_vehicle(what: String, sub: String, locked: Variant, close_keys: String) -> void:
+## The player's vehicle's panel: `what` says which and where; `locked` its lock (null: no vehicle out); `on_duty` the
+## bus job's line ("" off duty).
+func open_vehicle(what: String, sub: String, locked: Variant, close_keys: String, on_duty := "") -> void:
 	kind = "vehicle"
 	view = ""
 	garage_id = ""
@@ -263,7 +290,9 @@ func open_vehicle(what: String, sub: String, locked: Variant, close_keys: String
 	_clear_rows()
 	_status.text = ""
 	_hint.text = "%s / Esc close" % close_keys
-	_parts(["vehicle"] if locked != null else [])
+	_parts((["vehicle"] if locked != null else []) + (["duty"] if on_duty != "" else []))
+	if on_duty != "":
+		_sub.text += "  ·  " + on_duty
 	if locked != null:
 		set_locked(locked)
 		_lock.grab_focus()

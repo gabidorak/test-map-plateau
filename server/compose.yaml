@@ -28,7 +28,7 @@ services:
       - accounts-data:/data
       - ./backups:/backups
 
-  # Only for a machine without Caddy of its own: `docker compose --profile caddy up -d` (ACCOUNTS_DOMAIN in .env).
+  # Only for a machine without Caddy of its own: `docker compose --profile caddy up -d` (SITE_DOMAIN in .env).
   caddy:
     image: caddy:2
     profiles: [caddy]
@@ -37,7 +37,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      ACCOUNTS_DOMAIN: "${ACCOUNTS_DOMAIN:-accounts.localhost}"
+      SITE_DOMAIN: "${SITE_DOMAIN:-localhost}"
       ACCOUNTS_UPSTREAM: "accounts:8000"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

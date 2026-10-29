@@ -24,6 +24,7 @@ extends "res://scripts/modes/game_mode.gd"
 ##   TOW s later (tow_time), and an owned one is wrecked in its owner's garage until they pay its repair (a lent one: nothing to
 ##   pay, take another).
 ## - Paint: each vehicle out shows its owner's colour on every peer (`vehicles` "colour", _sync_looks).
+## - The bus job (scripts/online/bus_job.gd, O5): duty on a real line from the bus depot's terminal, paid per stop.
 ## The host (the official server) keeps who owns which vehicle; every peer gets it (`vehicles`) to show the prompts.
 ## Played solo (the tools: PLATEAU_MODE=online), the player's garage is PLATEAU_ONLINE_VEHICLES (models, comma-separated)
 ## and their money PLATEAU_ONLINE_MONEY (the starting money by default), kept here (test_garage, test_money).
@@ -37,6 +38,7 @@ const Water = preload("res://scripts/water.gd")
 const Prices = preload("res://scripts/online/prices.gd")
 const Shop = preload("res://scripts/online/shop.gd")
 const Paint = preload("res://scripts/paint.gd")
+const BusJob = preload("res://scripts/online/bus_job.gd")
 
 signal answered(ok: bool, text: String)     # the host's answer to our last request at a garage terminal
 
@@ -59,6 +61,7 @@ var tow_time := TOW
 var test_garage: Array = []                 # played solo by the tools: the player's vehicles ({"id", "model", ...})
 var test_money := 0                         # played solo by the tools: the player's €
 var shop: Shop
+var bus_job: BusJob
 var _leaving := {}                          # host: account -> [net id, s left]
 var _panel: GaragePanel
 var _wallet: Label
@@ -91,6 +94,10 @@ func _ready() -> void:
 	shop.name = "Shop"
 	shop.mode = self
 	add_child(shop)
+	bus_job = BusJob.new()
+	bus_job.name = "BusJob"
+	bus_job.mode = self
+	add_child(bus_job)
 	multiplayer.peer_disconnected.connect(_on_left)
 	game.economy.logged_in.connect(_on_login)
 
@@ -139,6 +146,9 @@ func walk_help(k: Callable) -> String:
 
 
 func extra_help(k: Callable) -> String:
+	if bus_job.on_duty():
+		return "ON DUTY · stop in each stop's bay, %s open the doors %d s · %s your bus (off duty) · the next stop is the waypoint" % [
+				k.call("doors"), int(bus_job.pay.get("doors", 3.0)), k.call("vehicle_menu")]
 	return "%s your vehicle (lock, send back) · the garages are on the map (%s) · buy vehicles at Prestige Motors, " % [
 			k.call("vehicle_menu"), game.letter_key("world_map", "M")] + "repair and paint them at a garage terminal"
 
@@ -222,7 +232,7 @@ func open_garage(id: String) -> void:
 	var look: Dictionary = Garages.KINDS[g["kind"]]
 	var sub := {"public": "Your vehicles (not the work ones: buses at the bus depot, fire trucks at the fire station)",
 			"shop": "Your vehicles (not the work ones). Those bought here come out on these bays.",
-			"depot": "Bus drivers: a lent bus, or one of yours; buses for sale", "fire":
+			"depot": "Bus drivers: pick a line to go on duty (in your bus, or a lent one); buses for sale", "fire":
 			"Firefighters: a lent fire truck, or yours; fire trucks for sale"}
 	_open_panel()
 	_panel.open_garage(id, "%s · %s" % [look["title"], g["name"]] if g["kind"] in Garages.PUBLIC else str(g["name"]),
@@ -245,7 +255,8 @@ func open_vehicle() -> void:
 		return
 	var d := car.global_position.distance_to(game.map_eye())
 	_panel.open_vehicle("Your %s" % Car.common_name(car.model_name), "%d m away" % roundi(d) if d > 8.0
-			else "Right here", vehicles.get(mine, {}).get("locked", true), Settings.key_text("vehicle_menu"))
+			else "Right here", vehicles.get(mine, {}).get("locked", true), Settings.key_text("vehicle_menu"),
+			"On duty: line %s" % bus_job.info["ref"] if bus_job.on_duty() else "")
 	game.update_controls()
 
 
@@ -287,6 +298,9 @@ func _build_hud() -> void:
 	_panel.send_back.connect(func() -> void:
 		to_host(self, "_h_back", [])
 		_close_panel())
+	_panel.duty.connect(func(ref: String) -> void:
+		_panel.set_status("Going on duty…" if ref != "" else "Going off duty…")
+		bus_job.ask_duty(_panel.garage_id, ref))
 	_wallet = Label.new()
 	_wallet.name = "Wallet"
 	_wallet.add_theme_font_size_override("font_size", 24)
@@ -530,7 +544,11 @@ func out_on_map(account_id: int, vehicle: int) -> String:
 	return ""
 
 
-## The net id of account `account`'s vehicle out, or "".
+## The net id of account `account_id`'s vehicle out, or "".
+func vehicle_of(account_id: int) -> String:
+	return _vehicle_of(account_id)
+
+
 func _vehicle_of(account_id: int) -> String:
 	for id: String in vehicles:
 		if vehicles[id].get("account", -1) == account_id:
@@ -683,7 +701,7 @@ func send_garage(peer: int, gid: String, message := "") -> void:
 	if not _near(peer, g):
 		send_to(peer, self, "_c_garage", [gid, [], "Walk up to the garage's terminal."])
 		return
-	send_to(peer, self, "_c_garage", [gid, offer(g, acc), message])
+	send_to(peer, self, "_c_garage", [gid, (bus_job.offer(peer) if g["kind"] == "depot" else []) + offer(g, acc), message])
 
 
 @rpc("any_peer", "call_remote", "reliable")

@@ -99,6 +99,20 @@ func vehicle_change(account_id: int, change: Dictionary) -> Dictionary:
 	return r
 
 
+## Server: pays account `account_id` `amount` € for job `job` ("bus:4606"...), cut to the account's hourly cap `cap`
+## (the accounts service counts every job's pay over the last hour: server/accounts db.earn). The answer as accounts.gd's,
+## "data": {"balance", "paid", "hour"}; a logged-in player of that account sees their wallet follow.
+func pay(account_id: int, amount: int, reason: String, job: String, cap: int) -> Dictionary:
+	var r: Dictionary = await accounts.server_post("/v1/server/pay", {"account": account_id, "amount": amount,
+			"reason": reason, "job": job, "cap": cap}, secret)
+	if r["ok"]:
+		for id: int in _logged:
+			if _logged[id]["account"] == account_id:
+				_logged[id]["balance"] = int(r["data"]["balance"])
+				_wallet.rpc_id(id, _logged[id]["balance"])
+	return r
+
+
 func _on_registered(id: int) -> void:
 	if official:
 		_waiting[id] = 0.0

@@ -29,7 +29,7 @@ checked before calling it finished.
 - Tables: `accounts` (id, username, display case, password hash, created, renamed_at, banned), `tokens` (hash of
   the token, account, created, last used), `wallet` (balance), `vehicles` (account, model, colour, wrecked,
   upgrades json), `payments` (account, amount, reason, job, time), `reserved_names` (old names for 30 days).
-- Public API (through Caddy, `accounts.<domain>`): `POST /v1/signup`, `POST /v1/login`, `POST /v1/logout`,
+- Public API (through Caddy, `https://<domain>/accounts`): `POST /v1/signup`, `POST /v1/login`, `POST /v1/logout`,
   `POST /v1/logout-all`, `GET /v1/me` (username, balance, vehicles), `POST /v1/rename`.
 - Internal API (Docker network only, header with the server secret from an env var): `GET /v1/server/who?token=`,
   `POST /v1/server/pay`, `POST /v1/server/charge` (fails if the balance is too low), `POST /v1/server/vehicle`
@@ -130,10 +130,10 @@ checked before calling it finished.
 - Tune to ~15 000 €/h for a decent run with a lent bus (measure with a bot driving the line).
 
 **Done when:**
-- [ ] `tools/test_bus_job.gd`: a bot drives a full line on duty → pay within the target band; skipped stop and
+- [x] `tools/test_bus_job.gd`: a bot drives a full line on duty → pay within the target band; skipped stop and
       off-route penalised; teleport refused; cap holds.
-- [ ] `tools/test_bus_job.sh` (port 7799): duty stows a bot bus on the client's view, disconnect brings it back.
-- [ ] Shots of the HUD at a stop.
+- [x] `tools/test_bus_job.sh` (port 7799): duty stows a bot bus on the client's view, disconnect brings it back.
+- [x] Shots of the HUD at a stop.
 
 ## O6 — Stunts
 
@@ -185,10 +185,10 @@ a real fire station building at #1289.
 | Milestone | State | Notes |
 |---|---|---|
 | O1 Accounts service | ✅ | `server/accounts/` (71 pytest), compose + Caddyfile, arm64 cross-build without emulation. |
-| O2 Login + menu | ✅ | Account page, `accounts.gd`, `economy.gd` (`--official`), test_online_login.sh green. Addresses in `data/online.json` still empty. |
+| O2 Login + menu | ✅ | Account page, `accounts.gd`, `economy.gd` (`--official`), test_online_login.sh green. Addresses in `data/online.json`. |
 | O3 Rules + garages | ✅ | `online_mode.gd`, `online/garages.gd` + panel, `garages.json` (9 public + depot + fire station), map badges, `add-vehicle` admin. test_online_rules.sh green. |
 | O4 Shop, repairs, colours | ✅ | `online/shop.gd` + `prices.gd`, `paint.gd` (`car.gd` set_paint, crash damage online), delivery bays `prestige-motors`, PROTOCOL 14. test_online_shop.sh green (107 checks). |
-| O5 Bus job | ⬜ | |
+| O5 Bus job | ✅ | `online/bus_job.gd` (Main/Mode/BusJob), `data/jobs.json`, traffic.gd hold/release, accounts `pay` hourly `cap`, PROTOCOL 15. Bot on the 4606: 14 stops, ~15 200 €/h. test_bus_job.sh green (49 checks). |
 | O6 Stunts | ⬜ | |
 | O7 Fires + firefighter job | ⬜ | |
 | O8 Balance + admin | ⬜ | |

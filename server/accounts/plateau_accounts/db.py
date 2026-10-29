@@ -308,6 +308,28 @@ def pay(conn: sqlite3.Connection, account: int, amount: int, reason: str, job: s
         return _move(conn, account, amount, reason, job)
 
 
+HOUR = 3600.0
+
+
+def earned_in_hour(conn: sqlite3.Connection, account: int) -> int:
+    """What the account earned from jobs (any job but the admin's) in the last HOUR s."""
+    row = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE account = ? AND time > ? AND amount > 0 "
+                       "AND job NOT IN ('', 'admin')", (account, clock() - HOUR)).fetchone()
+    return row[0]
+
+
+def earn(conn: sqlite3.Connection, account: int, amount: int, reason: str, job: str, cap: int = 0) -> dict:
+    """Pays `amount` for job `job`, cut so that the account's job earnings over the last HOUR s stay within `cap`
+    (0: no cap; a cut payment's reason says "(cap)"). Returns the balance, what was paid, and the hour's earnings."""
+    if amount < 0:
+        raise Refused(400, "amount", "A payment is 0 or more.")
+    with write(conn):
+        hour = earned_in_hour(conn, account)
+        paid = min(amount, max(cap - hour, 0)) if cap > 0 else amount
+        after = _move(conn, account, paid, reason + (" (cap)" if paid < amount else ""), job)
+        return {"balance": after, "paid": paid, "hour": hour + paid}
+
+
 def charge(conn: sqlite3.Connection, account: int, amount: int, reason: str, job: str = "") -> int:
     if amount < 0:
         raise Refused(400, "amount", "A charge is 0 or more.")

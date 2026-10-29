@@ -1,6 +1,6 @@
 # PTA Online: an economy on the official server
 
-Status: **being built**: accounts service and login (O1, O2), rules and garages (O3) done, see the status table in ONLINE_MILESTONES.md. "Decided" = agreed with Gabriel; *(proposal)* = mine and
+Status: **being built**: accounts service and login (O1, O2), rules and garages (O3), shop (O4) and bus job (O5) done, see the status table in ONLINE_MILESTONES.md. "Decided" = agreed with Gabriel; *(proposal)* = mine and
 not agreed yet. Open questions are at the end (Q…).
 
 ## 1. Vision
@@ -52,7 +52,8 @@ A small **accounts service** next to the game server on the VPS, in the same `co
 
 - Python (FastAPI or plain `http.server`) + **SQLite** in the `/data` volume. Postgres is overkill for a few hundred
   accounts, and SQLite is one file to back up. Both run fine on aarch64.
-- Exposed over **HTTPS through Caddy** (e.g. `accounts.<domain>`), so passwords never travel in clear. ENet game
+- Exposed over **HTTPS through Caddy** (under `https://<domain>/accounts`, Caddy's `handle_path` strips the prefix:
+  `server/Caddyfile`), so passwords never travel in clear. ENet game
   traffic is not encrypted, so the password must never go through it.
 - Passwords hashed with **argon2** (or bcrypt).
 - It owns all persistent player data: accounts, wallet, garage, upgrades, stats.
@@ -202,6 +203,29 @@ depot), fire truck 80 000 (fire station). Not sold: police cars, ambulance, arme
 - Penalties: skipping a stop, crashing hard, leaving the route for too long (the bus race's off-road rule).
 - Real players riding as passengers give a bonus: a reason to ride a friend's bus.
 - Bot passengers later (people waiting at stops, boarding, a satisfaction meter).
+- Built in O5 (my choices): `scripts/online/bus_job.gd`, pay in `godot/data/jobs.json` (JSON like prices.json). At
+  the depot's terminal, one row per line the bots run (4606, 4619, L, Z): picking one puts the player on duty in their
+  bus out if it is a bus, else a lent bus of the line's model comes out (18 m for the 4606, 12 m for the others). A
+  line = its routes in turn, both ways; the job waits for the bus on one of them, facing its way (the 4606 starts at
+  the depot's door), and puts the waypoint on the next stop. **Stop served:** front of the bus in the bay (14 m short
+  of the bots' stop mark to 12 m past it, so a 12 m and an 18 m bus both fit), under 1 m/s, doors open 3 s on end.
+  **Pay per stop:** 90 € + 210 €/km of route since the last stop; +25 % when that stretch took at most 1.2× the bots'
+  planned driving time; + the stretch's bonuses (air time 100 €/s from 0.4 s, near miss 40 €, overtake 60 €, drift
+  80 €/s from 0.6 s); × combo (+0.1 per stop served up to ×2, back to ×1 at a penalty); ×1.5 own bus; +20 % per other
+  player riding (3 at most). A bot driving the whole 4606 (14 stops, ~22 min, no other traffic) earns ~15 200 €/h.
+  **Penalties** (taken from the next stops' pay, never from the wallet): skipped stop 150 €, hard crash (15 % of the
+  health at once) 300 €, off the route (over 12 m from its path for 4 s, or 40 m at once) 200 €: the job then waits
+  for the bus back on the route, the stops missed are skipped, and a shortcut's distance pays nothing. **Checks:**
+  a jump over 25 m in a tick, or over 1.2× the model's top speed (+3 m/s) for 0.5 s, or a stretch faster than that on
+  average: the stretch pays nothing. **Hourly cap:** 30 000 €/h per account over all jobs (2× the target), kept by
+  the accounts service (`/v1/server/pay` `cap`: the last hour's job payments, the admin's gifts excluded; a cut
+  payment says "(cap)" in the log), so it holds across server restarts. **Bot bus held:** going on duty takes the
+  line's nearest gliding bot bus off the map; it still runs its timetable unseen (it takes the departure it would
+  have made after its trip), so the line runs one bus fewer for the whole duty; off duty (asked at the depot or with
+  U, another vehicle taken out, the bus wrecked or sent back, leaving the game) it comes back where its timetable has
+  it, or at its next departure when that spot is within 150 m of a player. The HUD (top right, under the wallet):
+  line → destination, next stop and how far, the stretch's time, combo, bonuses pending, fines due, money paid this
+  duty, and the money/bonuses/fines popping in.
 
 **Firefighter**
 - Take a lent fire truck at the Polytechnique fire station (or spawn your own there, which pays more).

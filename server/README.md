@@ -110,11 +110,26 @@ reaches it on the Docker network (`http://accounts:8000`) with a shared secret, 
    chmod 600 .env
    ```
 
-2. HTTPS: a DNS `A` record `accounts.your.domain` to the VPS (DNS only on Cloudflare), TCP 80 and 443 open (Oracle:
-   the security list, and `sudo iptables -I INPUT 6 -p tcp -m multiport --dports 80,443 -j ACCEPT` +
-   `sudo netfilter-persistent save`). With Caddy already on the VPS, add the block of `Caddyfile` to its Caddyfile with
-   the domain written in, and `sudo systemctl reload caddy`; it proxies to `127.0.0.1:8790`, where compose publishes
-   the service (on this machine only), and refuses the game server's `/v1/server/*` routes. With Caddy in a container
+2. HTTPS, under `/accounts` on the server's own domain (`https://your.domain/accounts/v1/...`): the domain's DNS `A`
+   record to the VPS (DNS only on Cloudflare), TCP 80 and 443 open (Oracle: the security list, and
+   `sudo iptables -I INPUT 6 -p tcp -m multiport --dports 80,443 -j ACCEPT` + `sudo netfilter-persistent save`). With
+   Caddy already on the VPS, put the `handle_path /accounts/*` block of `Caddyfile` in that domain's site block of its
+   Caddyfile (next to its other routes), and `sudo systemctl reload caddy`; it strips the `/accounts` prefix, proxies to
+   `127.0.0.1:8790`, where compose publishes the service (on this machine only), and refuses the game server's
+   `/v1/server/*` routes. The official server's Caddyfile:
+
+   ```
+   plateaumap.mooo.com {
+           handle_path /accounts/* {
+                   @internal path /v1/server/*
+                   respond @internal 404
+                   reverse_proxy plateau-accounts:8000
+           }
+           # the other routes (releases...)
+   }
+   ```
+
+   With Caddy in a container
    of its own (another compose project), `127.0.0.1:8790` is not reachable from it: put both on a shared Docker
    network instead. In this folder, a `compose.override.yaml` (git-ignored, compose reads it by itself):
 
@@ -127,14 +142,16 @@ reaches it on the Docker network (`http://accounts:8000`) with a shared secret, 
        external: true
    ```
 
-   and in that Caddy's Caddyfile `reverse_proxy plateau-accounts:8000` (the container name, plain HTTP). Without Caddy, put
-   `ACCOUNTS_DOMAIN=accounts.your.domain` in `.env` and start compose's own: `docker compose --profile caddy up -d`.
+   and in that Caddy's Caddyfile `reverse_proxy plateau-accounts:8000` (the container name, plain HTTP: the official
+   server's setup above). Without Caddy, put `SITE_DOMAIN=your.domain` in `.env` and start compose's own:
+   `docker compose --profile caddy up -d`.
 
-3. `docker compose up -d --build`, then check: `curl https://accounts.your.domain/v1/status` answers
+3. `docker compose up -d --build`, then check: `curl https://your.domain/accounts/v1/status` answers
    `{"api":1,"min_client_api":1}`, and the game server's log says "official PTA Online server".
 
 4. The game's builds find both through `godot/data/online.json`: `"server": "your.domain:7777"`,
-   `"accounts_url": "https://accounts.your.domain"`. A build released with them shows PTA Online in the menu.
+   `"accounts_url": "https://your.domain/accounts"` (the official ones: `plateaumap.mooo.com:7777` and
+   `https://plateaumap.mooo.com/accounts`). A build released with them shows PTA Online in the menu.
 
 Admin (a forgotten password has no self-service reset: there is no email):
 
