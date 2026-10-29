@@ -27,6 +27,7 @@ const BUS_LEN_M := 70.0
 const TRAIN_LEN_M := 200.0
 const PULSE_EVERY := 2.6                      # s between two rings round a station
 const GRID_M := 500.0
+const STOP_SAME_M := 120.0                    # m: bus stops of the same name this near are one on the map
 
 ## Shared by every screen of the session: the parsed map, and the worker task parsing it.
 static var _data := {}
@@ -85,6 +86,14 @@ static func _parse_task() -> void:
 
 
 ## Picks up the worker's result once it is done (main thread).
+## The parsed map for other screens (scripts/world_map.gd): {} until it is (keep asking, once a frame).
+static func shared() -> Dictionary:
+	if _data.is_empty():
+		_start_parse()
+		_poll_parse()
+	return _data
+
+
 static func _poll_parse() -> void:
 	if _task < 0 or not WorkerThreadPool.is_task_completed(_task):
 		return
@@ -95,11 +104,12 @@ static func _poll_parse() -> void:
 
 
 ## The map's shapes, in world metres: {"roads": [PackedVector2Array], "rail": [path], "lines": [{"colour", "ref",
-## "paths": [path], "stops": PackedVector2Array}], "stations": [[name, Vector2]], "box": Rect2}, a path being
+## "paths": [path], "stops": PackedVector2Array}], "stations": [[name, Vector2]], "stops": [[name, Vector2]] (the bus
+## stops but the stations', one per name and place: both sides of the road together), "box": Rect2}, a path being
 ## {"pts": PackedVector2Array, "cum": PackedFloat32Array (m along it), "length": float}. Runs on a worker thread:
 ## files and JSON only, no node.
 static func parse() -> Dictionary:
-	var out := {"roads": [], "rail": [], "lines": [], "stations": []}
+	var out := {"roads": [], "rail": [], "lines": [], "stations": [], "stops": []}
 	var box := Rect2()
 	var bus: Variant = _read(BUS_ROUTES)
 	if bus is Dictionary:
@@ -119,6 +129,8 @@ static func parse() -> Dictionary:
 					var p := Vector2(pts[k][0], pts[k][1])
 					entry["stops"].append(p)
 					var name := str(stop.get("name", ""))
+					if name != "" and not name.begins_with("Gare "):
+						_add_stop(out["stops"], name, p)
 					if name.begins_with("Gare "):
 						var key := name.replace("Gare de ", "").replace("Gare du ", "Le ").replace(" - ", "-")
 						var acc: Array = gare.get(key, [Vector2.ZERO, 0])
@@ -170,6 +182,16 @@ static func parse() -> Dictionary:
 		return {}
 	out["box"] = box.grow(box.size.x * 0.03)
 	return out
+
+
+## Stop `name` at `p`, with the one of that name nearer than STOP_SAME_M if any: [name, Vector2 mean, count].
+static func _add_stop(stops: Array, name: String, p: Vector2) -> void:
+	for s: Array in stops:
+		if s[0] == name and s[1].distance_to(p) < STOP_SAME_M:
+			s[1] = (s[1] * s[2] + p) / (s[2] + 1.0)
+			s[2] += 1
+			return
+	stops.append([name, p, 1])
 
 
 static func _read(path: String) -> Variant:

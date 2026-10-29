@@ -103,6 +103,9 @@ const Modes = preload("res://scripts/modes/modes.gd")
 const LoadingScreen = preload("res://scripts/loading_screen.gd")
 const Loader = preload("res://scripts/loading_scene.gd")
 const Pacer = preload("res://scripts/pacer.gd")
+const Minimap = preload("res://scripts/minimap.gd")
+const WorldMap = preload("res://scripts/world_map.gd")
+const WaypointBeacon = preload("res://scripts/waypoint_beacon.gd")
 const WATER_SHOVE := 0.7                    # m/s a full-power water packet shoves a player along the jet
 const ENTER_RANGE := 3.0                    # metres from the car body
 const KILL_MARGIN := 20.0                   # m under the lowest ground where a falling player is put back
@@ -171,6 +174,11 @@ var _host_label: Label                      # top right while hosting: the addre
 var _host_label_t := 0.0
 var _toast: Label                           # "X joined the game"...
 var _toast_t := 0.0
+var minimap: Minimap                        # top left (K), in the HUD
+var world_map: WorldMap                     # full screen (M), in the HUD
+var waypoint: Variant = null                # pipeline (x, y) put on the full-screen map, or null (set_waypoint)
+var _beacon: WaypointBeacon                 # the waypoint's beam and marker
+var _map_mouse := Input.MOUSE_MODE_VISIBLE  # mouse mode to restore when the full-screen map closes
 var _stats: Label                           # F3: frame rate, CPU and GPU times, network timings (net.gd debug_text)
 var _stats_t := 0.0
 var _stats_frames := 0                      # frames since the last F3 update, and their summed times
@@ -431,6 +439,7 @@ func set_game_mode(id: String) -> void:
 		if s.salesman:
 			s.salesman.visible = allows("showrooms")
 			s.salesman.process_mode = Node.PROCESS_MODE_INHERIT if allows("showrooms") else Node.PROCESS_MODE_DISABLED
+	_place_minimap()
 	_update_help()
 
 
@@ -1399,9 +1408,40 @@ func set_pause_open(on: bool) -> void:
 	_update_controls()
 
 
-## True while the vehicle menu, the in-game menu or the chat line is open.
+## True while the vehicle menu, the in-game menu, the full-screen map or the chat line is open.
 func ui_open() -> bool:
-	return _menu.visible or pause.visible or chat.is_open()
+	return _menu.visible or pause.visible or chat.is_open() or (world_map != null and world_map.visible)
+
+
+## Opens or closes the full-screen map (M); the player and the vehicle driven take no keys while it is open.
+func set_world_map_open(on: bool) -> void:
+	if on == world_map.visible or (on and (pause.visible or chat.is_open() or not allows("map"))):
+		return
+	if on:
+		_map_mouse = Input.mouse_mode
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		world_map.open()
+	else:
+		world_map.visible = false
+		Input.mouse_mode = _map_mouse
+	_update_controls()
+
+
+## Puts the waypoint at pipeline (x, y) (the full-screen map), or takes it away (null).
+func set_waypoint(xy: Variant) -> void:
+	waypoint = xy
+	_beacon.place(xy)
+
+
+## Where the maps are centred: the player, the vehicle they are in, or the fly camera.
+func map_eye() -> Vector3:
+	if flying:
+		return fly_camera.global_position
+	if driving:
+		return driving.global_position
+	if riding:
+		return riding.global_position
+	return player.global_position
 
 
 ## The player, the fly camera or the vehicle driven take the keys and mouse unless a menu or the chat is open.
@@ -1477,8 +1517,12 @@ func _input(event: InputEvent) -> void:
 			set_chat_open(false)
 			get_viewport().set_input_as_handled()
 		return
-	if event.is_action_pressed("vehicle_menu") and not pause.visible and allows("vehicle_menu") \
-			or (key == KEY_ESCAPE and _menu.visible):
+	if event.is_action_pressed("world_map") and not pause.visible and not _menu.visible and allows("map") \
+			or (key == KEY_ESCAPE and world_map.visible):
+		set_world_map_open(not world_map.visible)
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("vehicle_menu") and not pause.visible and not world_map.visible \
+			and allows("vehicle_menu") or (key == KEY_ESCAPE and _menu.visible):
 		set_menu_open(not _menu.visible)
 		get_viewport().set_input_as_handled()
 	elif key == KEY_ESCAPE:
@@ -1487,7 +1531,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if loading or _menu.visible or pause.visible or chat.is_open() or mode == "":
+	if loading or _menu.visible or pause.visible or chat.is_open() or world_map.visible or mode == "":
 		return
 	if game_mode and game_mode.handle_input(event):
 		get_viewport().set_input_as_handled()
@@ -1530,6 +1574,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		Settings.set_value("night", not night.on)
 	elif event.is_action_pressed("headlights") and driving:
 		driving.set_headlights(not driving.headlights)
+	elif event.is_action_pressed("minimap") and allows("map"):
+		Settings.set_value("minimap", not minimap.visible)
+		_place_minimap()
 	elif event.is_action_pressed("toggle_stats"):
 		_stats.visible = not _stats.visible
 		_stats_t = 1.0
@@ -1644,7 +1691,18 @@ func _build_hud() -> void:
 	_stats.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 12)
 	_stats.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_stats.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	minimap = Minimap.new()
+	minimap.game = self
+	hud.add_child(minimap)
+	_place_minimap()
+	_beacon = WaypointBeacon.new()
+	_beacon.name = "Waypoint"
+	_beacon.game = self
+	add_child(_beacon)
 	_build_menu()
+	world_map = WorldMap.new()
+	world_map.game = self
+	hud.add_child(world_map)
 	chat = Chat.new()
 	chat.closed.connect(_update_controls)
 	chat.sent.connect(net.say)
@@ -1772,9 +1830,10 @@ func _update_help() -> void:
 	var extra: String = game_mode.extra_help(k) if game_mode else ""
 	if extra != "":
 		_help.text += "\n" + extra
-	_help.text += "\n%s graphics: %s · %s%s frame rate%s · F11 fullscreen" % [k.call("toggle_quality"),
+	_help.text += "\n%s graphics: %s · %s%s%s frame rate%s · F11 fullscreen" % [k.call("toggle_quality"),
 			quality, "%s %s · " % [k.call("night"), "day" if night and night.on else "night"] \
-			if allows("night_toggle") else "", k.call("toggle_stats"), " and network" if net.active else ""]
+			if allows("night_toggle") else "", "%s map · %s minimap · " % [letter_key("world_map", "M"),
+			k.call("minimap")] if allows("map") else "", k.call("toggle_stats"), " and network" if net.active else ""]
 	if net.active:
 		_help.text += " · Enter chat · Tab players"
 	if _menu_hint:
@@ -1791,6 +1850,24 @@ func _keys(actions: Array) -> String:
 		names.append(Settings.key_text(a))
 		short = short and names[-1].length() == 1
 	return ("" if short else "/").join(names)
+
+
+## The minimap as the settings and the game mode want it, the inspection panel beside it.
+func _place_minimap() -> void:
+	minimap.visible = Settings.values.get("minimap", true) and allows("map")
+	if not allows("map") and world_map:
+		set_world_map_open(false)
+		set_waypoint(null)
+	picker.panel.position.x = 12.0 + (Minimap.SIZE + 12.0 if minimap.visible else 0.0)
+
+
+## `action`'s key for the help: `letter` if one of its keys reads so on this layout (the full-screen map is bound on
+## M's spot on QWERTY and on AZERTY), else its first.
+func letter_key(action: String, letter: String) -> String:
+	for b: int in Settings.bindings(action):
+		if Settings.binding_text(b) == letter:
+			return letter
+	return Settings.key_text(action)
 
 
 ## The chat sits bottom left, just above the help.

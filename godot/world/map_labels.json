@@ -1,0 +1,229 @@
+{
+ "schema": 1,
+ "labels": [
+  {
+   "name": "AgroParisTech",
+   "kind": "school",
+   "tier": 0,
+   "x": -402.7,
+   "y": 138.9
+  },
+  {
+   "name": "CentraleSupélec",
+   "kind": "school",
+   "tier": 0,
+   "x": -2536.5,
+   "y": -386.9
+  },
+  {
+   "name": "ENS Paris-Saclay",
+   "kind": "school",
+   "tier": 0,
+   "x": -2566.4,
+   "y": -0.9
+  },
+  {
+   "name": "ENSAE Paris",
+   "kind": "school",
+   "tier": 0,
+   "x": 573.1,
+   "y": -261.1
+  },
+  {
+   "name": "ENSTA Paris",
+   "kind": "school",
+   "tier": 0,
+   "x": 1406.6,
+   "y": -194.5
+  },
+  {
+   "name": "Faculté de Pharmacie",
+   "kind": "school",
+   "tier": 0,
+   "x": -2029.7,
+   "y": -260.1
+  },
+  {
+   "name": "IUT d'Orsay",
+   "kind": "school",
+   "tier": 0,
+   "x": -2145.9,
+   "y": -244.4
+  },
+  {
+   "name": "Inria Saclay",
+   "kind": "school",
+   "tier": 0,
+   "x": 434.3,
+   "y": 137.5
+  },
+  {
+   "name": "Institut d'Optique",
+   "kind": "school",
+   "tier": 0,
+   "x": 210.0,
+   "y": 66.6
+  },
+  {
+   "name": "Polytech Paris-Saclay",
+   "kind": "school",
+   "tier": 0,
+   "x": -2079.2,
+   "y": -443.6
+  },
+  {
+   "name": "Télécom Paris",
+   "kind": "school",
+   "tier": 0,
+   "x": -0.4,
+   "y": 0.1
+  },
+  {
+   "name": "Télécom SudParis",
+   "kind": "school",
+   "tier": 0,
+   "x": 80.0,
+   "y": 6.2
+  },
+  {
+   "name": "École Polytechnique",
+   "kind": "school",
+   "tier": 0,
+   "x": 813.0,
+   "y": -44.0
+  },
+  {
+   "name": "Lac de l'X",
+   "kind": "water",
+   "tier": 0,
+   "x": 809.4,
+   "y": 299.8
+  },
+  {
+   "name": "Collège Alain-Fournier",
+   "kind": "school",
+   "tier": 1,
+   "x": -135.9,
+   "y": -1013.8
+  },
+  {
+   "name": "Collège Joseph Bara",
+   "kind": "school",
+   "tier": 1,
+   "x": 3051.6,
+   "y": -216.1
+  },
+  {
+   "name": "Lycée International de Palaiseau Paris Saclay",
+   "kind": "school",
+   "tier": 1,
+   "x": 427.9,
+   "y": 6.3
+  },
+  {
+   "name": "Lycée Polyvalent Saint-Martin",
+   "kind": "school",
+   "tier": 1,
+   "x": 2985.5,
+   "y": -8.6
+  },
+  {
+   "name": "École Maternelle des Petits Champs Ronds",
+   "kind": "school",
+   "tier": 1,
+   "x": 4563.5,
+   "y": 1199.5
+  },
+  {
+   "name": "École Primaire de Moulon",
+   "kind": "school",
+   "tier": 1,
+   "x": -2829.8,
+   "y": -11.0
+  },
+  {
+   "name": "École maternelle Jean-Macé",
+   "kind": "school",
+   "tier": 1,
+   "x": 1304.8,
+   "y": -980.0
+  },
+  {
+   "name": "École maternelle Jean-Moulin",
+   "kind": "school",
+   "tier": 1,
+   "x": 2404.9,
+   "y": -976.5
+  },
+  {
+   "name": "École maternelle Maillecourt",
+   "kind": "school",
+   "tier": 1,
+   "x": -94.8,
+   "y": -939.1
+  },
+  {
+   "name": "École maternelle Paul Langevin",
+   "kind": "school",
+   "tier": 1,
+   "x": 3127.1,
+   "y": 1171.3
+  },
+  {
+   "name": "École maternelle du Guichet",
+   "kind": "school",
+   "tier": 1,
+   "x": -637.7,
+   "y": -816.4
+  },
+  {
+   "name": "École Élémentaire Roger Ferdinand",
+   "kind": "school",
+   "tier": 1,
+   "x": 696.0,
+   "y": -955.1
+  },
+  {
+   "name": "École élementaire Henri Wallon",
+   "kind": "school",
+   "tier": 1,
+   "x": 2827.4,
+   "y": 1306.1
+  },
+  {
+   "name": "École élémentaire Jean-Macé",
+   "kind": "school",
+   "tier": 1,
+   "x": 1318.6,
+   "y": -913.6
+  },
+  {
+   "name": "École élémentaire Le Guichet",
+   "kind": "school",
+   "tier": 1,
+   "x": -429.5,
+   "y": -762.0
+  },
+  {
+   "name": "École élémentaire Paul Langevin",
+   "kind": "school",
+   "tier": 1,
+   "x": 3116.5,
+   "y": 1123.3
+  },
+  {
+   "name": "Bassin du Belvédère",
+   "kind": "water",
+   "tier": 1,
+   "x": -1660.4,
+   "y": -488.5
+  },
+  {
+   "name": "Miroir d'Eau",
+   "kind": "water",
+   "tier": 1,
+   "x": 97.0,
+   "y": -39.1
+  }
+ ]
+}
