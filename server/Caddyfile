@@ -1,9 +1,13 @@
-# HTTPS route to the PTA Online accounts service (accounts/). With Caddy already on the VPS, add this block to its
-# Caddyfile with the domain written in (accounts.your.domain, an A record to the VPS); the compose file's own `caddy`
-# service reads this file as is, from ACCOUNTS_DOMAIN and ACCOUNTS_UPSTREAM.
-{$ACCOUNTS_DOMAIN:accounts.localhost} {
-	# the game server's API stays on the Docker network (it needs the server secret anyway)
-	@internal path /v1/server/*
-	respond @internal 404
-	reverse_proxy {$ACCOUNTS_UPSTREAM:127.0.0.1:8790}
+# HTTPS route to the PTA Online accounts service (accounts/), under /accounts on the server's domain: the game calls
+# https://your.domain/accounts/v1/... (godot/data/online.json "accounts_url"), Caddy strips the prefix. With Caddy
+# already on the VPS, put the handle_path block in that domain's site block of its Caddyfile, with the upstream written
+# in (127.0.0.1:8790, or plateau-accounts:8000 from a Caddy container on a shared network: README.md); the compose
+# file's own `caddy` service reads this file as is, from SITE_DOMAIN and ACCOUNTS_UPSTREAM.
+{$SITE_DOMAIN:localhost} {
+	handle_path /accounts/* {
+		# the game server's API stays on the Docker network (it needs the server secret anyway)
+		@internal path /v1/server/*
+		respond @internal 404
+		reverse_proxy {$ACCOUNTS_UPSTREAM:127.0.0.1:8790}
+	}
 }

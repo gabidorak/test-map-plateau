@@ -1,0 +1,26 @@
+{
+  "about": "PTA Online's jobs (ONLINE_MODE.md 5, scripts/online/bus_job.gd): what they pay, in euros. Only the official server's copy counts. hour_cap: what an account may earn from all jobs in an hour (the accounts service cuts the rest).",
+  "hour_cap": 30000,
+  "bus": {
+    "about": "Paid at each stop served (in the bay, under 1 m/s, doors open `doors` s): stop + per_km of route driven since the last stop; fast: + fast_share of that when the stretch took at most fast_ratio times the bots' planned driving time; the stretch's bonuses added; all of it times the combo (combo_step more per stop served, up to combo_max, back to 1 at a penalty), times owned for the player's own bus, times 1 + rider per player riding (riders_max at most). Penalties are taken from the next pay.",
+    "stop": 90,
+    "per_km": 210,
+    "fast_ratio": 1.2,
+    "fast_share": 0.25,
+    "doors": 3.0,
+    "combo_step": 0.1,
+    "combo_max": 2.0,
+    "owned": 1.5,
+    "rider": 0.2,
+    "riders_max": 3,
+    "air_per_s": 100,
+    "air_min": 0.4,
+    "near_miss": 40,
+    "overtake": 60,
+    "drift_per_s": 80,
+    "drift_min": 0.6,
+    "skip_fine": 150,
+    "crash_fine": 300,
+    "off_route_fine": 200
+  }
+}

@@ -308,6 +308,27 @@ def test_pay_and_charge(client):
     assert rows[2]["job"] == "bus" and rows[0]["balance"] == 0
 
 
+def test_pay_cap_per_hour(client, clock):
+    token = signup(client).json()["token"]
+    account = client.get(f"/v1/server/who?token={token}", headers=internal()).json()["account"]
+
+    def pay(amount, job="bus:4606", cap=1000):
+        return client.post("/v1/server/pay", json={"account": account, "amount": amount, "reason": "stop", "job": job,
+                                                   "cap": cap}, headers=internal()).json()
+
+    assert pay(600) == {"balance": 5600, "paid": 600, "hour": 600}
+    client.post("/v1/server/pay", json={"account": account, "amount": 900, "reason": "gift", "job": "admin"},
+                headers=internal())                         # the admin's money doesn't count
+    assert pay(600) == {"balance": 6900, "paid": 400, "hour": 1000}
+    assert pay(300)["paid"] == 0
+    clock.t += 1800
+    assert pay(300, job="stunts")["paid"] == 0             # every job counts
+    clock.t += 1801                                         # the first two are over an hour old
+    assert pay(300) == {"balance": 7200, "paid": 300, "hour": 300}
+    rows = db.payments(db.connect(), account)
+    assert [r["reason"] for r in rows[:4]] == ["stop", "stop (cap)", "stop (cap)", "stop (cap)"]
+
+
 def test_vehicles(client):
     token = signup(client).json()["token"]
     account = client.get(f"/v1/server/who?token={token}", headers=internal()).json()["account"]
