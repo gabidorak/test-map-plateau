@@ -150,6 +150,8 @@ class Money(BaseModel):
     reason: str
     job: str = ""
     cap: int = 0                        # pay: job earnings per hour at most (db.earn), 0 none
+    once: str = ""                      # pay: a key whose first payment for the account is once_amount (db.earn)
+    once_amount: int = 0
 
 
 class VehicleChange(BaseModel):
@@ -174,8 +176,8 @@ def who(token: str = "", c=Depends(conn)) -> dict:
 @app.post("/v1/server/pay", dependencies=[Depends(server)])
 def pay(body: Money, c=Depends(conn)) -> dict:
     _owner(c, body.account)
-    if body.cap > 0:
-        return db.earn(c, body.account, body.amount, body.reason, body.job, body.cap)
+    if body.cap > 0 or body.once:
+        return db.earn(c, body.account, body.amount, body.reason, body.job, body.cap, body.once, body.once_amount)
     return {"balance": db.pay(c, body.account, body.amount, body.reason, body.job)}
 
 

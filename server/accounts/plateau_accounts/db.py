@@ -79,6 +79,12 @@ CREATE TABLE IF NOT EXISTS signups (
     time REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS signups_ip ON signups(ip, time);
+CREATE TABLE IF NOT EXISTS firsts (     -- things an account is paid more for the first time (a stunt spot: stunt:<id>)
+    account INTEGER NOT NULL REFERENCES accounts(id),
+    key TEXT NOT NULL,
+    time REAL NOT NULL,
+    PRIMARY KEY (account, key)
+);
 """
 
 _hasher = PasswordHasher()              # argon2id
@@ -318,16 +324,29 @@ def earned_in_hour(conn: sqlite3.Connection, account: int) -> int:
     return row[0]
 
 
-def earn(conn: sqlite3.Connection, account: int, amount: int, reason: str, job: str, cap: int = 0) -> dict:
+def earn(conn: sqlite3.Connection, account: int, amount: int, reason: str, job: str, cap: int = 0, once: str = "",
+         once_amount: int = 0) -> dict:
     """Pays `amount` for job `job`, cut so that the account's job earnings over the last HOUR s stay within `cap`
-    (0: no cap; a cut payment's reason says "(cap)"). Returns the balance, what was paid, and the hour's earnings."""
-    if amount < 0:
+    (0: no cap; a cut payment's reason says "(cap)"). `once`: a key (stunt:<spot>) whose first payment for the account
+    is `once_amount` instead ("first" in the answer; not counted as the first when the cap leaves nothing of it).
+    Returns the balance, what was paid, and the hour's earnings."""
+    if amount < 0 or once_amount < 0:
         raise Refused(400, "amount", "A payment is 0 or more.")
     with write(conn):
+        first = False
+        if once:
+            first = conn.execute("SELECT 1 FROM firsts WHERE account = ? AND key = ?", (account, once)).fetchone() is None
+            if first:
+                amount = once_amount
+                reason += " (first)"
         hour = earned_in_hour(conn, account)
         paid = min(amount, max(cap - hour, 0)) if cap > 0 else amount
+        if first and paid <= 0:
+            first = False
+        if first:
+            conn.execute("INSERT INTO firsts (account, key, time) VALUES (?, ?, ?)", (account, once, clock()))
         after = _move(conn, account, paid, reason + (" (cap)" if paid < amount else ""), job)
-        return {"balance": after, "paid": paid, "hour": hour + paid}
+        return {"balance": after, "paid": paid, "hour": hour + paid, "first": first}
 
 
 def charge(conn: sqlite3.Connection, account: int, amount: int, reason: str, job: str = "") -> int:

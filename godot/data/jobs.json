@@ -22,5 +22,22 @@
     "skip_fine": 150,
     "crash_fine": 300,
     "off_route_fine": 200
+  },
+  "stunts": {
+    "about": "Stunts on any vehicle (scripts/online/stunts.gd): air time pays air_per_s a second from air_min s; flip a whole turn (front flip, backflip, barrel roll) landed on the wheels; loop and roll a plane's; near_miss as the bus job's; top_speed holding top_share of the model's top speed top_hold s; each times decay per time the same kind paid this last hour. A stunt spot (world/stunts.json) pays spot_first the first time an account jumps it, spot_again after, times spot_decay per time it paid this last hour. Under min_pay a stunt pays nothing.",
+    "air_per_s": 80,
+    "air_min": 0.6,
+    "flip": 250,
+    "loop": 150,
+    "roll": 100,
+    "near_miss": 30,
+    "top_speed": 120,
+    "top_share": 0.92,
+    "top_hold": 3.0,
+    "spot_first": 2500,
+    "spot_again": 300,
+    "spot_decay": 0.6,
+    "decay": 0.85,
+    "min_pay": 5
   }
 }

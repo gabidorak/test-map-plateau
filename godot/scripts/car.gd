@@ -303,6 +303,9 @@ var _brake_mat: Material                    # on the brake lamps now
 var _reverse_lamps: Array[MeshInstance3D] = []   # a cab file's "reverse_lights", lit while backing up
 var _reversing := false
 var _net_pos := Vector3.ZERO                # LAN, remote: the last tick's position (which way it moves)
+var _carried: Array = []                    # LAN, just taken over: [body, velocity, spin] it goes on with...
+var _carry_ticks := 0                       # ...set again this many ticks (the unfreeze lands a tick late, with the
+											# kinematic copy's last velocity)
 var _lamp_mats := {}                        # "indicator"/"brake" -> [off, on]
 var _steering_wheel: Node3D
 var _steering_rest := Transform3D.IDENTITY
@@ -1502,6 +1505,7 @@ func place(t: Transform3D) -> void:
 		b.linear_velocity = Vector3.ZERO
 		b.angular_velocity = Vector3.ZERO
 	_crash_frame = -2
+	_carry_ticks = 0                            # (put somewhere: not going on as it went when taken over)
 
 
 ## The rigid bodies: this one and the rear section of an articulated vehicle.
@@ -1646,15 +1650,21 @@ func set_remote(on: bool) -> void:
 	remote = on
 	_remote_asleep = false
 	_net_bell = bells & 1 if on else -1
+	_carried.clear()
 	for b in bodies():
 		var lv := b.linear_velocity
 		var av := b.angular_velocity
 		b.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 		b.freeze = on
 		b.sleeping = false
-		if not on:
+		if not on:                          # a posed copy's velocity can be a snap's (its first pose from the spawn
+			if lv.length() > max_speed * 2.0 + 10.0 or av.length() > 30.0:   # point: thousands of m/s): dropped
+				lv = Vector3.ZERO
+				av = Vector3.ZERO
 			b.linear_velocity = lv
 			b.angular_velocity = av
+			_carried.append([b, lv, av])
+	_carry_ticks = 2 if not on else 0
 
 
 ## LAN games, remote vehicle: puts it to sleep beyond REMOTE_SLEEP m of the eye (`d`: the square of the distance to
@@ -2010,6 +2020,11 @@ func _physics_process(delta: float) -> void:
 	if remote:
 		_remote_process(delta)
 		return
+	if _carry_ticks > 0:
+		_carry_ticks -= 1
+		for c: Array in _carried:
+			c[0].linear_velocity = c[1]
+			c[0].angular_velocity = c[2]
 	if _rest_t > PARK_SLEEP and pilot == null and not driving:
 		if _asleep():
 			return                              # parked: nothing moves until something wakes it

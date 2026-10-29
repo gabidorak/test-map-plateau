@@ -19,6 +19,7 @@ const PLACES := {
 	"depot": {"colour": Color("#2e9d57"), "glyph": "bus"},
 	"fire": {"colour": Color("#d23b2f"), "glyph": "flame"},
 	"shop": {"colour": Color("#c9a043"), "glyph": "€"},
+	"stunt": {"colour": Color("#e0662a"), "glyph": "ramp"},
 }
 
 var game: Node                              # game.gd
@@ -157,6 +158,10 @@ static func draw_place(canvas: CanvasItem, font: Font, p: Vector2, kind: String,
 			canvas.draw_rect(Rect2(p + Vector2(-0.48, -0.36) * r, Vector2(0.96, 0.3) * r), look["colour"])
 			for x: float in [-0.35, 0.35]:
 				canvas.draw_circle(p + Vector2(x, 0.38) * r, 0.17 * r, Color.WHITE)
+		"ramp":
+			canvas.draw_colored_polygon(PackedVector2Array([p + Vector2(-0.62, 0.42) * r, p + Vector2(0.5, 0.42) * r,
+					p + Vector2(0.5, -0.12) * r]), Color.WHITE)
+			canvas.draw_circle(p + Vector2(0.18, -0.48) * r, 0.17 * r, Color.WHITE)
 		"flame":
 			canvas.draw_colored_polygon(PackedVector2Array([p + Vector2(0.0, -0.72) * r, p + Vector2(0.45, -0.05) * r,
 					p + Vector2(0.4, 0.38) * r, p + Vector2(0.0, 0.62) * r, p + Vector2(-0.4, 0.38) * r,

@@ -234,10 +234,16 @@ depot), fire truck 80 000 (fire station). Not sold: police cars, ambulance, arme
 - Pay per fire put out, shared by the people who sprayed it, plus a response-time bonus.
 - Needs a new fire system: flames + smoke, spreading, hit by the water cannon. The vehicle fire is a start.
 
-**Stunts** *(proposal: a bonus layer on any vehicle, not a job)*
-- Air time, flips, near misses, top speed, plus fixed **stunt spots** (named jumps: a big reward the first time,
-  small after that).
-- Diminishing returns per spot per hour, so one ramp can't be farmed.
+**Stunts** *(built in O6: a bonus layer on any vehicle, not a job; `scripts/online/stunts.gd`)*
+- Air time, flips (front flip, backflip, barrel roll, landed on the wheels), a plane's loops and rolls, near misses,
+  top speed, plus fixed **stunt spots** (`godot/world/stunts.json`: named jumps found on the map's own ground by
+  `tools/online/stunts.py`, kept only when a car really flies off them in the game; a big reward the first time,
+  small after that). Pay in `godot/data/jobs.json` "stunts", inside the jobs' hourly cap.
+- Diminishing returns per hour: each stunt kind pays ×0.85 per time it already paid this hour, each spot ×0.6, so one
+  ramp can't be farmed. A crash landing, a landing on the roof or a flight with a teleport in it pays nothing.
+- "The first time" is for good: the accounts service remembers which spots an account has done (`firsts` table,
+  `/v1/server/pay` `once`), so it survives server restarts. Players on bus duty get the bus job's bonuses instead.
+- Horses (they jump at a key) and planes (they fly) don't earn air time, only spots and loops/rolls.
 
 **Later:** race prizes (races are already built), taxi, delivery (van, or truck + trailer, A to B), police vs.
 speeders, ambulance, plane courier.

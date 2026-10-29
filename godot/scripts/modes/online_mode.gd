@@ -25,6 +25,8 @@ extends "res://scripts/modes/game_mode.gd"
 ##   pay, take another).
 ## - Paint: each vehicle out shows its owner's colour on every peer (`vehicles` "colour", _sync_looks).
 ## - The bus job (scripts/online/bus_job.gd, O5): duty on a real line from the bus depot's terminal, paid per stop.
+## - Stunts (scripts/online/stunts.gd, O6): air time, flips, near misses, top speed and the named stunt spots (on the
+##   maps) pay a bonus on any vehicle.
 ## The host (the official server) keeps who owns which vehicle; every peer gets it (`vehicles`) to show the prompts.
 ## Played solo (the tools: PLATEAU_MODE=online), the player's garage is PLATEAU_ONLINE_VEHICLES (models, comma-separated)
 ## and their money PLATEAU_ONLINE_MONEY (the starting money by default), kept here (test_garage, test_money).
@@ -39,6 +41,7 @@ const Prices = preload("res://scripts/online/prices.gd")
 const Shop = preload("res://scripts/online/shop.gd")
 const Paint = preload("res://scripts/paint.gd")
 const BusJob = preload("res://scripts/online/bus_job.gd")
+const Stunts = preload("res://scripts/online/stunts.gd")
 
 signal answered(ok: bool, text: String)     # the host's answer to our last request at a garage terminal
 
@@ -62,6 +65,7 @@ var test_garage: Array = []                 # played solo by the tools: the play
 var test_money := 0                         # played solo by the tools: the player's €
 var shop: Shop
 var bus_job: BusJob
+var stunts: Stunts
 var _leaving := {}                          # host: account -> [net id, s left]
 var _panel: GaragePanel
 var _wallet: Label
@@ -98,6 +102,10 @@ func _ready() -> void:
 	bus_job.name = "BusJob"
 	bus_job.mode = self
 	add_child(bus_job)
+	stunts = Stunts.new()
+	stunts.name = "Stunts"
+	stunts.mode = self
+	add_child(stunts)
 	multiplayer.peer_disconnected.connect(_on_left)
 	game.economy.logged_in.connect(_on_login)
 
@@ -150,7 +158,8 @@ func extra_help(k: Callable) -> String:
 		return "ON DUTY · stop in each stop's bay, %s open the doors %d s · %s your bus (off duty) · the next stop is the waypoint" % [
 				k.call("doors"), int(bus_job.pay.get("doors", 3.0)), k.call("vehicle_menu")]
 	return "%s your vehicle (lock, send back) · the garages are on the map (%s) · buy vehicles at Prestige Motors, " % [
-			k.call("vehicle_menu"), game.letter_key("world_map", "M")] + "repair and paint them at a garage terminal"
+			k.call("vehicle_menu"), game.letter_key("world_map", "M")] + "repair and paint them at a garage terminal · " + \
+			"stunts pay (jumps, flips, near misses; the stunt spots are on the map)"
 
 
 func map_places() -> Array:
@@ -158,7 +167,7 @@ func map_places() -> Array:
 	for g: Dictionary in garages.list:
 		if PLACE_KINDS.has(g["kind"]):
 			out.append([g["name"], PLACE_KINDS[g["kind"]], g["xy"]])
-	return out
+	return out + stunts.map_places()
 
 
 func ui_open() -> bool:
