@@ -205,7 +205,10 @@ depot), fire truck 80 000 (fire station). Not sold: police cars, ambulance, arme
 - Bot passengers later (people waiting at stops, boarding, a satisfaction meter).
 - Built in O5 (my choices): `scripts/online/bus_job.gd`, pay in `godot/data/jobs.json` (JSON like prices.json). At
   the depot's terminal, one row per line the bots run (4606, 4619, L, Z): picking one puts the player on duty in their
-  bus out if it is a bus, else a lent bus of the line's model comes out (18 m for the 4606, 12 m for the others). A
+  bus out if it is a bus (any bus does any line), else one of their own buses (the line's model first), else a lent bus
+  of the line's model comes out (18 m for the 4606, 12 m for the others). Refined 2026-10-29 (Gabriel: the depot was
+  unclear): the depot's list comes in parts (bus job with a how-to line / just take a bus out, no pay / for sale), each
+  line's row says which bus comes with it, and the terminal's prompt says "bus job: pick a line". A
   line = its routes in turn, both ways; the job waits for the bus on one of them, facing its way (the 4606 starts at
   the depot's door), and puts the waypoint on the next stop. **Stop served:** front of the bus in the bay (14 m short
   of the bots' stop mark to 12 m past it, so a 12 m and an 18 m bus both fit), under 1 m/s, doors open 3 s on end.
@@ -215,7 +218,9 @@ depot), fire truck 80 000 (fire station). Not sold: police cars, ambulance, arme
   player riding (3 at most). A bot driving the whole 4606 (14 stops, ~22 min, no other traffic) earns ~15 200 €/h.
   **Penalties** (taken from the next stops' pay, never from the wallet): skipped stop 150 €, hard crash (15 % of the
   health at once) 300 €, off the route (over 12 m from its path for 4 s, or 40 m at once) 200 €: the job then waits
-  for the bus back on the route, the stops missed are skipped, and a shortcut's distance pays nothing. **Checks:**
+  for the bus back on the route, the stops missed are skipped, and a shortcut's distance pays nothing; a red light
+  10 € (asked by Gabriel: really small; the front 3 m past a route light while red; the combo is kept; not a light the
+  bus served a stop over, as at Versailles where the bots leave the stop on red too). **Checks:**
   a jump over 25 m in a tick, or over 1.2× the model's top speed (+3 m/s) for 0.5 s, or a stretch faster than that on
   average: the stretch pays nothing. **Hourly cap:** 30 000 €/h per account over all jobs (2× the target), kept by
   the accounts service (`/v1/server/pay` `cap`: the last hour's job payments, the admin's gifts excluded; a cut
@@ -225,7 +230,10 @@ depot), fire truck 80 000 (fire station). Not sold: police cars, ambulance, arme
   U, another vehicle taken out, the bus wrecked or sent back, leaving the game) it comes back where its timetable has
   it, or at its next departure when that spot is within 150 m of a player. The HUD (top right, under the wallet):
   line → destination, next stop and how far, the stretch's time, combo, bonuses pending, fines due, money paid this
-  duty, and the money/bonuses/fines popping in.
+  duty, and the money/bonuses/fines popping in. **Hints** (asked by Gabriel) over the bottom of the screen: get in the
+  bus / follow the waypoint / "<stop> ahead: pull into its bay and stop" / stop the bus / open the doors / passengers
+  boarding (countdown) / close the doors and drive on / off the route; from the host's `bay` flag in the duty info and
+  the bus's own speed and doors.
 
 **Firefighter**
 - Take a lent fire truck at the Polytechnique fire station (or spawn your own there, which pays more).

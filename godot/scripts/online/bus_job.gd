@@ -3,8 +3,8 @@ extends Node
 ## online_mode.gd) on every peer, with its own RPCs. The host (the official server) judges everything from the states it
 ## already gets of the player's bus, and pays through the accounts service; the player's game only asks and shows.
 ## - Duty: at the bus depot's terminal, the player picks one of the real lines the bots run (world/bus_routes.json,
-##   pipeline/plateau/transit.py). They drive their bus out (one of theirs) or, without one, a lent bus of the line's
-##   model comes out on a bay. One bot bus of the line leaves the map meanwhile (traffic.gd hold_bus); it comes back
+##   pipeline/plateau/transit.py), and the bus comes with it (_bus_for, each line's row says which): the bus they have
+##   out (any bus), else one of theirs (the line's model first), else a lent bus of the line's model, on a bay. One bot bus of the line leaves the map meanwhile (traffic.gd hold_bus); it comes back
 ##   when they go off duty (the depot's terminal, U), take another vehicle out, wreck the bus, or leave.
 ## - The line: its routes in turn (both directions, and the short Lozère lines' legs). The job first waits for the bus
 ##   to be on one of them, going its way (from the depot, the 4606 starts at the door); from there it follows the
@@ -17,7 +17,8 @@ extends Node
 ##   time, near misses, overtakes, drifts); times the combo (up by `combo_step` per stop served, back to 1 at a
 ##   penalty), times `owned` for the player's own bus, times 1 + `rider` per other player riding along.
 ## - Penalties (taken from the next pay, the combo back to 1): a stop driven past without serving it, a hard crash
-##   (CRASH of the bus's health at once), off the route (over ON_ROUTE m from its path for OFF_TIME s on end, or over
+##   (CRASH of the bus's health at once), a red light (its front RED_PAST m past a red light of the route, not one it
+##   served a stop over: a small fine, the combo kept), off the route (over ON_ROUTE m from its path for OFF_TIME s on end, or over
 ##   OFF_FAR m at once: the job then waits for the bus back on the route, and the stops missed meanwhile are skipped).
 ## - Checks against a patched game (the bus is simulated by its driver, ONLINE_MODE.md 6.1): a jump of over TELEPORT m
 ##   in a tick, a speed over the model's top speed (SPEED_MARGIN, SPEED_SLACK) for TOO_FAST s, or a stretch driven
@@ -25,7 +26,9 @@ extends Node
 ##   time is counted here. The accounts service cuts what an account earns from all jobs to `hour_cap` an hour.
 ## - Nobody at the wheel, or another player: the job waits (nothing counts).
 ## The player's game shows the line, the next stop and how far, the stretch's time, the combo and what it has paid
-## (top right, under the wallet), the money and bonuses popping in, and puts the waypoint on the next stop.
+## (top right, under the wallet), the money and bonuses popping in, and puts the waypoint on the next stop. A hint
+## over the bottom of the screen says what to do now (get in the bus, follow the waypoint, pull into the bay, stop, open
+## the doors, boarding..., close them and drive on): from the host's word on the bay (`bay`) and the bus here.
 ## Played solo (the tools), the money is the mode's test_money, the cap counted here; PLATEAU_JOB_LOG=1 prints the log
 ## lines a dedicated server prints (every stop's pay worked out, the bonuses, the penalties).
 
@@ -51,6 +54,8 @@ const OFF_FAR := 40.0                       # m: off it at once
 const JOIN_SIDE := 6.0                      # m from the path the bus joins the route...
 const JOIN_ANGLE := 0.64                    # ...facing its way (cos 50°)
 const END_REACH := 25.0                     # m from the end of a route with every stop done: on to the next
+const RED_PAST := 3.0                       # m past a red light's mark the front may be (stopped a little over the line)
+const RED_JUMP := 30.0                      # m: further along in a tick runs no light (a join, a jump)
 const TELEPORT := 25.0                      # m in a tick
 const SPEED_MARGIN := 1.2                   # times the model's top speed...
 const SPEED_SLACK := 3.0                    # ...+ this, m/s
@@ -71,6 +76,8 @@ const AIR_LIFT := 0.6                       # m higher off the ground than it ri
 const AIR_SPEED := 4.0                      # m/s at least
 const RIDE_SMOOTH := 0.05                   # per look, of the moving average of how high it rides
 const POP_TIME := 3.5                       # s a popping line stays
+const NEAR_STOP := 120.0                    # m from the next stop the hint says to pull into its bay
+const SERVED_HINT := 8.0                    # s the hint says to close the doors and drive on after a stop paid
 
 var mode: Node                              # online_mode.gd, which makes this node
 var pay := {}                               # data/jobs.json "bus"
@@ -88,6 +95,9 @@ var _head: Label
 var _next: Label
 var _stats: Label
 var _pops: VBoxContainer
+var _hint: Label
+var _served_t := INF                        # client: s since the last stop paid
+var _board_t := 0.0                         # client: s stopped in the bay with the doors open (the hint's count)
 
 
 ## A route of a line (bus_routes.json): its path, the bots' planned speeds and its stops.
@@ -99,6 +109,7 @@ class Route:
 	var step := 1.0
 	var length := 0.0
 	var stops: Array = []                   # {"s", "name"}
+	var lights: Array = []                  # {"s", "phase"}: its traffic lights (traffic.gd light())
 
 	func _init(rid: String, r: Dictionary) -> void:
 		id = rid
@@ -106,6 +117,7 @@ class Route:
 		step = float(r["step"])
 		length = float(r["length"])
 		stops = r["stops"]
+		lights = r.get("lights", [])
 		var t := 0.0
 		var v: Array = r["v"]
 		for i in r["pts"].size():
@@ -185,6 +197,7 @@ class Duty:
 	var combo := 1.0
 	var void_why := ""                      # the stretch pays nothing (teleport, too fast)
 	var doors_t := 0.0                      # s stopped in the bay with the doors open
+	var bay := false                        # the front is in the next stop's bay (moving or not: the hints)
 	var off_t := 0.0                        # s off the route
 	var last := Vector3.ZERO                # middle of its front section last tick
 	var has_last := false
@@ -222,6 +235,8 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if _hud and is_instance_valid(_hud):
 		_hud.queue_free()
+	if _hint and is_instance_valid(_hint):
+		_hint.queue_free()
 
 
 # ---------------------------------------------------------------- host: lines
@@ -238,20 +253,58 @@ func _load() -> void:
 		_routes[rid] = Route.new(rid, data["routes"][rid])
 
 
-## The bus lines the depot offers: [{"duty": ref, "label", "note"}], the player's own first ("On duty"), then "Go off
-## duty" when they are.
-func offer(peer: int) -> Array:
+## The bus lines the depot (garage `gid`) offers player `peer`: [{"duty": ref, "label", "note" (the bus that comes
+## with it), "on" (their duty now)}], then "Go off duty" when they are on duty.
+func offer(peer: int, gid: String) -> Array:
 	_load()
 	var out := []
 	var on: Duty = duties.get(peer)
 	for line: Dictionary in _lines:
 		var ends := str(_routes[line["routes"][0]].dest)
 		var start := str(_routes[line["routes"][-1]].dest)
-		out.append({"duty": line["ref"], "label": "Line %s · %s ↔ %s" % [line["ref"], start, ends], "note":
-				"On duty" if on and on.line["ref"] == line["ref"] else Car.display_name(line["model"])})
+		var now: bool = on != null and on.line["ref"] == line["ref"]
+		out.append({"duty": line["ref"], "label": "%s · %s ↔ %s" % [line["ref"], start, ends], "on": now, "note":
+				"On duty now" if now else _bus_note(peer, _bus_for(peer, gid, line))})
 	if on:
 		out.append({"duty": "", "label": "Go off duty", "note": "%s paid this duty" % Economy.money(on.earned)})
 	return out
+
+
+## The bus player `peer` goes on duty on `line` in at garage `gid` (the depot): the bus they have out ("out": any bus),
+## else one of theirs that can come out there, of the line's model first ("own"), else a lent one of the line's model
+## ("lent"): {"use", "model", "vehicle" (garage id, 0 lent), "id" (net id of the one out, else "")}.
+func _bus_for(peer: int, gid: String, line: Dictionary) -> Dictionary:
+	var acc: Dictionary = mode.account(peer)
+	var id: String = mode.vehicle_of(int(acc.get("account", -1)))
+	var car: Car = mode.car_of(id) if id != "" else null
+	if car and car.model_name in BUSES and not car.broken:
+		return {"use": "out", "model": car.model_name, "vehicle": int(mode.vehicles[id].get("vehicle", 0)), "id": id}
+	var best := {}
+	for v: Dictionary in acc.get("vehicles", []):
+		var m := str(v["model"])
+		if m not in BUSES or not (best.is_empty() or m == line["model"] and best["model"] != line["model"]):
+			continue
+		if mode.spawn_problem(peer, gid, int(v["id"]), m, false) == "":
+			best = {"use": "own", "model": m, "vehicle": int(v["id"]), "id": ""}
+	if not best.is_empty():
+		return best
+	return {"use": "lent", "model": str(line["model"]), "vehicle": 0, "id": ""}
+
+
+## A line's row note at the depot: which bus comes with it (`plan`: _bus_for).
+func _bus_note(peer: int, plan: Dictionary) -> String:
+	var bus := Car.common_name(str(plan["model"]))
+	var more := " · pay ×%s" % str(pay.get("owned", 1.5))
+	if plan["use"] == "out":
+		return "In the %s you have out%s" % [bus, more if int(plan["vehicle"]) > 0 else ""]
+	var back := ""
+	var acc: Dictionary = mode.account(peer)
+	var id: String = mode.vehicle_of(int(acc.get("account", -1)))
+	if id != "":
+		back = " (your %s goes back)" % Car.common_name(str(mode.vehicles[id]["model"]))
+	if plan["use"] == "own":
+		return "Your %s comes out%s%s" % [bus, more, back]
+	return "A lent %s comes out%s" % [bus, back]
 
 
 func _line(ref: String) -> Dictionary:
@@ -285,14 +338,14 @@ func duty_for(peer: int, gid: String, ref: String) -> Array:
 		if duties[peer].line["ref"] == ref:
 			return [false, "You are on duty on line %s already." % ref]
 		end_duty(peer, "", false)
-	var id: String = mode.vehicle_of(int(acc["account"]))
-	var car: Car = mode.car_of(id)
-	if car == null or car.model_name not in BUSES:
-		var problem: String = mode.spawn_for(peer, gid, 0, str(line["model"]))
+	var plan := _bus_for(peer, gid, line)
+	var id: String = plan["id"]
+	if plan["use"] != "out":
+		var problem: String = mode.spawn_for(peer, gid, int(plan["vehicle"]), str(plan["model"]))
 		if problem != "":
 			return [false, problem]
 		id = mode.vehicle_of(int(acc["account"]))
-		car = mode.car_of(id)
+	var car: Car = mode.car_of(id)
 	var d := Duty.new()
 	d.peer = peer
 	d.account = int(acc["account"])
@@ -315,8 +368,10 @@ func duty_for(peer: int, gid: String, ref: String) -> Array:
 	_log("%s is on duty on line %s (%s %s)%s" % [d.username, ref, "their" if d.owned else "a lent", car.model_name,
 			", bot bus %s off the map" % d.held.car.net_id if d.held else ""])
 	_send_info(d)
-	return [true, "On duty: line %s. Drive to the line (the waypoint), serve every stop: in the bay, doors open (%s)." % [
-			ref, Settings.key_text("doors")]]
+	if plan["use"] == "out":
+		return [true, "On duty on line %s: drive your %s to the line (the waypoint)." % [ref, Car.common_name(car.model_name)]]
+	return [true, "On duty on line %s: your %s is out on a bay, %s to get in, then drive to the line (the waypoint)." % [
+			ref, Car.common_name(car.model_name), Settings.key_text("interact")]]
 
 
 ## Host: player `peer` goes off duty (`why` told them; "" says nothing): the bot bus held comes back.
@@ -397,7 +452,10 @@ func _follow(d: Duty, car: Car, mid: Vector3, delta: float) -> void:
 	q.x += reach                            # the front's s
 	if absf(q.y) < ON_ROUTE:
 		d.off_t = 0.0
+		var was := d.s
 		d.s = maxf(d.s, q.x)
+		if d.s - was < RED_JUMP:
+			_red_lights(d, route, was, d.s)
 	else:
 		d.off_t += delta
 		if d.off_t > OFF_TIME or absf(q.y) > OFF_FAR:
@@ -413,8 +471,11 @@ func _follow(d: Duty, car: Car, mid: Vector3, delta: float) -> void:
 		_send_info(d)
 	if d.next < route.stops.size():
 		var mark := float(route.stops[d.next]["s"])
-		if q.x > mark - STOP_BEFORE and q.x < mark + STOP_AFTER and absf(q.y) < STOP_SIDE and d.vel.length() < STILL \
-				and car.doors_open:
+		var bay := q.x > mark - STOP_BEFORE and q.x < mark + STOP_AFTER and absf(q.y) < STOP_SIDE
+		if bay != d.bay:
+			d.bay = bay
+			_send_info(d)
+		if bay and d.vel.length() < STILL and car.doors_open:
 			d.doors_t += delta
 			if d.doors_t >= float(pay["doors"]):
 				_serve(d, car, route, q.x)
@@ -465,6 +526,7 @@ func _serve(d: Duty, car: Car, route: Route, at: float) -> void:
 	d.bonus = 0
 	d.void_why = ""
 	d.doors_t = 0.0
+	d.bay = false
 	_send_info(d)
 	_pay(d, due, text, "%s (line %s)" % [stop, d.line["ref"]], fast > 0.0)
 
@@ -485,6 +547,7 @@ func _search(d: Duty, car: Car, mid: Vector3) -> void:
 		d.state = "route"
 		d.joined = true
 		d.off_t = 0.0
+		d.bay = false
 		if was_lost:
 			if at - d.s > 100.0:            # a shortcut: what was driven off the route pays nothing
 				d.seg_s = at
@@ -512,9 +575,24 @@ func _cheat(d: Duty, kind: String, what: String) -> void:
 		_send_info(d)
 
 
-func _penalty(d: Duty, kind: String, text: String, fine: int) -> void:
+## Runs the red lights of `route` the front went past from `from` to `to` m along it (RED_PAST m past their mark), but
+## not one it was already over when it served its last stop (a light at the stop: it leaves from there, as the bots).
+func _red_lights(d: Duty, route: Route, from: float, to: float) -> void:
+	var traffic: Node = mode.game.traffic
+	if traffic == null or to <= from:
+		return
+	for l: Dictionary in route.lights:
+		var at := float(l["s"]) + RED_PAST
+		if at > to:
+			break
+		if at > from and float(l["s"]) > d.seg_s + 1.0 and traffic.light(traffic.clock(), float(l["phase"])) == 2:
+			_penalty(d, "red_light", "Red light", int(pay.get("red_light_fine", 10)), false)
+
+
+func _penalty(d: Duty, kind: String, text: String, fine: int, reset_combo := true) -> void:
 	d.debt += fine
-	d.combo = 1.0
+	if reset_combo:
+		d.combo = 1.0
 	_event(d, kind, text, -fine)
 	_log("%s on line %s: %s (−%d €)" % [d.username, d.line["ref"], text, fine])
 	_send_info(d)
@@ -631,7 +709,8 @@ func _send_info(d: Duty) -> void:
 	var route := _route(d)
 	var out := {"ref": d.line["ref"], "colour": d.line.get("colour", "#3bb2ff"), "text": d.line.get("text", "#000000"),
 			"dest": route.dest, "state": d.state, "combo": d.combo, "bonus": d.bonus, "debt": d.debt, "earned": d.earned,
-			"seg_t": d.seg_t, "owned": d.owned, "held": d.held.car.net_id if d.held else "", "served": d.served}
+			"seg_t": d.seg_t, "owned": d.owned, "held": d.held.car.net_id if d.held else "", "served": d.served,
+			"bay": d.bay and d.state == "route", "car": d.car_id}
 	if d.state != "route":
 		out["stop"] = "the line" if d.state == "start" else "back to the route"
 		out["at"] = route.at(5.0) if d.state == "start" else route.at(d.s + 20.0)
@@ -751,6 +830,19 @@ func _build_hud() -> void:
 	_hud.offset_top = 54.0
 	_hud.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_hud.visible = false
+	_hint = Label.new()
+	_hint.name = "BusJobHint"
+	_hint.add_theme_font_size_override("font_size", 24)
+	_hint.add_theme_color_override("font_color", Color(1.0, 0.9, 0.45))
+	_hint.add_theme_color_override("font_outline_color", Color.BLACK)
+	_hint.add_theme_constant_override("outline_size", 6)
+	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mode.game.hud.add_child(_hint)
+	_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_MINSIZE, 190)
+	_hint.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_hint.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_hint.visible = false
 
 
 func _process(delta: float) -> void:
@@ -775,11 +867,56 @@ func _process(delta: float) -> void:
 		parts.append("−%s fines" % Economy.money(int(info["debt"])))
 	parts.append("%s this duty" % Economy.money(int(info["earned"])))
 	_stats.text = "  ·  ".join(parts)
+	_served_t += delta
+	_hint.text = _hint_text(dist, delta)
+	_hint.visible = _hint.text != "" and not mode.game.ui_open()
 	for p in _pops.get_children():
 		p.set_meta("t", float(p.get_meta("t")) + delta)
 		p.modulate.a = clampf((POP_TIME - float(p.get_meta("t"))) / 0.6, 0.0, 1.0)
 		if float(p.get_meta("t")) > POP_TIME:
 			p.queue_free()
+
+
+## What to do now (the hint over the bottom of the screen): `dist` m to the waypoint.
+func _hint_text(dist: float, delta: float) -> String:
+	var car: Car = mode.car_of(str(info.get("car", "")))
+	if car == null:
+		return ""
+	var doors := Settings.key_text("doors")
+	if mode.game.driving != car:
+		_board_t = 0.0
+		var away := car.global_position.distance_to(mode.game.map_eye())
+		if away > 15.0:
+			return "Walk back to your bus (%d m)" % roundi(away)
+		return "Get in your bus's driving seat (%s)" % Settings.key_text("interact")
+	var v := car.linear_velocity.length()
+	var boarding: bool = info["state"] == "route" and info["bay"] and v < STILL and car.doors_open
+	_board_t = _board_t + delta if boarding else 0.0
+	if _served_t < SERVED_HINT and (car.doors_open or v < STILL):
+		return "Close the doors (%s) and drive on to %s" % [doors, info["stop"]] if car.doors_open \
+				else "Drive on to %s" % info["stop"]
+	if info["state"] == "start":
+		return "Follow the waypoint to the line, then drive it towards %s" % info["dest"]
+	if info["state"] == "lost":
+		return "Off the route: drive back to it (the waypoint)"
+	if str(info["stop"]).ends_with("(end of the line)"):
+		return "Terminus ahead: drive to the end of the line" if dist < NEAR_STOP else ""
+	if boarding:
+		return "Passengers boarding… keep the doors open %d s" % ceili(maxf(float(pay.get("doors", 3.0)) - _board_t, 0.1))
+	if info["bay"]:
+		return "At %s: stop the bus" % info["stop"] if v >= STILL else "Open the doors (%s)" % doors
+	if car.doors_open and v < STILL and dist < NEAR_STOP:
+		return "Not in the bay yet: pull up to the stop (%d m)" % roundi(dist)
+	if car.doors_open and v > 3.0:
+		return "Close the doors (%s)" % doors
+	if dist < NEAR_STOP:
+		return "%s ahead: pull into its bay and stop" % info["stop"]
+	return ""
+
+
+## The hint shown now (tests): "" none.
+func hint_text() -> String:
+	return _hint.text if _hint and _hint.visible else ""
 
 
 ## The HUD's lines (tests).
@@ -836,6 +973,8 @@ func _c_duty(now: Dictionary) -> void:
 		return
 	_hud.visible = not now.is_empty()
 	if now.is_empty():
+		_hint.visible = false
+		_served_t = INF
 		if _waypoint != null and mode.game.waypoint == _waypoint:
 			mode.game.set_waypoint(null)
 		_waypoint = null
@@ -868,6 +1007,8 @@ func _c_event(kind: String, text: String, amount: int) -> void:
 	else:
 		l.text = text
 		l.add_theme_color_override("font_color", UiStyle.TEXT_WARN if kind == "void" else Color.WHITE)
+	if kind == "stop":
+		_served_t = 0.0
 	l.set_meta("t", 0.0)
 	_pops.add_child(l)
 	_pops.move_child(l, 0)

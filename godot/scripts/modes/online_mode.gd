@@ -155,8 +155,9 @@ func walk_help(k: Callable) -> String:
 
 func extra_help(k: Callable) -> String:
 	if bus_job.on_duty():
-		return "ON DUTY · stop in each stop's bay, %s open the doors %d s · %s your bus (off duty) · the next stop is the waypoint" % [
-				k.call("doors"), int(bus_job.pay.get("doors", 3.0)), k.call("vehicle_menu")]
+		return "ON DUTY · stop in each stop's bay, %s open the doors %d s · red lights: %s fine · %s your bus (off duty) · " % [
+				k.call("doors"), int(bus_job.pay.get("doors", 3.0)), Economy.money(int(bus_job.pay.get("red_light_fine", 10))),
+				k.call("vehicle_menu")] + "the next stop is the waypoint"
 	return "%s your vehicle (lock, send back) · the garages are on the map (%s) · buy vehicles at Prestige Motors, " % [
 			k.call("vehicle_menu"), game.letter_key("world_map", "M")] + "repair and paint them at a garage terminal · " + \
 			"stunts pay (jumps, flips, near misses; the stunt spots are on the map)"
@@ -241,7 +242,7 @@ func open_garage(id: String) -> void:
 	var look: Dictionary = Garages.KINDS[g["kind"]]
 	var sub := {"public": "Your vehicles (not the work ones: buses at the bus depot, fire trucks at the fire station)",
 			"shop": "Your vehicles (not the work ones). Those bought here come out on these bays.",
-			"depot": "Bus drivers: pick a line to go on duty (in your bus, or a lent one); buses for sale", "fire":
+			"depot": "Bus drivers earn money here: pick a line below, that's all (no need to get a bus out first).", "fire":
 			"Firefighters: a lent fire truck, or yours; fire trucks for sale"}
 	_open_panel()
 	_panel.open_garage(id, "%s · %s" % [look["title"], g["name"]] if g["kind"] in Garages.PUBLIC else str(g["name"]),
@@ -381,6 +382,8 @@ func prompt_text() -> String:
 				Car.common_name(v["model"])]
 	var g := terminal_at_hand()
 	if not g.is_empty():
+		if g["kind"] == "depot" and not bus_job.on_duty():
+			return "%s  %s · bus job: pick a line" % [Settings.key_text("interact"), g["name"]]
 		return "%s  %s · your vehicles" % [Settings.key_text("interact"), g["name"]]
 	if shop.catalogue_at_hand():
 		return "%s  %s · the catalogue" % [Settings.key_text("interact"), Shop.PRESTIGE_NAME]
@@ -710,7 +713,8 @@ func send_garage(peer: int, gid: String, message := "") -> void:
 	if not _near(peer, g):
 		send_to(peer, self, "_c_garage", [gid, [], "Walk up to the garage's terminal."])
 		return
-	send_to(peer, self, "_c_garage", [gid, (bus_job.offer(peer) if g["kind"] == "depot" else []) + offer(g, acc), message])
+	send_to(peer, self, "_c_garage", [gid, (bus_job.offer(peer, gid) if g["kind"] == "depot" else []) + offer(g, acc),
+			message])
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -721,8 +725,12 @@ func _h_spawn(gid: String, vehicle: int, model: String) -> void:
 	var problem := spawn_for(peer, gid, vehicle, model)
 	if problem != "" and game.net.dedicated:
 		print("%s: no %s at %s (%s)" % [game.net.player_name(peer), model, gid, problem])
-	send_to(peer, self, "_c_result", [problem == "", "Out on a bay: %s to get in." % Settings.key_text("interact")
-			if problem == "" else problem])
+	var text := problem
+	if problem == "":
+		text = "Out on a bay: %s to get in." % Settings.key_text("interact")
+		if garages.get_garage(gid).get("kind", "") == "depot" and not bus_job.duties.has(peer):
+			text += " Not on duty: pick a line at the terminal to earn money."
+	send_to(peer, self, "_c_result", [problem == "", text])
 
 
 @rpc("any_peer", "call_remote", "reliable")
