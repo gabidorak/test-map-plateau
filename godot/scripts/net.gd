@@ -54,11 +54,12 @@ signal ended(reason: String)                # client: the host closed the game
 signal message(text: String)                # someone joined or left, a vehicle is taken...
 signal chat(id: int, text: String)          # player `id` said `text`
 signal registered(id: int)                  # host: player `id` was let in (it has the players, vehicles... now)
+signal welcomed                             # client: the host's welcome came in (its vehicles are being made)
 
 const PORT := 7777                          # the host tries the next ones when it is taken
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
-const PROTOCOL := 11                        # bump when the messages change (build_id: other builds are refused anyway)
+const PROTOCOL := 12                        # bump when the messages change (build_id: other builds are refused anyway)
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const TRAIN_SEND_RATE := 10.0               # RER B train states per second (host)
@@ -88,6 +89,7 @@ var active := false                         # hosting, or welcomed by a host
 var dedicated := false                      # hosting without a player of our own
 var port := 0                               # the game's port (hosting) or the host's (client)
 var host_address := ""                      # client: the address joined
+var fail_kind := ""                         # client: why `failed` came last: timeout, unreachable, closed, build
 var players := {}                           # peer id -> {"name": String, "color": Color}, ourselves included
 var cars := {}                              # net id -> Car, all of them (simulated here or elsewhere)
 var owner_of := {}                          # net id -> peer simulating it
@@ -287,11 +289,12 @@ func _process(delta: float) -> void:
 		_connect_t += delta
 		if _connect_t > CONNECT_TIMEOUT:
 			_fail("No answer from %s:%d. Check the address, and that the host's firewall lets the game through." % [
-					host_address, port])
+					host_address, port], "timeout")
 
 
-func _fail(reason: String) -> void:
+func _fail(reason: String, kind := "") -> void:
 	leave()
+	fail_kind = kind
 	failed.emit(reason)
 
 
@@ -300,7 +303,7 @@ func _on_connected() -> void:
 
 
 func _on_connection_failed() -> void:
-	_fail("Could not reach %s:%d. Is a game hosted there?" % [host_address, port])
+	_fail("Could not reach %s:%d. Is a game hosted there?" % [host_address, port], "unreachable")
 
 
 func _on_server_disconnected() -> void:
@@ -308,7 +311,7 @@ func _on_server_disconnected() -> void:
 		leave()
 		ended.emit("The host closed the game.")
 	else:
-		_fail("The host closed the connection.")
+		_fail("The host closed the connection.", "closed")
 
 
 func _sender() -> int:
@@ -336,9 +339,7 @@ func _register(protocol: int, nickname: String, color: Color) -> void:
 		var tag := str(ProjectSettings.get_setting("application/config/version", ""))
 		_refused.rpc_id(id, "The host runs another build of the game (%s)." % [
 				Updater.pretty(tag) if tag != "" else "unversioned"])
-		get_tree().create_timer(1.0).timeout.connect(func() -> void:
-			if multiplayer.multiplayer_peer is ENetMultiplayerPeer:
-				(multiplayer.multiplayer_peer as ENetMultiplayerPeer).disconnect_peer(id))
+		drop_peer(id)
 		return
 	nickname = nickname.strip_edges().left(20)
 	players[id] = {"name": nickname if nickname != "" else "Player", "color": color}
@@ -353,11 +354,26 @@ func _register(protocol: int, nickname: String, color: Color) -> void:
 	message.emit("%s joined the game" % players[id]["name"])
 
 
+## Server: disconnects a client `after` s (time for a message sent just before to get there).
+func drop_peer(id: int, after := 1.0) -> void:
+	get_tree().create_timer(after).timeout.connect(func() -> void:
+		if multiplayer.multiplayer_peer is ENetMultiplayerPeer and id in multiplayer.get_peers():
+			(multiplayer.multiplayer_peer as ENetMultiplayerPeer).disconnect_peer(id))
+
+
+## Player `id` is now called `nickname` (PTA Online: their username, scripts/economy.gd tells every peer).
+func set_player_name(id: int, nickname: String) -> void:
+	if players.has(id):
+		players[id]["name"] = nickname
+	if _remotes.has(id):
+		(_remotes[id] as RemotePlayer).label.text = nickname
+
+
 @rpc("authority", "call_remote", "reliable")
 func _refused(reason: String) -> void:
 	var tag := str(ProjectSettings.get_setting("application/config/version", ""))
 	_fail("%s You have %s: restart the game to update, or ask the host to." % [reason,
-			Updater.pretty(tag) if tag != "" else "an unversioned build"])
+			Updater.pretty(tag) if tag != "" else "an unversioned build"], "build")
 
 
 ## Client: the host's players, vehicles, what is bent or knocked over there, and its game mode. Under game.gd's
@@ -366,6 +382,7 @@ func _refused(reason: String) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _welcome(all: Dictionary, snapshot: Array, broken: Array, mode_id: String) -> void:
 	game.set_game_mode(mode_id)             # Main/Mode first: the mode's own messages follow this one
+	welcomed.emit()                         # (PTA Online: the login goes now, scripts/economy.gd)
 	players = all
 	for id: int in players:
 		if id != me():

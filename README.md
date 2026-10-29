@@ -22,6 +22,11 @@ below), then
   (`IP:port`) shows at the top right of the host's screen. The game is announced on the local network.
 - **Join a game**: lists the games announced on the network with their game mode (click one), or type the host's
   address and port. You play the host's mode.
+- **PTA Online**: the official server (being built, see [ONLINE_MODE.md](ONLINE_MODE.md)). Its page logs in or creates an
+  account (username + password, no email; the rules are checked while typing), remembers the login on this computer
+  (a session token in `user://account.cfg`, never the password), logs out (here or everywhere) and changes the username
+  (once every 30 days); **Play PTA Online** joins the official server, where you play under your username. Its address
+  is in `godot/data/online.json` (empty: this build has no PTA Online). `-- --online` joins with the login kept.
 
 A loading screen covers the start of the game, a game started solo, hosted or joined, and the return to the main menu:
 the plateau drawn as a transit map from the game's own routes (the bot cars' roads, the RER B and the four bus lines with
@@ -190,6 +195,8 @@ tools/test_lan_buses.sh   # LAN game with bot buses: the client gets them (no wh
 godot --headless --fixed-fps 60 --path . --script res://tools/test_races.gd  # races, solo: offered in the start circle (not to a plane, the bus race only to buses), countdown hold, checkpoints in order, finish, results, chat, leaderboard and records file; off the road in the bus race; a bot drives each route to the finish (PLATEAU_TEST_ONLY=lap,bus,bot_bus,bot_lap)
 tools/test_lan_races.sh   # races in a LAN game: the leaderboard for a newcomer, inviting the other driver in the circle, the same GO, results and chat on both
 tools/test_server_records.sh   # a dedicated server's race records outlive a restart (~1 min)
+tools/test_online_login.sh   # PTA Online logins: a local accounts service + an official server; sign up and join as the username, the kept login joins without typing, bad token / no login kicked, accounts service or server down -> clear messages (~2 min; needs server/accounts/requirements.txt in .venv)
+(cd ../server/accounts && ../../.venv/bin/python -m pytest -q)   # the accounts service: every route, username/password rules, look-alikes, lockouts, sign-up limit, renames, the internal API's secret, money, admin CLI, backups (~4 s)
 godot --headless --fixed-fps 60 --path . --script res://tools/test_trains.gd  # RER B: departures, entering the map, the stop at Lozère (±1 m, doors on the platform side), door hold, a ride to the map edge, signals, a car on the track, LODs, tick cost (PLATEAU_TEST_ONLY=stop,hold,ride,signals,obstacle,...)
 tools/test_lan_trains.sh   # RER B in a LAN game: the client gets the host's trains, sees one stop at Lozère when the host does, rides it
 godot --path . --script res://tools/train_shots.gd -- --milestone=rerb_E [--night]   # trains standing at Lozère, from the station and on board -> data/review/shots/rerb_E/train_*.png

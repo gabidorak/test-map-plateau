@@ -1,0 +1,5 @@
+{
+  "_about": "PTA Online's official server, in the build (scripts/accounts.gd; PLATEAU_ONLINE_SERVER and PLATEAU_ACCOUNTS_URL override them). Kept out of project.godot, whose changes alter the launcher id (tools/pck_tool.py). Empty: this build has no PTA Online.",
+  "server": "",
+  "accounts_url": ""
+}

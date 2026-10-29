@@ -1,0 +1,6 @@
+tests
+.pytest_cache
+**/__pycache__
+rule_vectors.json
+sync_client_rules.py
+pytest.ini

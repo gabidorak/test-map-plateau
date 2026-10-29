@@ -9,6 +9,8 @@ esac
 PORT="${PORT:-7777}"
 NAME="${SERVER_NAME:-Plateau server}"
 MODE="${GAME_MODE:-sandbox}"   # sandbox or escape (Escape from Plateau)
+# OFFICIAL=1: the PTA Online server, players log in (PLATEAU_ACCOUNTS_URL and PLATEAU_SERVER_SECRET, from compose.yaml)
+OFFICIAL_FLAG=$([ -n "$OFFICIAL" ] && [ "$OFFICIAL" != 0 ] && echo --official)
 cd /data || exit 1
 DATA="/data/.local/share/godot/app_userdata/Plateau Map/data"   # unpacked game packs (godot/scripts/delta.gd)
 
@@ -47,4 +49,4 @@ if [ "$tag" != "$(cat tag 2>/dev/null)" ]; then
 fi
 [ -x "$ASSET" ] || { echo "No build to run"; sleep 60; exit 1; }
 
-exec "./$ASSET" --headless -- --dedicated --port="$PORT" --name="$NAME" --mode="$MODE"
+exec "./$ASSET" --headless -- --dedicated --port="$PORT" --name="$NAME" --mode="$MODE" $OFFICIAL_FLAG

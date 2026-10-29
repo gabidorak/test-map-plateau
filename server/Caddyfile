@@ -1,0 +1,9 @@
+# HTTPS route to the PTA Online accounts service (accounts/). With Caddy already on the VPS, add this block to its
+# Caddyfile with the domain written in (accounts.your.domain, an A record to the VPS); the compose file's own `caddy`
+# service reads this file as is, from ACCOUNTS_DOMAIN and ACCOUNTS_UPSTREAM.
+{$ACCOUNTS_DOMAIN:accounts.localhost} {
+	# the game server's API stays on the Docker network (it needs the server secret anyway)
+	@internal path /v1/server/*
+	respond @internal 404
+	reverse_proxy {$ACCOUNTS_UPSTREAM:127.0.0.1:8790}
+}
