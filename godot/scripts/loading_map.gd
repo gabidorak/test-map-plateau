@@ -6,9 +6,12 @@ extends Control
 ## the first time a screen asks (MAP.parse below), the map fades in once they are, and the result is kept for the
 ## rest of the session, so the screen shown when going back to the menu has its map at once.
 ## The lines draw themselves in the first time the map shows (once per session); the vehicles' positions come from
-## the clock alone, so two screens shown one over the other (the startup screen fading out over game.gd's own while a
-## game starts) show the same frame and cross-fade without a jump. The whole map drifts slowly (scale and position of
-## this Control: no redraw); only the vehicles and the station pulses are redrawn every frame.
+## the clock alone (_clock: the frames' deltas, not the time the frame's work happens to end, which moved them by
+## up to the loader's budget), so two screens shown one over the other (the startup screen fading out over game.gd's
+## own while a game starts) show the same frame and cross-fade without a jump. The whole map drifts slowly (the
+## transform of a Node2D holding the layers: no redraw; a Control's position would be snapped to whole pixels, the map
+## jumping a pixel at a time while its scale changed smoothly); only the vehicles and the station pulses are redrawn
+## every frame.
 
 const BUS_ROUTES := "res://world/bus_routes.json"
 const CAR_ROUTES := "res://world/car_routes.json"
@@ -30,6 +33,8 @@ static var _data := {}
 static var _task := -1
 static var _parsed := {}                      # written by the task, read once it is done
 static var _revealed_at := -1.0               # clock (s) when the lines first drew in
+static var _now := 0.0                        # the clock (s): the frames' deltas added up, once a frame
+static var _now_frame := -1
 
 var _fit := Transform2D.IDENTITY              # world metres (x east, y north) -> this Control's pixels
 var _fit_size := Vector2.ZERO                 # the size _fit is for
@@ -37,19 +42,21 @@ var _shown := 0.0                             # 0..1 while the map fades in
 var _roads: Control                           # drawn once (per size)
 var _lines: Control                           # redrawn while the lines draw in
 var _moving: Control                          # vehicles and pulses, every frame
+var _drift: Node2D                            # the three, drifting
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_drift = Node2D.new()
+	add_child(_drift)
 	for layer in 3:
-		var c := Control.new()
+		var c := Control.new()                  # (sized in _refit: a Control is culled outside its rect)
 		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		c.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		add_child(c)
-	_roads = get_child(0)
-	_lines = get_child(1)
-	_moving = get_child(2)
+		_drift.add_child(c)
+	_roads = _drift.get_child(0)
+	_lines = _drift.get_child(1)
+	_moving = _drift.get_child(2)
 	_roads.draw.connect(_draw_roads)
 	_lines.draw.connect(_draw_lines)
 	_moving.draw.connect(_draw_moving)
@@ -64,7 +71,7 @@ static func ready_to_draw() -> bool:
 
 
 static func _clock() -> float:
-	return Time.get_ticks_msec() / 1000.0
+	return _now
 
 
 static func _start_parse() -> void:
@@ -192,6 +199,9 @@ static func _path(pts: Array, step: float, thin := 1.0) -> Dictionary:
 
 
 func _process(delta: float) -> void:
+	if _now_frame != Engine.get_process_frames():
+		_now_frame = Engine.get_process_frames()
+		_now += delta
 	if _data.is_empty():
 		_poll_parse()
 		if _data.is_empty():
@@ -209,14 +219,16 @@ func _process(delta: float) -> void:
 		_lines.queue_redraw()
 	# A slow drift over the map, as if a camera hovered over it.
 	var t := _clock()
-	pivot_offset = size * 0.5
-	scale = Vector2.ONE * (1.035 + 0.025 * sin(t * 0.07))
-	position = Vector2(sin(t * 0.045) * size.x * 0.012, cos(t * 0.06) * size.y * 0.01)
+	var k := 1.035 + 0.025 * sin(t * 0.07)    # scaled about the middle
+	var shift := Vector2(sin(t * 0.045) * size.x * 0.012, cos(t * 0.06) * size.y * 0.01)
+	_drift.transform = Transform2D(0.0, Vector2(k, k), 0.0, shift + size * 0.5 * (1.0 - k))
 	_moving.queue_redraw()
 
 
 ## Fits the map's box in this Control, north up, with room left for the title above and the status below.
 func _refit() -> void:
+	for c: Control in _drift.get_children():
+		c.size = size
 	if not _data.has("box") or size.x < 2.0 or size.y < 2.0:
 		return
 	_fit_size = size
