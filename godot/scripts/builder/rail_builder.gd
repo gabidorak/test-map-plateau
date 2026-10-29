@@ -19,6 +19,7 @@ const Layers = preload("res://scripts/physics_layers.gd")
 const GroundHeights = preload("res://scripts/ground_heights.gd")
 const RailMap = preload("res://scripts/rail_map.gd")
 const GroundBuilder = preload("res://scripts/builder/ground_builder.gd")
+const LabelFit = preload("res://scripts/label_fit.gd")
 const RAIL_PATH := "res://world/rail.json"
 const PROP_SHADER := "res://shaders/toy_prop.gdshader"
 const CONCRETE := Color("#cfc8ba")          # palette props.concrete
@@ -1407,7 +1408,8 @@ func _board(parent: Node3D, m: Mesher, xf: Transform3D, text: String, subtitle: 
 		holder.transform = xf * Transform3D(Basis(Vector3.UP, 0.0 if face > 0.0 else PI), Vector3.ZERO)
 		holder.set_meta("plateau", info)
 		parent.add_child(holder)
-		_label(holder, text, centre + Vector3(0.0, 0.07 if subtitle else 0.0, 0.034), 150, Color.WHITE, w - 0.1)
+		var l := _label(holder, text, centre + Vector3(0.0, 0.07 if subtitle else 0.0, 0.034), 150, Color.WHITE, w - 0.1)
+		LabelFit.fit(l, Vector2(w - 0.1, 0.42 if subtitle else h - 0.05))     # one line on the board (over the subtitle)
 		if subtitle:
 			_label(holder, subtitle, centre + Vector3(0.0, -0.17, 0.034), 52, Color.WHITE, w - 0.1)
 

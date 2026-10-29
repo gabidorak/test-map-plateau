@@ -26,6 +26,7 @@ extends Node3D
 
 const Layers = preload("res://scripts/physics_layers.gd")
 const VehicleAudio = preload("res://scripts/vehicle_audio.gd")
+const LabelFit = preload("res://scripts/label_fit.gd")
 const MODEL := "res://assets/cars/mi79.glb"
 const LAYOUT := "res://assets/cars/mi79.json"
 const UNITS := 2                            # units of four cars (an 8-car train, the RER B's standard)
@@ -561,6 +562,7 @@ class TrainCar extends Node3D:
 			_display.double_sided = false
 			_display.position = Vector3(disp[0], disp[1], float(disp[2]) + 0.03)
 			_display.visibility_range_end = 90.0
+			LabelFit.fit(_display, Vector2(1.5, 0.18))     # the panel: 1.6 x 0.2 m (blender/vehicles/build_train.py)
 			add_child(_display)
 		_light = OmniLight3D.new()
 		_light.omni_range = CABIN_RANGE
@@ -621,7 +623,7 @@ class TrainCar extends Node3D:
 
 	func set_display(text: String) -> void:
 		if _display:
-			_display.text = text
+			LabelFit.set_text(_display, text)
 			_display.visible = text != ""
 
 	func set_cabin_light(on: bool) -> void:

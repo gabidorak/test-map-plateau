@@ -19,6 +19,7 @@ const Layers = preload("res://scripts/physics_layers.gd")
 const GroundHeights = preload("res://scripts/ground_heights.gd")
 const Car = preload("res://scripts/car.gd")
 const Dealership = preload("res://scripts/dealership.gd")
+const LabelFit = preload("res://scripts/label_fit.gd")
 const SPECS_PATH := "res://world/interiors.json"
 const FLOOR_SHADER := "res://shaders/showroom_floor.gdshader"
 const PODIUM := 3.0                     # m, display podium radius (tools/dealership/dealership_layout.py PODIUM)
@@ -391,12 +392,14 @@ func _build_one(parent: Node3D, b: Dictionary, spec: Dictionary, ground: GroundH
 		var p := ring[e]
 		var q := ring[(e + 1) % n]
 		var along := (q - p).normalized()
-		var mid := p + along * clampf((at - p).dot(along), 0.0, p.distance_to(q))
+		var u := clampf((at - p).dot(along), 0.0, p.distance_to(q))
+		var mid := p + along * u
 		var out2 := Vector2(along.y, -along.x)
 		var l := _label(spec["sign"], 150, 0.01, Color(1.0, 0.8, 0.38))
 		l.transform = _frame(mid + out2 * 0.06, ceil_z + 1.25, rad_to_deg(atan2(out2.y, out2.x)))
 		l.outline_size = 10
 		l.outline_modulate = Color(0.25, 0.17, 0.03)
+		LabelFit.fit(l, Vector2(2.0 * minf(u, p.distance_to(q) - u) - 1.0, 2.2))   # centred on the door, on its wall
 		l.visibility_range_end = 0.0
 		node.add_child(l)
 
@@ -424,6 +427,7 @@ func _build_one(parent: Node3D, b: Dictionary, spec: Dictionary, ground: GroundH
 		decor.box("black", plate, Vector3(0.9, 0.5, 0.04))
 		decor.box("gold", plate.translated_local(Vector3(0.0, 0.0, -0.005)), Vector3(0.96, 0.56, 0.035))
 		var l := _label("%s\n%s" % [Car.display_name(c["model"]), c["price"]], 44, 0.004, Color(1.0, 0.86, 0.5))
+		LabelFit.fit(l, Vector2(0.82, 0.44))        # on the black of the plate
 		l.transform = plate.translated_local(Vector3(0.0, 0.0, 0.025))
 		node.add_child(l)
 		obstacles.append(Vector3(xf.origin.x, xf.origin.z, PODIUM + 0.3))

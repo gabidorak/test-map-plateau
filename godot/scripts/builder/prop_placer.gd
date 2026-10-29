@@ -14,6 +14,7 @@ const Layers = preload("res://scripts/physics_layers.gd")
 const GroundHeights = preload("res://scripts/ground_heights.gd")
 const PropData = preload("res://scripts/prop_data.gd")
 const PropCollision = preload("res://scripts/prop_collision.gd")
+const LabelFit = preload("res://scripts/label_fit.gd")
 const MODELS_DIR := "res://assets/props/"
 const SHADER := "res://shaders/toy_prop.gdshader"
 const GLASS_SHADER := "res://shaders/toy_prop_glass.gdshader"
@@ -271,13 +272,15 @@ func _bus_labels(stops: Node3D, p: Dictionary, xf: Transform3D) -> void:
 			var front := float(a["t"]) + 0.003
 			var x := float(a["x"]) * side
 			var top := float(a["z0"]) + float(a["h"])
-			_label(face, name, Vector3(x, top - float(a["band"]) / 2.0, front), float(a["w"]) - 0.03, 32, Color.WHITE)
+			var l := _label(face, name, Vector3(x, top - float(a["band"]) / 2.0, front), float(a["w"]) - 0.03, 32, Color.WHITE)
+			LabelFit.fit(l, Vector2(float(a["w"]) - 0.03, float(a["band"]) - 0.01))   # in the flag's top band
 			_badges(face, lines, Vector3(x, top - float(a["band"]) - 0.075, front), 3, Vector2(0.15, 0.1))
 	else:
 		var a: Dictionary = _models["bus_shelter"]["anchors"]["fascia"]
 		var w: float = a["w"]
 		var front := -float(a["y"]) + 0.004
-		_label(node, name, Vector3(float(a["x"]) - w * 0.17, float(a["z"]), front), w * 0.62, 72, blue)
+		var l := _label(node, name, Vector3(float(a["x"]) - w * 0.17, float(a["z"]), front), w * 0.62, 72, blue)
+		LabelFit.fit(l, Vector2(w * 0.62, float(a["h"]) + 0.01))     # on the fascia (a line's box is a bit taller than its letters)
 		_badges(node, lines, Vector3(float(a["x"]) + w * 0.33, float(a["z"]), front), 4, Vector2(0.27, 0.17))
 
 
