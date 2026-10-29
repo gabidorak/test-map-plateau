@@ -101,10 +101,14 @@ func vehicle_change(account_id: int, change: Dictionary) -> Dictionary:
 
 ## Server: pays account `account_id` `amount` € for job `job` ("bus:4606"...), cut to the account's hourly cap `cap`
 ## (the accounts service counts every job's pay over the last hour: server/accounts db.earn). The answer as accounts.gd's,
-## "data": {"balance", "paid", "hour"}; a logged-in player of that account sees their wallet follow.
-func pay(account_id: int, amount: int, reason: String, job: String, cap: int) -> Dictionary:
-	var r: Dictionary = await accounts.server_post("/v1/server/pay", {"account": account_id, "amount": amount,
-			"reason": reason, "job": job, "cap": cap}, secret)
+## "data": {"balance", "paid", "hour", "first"}; a logged-in player of that account sees their wallet follow. `once`: a
+## key whose first payment for the account is `once_amount` instead ("first" true then: a stunt spot's first jump).
+func pay(account_id: int, amount: int, reason: String, job: String, cap: int, once := "", once_amount := 0) -> Dictionary:
+	var body := {"account": account_id, "amount": amount, "reason": reason, "job": job, "cap": cap}
+	if once != "":
+		body["once"] = once
+		body["once_amount"] = once_amount
+	var r: Dictionary = await accounts.server_post("/v1/server/pay", body, secret)
 	if r["ok"]:
 		for id: int in _logged:
 			if _logged[id]["account"] == account_id:

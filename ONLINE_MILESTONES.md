@@ -13,8 +13,8 @@ checked before calling it finished.
 3. **RPC ids:** new RPCs live in their own nodes (`Main/Economy`, `Main/Jobs/*`), like `Main/Races`, so net.gd's
    RPC ids don't shift. Bump `PROTOCOL` whenever the wire format changes.
 4. **Tests:** pytest for the accounts service, a headless `tools/test_<x>.gd` per milestone, and a LAN shell test
-   (host = `--official` server + client) for anything networked, on its own port: 7796-7799 (7790-7795 are taken by
-   the existing tests). Tests start a local accounts service with a throwaway SQLite file.
+   (host = `--official` server + client) for anything networked, on its own port: 7796-7800 (7790-7795 are taken by
+   the existing tests; 7800 is O6's). Tests start a local accounts service with a throwaway SQLite file.
 5. **Data keyed by OSM ids** (garages, depots, shop), so it survives map rebuilds, like `interiors.json`.
 6. **Status notes stay short** (3 lines max). Details go in the milestone's section.
 7. When a decision changes, update [ONLINE_MODE.md](ONLINE_MODE.md) first.
@@ -145,7 +145,9 @@ checked before calling it finished.
 - HUD popup with the stunt's name and reward.
 
 **Done when:**
-- [ ] `tools/test_stunts.gd`: scripted jump pays once big then small, flip detected, farming one ramp decays.
+- [x] `tools/test_stunts.gd`: scripted jump pays once big then small, flip detected, farming one ramp decays.
+- [x] `tools/test_stunts.sh` (port 7800): the same spot jumped on an official server: first-time reward then a small
+      one, paid by the accounts service (`firsts` table), with the popup.
 
 ## O7 — Fires + firefighter job
 
@@ -189,6 +191,6 @@ a real fire station building at #1289.
 | O3 Rules + garages | ✅ | `online_mode.gd`, `online/garages.gd` + panel, `garages.json` (9 public + depot + fire station), map badges, `add-vehicle` admin. test_online_rules.sh green. |
 | O4 Shop, repairs, colours | ✅ | `online/shop.gd` + `prices.gd`, `paint.gd` (`car.gd` set_paint, crash damage online), delivery bays `prestige-motors`, PROTOCOL 14. test_online_shop.sh green (107 checks). |
 | O5 Bus job | ✅ | `online/bus_job.gd` (Main/Mode/BusJob), `data/jobs.json`, traffic.gd hold/release, accounts `pay` hourly `cap`, PROTOCOL 15. Bot on the 4606: 14 stops, ~15 200 €/h. test_bus_job.sh green (49 checks). |
-| O6 Stunts | ⬜ | |
+| O6 Stunts | ✅ | `online/stunts.gd` (Main/Mode/Stunts), 10 spots in `world/stunts.json` (`tools/online/stunts.py` + `test_stunts.gd --trial`), accounts `pay` `once` + `firsts`, PROTOCOL 16. test_stunts.sh green. Fixed: a taken-over car could keep a snap's velocity. |
 | O7 Fires + firefighter job | ⬜ | |
 | O8 Balance + admin | ⬜ | |

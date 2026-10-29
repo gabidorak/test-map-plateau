@@ -599,7 +599,7 @@ func _pay(d: Duty, due: int, text: String, reason: String, fast: bool) -> void:
 			if not r["ok"]:
 				push_warning("Could not pay %s: %s" % [d.username, r["message"]])
 		else:
-			paid = _solo_pay(due)
+			paid = solo_pay(due)
 		if paid < due:
 			_log("%s: %d € of %d paid (hourly cap %d €)" % [d.username, paid, due, cap])
 	d.earned += paid
@@ -607,7 +607,9 @@ func _pay(d: Duty, due: int, text: String, reason: String, fast: bool) -> void:
 	_send_info(d)
 
 
-func _solo_pay(amount: int) -> int:
+## Played solo: pays `amount` € into the mode's test_money, within the hourly cap (every job's: the stunts' too); what
+## was paid.
+func solo_pay(amount: int) -> int:
 	_solo_paid = _solo_paid.filter(func(e: Array) -> bool: return time - e[0] < 3600.0)
 	var hour := 0
 	for e: Array in _solo_paid:

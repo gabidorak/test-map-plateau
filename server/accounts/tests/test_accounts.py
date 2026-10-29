@@ -316,17 +316,43 @@ def test_pay_cap_per_hour(client, clock):
         return client.post("/v1/server/pay", json={"account": account, "amount": amount, "reason": "stop", "job": job,
                                                    "cap": cap}, headers=internal()).json()
 
-    assert pay(600) == {"balance": 5600, "paid": 600, "hour": 600}
+    assert pay(600) == {"balance": 5600, "paid": 600, "hour": 600, "first": False}
     client.post("/v1/server/pay", json={"account": account, "amount": 900, "reason": "gift", "job": "admin"},
                 headers=internal())                         # the admin's money doesn't count
-    assert pay(600) == {"balance": 6900, "paid": 400, "hour": 1000}
+    assert pay(600) == {"balance": 6900, "paid": 400, "hour": 1000, "first": False}
     assert pay(300)["paid"] == 0
     clock.t += 1800
     assert pay(300, job="stunts")["paid"] == 0             # every job counts
     clock.t += 1801                                         # the first two are over an hour old
-    assert pay(300) == {"balance": 7200, "paid": 300, "hour": 300}
+    assert pay(300) == {"balance": 7200, "paid": 300, "hour": 300, "first": False}
     rows = db.payments(db.connect(), account)
     assert [r["reason"] for r in rows[:4]] == ["stop", "stop (cap)", "stop (cap)", "stop (cap)"]
+
+
+def test_pay_first_time(client, clock):
+    token = signup(client).json()["token"]
+    account = client.get(f"/v1/server/who?token={token}", headers=internal()).json()["account"]
+    other = client.get(f"/v1/server/who?token={signup(client, 'Other_1').json()['token']}",
+                       headers=internal()).json()["account"]
+
+    def pay(once, who=account, cap=0):
+        return client.post("/v1/server/pay", json={"account": who, "amount": 100, "reason": "Big jump", "job": "stunts",
+                                                   "cap": cap, "once": once, "once_amount": 2000},
+                           headers=internal()).json()
+
+    assert pay("stunt:a") == {"balance": 7000, "paid": 2000, "hour": 2000, "first": True}
+    assert pay("stunt:a") == {"balance": 7100, "paid": 100, "hour": 2100, "first": False}    # small after
+    assert pay("stunt:b")["first"] is True                                                    # per key
+    assert pay("stunt:a", who=other)["paid"] == 2000                                          # per account
+    clock.t += 30 * 86400
+    assert pay("stunt:a")["paid"] == 100                                                      # for good
+    assert db.payments(db.connect(), account)[-2]["reason"] == "Big jump (first)"
+    # the cap leaving nothing of a first: it stays to be had
+    clock.t += 3601
+    assert pay("stunt:c", cap=1000)["paid"] == 1000                                          # cut, still the first
+    assert pay("stunt:d", cap=1000) == {"balance": 10200, "paid": 0, "hour": 1000, "first": False}
+    clock.t += 3601
+    assert pay("stunt:d")["first"] is True
 
 
 def test_vehicles(client):
