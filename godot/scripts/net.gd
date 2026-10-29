@@ -61,7 +61,7 @@ signal welcomed                             # client: the host's welcome came in
 const PORT := 7777                          # the host tries the next ones when it is taken
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
-const PROTOCOL := 13                        # bump when the messages change (build_id: other builds are refused anyway)
+const PROTOCOL := 14                        # bump when the messages change (build_id: other builds are refused anyway)
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
 const TRAIN_SEND_RATE := 10.0               # RER B train states per second (host)

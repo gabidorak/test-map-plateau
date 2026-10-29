@@ -8,7 +8,9 @@ beside the row's first bay:
   corridors); a "big" bay takes the long and wide vehicles (truck + trailer, biplane);
 - the bus depot at Massy-Palaiseau station (buses only, bus drivers);
 - the fire station at Polytechnique, building #1289 "SPIS" (osm:w1063984911, an open canopy 2.9 m high: the 3.1 m
-  fire truck doesn't fit under it, so the bays are beside it), fire trucks only.
+  fire truck doesn't fit under it, so the bays are beside it), fire trucks only;
+- Prestige Motors' delivery bays, by its main door (the shop, scripts/online/shop.gd: a vehicle bought there comes out
+  on them; its terminal works as a public garage's).
 
 Each garage names its car park by OSM id (or a point and a radius, for the depot and the fire station), so a rebuilt
 map only needs this rerun. The bays are searched (position on a 1 m grid, heading every 5°, nearest the target first)
@@ -72,6 +74,8 @@ GARAGES = [
      "bays": [BUS, BUS]},
     {"id": "fire-station", "name": "Fire station - Polytechnique", "kind": "fire", "near": (830.0, -151.0, 45.0),
      "bays": [TRUCK, TRUCK]},
+    {"id": "prestige-motors", "name": "Prestige Motors", "kind": "shop", "near": (276.3, 18.0, 70.0),
+     "target": (287.0, 15.0), "bays": [CAR, CAR, CAR]},
 ]
 
 

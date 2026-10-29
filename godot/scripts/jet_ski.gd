@@ -60,6 +60,11 @@ var _clock := 0.0
 var _jet_in_water := false
 
 
+## PTA Online's repaints (car.gd set_paint): the deck in `c` (null: its own colour).
+func _repaint(c: Variant) -> void:
+	(_mats["deck"] as StandardMaterial3D).albedo_color = c if c != null else COLORS["deck"]
+
+
 func setup(model: String) -> void:
 	var spec: Dictionary = SPECS[model]
 	model_name = model

@@ -47,6 +47,10 @@ extends VehicleBody3D
 ## half of it, grey smoke comes out of the engine; at 0 it is `broken`: a boom and a ball of fire, the engine dies, the
 ## body is scorched and black smoke billows out of it (scripts/wreck_smoke.gd) until it is repaired REPAIR_AFTER s
 ## later, or until the fire truck's water cannon has hosed it for EXTINGUISH s (douse), which puts the fire out.
+## PTA Online's player vehicles (scripts/modes/online_mode.gd) take `crash_damage` (a sudden change of speed of CRASH_FROM
+## m/s and more in a tick hurts, CRASH_WRECK m/s breaks it from full health) and don't repair themselves
+## (`repairs_itself`: they are repaired at a garage, paid). Paint (`paint`, set_paint; scripts/paint.gd): PTA Online's
+## repaints, the far mesh made again in the new colour.
 ## Headlights (set_headlights; L for the driver, game.gd): a spot light for the beam (casting shadows from the vehicle
 ## the player drives), glowing lamps, the tail lamps dimly lit and a walkable vehicle's cabin lights. Bots drive with
 ## them on at night (`night`, scripts/night.gd).
@@ -60,6 +64,7 @@ const Layers = preload("res://scripts/physics_layers.gd")
 const VehicleAudio = preload("res://scripts/vehicle_audio.gd")
 const Trailer = preload("res://scripts/car_trailer.gd")
 const WreckSmoke = preload("res://scripts/wreck_smoke.gd")
+const Paint = preload("res://scripts/paint.gd")
 const Water = preload("res://scripts/water.gd")
 const Prefs = preload("res://scripts/settings.gd")
 const KENNEY_WHEELS := ["wheel-front-left", "wheel-front-right", "wheel-back-left", "wheel-back-right"]
@@ -194,6 +199,8 @@ const DAMAGED := 0.5                        # share of the health under which th
 const REPAIR_AFTER := 60.0                  # s a broken vehicle smokes before it is repaired
 const PARK_SLEEP := 3.0                     # s parked at rest before its bodies sleep (_sleep_parked)
 const EXTINGUISH := 2.0                     # s of the fire truck's water on a broken vehicle that put its fire out
+const CRASH_FROM := 8.0                     # m/s of speed lost or gained in a tick from which a knock hurts (crash_damage)
+const CRASH_WRECK := 22.0                   # m/s in a tick that breaks a vehicle from full health (~80 km/h into a wall)
 const HEADLIGHT := Color(1.0, 0.93, 0.8)    # beam colour, warm white
 const BEAM_RANGE := 60.0                    # m
 const BEAM_ANGLE := 32.0                    # degrees from the axis to the edge of the cone
@@ -257,6 +264,11 @@ var hold := false                           # held still at a race start (script
 var health := HEALTH
 var max_health := HEALTH
 var broken := false                         # health 0: engine dead, black smoke
+var crash_damage := false                   # hard knocks take health (PTA Online's player vehicles)
+var repairs_itself := true                  # broken: repaired REPAIR_AFTER s later or by the water cannon
+var paint := ""                             # its colour (scripts/paint.gd id; "" its own: set_paint)
+var _crash_v := Vector3.ZERO                # velocity at the last tick's crash check (_check_crash)
+var _crash_frame := -2                      # physics frame of that check
 var smoke_spot := Vector3.ZERO              # car frame: where the smoke comes out (the engine)
 var smoke_size := 1.0
 
@@ -349,7 +361,7 @@ const BOT_COLOR := Color(0.16, 0.3, 0.55)   # the bot drivers' uniform
 static var _soot: StandardMaterial3D        # drawn over a broken vehicle's meshes
 static var night := false                   # scripts/night.gd: bots drive with their headlights on
 static var _lamp_shader: Shader             # the model's own lamp surfaces, lit (_build_headlights)
-static var _far_meshes := {}                # model (+ "/rear") -> its sections' far mesh, shared (null: none)
+static var _far_meshes := {}                # model (+ "/rear", + "#" paint) -> its sections' far mesh, shared (null: none)
 static var _far_material: ShaderMaterial
 static var _far_images := {}                # albedo texture -> its Image, decompressed, while merging (_far_colours)
 var _far: Array[MeshInstance3D] = []        # the sections' far meshes (_build_far)
@@ -364,6 +376,16 @@ static func is_armed(model: String) -> bool:
 
 static func display_name(model: String) -> String:
 	return SPECS[model].get("label", model.replace("-", " ").capitalize())
+
+
+## Name of `model` inside a sentence ("your taxi", "your Audi R8"): display_name in lower case, unless it holds a name
+## (a maker's, or a word with a capital past its first letter: "BMW M4", "IDFM bus (12 m)").
+static func common_name(model: String) -> String:
+	var label := display_name(model)
+	for w: String in label.split(" "):
+		if w.substr(1) != w.substr(1).to_lower() or w in ["Audi", "Mercedes", "Renault", "Volvo"]:
+			return label
+	return label.to_lower()
 
 
 func setup(model: String) -> void:
@@ -1133,7 +1155,7 @@ func _build_far() -> void:
 		return
 	for body in bodies():
 		var details := _far_details(body)
-		var key := model_name + ("/rear" if body != self else "")
+		var key := model_name + ("/rear" if body != self else "") + ("#" + paint if paint != "" else "")
 		if not _far_meshes.has(key):
 			_far_meshes[key] = _merge_far(body, details)
 		if _far_meshes[key] == null:
@@ -1344,6 +1366,7 @@ func place(t: Transform3D) -> void:
 		b.global_transform = t if b == self else t.translated_local(rear_offset)
 		b.linear_velocity = Vector3.ZERO
 		b.angular_velocity = Vector3.ZERO
+	_crash_frame = -2
 
 
 ## The rigid bodies: this one and the rear section of an articulated vehicle.
@@ -1646,7 +1669,7 @@ func damage(amount: float) -> void:
 ## The fire truck's water cannon (scripts/water_cannon.gd: game.gd, through net.gd on the peer simulating the vehicle)
 ## hosed it for `seconds`: a broken vehicle's fire is out after EXTINGUISH s of it, and it runs again.
 func douse(seconds: float) -> void:
-	if not broken:
+	if not broken or not repairs_itself:
 		return
 	_doused += seconds
 	if _doused >= EXTINGUISH:
@@ -1718,9 +1741,40 @@ func _set_scorched(on: bool) -> void:
 		mi.material_overlay = _soot if on else null
 
 
+## A hard knock (crash_damage, simulated here): the change of velocity since the last tick, beyond CRASH_FROM m/s,
+## takes health, all of it at CRASH_WRECK m/s. Only from one tick to the next (not across a sleep, a teleport or a time
+## simulated by another peer).
+func _check_crash() -> void:
+	var frame := Engine.get_physics_frames()
+	var dv := (linear_velocity - _crash_v).length()
+	if crash_damage and not broken and frame == _crash_frame + 1 and dv > CRASH_FROM:
+		set_health(health - max_health * (dv - CRASH_FROM) / (CRASH_WRECK - CRASH_FROM))
+	_crash_v = linear_velocity
+	_crash_frame = frame
+
+
+## Paints it in paint `id` (scripts/paint.gd; "" its own colours) and makes its far mesh again in that colour.
+func set_paint(id: String) -> void:
+	if id == paint:
+		return
+	paint = id
+	_repaint(Paint.colour(model_name, id))
+	if not _far.is_empty():
+		for f in _far:
+			f.get_parent().remove_child(f)
+			f.queue_free()
+		_far.clear()
+		_build_far()
+
+
+## Its meshes in colour `c` (null: their own). The biplane, the horse and the jet-ski recolour their own materials.
+func _repaint(c: Variant) -> void:
+	Paint.repaint(self, c)
+
+
 ## Broken vehicle simulated here: repaired once REPAIR_AFTER s have gone by (the others follow its health).
 func _update_damage(delta: float) -> void:
-	if broken:
+	if broken and repairs_itself:
 		_broken_t += delta
 		if _broken_t >= REPAIR_AFTER:
 			set_health(max_health)
@@ -1900,6 +1954,7 @@ func _physics_process(delta: float) -> void:
 	_set_reverse_lamps(driving and throttle < 0.0 and v <= 0.5)
 	_update_steering()
 	_update_doors(delta)
+	_check_crash()
 	_update_damage(delta)
 	audio.update(v, throttle, max_speed, delta)
 	_sleep_parked(v, delta)

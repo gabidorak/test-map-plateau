@@ -5,7 +5,8 @@ extends Node3D
 ## it and presses E to pick one of their vehicles, which the server parks on a free bay that fits it.
 ## Kinds: "public" (car parks spread over the map: any vehicle but the work ones; a "big" bay takes the truck with its
 ## trailer and the biplane), "depot" (the bus depot at Massy-Palaiseau: buses only), "fire" (the fire station at
-## Polytechnique: fire trucks only).
+## Polytechnique: fire trucks only), "shop" (Prestige Motors' delivery bays by its door: a vehicle bought there comes
+## out on them; otherwise a public garage).
 ## Positions in the file are map coordinates (x east, y north; Godot = (x, height, -y)) and yaws in degrees (0 north,
 ## clockwise); heights come from the ground (scripts/ground_map.gd), so the server has them too. The dedicated server
 ## makes no meshes, only the kiosks' collision.
@@ -19,7 +20,9 @@ const KINDS := {
 	"public": {"title": "Garage", "colour": Color("#2f6fd6"), "sign": "P", "paint": Color(0.93, 0.93, 0.9)},
 	"depot": {"title": "Bus depot", "colour": Color("#2e9d57"), "sign": "BUS", "paint": Color(1.0, 0.82, 0.2)},
 	"fire": {"title": "Fire station", "colour": Color("#d23b2f"), "sign": "18", "paint": Color(0.92, 0.25, 0.2)},
+	"shop": {"title": "Deliveries", "colour": Color("#c9a043"), "sign": "€", "paint": Color(1.0, 0.82, 0.42)},
 }
+const PUBLIC := ["public", "shop"]          # kinds any of a player's vehicles but the work ones come out at
 const LINE := 0.12                          # m, painted bay lines
 const LIFT := 0.035                         # m over the ground
 const BAY_MARGIN := 0.15                    # m a vehicle keeps from its bay's lines
@@ -83,7 +86,7 @@ func terminal_near(p: Vector3, reach: float) -> Dictionary:
 
 
 ## The garage of one of `kinds` nearest to `p` (Godot), or {}.
-func nearest(p: Vector3, kinds := ["public"]) -> Dictionary:
+func nearest(p: Vector3, kinds := PUBLIC) -> Dictionary:
 	var best := {}
 	var best_d := INF
 	for g: Dictionary in list:
@@ -237,7 +240,7 @@ func _kiosk(node: Node3D, g: Dictionary, meshes: bool) -> void:
 		mark.transform = Transform3D(Basis(Vector3.UP, 0.0 if side > 0.0 else PI), Vector3(0.55, 3.45, side * 0.045))
 		k.add_child(mark)
 	var title := Label3D.new()
-	title.text = "%s\n%s" % [look["title"], g["name"]] if g["kind"] == "public" else str(g["name"])
+	title.text = "%s\n%s" % [look["title"], g["name"]] if g["kind"] in PUBLIC else str(g["name"])
 	title.font_size = 44
 	title.pixel_size = 0.01
 	title.outline_size = 12
@@ -262,7 +265,7 @@ func _paint_bays(node: Node3D, g: Dictionary) -> void:
 		var corners := [Vector3(-hw, 0, -hl), Vector3(hw, 0, -hl), Vector3(hw, 0, hl), Vector3(-hw, 0, hl)]
 		for e in 4:
 			_line(st, xf * corners[e], xf * corners[(e + 1) % 4])
-		var text: String = "%s %d" % [look["sign"], n] if g["kind"] == "public" else str(look["sign"]) if g["kind"] == "depot" \
+		var text: String = "%s %d" % [look["sign"], n] if g["kind"] in PUBLIC else str(look["sign"]) if g["kind"] == "depot" \
 				else "POMPIERS"
 		for end: float in [-1.0, 1.0]:      # readable from either end of the bay
 			var mark := Label3D.new()

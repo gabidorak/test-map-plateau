@@ -155,6 +155,19 @@ typing.
   opens your vehicle's panel (lock/unlock, send it back); the in-game menu has "Back to the nearest garage". The
   terminal range is judged on the server from the player's newest state. A new account has an empty garage until the
   shop (O4): `plateau-admin add-vehicle <user> <model>` fills it.
+- Built in O4 (my choices): prices in `godot/data/prices.json` (JSON, not TOML: a `.toml` file needs an export filter,
+  and editing `export_presets.cfg` changes the launcher id, so every player would download a whole new launcher). The
+  price list is in 4.1 below. A repaint costs 2 % of the price, at least 200 €. Prestige Motors: E by Jean-Claude or at a
+  podium's gold price stand opens the catalogue; the stands and Jean-Claude quote the online prices. A vehicle bought
+  comes out on 3 delivery bays by the showroom's door (garage `prestige-motors`, kind "shop": it works as a public
+  garage, with no map badge of its own), or waits in the garage when it can't (bays taken, the jet-ski: get it out at
+  Polytechnique - Lac). Paint: 14 car colours, 6 coats for the horse, "its own colour" to go back; the body paint only
+  (a black roof or carbon bonnet stays), the toy cars' palette swatch recoloured; not for buses, the fire truck, police
+  cars and the 1928 Mercedes (collector's piece, painted textures). **Wrecks:** online, a player's vehicle takes crash
+  damage (a speed change of 8 m/s in one tick starts to hurt, 22 m/s wrecks it from full health, ~80 km/h into a wall;
+  plain driving and hard braking don't) and never repairs itself; once broken it is towed back 15 s later, and an owned
+  one is marked wrecked until its repair is paid (a lent one: take another). Crash damage only exists online (solo and
+  LAN unchanged).
 
 ### 4.1 Prices (decided)
 
@@ -169,6 +182,12 @@ so 5-10 h = 75 000-150 000 €.
 | Sports | hatchback-sports, sedan-sports, SUV luxury | 75 000-100 000 € | 5-7 h |
 | Super | BMW M4, Audi RS6, Audi R8 | 120 000-150 000 € | 8-10 h |
 | Work | 12 m bus, 18 m bus, fire truck | 40 000-80 000 € | 2.5-5 h (pays for itself: +50 % on that job) |
+
+Set in O4 (`godot/data/prices.json`): hatchback (KayKit) 5 000, horse 6 000, compact hatchback 6 500, sedan 7 500;
+taxi 12 000, van 14 000, delivery van 15 000, SUV 16 000, Renault Zoe 18 000, family SUV 22 000; jet-ski 30 000,
+Mercedes 1928 45 000, Volvo FH16 50 000 (58 000 with its trailer), biplane 60 000; sports hatchback 75 000, sports sedan
+85 000, luxury SUV 100 000; BMW M4 120 000, Audi RS6 135 000, Audi R8 150 000; 12 m bus 40 000, 18 m bus 60 000 (bus
+depot), fire truck 80 000 (fire station). Not sold: police cars, ambulance, armed vehicles.
 | Later | ambulance, police cars | with their jobs | |
 
 ## 5. Jobs (ways to earn)

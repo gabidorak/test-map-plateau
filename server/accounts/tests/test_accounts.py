@@ -95,6 +95,14 @@ def test_client_rules_file_matches():
     assert copy["password_min"] == rules.PASSWORD_MIN and copy["password_max"] == rules.PASSWORD_MAX
 
 
+def test_start_money_matches_prices():
+    """godot/data/prices.json's starting money (the cheapest car's price) is what a new account gets."""
+    prices = json.loads((HERE.parent.parent / "godot/data/prices.json").read_text(encoding="utf-8"))
+    assert prices["start"] == db.START_BALANCE
+    cheapest = min(p for t in prices["tiers"] if t["at"] == "prestige" for p in t["models"].values())
+    assert cheapest == db.START_BALANCE
+
+
 # ---------------------------------------------------------------- public API
 
 def test_signup_login_me_logout(client):

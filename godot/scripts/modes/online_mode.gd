@@ -18,8 +18,15 @@ extends "res://scripts/modes/game_mode.gd"
 ## - Players join on foot by the garage nearest to the game's spawn point (beside their vehicle when it waited for
 ##   them); the in-game menu takes them back to the nearest garage.
 ## - The wallet shows top right (the server's word, economy.gd); the garages are on the maps (map_places).
+## - The shop (scripts/online/shop.gd, O4): Prestige Motors' catalogue, the work vehicles sold at the bus depot and the
+##   fire station, repairs and repaints at any garage terminal. A vehicle bought comes out on the shop's bays.
+## - Wrecks: a player's vehicle out takes crash damage and doesn't repair itself (car.gd); once broken it is towed back
+##   TOW s later (tow_time), and an owned one is wrecked in its owner's garage until they pay its repair (a lent one: nothing to
+##   pay, take another).
+## - Paint: each vehicle out shows its owner's colour on every peer (`vehicles` "colour", _sync_looks).
 ## The host (the official server) keeps who owns which vehicle; every peer gets it (`vehicles`) to show the prompts.
-## Played solo (the tools: PLATEAU_MODE=online), the player's garage is PLATEAU_ONLINE_VEHICLES (models, comma-separated).
+## Played solo (the tools: PLATEAU_MODE=online), the player's garage is PLATEAU_ONLINE_VEHICLES (models, comma-separated)
+## and their money PLATEAU_ONLINE_MONEY (the starting money by default), kept here (test_garage, test_money).
 
 const Garages = preload("res://scripts/online/garages.gd")
 const GaragePanel = preload("res://scripts/online/garage_panel.gd")
@@ -27,6 +34,9 @@ const Economy = preload("res://scripts/economy.gd")
 const Car = preload("res://scripts/car.gd")
 const Marks = preload("res://scripts/race_marks.gd")
 const Water = preload("res://scripts/water.gd")
+const Prices = preload("res://scripts/online/prices.gd")
+const Shop = preload("res://scripts/online/shop.gd")
+const Paint = preload("res://scripts/paint.gd")
 
 signal answered(ok: bool, text: String)     # the host's answer to our last request at a garage terminal
 
@@ -36,7 +46,8 @@ const KEEP := 30.0                          # s a player's vehicle waits for the
 const REACH := 2.5                          # m from a terminal for E
 const SERVER_REACH := 8.0                   # m the server allows (the player's position reaches it a little late)
 const PROMPT_REACH := 3.0                   # m from a vehicle for its owner's prompt
-const PLACE_KINDS := {"public": "garage", "depot": "depot", "fire": "fire"}
+const PLACE_KINDS := {"public": "garage", "depot": "depot", "fire": "fire"}   # (the shop's: Prestige Motors already)
+const TOW := 15.0                           # s a broken player vehicle stays before it is towed back (PLATEAU_ONLINE_TOW)
 
 var hosting := false                        # this peer keeps the garages (solo, host, official server)
 var garages: Garages
@@ -44,7 +55,10 @@ var vehicles := {}                          # net id -> {"owner": username, "mod
 											# "account", "peer" (0: left) and "vehicle" (garage id, 0 lent)
 var mine := ""                              # net id of our vehicle out, "" none
 var keep_time := KEEP
-var test_garage: Array = []                 # played solo by the tools: the player's vehicles (models)
+var tow_time := TOW
+var test_garage: Array = []                 # played solo by the tools: the player's vehicles ({"id", "model", ...})
+var test_money := 0                         # played solo by the tools: the player's €
+var shop: Shop
 var _leaving := {}                          # host: account -> [net id, s left]
 var _panel: GaragePanel
 var _wallet: Label
@@ -66,8 +80,17 @@ func _ready() -> void:
 	add_child(garages)
 	if OS.get_environment("PLATEAU_ONLINE_KEEP") != "":
 		keep_time = float(OS.get_environment("PLATEAU_ONLINE_KEEP"))
+	if OS.get_environment("PLATEAU_ONLINE_TOW") != "":
+		tow_time = float(OS.get_environment("PLATEAU_ONLINE_TOW"))
 	for m in OS.get_environment("PLATEAU_ONLINE_VEHICLES").split(",", false):
-		test_garage.append(m.strip_edges())
+		test_garage.append({"id": test_garage.size() + 1, "model": m.strip_edges(), "colour": "", "wrecked": false,
+				"upgrades": {}})
+	var money := OS.get_environment("PLATEAU_ONLINE_MONEY")
+	test_money = int(money) if money != "" else Prices.start_money()
+	shop = Shop.new()
+	shop.name = "Shop"
+	shop.mode = self
+	add_child(shop)
 	multiplayer.peer_disconnected.connect(_on_left)
 	game.economy.logged_in.connect(_on_login)
 
@@ -87,6 +110,9 @@ func begin() -> void:
 	if game.mode == "server":
 		return
 	_build_hud()
+	shop.begin()
+	if not game.net.active:
+		game.economy.balance = test_money
 	game.economy.wallet_changed.connect(_show_wallet)
 	_show_wallet()
 	if _beside == "":
@@ -113,14 +139,15 @@ func walk_help(k: Callable) -> String:
 
 
 func extra_help(k: Callable) -> String:
-	return "%s your vehicle (lock, send back) · the garages are on the map (%s)" % [k.call("vehicle_menu"),
-			game.letter_key("world_map", "M")]
+	return "%s your vehicle (lock, send back) · the garages are on the map (%s) · buy vehicles at Prestige Motors, " % [
+			k.call("vehicle_menu"), game.letter_key("world_map", "M")] + "repair and paint them at a garage terminal"
 
 
 func map_places() -> Array:
 	var out := []
 	for g: Dictionary in garages.list:
-		out.append([g["name"], PLACE_KINDS.get(g["kind"], "garage"), g["xy"]])
+		if PLACE_KINDS.has(g["kind"]):
+			out.append([g["name"], PLACE_KINDS[g["kind"]], g["xy"]])
 	return out
 
 
@@ -180,6 +207,9 @@ func handle_input(event: InputEvent) -> bool:
 		if not g.is_empty():
 			open_garage(g["id"])
 			return true
+		if shop.catalogue_at_hand():
+			shop.open_catalogue()
+			return true
 	if event.is_action_pressed("vehicle_menu"):
 		open_vehicle()
 		return true
@@ -191,9 +221,11 @@ func open_garage(id: String) -> void:
 	var g := garages.get_garage(id)
 	var look: Dictionary = Garages.KINDS[g["kind"]]
 	var sub := {"public": "Your vehicles (not the work ones: buses at the bus depot, fire trucks at the fire station)",
-			"depot": "Bus drivers: a lent bus, or one of yours", "fire": "Firefighters: a lent fire truck, or yours"}
+			"shop": "Your vehicles (not the work ones). Those bought here come out on these bays.",
+			"depot": "Bus drivers: a lent bus, or one of yours; buses for sale", "fire":
+			"Firefighters: a lent fire truck, or yours; fire trucks for sale"}
 	_open_panel()
-	_panel.open_garage(id, "%s · %s" % [look["title"], g["name"]] if g["kind"] == "public" else str(g["name"]),
+	_panel.open_garage(id, "%s · %s" % [look["title"], g["name"]] if g["kind"] in Garages.PUBLIC else str(g["name"]),
 			sub[g["kind"]], Settings.key_text("interact"))
 	game.update_controls()
 	to_host(self, "_h_open", [id])
@@ -212,12 +244,16 @@ func open_vehicle() -> void:
 		game.update_controls()
 		return
 	var d := car.global_position.distance_to(game.map_eye())
-	_panel.open_vehicle("Your %s" % Car.display_name(car.model_name).to_lower(), "%d m away" % roundi(d) if d > 8.0
+	_panel.open_vehicle("Your %s" % Car.common_name(car.model_name), "%d m away" % roundi(d) if d > 8.0
 			else "Right here", vehicles.get(mine, {}).get("locked", true), Settings.key_text("vehicle_menu"))
 	game.update_controls()
 
 
 ## Frees the mouse for a panel about to show (its open_* call, then game.update_controls()).
+func open_panel() -> void:
+	_open_panel()
+
+
 func _open_panel() -> void:
 	if not _panel.visible:
 		_mouse = Input.mouse_mode
@@ -243,6 +279,11 @@ func _build_hud() -> void:
 		_panel.set_status("Getting it out…")
 		to_host(self, "_h_spawn", [_panel.garage_id, vehicle, model]))
 	_panel.lock.connect(set_locked)
+	_panel.buy.connect(func(model: String) -> void:
+		_panel.set_status("Buying…")
+		shop.buy(_panel.garage_id if _panel.kind == "garage" else Shop.PRESTIGE, model))
+	_panel.repair.connect(func(vehicle: int) -> void: shop.repair(_panel.garage_id, vehicle))
+	_panel.repaint.connect(func(vehicle: int, colour: String) -> void: shop.repaint(_panel.garage_id, vehicle, colour))
 	_panel.send_back.connect(func() -> void:
 		to_host(self, "_h_back", [])
 		_close_panel())
@@ -279,6 +320,7 @@ func _show_wallet() -> void:
 func _process(delta: float) -> void:
 	if hosting:
 		_host_tick(delta)
+	_sync_looks()
 	if _prompt == null:
 		return
 	if _beside != "":
@@ -292,6 +334,20 @@ func _process(delta: float) -> void:
 	_prompt.text = prompt_text()
 
 
+## Each player's vehicle out as it should be here: in its owner's colour (not on the dedicated server, which draws
+## nothing), taking crash damage and not repairing itself (wherever it is simulated).
+func _sync_looks() -> void:
+	for id: String in vehicles:
+		var car := car_of(id)
+		if car == null:
+			continue
+		car.crash_damage = true
+		car.repairs_itself = false
+		var colour := str(vehicles[id].get("colour", ""))
+		if car.paint != colour and game.mode != "server":
+			car.set_paint(colour)
+
+
 ## The line over the bottom of the screen: the terminal at hand, or whose the vehicle at hand is.
 func prompt_text() -> String:
 	if game.ui_open() or game.flying or game.riding:
@@ -299,10 +355,12 @@ func prompt_text() -> String:
 	if game.driving:
 		var v: Dictionary = vehicles.get(game.driving.net_id, {})
 		return "" if v.is_empty() or game.driving.net_id == mine else "%s's %s (unlocked)" % [v["owner"],
-				Car.display_name(v["model"]).to_lower()]
+				Car.common_name(v["model"])]
 	var g := terminal_at_hand()
 	if not g.is_empty():
 		return "%s  %s · your vehicles" % [Settings.key_text("interact"), g["name"]]
+	if shop.catalogue_at_hand():
+		return "%s  %s · the catalogue" % [Settings.key_text("interact"), Shop.PRESTIGE_NAME]
 	var car: Car = game.nearest_car()
 	if car == null:
 		return ""
@@ -310,9 +368,9 @@ func prompt_text() -> String:
 	if v.is_empty():
 		return "Not for driving: online, you drive your own vehicles (garages on the map)"
 	if car.net_id == mine:
-		return "Your %s · %s · %s lock/unlock" % [Car.display_name(v["model"]).to_lower(), "locked" if v["locked"]
+		return "Your %s · %s · %s lock/unlock" % [Car.common_name(v["model"]), "locked" if v["locked"]
 				else "unlocked", Settings.key_text("vehicle_menu")]
-	return "%s's %s · %s" % [v["owner"], Car.display_name(v["model"]).to_lower(),
+	return "%s's %s · %s" % [v["owner"], Car.common_name(v["model"]),
 			"locked: you can ride along, not drive" if v["locked"] else "unlocked: you may drive it"]
 
 
@@ -322,7 +380,7 @@ func _put_beside(car: Car) -> void:
 	var to := car.global_position - p
 	game.player.set_carrier(null)
 	game.player.teleport(p, atan2(-to.x, -to.z))
-	game.toast("Your %s waited for you" % Car.display_name(car.model_name).to_lower())
+	game.toast("Your %s waited for you" % Car.common_name(car.model_name))
 
 
 # ---------------------------------------------------------------- host
@@ -333,45 +391,56 @@ func account(peer: int) -> Dictionary:
 	if game.economy.official:
 		return game.economy.account_of(peer)
 	if not game.net.active and peer == me():
-		var list := []
-		for i in test_garage.size():
-			list.append({"id": i + 1, "model": test_garage[i], "colour": "", "wrecked": false, "upgrades": {}})
-		return {"account": 0, "username": game.nickname, "vehicles": list}
+		return {"account": 0, "username": game.nickname, "balance": test_money, "vehicles": test_garage}
 	return {}
 
 
 ## What garage `g` offers player account `acc`: [{"vehicle" (garage id, 0 lent), "model", "label", "note"}]; a note
-## says why it can't come out here.
+## says why it can't come out here. The player's own also have "colour" (paint id), "repair" (€ when wrecked, else 0)
+## and "repaint" (€ a coat, 0 when it can't be painted); the work vehicles on sale at the depot and the fire station come
+## last, with "buy" (€; "vehicle" -1).
 func offer(g: Dictionary, acc: Dictionary) -> Array:
 	var kind: String = g["kind"]
+	var public: bool = kind in Garages.PUBLIC
 	var out := []
 	for m: String in WORK.get(kind, []):
 		out.append({"vehicle": 0, "model": m, "label": "%s (lent)" % Car.display_name(m), "note": ""})
+	var out_now := {}                       # vehicles of the account on the map
+	for id: String in vehicles:
+		if vehicles[id].get("account", -1) == acc.get("account", -2):
+			out_now[int(vehicles[id]["vehicle"])] = true
 	for v: Dictionary in acc.get("vehicles", []):
 		var m := str(v["model"])
 		if not Car.SPECS.has(m):
 			continue
 		var note := ""
-		if kind != "public" and m not in WORK[kind]:
+		var wrecked: bool = v.get("wrecked", false)
+		if not public and m not in WORK[kind]:
 			continue                        # the depot and the fire station only show their own kind
-		if kind == "public" and m in WORK["depot"]:
+		if public and m in WORK["depot"]:
 			note = "At the bus depot (Massy-Palaiseau)"
-		elif kind == "public" and m in WORK["fire"]:
+		elif public and m in WORK["fire"]:
 			note = "At the fire station (Polytechnique)"
 		elif m in ARMED:
 			note = "Not allowed in PTA Online"
-		elif v.get("wrecked", false):
-			note = "Wrecked"
+		elif wrecked:
+			note = "Wrecked: repair it first" if not out_now.has(int(v["id"])) else "Wrecked: being towed back"
 		elif m == "jet-ski" and _water_spot(g) == null:
 			note = "No lake near this garage"
 		elif m != "jet-ski" and not Garages.any_fits(g, m):
 			note = "Too big for this garage"
-		out.append({"vehicle": int(v["id"]), "model": m, "label": Car.display_name(m), "note": note})
+		out.append({"vehicle": int(v["id"]), "model": m, "label": Car.display_name(m), "note": note,
+				"colour": str(v.get("colour", "")), "repair": Prices.repair(m) if wrecked and m not in ARMED else 0,
+				"repaint": Prices.repaint(m) if Paint.can_paint(m) else 0})
+	if not public:
+		for m: String in Prices.catalogue(kind):
+			out.append({"vehicle": -1, "model": m, "label": Car.display_name(m), "note": "", "buy": Prices.price(m)})
 	return out
 
 
-## Host: why player `peer` can't get vehicle (`vehicle`, `model`) out at garage `gid`, or "" when they can.
-func spawn_problem(peer: int, gid: String, vehicle: int, model: String) -> String:
+## Host: why player `peer` can't get vehicle (`vehicle`, `model`) out at garage `gid`, or "" when they can (`near`: they
+## must stand by its terminal; a vehicle just bought is delivered to the shop's bays wherever they are).
+func spawn_problem(peer: int, gid: String, vehicle: int, model: String, near := true) -> String:
 	var acc := account(peer)
 	if acc.is_empty():
 		return "Not logged in."
@@ -380,7 +449,7 @@ func spawn_problem(peer: int, gid: String, vehicle: int, model: String) -> Strin
 		return "No such garage."
 	if model in ARMED:
 		return "Armed vehicles aren't allowed in PTA Online."
-	if not _near(peer, g):
+	if near and not _near(peer, g):
 		return "Walk up to the garage's terminal."
 	for e: Dictionary in offer(g, acc):
 		if int(e["vehicle"]) == vehicle and e["model"] == model:
@@ -389,12 +458,21 @@ func spawn_problem(peer: int, gid: String, vehicle: int, model: String) -> Strin
 
 
 ## Whether player `peer` stands by garage `g`'s terminal (as the host sees them).
+func near(peer: int, g: Dictionary) -> bool:
+	return _near(peer, g)
+
+
 func _near(peer: int, g: Dictionary) -> bool:
 	var p: Variant = _position_of(peer)
 	if p == null:
 		return false
 	var t: Vector3 = g["terminal"]
 	return Vector2(t.x - p.x, t.z - p.z).length() <= SERVER_REACH and absf(t.y - p.y) < 4.0
+
+
+## Where the host sees player `peer` (Godot), or null.
+func position_of(peer: int) -> Variant:
+	return _position_of(peer)
 
 
 func _position_of(peer: int) -> Variant:
@@ -405,11 +483,15 @@ func _position_of(peer: int) -> Variant:
 
 ## Host: gets vehicle (`vehicle`, `model`) out at garage `gid` for player `peer`, sending their vehicle out before
 ## back first. "" when done, else why not.
-func spawn_for(peer: int, gid: String, vehicle: int, model: String) -> String:
-	var problem := spawn_problem(peer, gid, vehicle, model)
+func spawn_for(peer: int, gid: String, vehicle: int, model: String, near := true) -> String:
+	var problem := spawn_problem(peer, gid, vehicle, model, near)
 	if problem != "":
 		return problem
 	var acc := account(peer)
+	var colour := ""
+	for v: Dictionary in acc["vehicles"]:
+		if int(v["id"]) == vehicle:
+			colour = str(v.get("colour", ""))
 	var g := garages.get_garage(gid)
 	var old := _vehicle_of(int(acc["account"]))
 	var others: Array = game.cars.filter(func(c: Car) -> bool: return c.net_id != old)
@@ -423,7 +505,7 @@ func spawn_for(peer: int, gid: String, vehicle: int, model: String) -> String:
 	if car.net_id == "":                    # solo: no network id
 		_next_solo += 1
 		car.net_id = "solo:%d" % _next_solo
-	vehicles[car.net_id] = {"owner": str(acc["username"]), "model": model, "locked": true,
+	vehicles[car.net_id] = {"owner": str(acc["username"]), "model": model, "locked": true, "colour": colour,
 			"account": int(acc["account"]), "peer": peer, "vehicle": vehicle}
 	_share(car.net_id)
 	send_to(peer, self, "_c_mine", [car.net_id, false])
@@ -440,6 +522,14 @@ func _water_spot(g: Dictionary) -> Variant:
 	return Water.current.spot_near(g["terminal"], game.JET_SKI_REACH, game.JET_SKI_ROOM, game.JET_SKI_LAKE)
 
 
+## The net id of account `account_id`'s garage vehicle `vehicle` when it is out, or "".
+func out_on_map(account_id: int, vehicle: int) -> String:
+	for id: String in vehicles:
+		if vehicles[id].get("account", -1) == account_id and int(vehicles[id]["vehicle"]) == vehicle:
+			return id
+	return ""
+
+
 ## The net id of account `account`'s vehicle out, or "".
 func _vehicle_of(account_id: int) -> String:
 	for id: String in vehicles:
@@ -449,6 +539,10 @@ func _vehicle_of(account_id: int) -> String:
 
 
 ## Host: takes vehicle `id` back to its garage (off the map, everywhere).
+func send_back(id: String) -> void:
+	_send_back(id)
+
+
 func _send_back(id: String) -> void:
 	var car := car_of(id)
 	vehicles.erase(id)
@@ -470,6 +564,10 @@ func car_of(id: String) -> Car:
 
 
 ## Host: tells everyone what vehicle `id` is now (nothing: gone).
+func share(id: String) -> void:
+	_share(id)
+
+
 func _share(id: String) -> void:
 	var info := _public(id)
 	send_all(self, "_c_vehicle", [id, info])
@@ -481,7 +579,7 @@ func _public(id: String) -> Dictionary:
 	if not vehicles.has(id):
 		return {}
 	var v: Dictionary = vehicles[id]
-	return {"owner": v["owner"], "model": v["model"], "locked": v["locked"]}
+	return {"owner": v["owner"], "model": v["model"], "locked": v["locked"], "colour": v.get("colour", "")}
 
 
 func refuse_drive(net_id: String, peer: int) -> bool:
@@ -499,7 +597,7 @@ func refuse_drive(net_id: String, peer: int) -> bool:
 	if not v["locked"]:
 		return false
 	send_to(peer, self, "_c_notice", ["%s's %s is locked: you can ride along, not drive." % [v["owner"],
-			Car.display_name(v["model"]).to_lower()]])
+			Car.common_name(v["model"])]])
 	return true
 
 
@@ -532,6 +630,18 @@ func _on_left(peer: int) -> void:
 
 
 func _host_tick(delta: float) -> void:
+	for id: String in vehicles.keys():      # wrecks: towed back TOW s after they broke
+		var v: Dictionary = vehicles[id]
+		var car := car_of(id)
+		if v.has("tow"):
+			v["tow"] -= delta
+			if v["tow"] <= 0.0:
+				if game.net.dedicated:
+					print("%s's wrecked %s was towed back" % [v["owner"], v["model"]])
+				_send_back(id)
+		elif car and car.broken:
+			v["tow"] = tow_time
+			shop.wrecked(id)
 	for account_id: int in _leaving.keys():
 		_leaving[account_id][1] -= delta
 		if _leaving[account_id][1] <= 0.0:
@@ -561,12 +671,19 @@ func _h_open(gid: String) -> void:
 	var peer := _sender()
 	if game.economy.official:
 		await game.economy.refresh(peer)    # the garage may have changed (the admin, a purchase)
+	send_garage(peer, gid)
+
+
+## Host: garage `gid`'s list to player `peer` (`message` in its status line).
+func send_garage(peer: int, gid: String, message := "") -> void:
 	var g := garages.get_garage(gid)
 	var acc := account(peer)
 	if g.is_empty() or acc.is_empty():
 		return
-	var message := "" if _near(peer, g) else "Walk up to the garage's terminal."
-	send_to(peer, self, "_c_garage", [gid, offer(g, acc) if message == "" else [], message])
+	if not _near(peer, g):
+		send_to(peer, self, "_c_garage", [gid, [], "Walk up to the garage's terminal."])
+		return
+	send_to(peer, self, "_c_garage", [gid, offer(g, acc), message])
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -601,7 +718,7 @@ func _h_back() -> void:
 func _c_garage(gid: String, entries: Array, message: String) -> void:
 	if _panel and _panel.kind == "garage" and _panel.garage_id == gid:
 		_panel.show_entries(entries, message if message != "" or not entries.is_empty()
-				else "Nothing here yet: Prestige Motors sells vehicles.")
+				else "Nothing here yet: Prestige Motors sells vehicles (on the map, M).")
 
 
 @rpc("authority", "call_remote", "reliable")
