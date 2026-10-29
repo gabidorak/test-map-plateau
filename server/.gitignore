@@ -2,3 +2,5 @@
 .env
 backups/
 .pytest_cache/
+# a machine's own additions (e.g. the accounts service on a shared Caddy network)
+compose.override.yaml
