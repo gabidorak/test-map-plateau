@@ -26,7 +26,7 @@ const REPO := "gabidorak/test-map-plateau"
 const API := "https://api.github.com/repos/" + REPO + "/releases/latest"
 const STORE := "https://github.com/" + REPO + "/releases/download/store/"
 const ASSETS := {"Windows": "plateau-map-windows.exe", "Windows arm64": "plateau-map-windows-arm64.exe",
-		"Linux": "plateau-map-linux.x86_64", "macOS": "plateau-map-macos.zip"}
+		"Linux": "plateau-map-linux.x86_64", "Linux arm64": "plateau-map-linux.arm64", "macOS": "plateau-map-macos.zip"}
 # "launcher2-": builds up to 38 never swapped in a rebuilt launcher (they restarted the old one and updated again, in a
 # loop); without the "launcher-" files they look for, they take the full download instead.
 const LAUNCHER_ASSETS := {"Windows": "launcher2-windows.bin", "Windows arm64": "launcher2-windows-arm64.bin",
@@ -460,10 +460,11 @@ func _get_json(url: String, done: Callable) -> void:
 		_download_full()
 
 
-## This build's key in ASSETS and LAUNCHER_ASSETS: Windows builds come for x86_64 and for ARM64 (Snapdragon laptops).
+## This build's key in ASSETS and LAUNCHER_ASSETS: Windows builds come for x86_64 and for ARM64 (Snapdragon laptops),
+## Linux ones too (ARM64 for the dedicated server on ARM VMs; no launcher delta, players there take the full download).
 static func _platform() -> String:
-	if OS.get_name() == "Windows" and OS.has_feature("arm64"):
-		return "Windows arm64"
+	if OS.get_name() in ["Windows", "Linux"] and OS.has_feature("arm64"):
+		return OS.get_name() + " arm64"
 	return OS.get_name()
 
 

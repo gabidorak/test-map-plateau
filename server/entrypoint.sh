@@ -2,7 +2,10 @@
 # Fetches the latest release's Linux build into /data (unless it is already there), then runs it as a dedicated server.
 # Keeps the build it has when GitHub can't be reached.
 REPO="${REPO:-gabidorak/test-map-plateau}"
-ASSET=plateau-map-linux.x86_64
+case "$(uname -m)" in
+    aarch64|arm64) ASSET=plateau-map-linux.arm64 ;;   # ARM VMs (Oracle Ampere, Graviton...)
+    *) ASSET=plateau-map-linux.x86_64 ;;
+esac
 PORT="${PORT:-7777}"
 NAME="${SERVER_NAME:-Plateau server}"
 MODE="${GAME_MODE:-sandbox}"   # sandbox or escape (Escape from Plateau)

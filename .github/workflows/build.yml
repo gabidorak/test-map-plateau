@@ -128,6 +128,12 @@ jobs:
           mkdir -p "${{ matrix.output }}"
           godot --headless --path . --export-release "${{ matrix.preset }} Packed" "${{ matrix.output }}/${{ matrix.file }}"
 
+      # Linux ARM64, for the dedicated server on ARM VMs (server/): the same data chunks behind an arm64 engine.
+      - name: Export Linux ARM64
+        if: matrix.preset == 'Linux'
+        working-directory: godot
+        run: godot --headless --path . --export-release "Linux ARM64 Packed" "${{ matrix.output }}/Plateau Map.arm64"
+
       # Launcher delta (scripts/delta.gd): the same executable without the data chunks, as the blocks a player's
       # executable already has and the few it lacks (macOS gets the full download when its launcher changes).
       - name: Launcher delta
@@ -196,13 +202,13 @@ jobs:
           path: ${{ runner.temp }}/info
           retention-days: 3
 
-      # upload-artifact drops the executable bit, so the Linux build is tarred.
+      # upload-artifact drops the executable bit, so the Linux builds are tarred.
       - name: Package Linux build
         if: matrix.preset == 'Linux'
         working-directory: godot/output/linux
         run: |
-          tar czf ../plateau-map-linux.tar.gz "${{ matrix.file }}"
-          rm "${{ matrix.file }}"
+          tar czf ../plateau-map-linux.tar.gz "${{ matrix.file }}" "Plateau Map.arm64"
+          rm "${{ matrix.file }}" "Plateau Map.arm64"
           mv ../plateau-map-linux.tar.gz .
 
       - uses: actions/upload-artifact@v4
@@ -252,6 +258,7 @@ jobs:
           mv "artifacts/plateau-map-windows-arm64/Plateau Map.exe" release/plateau-map-windows-arm64.exe
           tar xzf artifacts/plateau-map-linux/plateau-map-linux.tar.gz -C artifacts/plateau-map-linux
           mv "artifacts/plateau-map-linux/Plateau Map.x86_64" release/plateau-map-linux.x86_64
+          mv "artifacts/plateau-map-linux/Plateau Map.arm64" release/plateau-map-linux.arm64
           mv "artifacts/plateau-map-macos/Plateau Map.zip" release/plateau-map-macos.zip
           mv artifacts/plateau-map-windows-info/launcher2-windows.bin \
               artifacts/plateau-map-windows-arm64-info/launcher2-windows-arm64.bin \
