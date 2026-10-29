@@ -1,7 +1,7 @@
 extends SceneTree
 ## PTA Online's bus job (ONLINE_MILESTONES.md O5, scripts/online/bus_job.gd). The role is the first argument after `--`:
 ## - `--check`: played solo (PLATEAU_MODE=online, an empty garage): the depot's lines, going on duty (a lent 18 m bus
-##   comes out), duty refused away from the depot; a bot drives the whole 4606 to Le Guichet on duty: every stop served,
+##   comes out), duty refused away from the depot; a bot drives the whole 4606 to the west edge (towards Christ de Saclay) on duty: every stop served,
 ##   no penalty, the pay per hour within PAY_BAND; then skipped stops, off the route, a teleport (the stretch pays
 ##   nothing), the hourly cap; off duty; with the bot buses running, duty holds one of them off the map and off duty
 ##   brings it back. ~4 min.
@@ -304,7 +304,7 @@ func _solo() -> void:
 	r = await _ask_duty("bus-depot", "9999")
 	_check(not r[0], "no duty on a line that doesn't exist: %s" % r[1])
 
-	# a bot drives the whole 4606 to Le Guichet
+	# a bot drives the whole 4606 to the west edge (towards Christ de Saclay)
 	var line: Dictionary = _lines["4606"]
 	var bot := _bot(car, line)
 	_put(car, bot, 0, bot.nose + bot.tail + 1.0)
@@ -341,7 +341,7 @@ func _solo() -> void:
 	_check(_mode.test_money == 5000 + d.earned and _main.economy.balance == _mode.test_money,
 			"the wallet follows: %d €" % _mode.test_money)
 	_check(d.combo > 1.5, "the combo grew stop after stop: ×%.1f" % d.combo)
-	_check(d.r == 1 and d.state == "start", "on to the line's other way at Le Guichet (%d, %s)" % [d.r, d.state])
+	_check(d.r == 1 and d.state == "start", "on to the line's other way at the west edge (%d, %s)" % [d.r, d.state])
 	for e: Array in d.events:
 		if e[0] != "stop":
 			print("     %s" % str(e))
@@ -366,7 +366,7 @@ func _solo() -> void:
 	var skipped := await _drive_until(func() -> bool: return d.s > 600.0, 4.0)
 	var skips := _events(d, "skip")
 	_check(skipped and skips.size() == 2 and d.combo == 1.0 and d.debt == 2 * int(_job.pay["skip_fine"]),
-			"driving past Gare du Guichet and Versailles: 2 skipped stops fined, combo back to ×1 (%s, debt %d €)" % [
+			"driving past Plaine des Sports and Joliot-Curie: 2 skipped stops fined, combo back to ×1 (%s, debt %d €)" % [
 			str(skips), d.debt])
 	car.set_pilot(null)
 	car.hold = true
@@ -391,13 +391,13 @@ func _solo() -> void:
 	# a teleport ahead on the route: refused, the stops jumped over skipped, the next stop pays nothing
 	var real := _bot(car, line)
 	var debt: int = d.debt
-	_put(car, real, 1, 1500.0, false)
+	_put(car, real, 1, 1300.0, false)
 	var back := await _drive_until(func() -> bool: return d.state == "route", 1.0)
 	await _frames(2)
 	_check(back and _events(d, "void").size() == 1 and d.void_why == "teleport",
-			"a jump of 1.5 km along the route is refused (%s)" % str(_events(d, "void")))
+			"a jump to 1.3 km along the route is refused (%s)" % str(_events(d, "void")))
 	_check(_events(d, "skip").size() == 3 and d.debt == debt + int(_job.pay["skip_fine"]),
-			"the stop jumped over (Mûriers) is skipped: %s" % str(_events(d, "skip").back()))
+			"the stop jumped over (Moulon) is skipped: %s" % str(_events(d, "skip").back()))
 	var served: int = d.served
 	var reached := await _drive_until(func() -> bool: return d.served > served, 6.0)
 	var last: Array = _events(d, "stop").back()
