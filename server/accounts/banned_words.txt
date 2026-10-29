@@ -1,0 +1,73 @@
+# Words a username may not contain (ONLINE_MODE.md 3.4, rule 7): French and English insults, slurs and sexual words.
+# Compared after the look-alike normalisation (lowercase, 0→o 1→i l→i 3→e 4→a 5→s 7→t, _ - . dropped). Entries of 3
+# letters or fewer only refuse the whole name. Words that hide in normal names are left out on purpose ("pute" is in
+# "computer", "rape" in "drapeau", "nique" in "technique", "negro" in "montenegro"): the admin renames what gets past.
+# French
+batard
+bougnoule
+connard
+connasse
+couille
+encule
+enfoire
+filsdepute
+gogole
+gouine
+merde
+niquetamere
+ntm
+fdp
+tg
+pd
+con
+putain
+salaud
+salope
+suceuse
+tapette
+tarlouze
+violeur
+youpin
+negre
+# English
+asshole
+ass
+bastard
+bitch
+cocksucker
+cunt
+cum
+dumbass
+fag
+faggot
+fuck
+jizz
+motherfucker
+nigga
+nigger
+pussy
+rapist
+retard
+shit
+slut
+twat
+wank
+whore
+# sexual
+boobs
+hentai
+milf
+orgasm
+penis
+porn
+sex
+sexe
+sperm
+tits
+vagin
+zizi
+pedophil
+# hate
+hitler
+nazi
+kkk

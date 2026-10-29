@@ -69,6 +69,10 @@ extends Node3D
 ## it says which of the features above stay on (allows), takes keys first and adds help lines. Sandbox
 ## (scripts/modes/sandbox_mode.gd) is all of the above; Escape from Plateau (scripts/escape/escape_mode.gd) is a co-op
 ## survival night: zombies, survivors to carry to a rescue helicopter, weapons.
+## PTA Online (ONLINE_MODE.md): the welcome menu's account page (scripts/main_menu.gd, scripts/accounts.gd) logs in, then
+## start_online joins the official server, whose address is in the build (--online on the command line, with the login
+## kept from the menu). That server runs with --dedicated --official and checks every player's login (scripts/
+## economy.gd, Main/Economy): their name is their username, and it sends away those without one, with a message.
 
 signal world_staged                         # the loader has put the whole world in the tree (see `staged`)
 signal set_up                               # _ready has done all but placing the player: the loader lets it run
@@ -99,6 +103,8 @@ const PlayerList = preload("res://scripts/player_list.gd")
 const Traffic = preload("res://scripts/traffic.gd")
 const Night = preload("res://scripts/night.gd")
 const Races = preload("res://scripts/races.gd")
+const Economy = preload("res://scripts/economy.gd")
+const Accounts = preload("res://scripts/accounts.gd")
 const Modes = preload("res://scripts/modes/modes.gd")
 const LoadingScreen = preload("res://scripts/loading_screen.gd")
 const Loader = preload("res://scripts/loading_scene.gd")
@@ -141,6 +147,8 @@ var breakables: Breakables
 var traffic: Traffic
 var night: Night
 var races: Races
+var economy: Economy                        # Main/Economy: PTA Online logins (and money, later)
+var online := false                         # client: playing PTA Online on the official server (start_online)
 var hud: CanvasLayer
 var _help: Label
 var _dash: Label                            # speed, gear, indicators, doors while driving
@@ -232,6 +240,15 @@ func _ready() -> void:
 	races.name = "Races"
 	races.game = self
 	add_child(races)
+	economy = Economy.new()
+	economy.name = "Economy"
+	economy.game = self
+	add_child(economy)
+	economy.account_changed.connect(func() -> void:
+		_show_toast("Logged in as %s  ·  %s" % [economy.username, Economy.money(economy.balance)]))
+	economy.kicked.connect(func(message: String) -> void:
+		MainMenu.notice_page = "online"
+		back_to_menu(message))
 	net.registered.connect(races.send_boards)
 	net.registered.connect(func(id: int) -> void:
 		if game_mode:
@@ -276,7 +293,7 @@ func _ready() -> void:
 	for s in get_tree().get_nodes_in_group("showroom"):
 		s.game = self
 	var welcome := get_tree().current_scene == self and not (_args.has("solo") or _args.has("host") or _args.has("join") \
-			or _args.has("dedicated"))
+			or _args.has("dedicated") or _args.has("online"))
 	fly_camera.active = false
 	if welcome:
 		_open_main_menu()
@@ -294,6 +311,8 @@ func _ready() -> void:
 	elif _args.has("join"):
 		var where: String = _args["join"]
 		start_join(where.get_slice(":", 0), int(where.get_slice(":", 1)) if where.contains(":") else Net.PORT)
+	elif _args.has("online"):
+		start_online()
 	else:
 		start_solo()
 
@@ -313,6 +332,7 @@ func _open_main_menu() -> void:
 	menu.solo.connect(func() -> void: _take_profile(); start_solo())
 	menu.host.connect(func() -> void: _take_profile(); start_host())
 	menu.join.connect(func(address: String, port: int) -> void: _take_profile(); start_join(address, port))
+	menu.online.connect(func() -> void: _take_profile(); start_online())
 	menu.quit.connect(get_tree().quit)
 	menu.mode_picked.connect(_preview_mode)
 	_preview_mode(menu.mode_id)
@@ -514,7 +534,9 @@ func start_dedicated() -> void:
 	Engine.max_fps = 60                     # nothing to draw: do not spin between physics ticks
 	net.message.connect(func(text: String) -> void: print(text))
 	net.chat.connect(func(id: int, text: String) -> void: print("%s: %s" % [net.player_name(id), text]))
-	var err := net.host(_args.get("name", "Plateau server"), color, int(_args.get("port", Net.PORT)), true)
+	var err := economy.make_official() if _args.has("official") else ""
+	if err == "":
+		err = net.host(_args.get("name", "Plateau server"), color, int(_args.get("port", Net.PORT)), true)
 	if err != "":
 		printerr(err)
 		get_tree().quit(1)
@@ -525,8 +547,9 @@ func start_dedicated() -> void:
 		races.start_hosting()
 	hud.visible = false
 	_set_player_enabled(false)
-	print("Dedicated server on UDP port %d, %s (%s)" % [net.port, Modes.title(mode_id), AutoUpdater.version \
-			if AutoUpdater.version != "" else "unversioned build: no update checks"])
+	print("Dedicated server on UDP port %d, %s%s (%s)" % [net.port, Modes.title(mode_id),
+			", official PTA Online server (logins checked at %s)" % Accounts.accounts_url() if economy.official else "",
+			AutoUpdater.version if AutoUpdater.version != "" else "unversioned build: no update checks"])
 	_update_poll_t = UPDATE_POLL
 	_start_world()
 	game_mode.begin()
@@ -562,6 +585,32 @@ func start_join(address: String, port: int) -> void:
 		menu.set_status("Connecting to %s:%d…" % [address, port], false, true)
 
 
+## PTA Online: joins the official server (its address is in the build, scripts/accounts.gd) with the login the account
+## page keeps; the name played under is the username (the server confirms it, scripts/economy.gd).
+func start_online() -> void:
+	var where := Accounts.official_server()
+	if where.is_empty() or Accounts.token() == "":
+		_on_join_failed("PTA Online isn't set up in this build." if where.is_empty() else "Log in to PTA Online first.")
+		return
+	online = true
+	nickname = Accounts.saved()["username"]
+	start_join(where[0], where[1])
+
+
+## What a failed PTA Online join means for the player (net.gd fail_kind).
+func _online_failure(reason: String) -> String:
+	match net.fail_kind:
+		"timeout", "unreachable":
+			return "The PTA Online server isn't answering: it may be down, or restarting for an update. Try again in " \
+					+ "a few minutes."
+		"build":
+			return "The PTA Online server runs another build of the game: restart the game to update (if you just " \
+					+ "did, the server is updating too: try again in a few minutes)."
+		"closed":
+			return "The PTA Online server closed the connection."
+	return reason
+
+
 func _on_joined() -> void:
 	net.discovery.stop()
 	mode = "client"
@@ -569,7 +618,8 @@ func _on_joined() -> void:
 	_begin()
 	# a step aside per player, so newcomers do not all land in the same spot
 	spawn_at(spawn_xy + Vector2(1.2 * (net.me() % 5 - 2), 0.0), deg_to_rad(spawn_yaw_deg))
-	_show_toast("Joined %s's game" % net.player_name(1) if net.players.has(1) else "Joined the server")
+	_show_toast("Joined PTA Online" if online else "Joined %s's game" % net.player_name(1) if net.players.has(1) \
+			else "Joined the server")
 	if game_mode == null:                   # (a host of an older build would have been refused)
 		set_game_mode(Modes.DEFAULT)
 	game_mode.begin()
@@ -579,6 +629,11 @@ func _on_joined() -> void:
 
 
 func _on_join_failed(reason: String) -> void:
+	if online:
+		reason = _online_failure(reason)
+		online = false
+		if menu == null:
+			MainMenu.notice_page = "online"     # the next menu opens on the account page
 	var had_loading := loading != null
 	if menu:
 		_reveal_menu()

@@ -8,8 +8,42 @@ services:
     environment:
       SERVER_NAME: "Plateau server"
       GAME_MODE: "sandbox"        # or "escape": Escape from Plateau
+      OFFICIAL: "${OFFICIAL:-}"   # "1" in .env: the PTA Online server (logins checked with the accounts service)
+      PLATEAU_ACCOUNTS_URL: "http://accounts:8000"
+      PLATEAU_SERVER_SECRET: "${PLATEAU_SERVER_SECRET:-}"
     volumes:
       - plateau-data:/data
 
+  # PTA Online accounts, wallets and garages (accounts/). Published on this machine only: Caddy proxies it as HTTPS
+  # (Caddyfile), the game server reaches it on the Docker network. Daily backups go to ./backups, outside the volume.
+  accounts:
+    build: accounts
+    container_name: plateau-accounts
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8790:8000"
+    environment:
+      PLATEAU_SERVER_SECRET: "${PLATEAU_SERVER_SECRET:-}"
+    volumes:
+      - accounts-data:/data
+      - ./backups:/backups
+
+  # Only for a machine without Caddy of its own: `docker compose --profile caddy up -d` (ACCOUNTS_DOMAIN in .env).
+  caddy:
+    image: caddy:2
+    profiles: [caddy]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      ACCOUNTS_DOMAIN: "${ACCOUNTS_DOMAIN:-accounts.localhost}"
+      ACCOUNTS_UPSTREAM: "accounts:8000"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+
 volumes:
   plateau-data:
+  accounts-data:
+  caddy-data:

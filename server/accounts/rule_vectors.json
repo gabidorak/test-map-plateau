@@ -1,0 +1,42 @@
+{
+  "_about": "Usernames and passwords the service (plateau_accounts/rules.py, tests/test_rules.py) and the game (godot/scripts/account_rules.gd, godot/tools/test_online_login.gd) must judge the same way. A refused entry gives the start of the message.",
+  "usernames_ok": ["Gabriel", "abc", "ab.c", "a-b_c.d", "Player_42", "1984", "x77", "jean.claude2", "Constantin", "Abcdefghijklmnop", "Concorde", "Massy-Palaiseau", "Tchoutchou"],
+  "usernames_refused": [
+    ["ab", "A username has"],
+    ["Abcdefghijklmnopq", "A username has"],
+    ["élodie", "Only letters"],
+    ["two words", "Only letters"],
+    ["semi;colon", "Only letters"],
+    ["_lead", "A username starts"],
+    [".lead", "A username starts"],
+    ["trail-", "A username doesn't end"],
+    ["a__b", "No two of"],
+    ["a.-b", "No two of"],
+    ["Admin", "This name is reserved"],
+    ["4dm1n", "This name is reserved"],
+    ["a.d.m.i.n", "This name is reserved"],
+    ["JeanClaude", "This name is reserved"],
+    ["Jean-Claude", "This name is reserved"],
+    ["Dragon91", "This name is reserved"],
+    ["dragon9l", "This name is reserved"],
+    ["Plateau", "This name is reserved"],
+    ["null", "This name is reserved"],
+    ["Connard", "This name isn't allowed"],
+    ["xXfuckXx", "This name isn't allowed"],
+    ["5h1t_happens", "This name isn't allowed"],
+    ["con", "This name isn't allowed"],
+    ["c0n", "This name isn't allowed"],
+    ["Hitler1945", "This name isn't allowed"]
+  ],
+  "passwords_ok": [["correct horse", "Gabriel"], ["été à Saclay", "Gabriel"], ["12345678x9", "Gabriel"]],
+  "passwords_refused": [
+    ["short", "Gabriel", "A password has at least"],
+    ["1234567", "Gabriel", "A password has at least"],
+    ["GABRIEL1", "gabriel1", "The password can't be the username"],
+    ["password", "Gabriel", "This password is one of the most common"],
+    ["Password", "Gabriel", "This password is one of the most common"],
+    ["azertyuiop", "Gabriel", "This password is one of the most common"],
+    ["12345678", "Gabriel", "This password is one of the most common"],
+    ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "Gabriel", "A password has at most"]
+  ]
+}

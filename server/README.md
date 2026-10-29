@@ -92,3 +92,52 @@ docker compose start
 ```
 
 Only `docker compose down -v` (which deletes the volume) loses them.
+
+## PTA Online accounts
+
+`accounts/` is the PTA Online accounts service (ONLINE_MODE.md, ONLINE_MILESTONES.md O1): accounts, wallets and
+garages in one SQLite file (`/data/accounts.db` in the `accounts-data` volume), a small FastAPI app. `compose.yaml`
+runs it next to the game server. The game reaches it over HTTPS through Caddy (log in, sign up...); the game server
+reaches it on the Docker network (`http://accounts:8000`) with a shared secret, and only a server started with
+`OFFICIAL=1` checks the players' logins (`--official`). Other servers made from this image have no economy.
+
+1. Secrets, in `server/.env` (git-ignored, read by `docker compose`):
+
+   ```sh
+   cd test-map-plateau/server
+   printf 'OFFICIAL=1\nPLATEAU_SERVER_SECRET=%s\n' "$(openssl rand -hex 32)" > .env
+   chmod 600 .env
+   ```
+
+2. HTTPS: a DNS `A` record `accounts.your.domain` to the VPS (DNS only on Cloudflare), TCP 80 and 443 open (Oracle:
+   the security list, and `sudo iptables -I INPUT 6 -p tcp -m multiport --dports 80,443 -j ACCEPT` +
+   `sudo netfilter-persistent save`). With Caddy already on the VPS, add the block of `Caddyfile` to its Caddyfile with
+   the domain written in, and `sudo systemctl reload caddy`; it proxies to `127.0.0.1:8790`, where compose publishes
+   the service (on this machine only), and refuses the game server's `/v1/server/*` routes. Without Caddy, put
+   `ACCOUNTS_DOMAIN=accounts.your.domain` in `.env` and start compose's own: `docker compose --profile caddy up -d`.
+
+3. `docker compose up -d --build`, then check: `curl https://accounts.your.domain/v1/status` answers
+   `{"api":1,"min_client_api":1}`, and the game server's log says "official PTA Online server".
+
+4. The game's builds find both through `godot/data/online.json`: `"server": "your.domain:7777"`,
+   `"accounts_url": "https://accounts.your.domain"`. A build released with them shows PTA Online in the menu.
+
+Admin (a forgotten password has no self-service reset: there is no email):
+
+```sh
+docker compose exec accounts plateau-admin show <user>                  # balance, vehicles, last 50 payments
+docker compose exec accounts plateau-admin reset-password <user>        # prints a new one; logs them out everywhere
+docker compose exec accounts plateau-admin rename <user> <new name>     # any time (players: once every 30 days)
+docker compose exec accounts plateau-admin ban <user>                   # and unban; a ban logs them out everywhere
+docker compose exec accounts plateau-admin give <user> <€> [reason]     # and take
+```
+
+Backups: once a day the service copies the live database (SQLite's online backup) to `server/backups/
+accounts-YYYY-MM-DD.db` on the host, outside the Docker volume, and keeps the last 14. To restore one:
+`docker compose stop accounts`, `docker compose cp backups/accounts-2026-11-02.db accounts:/data/accounts.db`, delete
+`/data/accounts.db-wal` and `-shm` if there are any (`docker compose run --rm --entrypoint sh accounts -c 'rm -f
+/data/accounts.db-*'`), `docker compose start accounts`.
+
+The image builds without running anything for the target (dependencies' wheels are fetched for it), so an ARM64 image
+can be built on an x86 machine too: `docker buildx build --platform linux/arm64 accounts`. Tests:
+`cd accounts && python -m pytest -q` (with `requirements.txt` and `httpx` installed), and `godot/tools/test_online_login.sh`.

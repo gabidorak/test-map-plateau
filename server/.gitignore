@@ -1,0 +1,4 @@
+# secrets (PLATEAU_SERVER_SECRET, OFFICIAL, ACCOUNTS_DOMAIN) and the accounts backups
+.env
+backups/
+.pytest_cache/

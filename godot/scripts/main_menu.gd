@@ -1,9 +1,11 @@
 extends CanvasLayer
 ## Welcome menu, over the campus flyover (game.gd shows it when the game starts). The player picks a nickname, a
 ## colour and a game mode (scripts/modes/modes.gd: Sandbox, Escape from Plateau; all kept in user://settings.cfg),
-## then: Explore solo (Play solo), Host a game on LAN (in that mode), Join a game (a page with the games found on the
-## LAN by scripts/lan_discovery.gd, their mode too, and an address + port field: a client plays the host's mode),
-## Settings (scripts/settings_menu.gd), or Quit. game.gd does the rest and
+## then one of three ways to play: Solo (Explore solo / Play solo), LAN: Host a game on LAN (in that mode) or Join a
+## game (a page with the games found on the LAN by scripts/lan_discovery.gd, their mode too, and an address + port
+## field: a client plays the host's mode), or PTA Online (the account page: log in, create an account, log out, change
+## the username, with the rules of scripts/account_rules.gd checked while typing; then Play joins the official server,
+## as the username). Settings (scripts/settings_menu.gd), or Quit. game.gd does the rest and
 ## reports back with set_status. The bottom row shows the build and what the updater (scripts/updater.gd) is doing:
 ## downloading the latest release, then "Restart now".
 
@@ -12,6 +14,9 @@ const LanDiscovery = preload("res://scripts/lan_discovery.gd")
 const Updater = preload("res://scripts/updater.gd")
 const SettingsMenu = preload("res://scripts/settings_menu.gd")
 const Modes = preload("res://scripts/modes/modes.gd")
+const Accounts = preload("res://scripts/accounts.gd")
+const AccountRules = preload("res://scripts/account_rules.gd")
+const Economy = preload("res://scripts/economy.gd")
 const SETTINGS := "user://settings.cfg"
 const COLORS: Array[Color] = [Color(1, 0.55, 0.2), Color(0.25, 0.55, 1.0), Color(0.3, 0.8, 0.35), Color(0.95, 0.3, 0.35),
 		Color(0.7, 0.4, 0.95), Color(1.0, 0.85, 0.2), Color(0.2, 0.8, 0.8), Color(1.0, 0.5, 0.75)]
@@ -20,10 +25,12 @@ signal solo
 signal host
 signal mode_picked(id: String)              # the game mode chosen (game.gd previews its night behind the menu)
 signal join(address: String, port: int)
+signal online                               # PTA Online: join the official server with the login kept (accounts.gd)
 signal quit
 
 ## Shown once by the next menu: why the last game ended ("The host closed the game.").
 static var notice := ""
+static var notice_page := ""                # "online": the next menu opens on the PTA Online page (with the notice)
 
 var nickname := ""
 var color_index := 0
@@ -52,6 +59,30 @@ var _panel: PanelContainer
 var _settings: SettingsMenu
 var _mode_buttons := {}                     # mode id -> its toggle button
 var _mode_about: Label
+var _accounts: Accounts                     # HTTPS calls of the PTA Online page
+var _online_page: VBoxContainer
+var _online_status: Label
+var _signed_box: VBoxContainer              # logged in: who, Play, log out...
+var _who: Label
+var _play_button: Button
+var _rename_row: HBoxContainer
+var _rename_edit: LineEdit
+var _rename_hint: Label
+var _form_box: VBoxContainer                # logged out: log in / create an account
+var _signup := false                        # the form creates an account
+var _tab_login: Button
+var _tab_signup: Button
+var _user_edit: LineEdit
+var _user_hint: Label
+var _pass_edit: LineEdit
+var _pass_hint: Label
+var _confirm_edit: LineEdit
+var _confirm_hint: Label
+var _confirm_label: Label
+var _no_email: Label
+var _remember: CheckBox
+var _submit: Button
+var _online_busy := false                   # a call to the accounts service is under way
 
 
 func _ready() -> void:
@@ -77,6 +108,11 @@ func _ready() -> void:
 	_join_page = _build_join_page(cfg)
 	_join_page.visible = false
 	pages.add_child(_join_page)
+	_accounts = Accounts.new()
+	add_child(_accounts)
+	_online_page = _build_online_page()
+	_online_page.visible = false
+	pages.add_child(_online_page)
 	UiStyle.centre(panel)
 	_panel = panel
 	_settings = SettingsMenu.new()
@@ -84,10 +120,15 @@ func _ready() -> void:
 	_settings.closed.connect(func() -> void:
 		_panel.visible = true
 		_solo_button.grab_focus())
+	var page := notice_page
+	notice_page = ""
+	if page == "online":
+		show_online_page.call_deferred(true)
 	if notice != "":
 		set_status(notice, true)
 		notice = ""
-	_solo_button.grab_focus.call_deferred()
+	if page != "online":
+		_solo_button.grab_focus.call_deferred()
 
 
 func _build_main_page(cfg: ConfigFile) -> VBoxContainer:
@@ -132,22 +173,32 @@ func _build_main_page(cfg: ConfigFile) -> VBoxContainer:
 	_mode_about.custom_minimum_size.x = 560
 	var buttons := VBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 10)
-	_solo_button = UiStyle.button("Explore solo", _looks, Vector2(320, 48), 20)
+	_solo_button = UiStyle.button("Explore solo", _looks, Vector2(420, 48), 20)
 	_solo_button.pressed.connect(func() -> void: if not _busy: solo.emit())
 	buttons.add_child(_solo_button)
-	var b := UiStyle.button("Host a game on LAN", _looks, Vector2(320, 48), 20)
+	var lan := HBoxContainer.new()
+	lan.add_theme_constant_override("separation", 10)
+	lan.alignment = BoxContainer.ALIGNMENT_CENTER
+	var b := UiStyle.button("Host a game on LAN", _looks, Vector2(205, 48), 20)
+	b.tooltip_text = "Host a game on your network, in the game mode picked above"
 	b.pressed.connect(func() -> void: if not _busy: host.emit())
-	buttons.add_child(b)
-	b = UiStyle.button("Join a game", _looks, Vector2(320, 48), 20)
+	lan.add_child(b)
+	b = UiStyle.button("Join a game", _looks, Vector2(205, 48), 20)
+	b.tooltip_text = "Join a game on your network, or a server by its address"
 	b.pressed.connect(_show_join_page.bind(true))
+	lan.add_child(b)
+	buttons.add_child(lan)
+	b = UiStyle.button("PTA Online", _looks, Vector2(420, 52), 21)
+	b.tooltip_text = "The official server: jobs, money, your own garage"
+	b.pressed.connect(show_online_page.bind(true))
 	buttons.add_child(b)
-	b = UiStyle.button("Settings", _looks, Vector2(320, 44), 18)
+	b = UiStyle.button("Settings", _looks, Vector2(420, 44), 18)
 	b.pressed.connect(func() -> void:
 		if not _busy:
 			_panel.visible = false
 			_settings.open())
 	buttons.add_child(b)
-	b = UiStyle.button("Quit", _looks, Vector2(320, 40), 17)
+	b = UiStyle.button("Quit", _looks, Vector2(420, 40), 17)
 	b.pressed.connect(func() -> void: quit.emit())
 	buttons.add_child(b)
 	var centre := CenterContainer.new()
@@ -322,7 +373,9 @@ func _save() -> void:
 
 ## Gives the keyboard back to the menu (game.gd hid it while a LAN game started, then the join or host failed).
 func focus_default() -> void:
-	if _join_page.visible:
+	if _online_page.visible:
+		(_play_button if _signed_box.visible else _submit).grab_focus()
+	elif _join_page.visible:
 		(_address if _address.text == "" else _join_button).grab_focus()
 	else:
 		_solo_button.grab_focus()
@@ -400,7 +453,7 @@ func _join_typed() -> void:
 ## Message under the buttons of the current page; `busy` greys the menu out while connecting.
 func set_status(text: String, warn := false, busy := false) -> void:
 	_busy = busy
-	for l: Label in [_status, _join_status]:
+	for l: Label in [_status, _join_status, _online_status]:
 		l.text = text
 		l.add_theme_color_override("font_color", UiStyle.TEXT_WARN if warn else UiStyle.TEXT_DIM)
 
@@ -409,6 +462,285 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not visible or _busy:
 		return
 	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_ESCAPE \
-			and _join_page.visible:
-		_show_join_page(false)
+			and (_join_page.visible or _online_page.visible):
+		if _join_page.visible:
+			_show_join_page(false)
+		else:
+			show_online_page(false)
 		get_viewport().set_input_as_handled()
+
+
+# ---------------------------------------------------------------- PTA Online
+
+## The PTA Online page: the login kept on this computer (checked with the accounts service when the page opens), Play
+## and the account's buttons; or the form to log in or create an account.
+func _build_online_page() -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	box.custom_minimum_size.x = 560
+	box.add_child(UiStyle.label("PTA Online", 36))
+	var about := UiStyle.label("The official server, shared by everyone: earn money in jobs and buy your own vehicles. "
+			+ "Your solo and LAN games don't change.", 16, UiStyle.TEXT_DIM)
+	about.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(about)
+
+	_signed_box = VBoxContainer.new()
+	_signed_box.add_theme_constant_override("separation", 10)
+	_who = UiStyle.label("", 20)
+	_signed_box.add_child(_who)
+	_play_button = UiStyle.button("Play PTA Online", _looks, Vector2(320, 50), 21)
+	_play_button.pressed.connect(func() -> void:
+		if not _busy and not _online_busy:
+			online.emit())
+	var c := CenterContainer.new()
+	c.add_child(_play_button)
+	_signed_box.add_child(c)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var b := UiStyle.button("Change username", _looks, Vector2(0, 36), 15)
+	b.pressed.connect(func() -> void:
+		_rename_row.visible = not _rename_row.visible
+		if _rename_row.visible:
+			_rename_edit.grab_focus())
+	row.add_child(b)
+	b = UiStyle.button("Log out", _looks, Vector2(0, 36), 15)
+	b.pressed.connect(_logout.bind(false))
+	row.add_child(b)
+	b = UiStyle.button("Log out everywhere", _looks, Vector2(0, 36), 15)
+	b.tooltip_text = "Logs out every computer this account is logged in on"
+	b.pressed.connect(_logout.bind(true))
+	row.add_child(b)
+	_signed_box.add_child(row)
+	_rename_row = HBoxContainer.new()
+	_rename_row.add_theme_constant_override("separation", 8)
+	_rename_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_rename_edit = UiStyle.line_edit("", "New username", 220.0)
+	_rename_edit.max_length = 16
+	_rename_edit.text_changed.connect(func(t: String) -> void:
+		_hint(_rename_hint, AccountRules.username_problem(t) if t != "" else "", "Once every 30 days."))
+	_rename_edit.text_submitted.connect(func(_t: String) -> void: _rename())
+	_rename_row.add_child(_rename_edit)
+	b = UiStyle.button("Rename", _looks, Vector2(110, 36), 15)
+	b.pressed.connect(_rename)
+	_rename_row.add_child(b)
+	_rename_hint = UiStyle.label("Once every 30 days.", 14, UiStyle.TEXT_DIM, HORIZONTAL_ALIGNMENT_LEFT)
+	_rename_row.add_child(_rename_hint)
+	_rename_row.visible = false
+	_signed_box.add_child(_rename_row)
+	box.add_child(_signed_box)
+
+	_form_box = VBoxContainer.new()
+	_form_box.add_theme_constant_override("separation", 8)
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 8)
+	tabs.alignment = BoxContainer.ALIGNMENT_CENTER
+	var group := ButtonGroup.new()
+	_tab_login = UiStyle.button("Log in", _looks, Vector2(200, 38), 17)
+	_tab_signup = UiStyle.button("Create an account", _looks, Vector2(200, 38), 17)
+	for t: Button in [_tab_login, _tab_signup]:
+		t.toggle_mode = true
+		t.button_group = group
+		t.focus_mode = Control.FOCUS_NONE
+		tabs.add_child(t)
+	_tab_login.pressed.connect(_set_signup.bind(false))
+	_tab_signup.pressed.connect(_set_signup.bind(true))
+	_form_box.add_child(tabs)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 4)
+	_user_edit = UiStyle.line_edit(str(Accounts.saved()["username"]), "3 to 16 letters, digits, _ - .", 300.0)
+	_user_edit.max_length = 16
+	_user_hint = UiStyle.label("", 14, UiStyle.TEXT_DIM, HORIZONTAL_ALIGNMENT_LEFT)
+	_pass_edit = UiStyle.line_edit("", "At least 8 characters", 300.0)
+	_pass_edit.secret = true
+	_pass_edit.max_length = 128
+	_pass_hint = UiStyle.label("", 14, UiStyle.TEXT_DIM, HORIZONTAL_ALIGNMENT_LEFT)
+	_confirm_edit = UiStyle.line_edit("", "The same password again", 300.0)
+	_confirm_edit.secret = true
+	_confirm_edit.max_length = 128
+	_confirm_hint = UiStyle.label("", 14, UiStyle.TEXT_DIM, HORIZONTAL_ALIGNMENT_LEFT)
+	for e: Array in [["Username", _user_edit, _user_hint], ["Password", _pass_edit, _pass_hint],
+			["Again", _confirm_edit, _confirm_hint]]:
+		var l := UiStyle.label(e[0], 17, UiStyle.TEXT_DIM, HORIZONTAL_ALIGNMENT_RIGHT)
+		grid.add_child(l)
+		_confirm_label = l
+		grid.add_child(e[1])
+		grid.add_child(Control.new())
+		grid.add_child(e[2])
+		(e[1] as LineEdit).text_changed.connect(func(_t: String) -> void: _check_form())
+		(e[1] as LineEdit).text_submitted.connect(func(_t: String) -> void: _submit_form())
+	var gc := CenterContainer.new()
+	gc.add_child(grid)
+	_form_box.add_child(gc)
+	_remember = CheckBox.new()
+	_remember.text = "Remember me on this computer"
+	_remember.button_pressed = bool(Accounts.saved()["remember"])
+	_remember.focus_mode = Control.FOCUS_NONE
+	_remember.add_theme_font_size_override("font_size", 16)
+	var rc := CenterContainer.new()
+	rc.add_child(_remember)
+	_form_box.add_child(rc)
+	_submit = UiStyle.button("Log in", _looks, Vector2(240, 44), 19)
+	_submit.pressed.connect(_submit_form)
+	var sc := CenterContainer.new()
+	sc.add_child(_submit)
+	_form_box.add_child(sc)
+	_no_email = UiStyle.label("No email: keep your password safe. A forgotten one is reset by the server's admin.", 14,
+			UiStyle.TEXT_DIM)
+	_form_box.add_child(_no_email)
+	box.add_child(_form_box)
+
+	_online_status = UiStyle.label("", 16, UiStyle.TEXT_WARN)
+	_online_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_online_status)
+	var back := UiStyle.button("Back", _looks, Vector2(140, 38))
+	back.pressed.connect(show_online_page.bind(false))
+	var bc := CenterContainer.new()
+	bc.add_child(back)
+	box.add_child(bc)
+	_set_signup(false)
+	return box
+
+
+func show_online_page(on: bool) -> void:
+	if _busy:
+		return
+	_main_page.visible = not on
+	_online_page.visible = on
+	_online_status.text = ""
+	if not on:
+		_solo_button.grab_focus()
+		return
+	if Accounts.official_server().is_empty() or Accounts.accounts_url() == "":
+		_show_signed(false)
+		_form_box.visible = false
+		_online_message("PTA Online isn't set up in this build of the game.", true)
+		return
+	if Accounts.token() == "":
+		_show_signed(false)
+		return
+	_show_signed(true, Accounts.saved()["username"])
+	_who.text = "Logged in as %s" % Accounts.saved()["username"]
+	_play_button.grab_focus()
+	_online_busy = true
+	var r: Dictionary = await _accounts.me()
+	_online_busy = false
+	if not _online_page.visible:
+		return
+	if r["ok"]:
+		_show_signed(true, str(r["data"]["username"]), int(r["data"]["balance"]))
+	elif r["error"] in ["token", "banned"]:
+		Accounts.forget()
+		_show_signed(false)
+		_online_message(r["message"], true)
+	else:
+		_online_message(r["message"], true)  # the service can't be reached: Play may still get a clearer answer
+
+
+## The logged-in part (who, balance, Play...) or the form.
+func _show_signed(on: bool, username := "", balance := -1) -> void:
+	_signed_box.visible = on
+	_form_box.visible = not on
+	_rename_row.visible = false
+	if on:
+		_who.text = "Logged in as %s" % username + ("  ·  %s" % Economy.money(balance) if balance >= 0 else "")
+		_play_button.grab_focus()
+	else:
+		_pass_edit.text = ""
+		_confirm_edit.text = ""
+		_check_form()
+		(_pass_edit if _user_edit.text != "" else _user_edit).grab_focus()
+
+
+func _set_signup(on: bool) -> void:
+	_signup = on
+	_tab_login.set_pressed_no_signal(not on)
+	_tab_signup.set_pressed_no_signal(on)
+	_submit.text = "Create the account" if on else "Log in"
+	_confirm_edit.visible = on
+	_confirm_hint.visible = on
+	_confirm_label.visible = on
+	_no_email.visible = on
+	_online_status.text = ""
+	_check_form()
+
+
+## Signing up: the rules' verdict under each field as the player types; the button waits for a valid form.
+func _check_form() -> bool:
+	var user := _user_edit.text
+	var pw := _pass_edit.text
+	if not _signup:
+		_hint(_user_hint, "", "")
+		_hint(_pass_hint, "", "")
+		_submit.disabled = user.strip_edges() == "" or pw == ""
+		return not _submit.disabled
+	var user_problem := AccountRules.username_problem(user) if user != "" else ""
+	var pass_problem := AccountRules.password_problem(pw, user) if pw != "" else ""
+	var confirm_problem := "Not the same password." if _confirm_edit.text != "" and _confirm_edit.text != pw else ""
+	_hint(_user_hint, user_problem, "Shown to other players. Letters, digits, _ - . (3 to 16).")
+	_hint(_pass_hint, pass_problem, "8 characters or more: a few words make a good one.")
+	_hint(_confirm_hint, confirm_problem, "")
+	_submit.disabled = user == "" or pw == "" or _confirm_edit.text != pw or user_problem != "" or pass_problem != ""
+	return not _submit.disabled
+
+
+func _hint(l: Label, problem: String, otherwise: String) -> void:
+	l.text = problem if problem != "" else otherwise
+	l.add_theme_color_override("font_color", UiStyle.TEXT_WARN if problem != "" else UiStyle.TEXT_DIM)
+
+
+func _online_message(text: String, warn := false) -> void:
+	_online_status.text = text
+	_online_status.add_theme_color_override("font_color", UiStyle.TEXT_WARN if warn else UiStyle.TEXT_DIM)
+
+
+func _submit_form() -> void:
+	if _online_busy or _busy or not _check_form():
+		return
+	_online_busy = true
+	_submit.disabled = true
+	_online_message("Creating the account…" if _signup else "Logging in…")
+	var user := _user_edit.text.strip_edges()
+	var r: Dictionary
+	if _signup:
+		r = await _accounts.signup(user, _pass_edit.text)
+	else:
+		r = await _accounts.login(user, _pass_edit.text)
+	_online_busy = false
+	_check_form()
+	if not r["ok"]:
+		_online_message(r["message"], true)
+		return
+	Accounts.keep(str(r["data"]["token"]), str(r["data"]["username"]), _remember.button_pressed)
+	_online_message("Welcome, %s! You start with %s." % [r["data"]["username"], Economy.money(int(r["data"]["balance"]))] \
+			if _signup else "")
+	_show_signed(true, str(r["data"]["username"]), int(r["data"]["balance"]))
+
+
+func _logout(everywhere: bool) -> void:
+	if _online_busy:
+		return
+	_online_busy = true
+	var r: Dictionary = await _accounts.logout(everywhere)
+	_online_busy = false
+	_show_signed(false)
+	_online_message("Logged out everywhere." if everywhere and r["ok"] else "Logged out." if r["ok"] \
+			else "Logged out on this computer (%s)" % r["message"], not r["ok"])
+
+
+func _rename() -> void:
+	var new_name := _rename_edit.text.strip_edges()
+	if _online_busy or AccountRules.username_problem(new_name) != "":
+		return
+	_online_busy = true
+	var r: Dictionary = await _accounts.rename(new_name)
+	_online_busy = false
+	if not r["ok"]:
+		_hint(_rename_hint, r["message"], "")
+		return
+	var saved := Accounts.saved()
+	Accounts.keep(saved["token"], str(r["data"]["username"]), saved["remember"])
+	_show_signed(true, str(r["data"]["username"]), int(r["data"]["balance"]))
+	_online_message("You are now %s." % r["data"]["username"])

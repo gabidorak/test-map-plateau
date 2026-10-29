@@ -1,0 +1,3 @@
+#!/bin/sh
+# docker compose exec accounts plateau-admin <command> (plateau_accounts/admin.py)
+exec python -c 'from plateau_accounts.user import drop_root; drop_root(); from plateau_accounts.admin import main; main()' "$@"
