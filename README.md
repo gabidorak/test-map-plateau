@@ -27,6 +27,12 @@ below), then
   (a session token in `user://account.cfg`, never the password), logs out (here or everywhere) and changes the username
   (once every 30 days); **Play PTA Online** joins the official server, where you play under your username. Its address
   is in `godot/data/online.json` (empty: this build has no PTA Online). `-- --online` joins with the login kept.
+  There, vehicles belong to your account and only come out at **garages** (`scripts/modes/online_mode.gd`, the spots in
+  `godot/world/garages.json` from `tools/online/garages.py`): nine car parks over the map, the bus depot at
+  Massy-Palaiseau (buses, lent) and the fire station at Polytechnique (fire trucks, lent), all on the M map and the
+  minimap. E at a garage's terminal lists your vehicles; the one picked comes out on a free bay, and sends the one you
+  had out back. It comes out locked (others ride along, never drive) until you unlock it (U); it stays 30 s after you
+  leave. No vehicle menu, no C, no fly camera, no armed vehicles there; your wallet shows top right.
 
 A loading screen covers the start of the game, a game started solo, hosted or joined, and the return to the main menu:
 the plateau drawn as a transit map from the game's own routes (the bot cars' roads, the RER B and the four bus lines with
@@ -157,6 +163,7 @@ blender -b --factory-startup -P blender/vehicles/import_textured.py   # 1928 Mer
 blender -b --factory-startup -P blender/building_kit/build_kit.py  # building kit -> godot/assets/building_kit/kit.glb (~1 s)
 blender -b --factory-startup -P blender/vehicles/build_train.py -- --preview=$PWD/data/review/mi79/mi79   # RER B MI 79 R cars -> mi79.glb + .json (~10 s, previews ~40 s; an absolute --preview path)
 .venv/Scripts/python tools/escape/escape_spots.py --plot=/tmp/escape.png   # Escape from Plateau's survivor hideouts, helicopter fields and supply spots -> godot/world/escape.json (~3 s; shapely, Pillow)
+.venv/Scripts/python tools/online/garages.py --plot=/tmp/garages.png   # PTA Online's garages, bus depot and fire station: terminals and bays on OSM car parks, clear of obstacles and bot paths -> godot/world/garages.json (~1.5 min, --only=id,id; shapely, Pillow)
 
 # RER B (see "RER B" below): python venv with numpy, shapely and Pillow
 .venv/Scripts/python tools/rail/fetch_osm.py      # optional: refetch the OSM extract tools/rail/osm_rail.json (Overpass)
@@ -196,6 +203,7 @@ godot --headless --fixed-fps 60 --path . --script res://tools/test_races.gd  # r
 tools/test_lan_races.sh   # races in a LAN game: the leaderboard for a newcomer, inviting the other driver in the circle, the same GO, results and chat on both
 tools/test_server_records.sh   # a dedicated server's race records outlive a restart (~1 min)
 tools/test_online_login.sh   # PTA Online logins: a local accounts service + an official server; sign up and join as the username, the kept login joins without typing, bad token / no login kicked, accounts service or server down -> clear messages (~2 min; needs server/accounts/requirements.txt in .venv)
+tools/test_online_rules.sh   # PTA Online rules and garages: solo checks (every garage's bays, U closed, the terminal's list, one vehicle out, garage kinds, armed refused, jet-ski on the lake, drive refusals, map places), then an official server + two players: forged armed parks ignored, the locked car refused to the other player then driven once unlocked, kept 30 s for its owner's return, then gone (~2 min)
 (cd ../server/accounts && ../../.venv/bin/python -m pytest -q)   # the accounts service: every route, username/password rules, look-alikes, lockouts, sign-up limit, renames, the internal API's secret, money, admin CLI, backups (~4 s)
 godot --headless --fixed-fps 60 --path . --script res://tools/test_trains.gd  # RER B: departures, entering the map, the stop at Lozère (±1 m, doors on the platform side), door hold, a ride to the map edge, signals, a car on the track, LODs, tick cost (PLATEAU_TEST_ONLY=stop,hold,ride,signals,obstacle,...)
 tools/test_lan_trains.sh   # RER B in a LAN game: the client gets the host's trains, sees one stop at Lozère when the host does, rides it

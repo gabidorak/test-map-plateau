@@ -67,6 +67,8 @@ func stock(g: Node, pacer: RefCounted = null) -> void:
 		if is_instance_valid(parked[k]) and parked[k] in g.cars:
 			continue
 		var c: Dictionary = cars[k]
+		if Car.is_armed(c["model"]) and not g.allows("armed_vehicles"):
+			continue                        # (PTA Online: no armed vehicle on show)
 		parked[k] = g.park_vehicle(c["model"], c["xf"])
 		if pacer and pacer.due():           # scripts/pacer.gd: a game starting under the loading overlay
 			await pacer.wait()

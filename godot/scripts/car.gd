@@ -356,6 +356,12 @@ var _far: Array[MeshInstance3D] = []        # the sections' far meshes (_build_f
 
 
 ## Name of `model` for menus: its spec's label, else the model name capitalized ("sedan" -> "Sedan").
+## Whether `model` carries a weapon (the armed biplane's guns, the two-seater's turret, the GAZ Tiger's roof gun).
+static func is_armed(model: String) -> bool:
+	var spec: Dictionary = SPECS.get(model, {})
+	return spec.get("guns", false) or spec.get("turret", false) or spec.get("roof_gun", false)
+
+
 static func display_name(model: String) -> String:
 	return SPECS[model].get("label", model.replace("-", " ").capitalize())
 

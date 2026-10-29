@@ -160,7 +160,7 @@ func _build_main_page(cfg: ConfigFile) -> VBoxContainer:
 	modes.alignment = BoxContainer.ALIGNMENT_CENTER
 	modes.add_child(UiStyle.label("Game mode", 17, UiStyle.TEXT_DIM))
 	var group := ButtonGroup.new()
-	for id: String in Modes.ids():
+	for id: String in Modes.pickable():
 		var mb := UiStyle.button(Modes.title(id), _looks, Vector2(200, 40), 17)
 		mb.toggle_mode = true
 		mb.button_group = group
@@ -337,12 +337,12 @@ static func saved_profile() -> Array:
 	var mode := str(cfg.get_value("player", "mode", Modes.DEFAULT))
 	return [str(cfg.get_value("player", "name", user.capitalize() if user != "" else "Player")),
 			clampi(int(cfg.get_value("player", "color", 0)), 0, COLORS.size() - 1),
-			mode if Modes.valid(mode) else Modes.DEFAULT]
+			mode if mode in Modes.pickable() else Modes.DEFAULT]
 
 
 ## The game mode played solo or hosted: its button down, its line under the row, the solo button named after it.
 func _pick_mode(id: String) -> void:
-	mode_id = id if Modes.valid(id) else Modes.DEFAULT
+	mode_id = id if id in Modes.pickable() else Modes.DEFAULT
 	for other: String in _mode_buttons:
 		(_mode_buttons[other] as Button).set_pressed_no_signal(other == mode_id)
 	_mode_about.text = Modes.about(mode_id)

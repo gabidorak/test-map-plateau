@@ -73,9 +73,14 @@ extends Node3D
 ## start_online joins the official server, whose address is in the build (--online on the command line, with the login
 ## kept from the menu). That server runs with --dedicated --official and checks every player's login (scripts/
 ## economy.gd, Main/Economy): their name is their username, and it sends away those without one, with a message.
+## It plays only PTA Online (scripts/modes/online_mode.gd), a mode the welcome menu doesn't offer for solo or LAN games:
+## vehicles belong to accounts and come out at garages (E at a terminal), one per player, locked to others (U); no
+## vehicle menu, no C, no fly camera, no armed vehicles; the wallet shows top right. The maps mark Prestige Motors and the
+## game mode's places (map_places: the garages).
 
 signal world_staged                         # the loader has put the whole world in the tree (see `staged`)
 signal set_up                               # _ready has done all but placing the player: the loader lets it run
+signal toast_shown(text: String)            # a line at the top of the screen (toast; the tests read them)
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
@@ -279,6 +284,11 @@ func _ready() -> void:
 	var profile := MainMenu.saved_profile()
 	mode_id = _args.get("mode", OS.get_environment("PLATEAU_MODE") if get_tree().current_scene != self else profile[2])
 	if not Modes.valid(mode_id):
+		mode_id = Modes.DEFAULT
+	# PTA Online is the official server's mode, and its only one (the tools may play it solo: PLATEAU_MODE)
+	if _args.has("official"):
+		mode_id = Modes.ONLINE
+	elif mode_id == Modes.ONLINE and get_tree().current_scene == self:
 		mode_id = Modes.DEFAULT
 	nickname = _args.get("name", profile[0])
 	color = MainMenu.COLORS[clampi(int(_args.get("color", profile[1])), 0, MainMenu.COLORS.size() - 1)]
@@ -979,11 +989,12 @@ func _stock_showrooms(pacer: Pacer = null) -> void:
 		await s.stock(self, pacer)
 
 
-## `model` parked at `xf` (+Z forward, on the ground: a showroom podium), the footprint centred there.
-func park_vehicle(model: String, xf: Transform3D) -> Car:
+## `model` parked at `xf` (+Z forward, on the ground: a showroom podium), the footprint centred there; `exact`: its
+## origin right at `xf` (the jet-ski on the water, Water.spot_near).
+func park_vehicle(model: String, xf: Transform3D, exact := false) -> Car:
 	var car := new_vehicle(model)
 	add_child(car)
-	car.place(xf.translated_local(-car.extents_center).translated(Vector3.UP * 0.3))
+	car.place(xf if exact else xf.translated_local(-car.extents_center).translated(Vector3.UP * 0.3))
 	_add_car(car)
 	net.car_parked(car)
 	return car
@@ -1455,17 +1466,20 @@ func set_pause_open(on: bool) -> void:
 		if game_mode and game_mode.pause_info() != "":
 			info = game_mode.pause_info() + "\n" + info
 		var hosting := mode == "solo" or mode == "host"
+		var actions: Array = (game_mode.host_actions() if hosting else []) + game_mode.player_actions() if game_mode \
+				else []
 		pause.open(info, players, "Back to main menu", hosting, bus_bots, allows("bot_traffic"), allows("clear_vehicles"),
-				game_mode.host_actions() if game_mode and hosting else [])
+				actions)
 	else:
 		pause.close()
 		Input.mouse_mode = _pause_mouse
 	_update_controls()
 
 
-## True while the vehicle menu, the in-game menu, the full-screen map or the chat line is open.
+## True while the vehicle menu, the in-game menu, the full-screen map, the chat line or a game mode's panel is open.
 func ui_open() -> bool:
-	return _menu.visible or pause.visible or chat.is_open() or (world_map != null and world_map.visible)
+	return _menu.visible or pause.visible or chat.is_open() or (world_map != null and world_map.visible) \
+			or (game_mode != null and game_mode.ui_open())
 
 
 ## Opens or closes the full-screen map (M); the player and the vehicle driven take no keys while it is open.
@@ -1488,6 +1502,19 @@ func set_waypoint(xy: Variant) -> void:
 	_beacon.place(xy)
 
 
+## The places the full-screen map and the minimap mark: [[name, kind, pipeline Vector2]] (minimap.gd PLACES):
+## the showrooms (Prestige Motors), and the game mode's (PTA Online's garages).
+func map_places() -> Array:
+	var out := []
+	for s in get_tree().get_nodes_in_group("showroom"):
+		if s.dealer != "" and not s.outline.is_empty():
+			var mid := Vector2.ZERO
+			for p: Vector2 in s.outline:
+				mid += p
+			out.append([s.dealer, "shop", mid / s.outline.size()])
+	return out + (game_mode.map_places() if game_mode else [])
+
+
 ## Where the maps are centred: the player, the vehicle they are in, or the fly camera.
 func map_eye() -> Vector3:
 	if flying:
@@ -1499,7 +1526,12 @@ func map_eye() -> Vector3:
 	return player.global_position
 
 
-## The player, the fly camera or the vehicle driven take the keys and mouse unless a menu or the chat is open.
+## The player, the fly camera or the vehicle driven take the keys and mouse unless a menu or the chat is open (a game
+## mode calls it when its panels open and close).
+func update_controls() -> void:
+	_update_controls()
+
+
 func _update_controls() -> void:
 	var ui := ui_open()
 	player.active = not ui and not flying and not driving and not riding
@@ -1544,6 +1576,7 @@ func toast(text: String) -> void:
 
 
 func _show_toast(text: String) -> void:
+	toast_shown.emit(text)
 	_toast.text = text
 	_toast_t = 4.0
 	_toast.modulate.a = 1.0
@@ -1579,6 +1612,8 @@ func _input(event: InputEvent) -> void:
 	elif event.is_action_pressed("vehicle_menu") and not pause.visible and not world_map.visible \
 			and allows("vehicle_menu") or (key == KEY_ESCAPE and _menu.visible):
 		set_menu_open(not _menu.visible)
+		get_viewport().set_input_as_handled()
+	elif key == KEY_ESCAPE and not pause.visible and game_mode and game_mode.close_ui():
 		get_viewport().set_input_as_handled()
 	elif key == KEY_ESCAPE:
 		set_pause_open(not pause.visible)

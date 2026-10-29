@@ -18,7 +18,15 @@ const LIST := {
 		"solo": "Play solo",
 		"script": "res://scripts/escape/escape_mode.gd",
 	},
+	"online": {
+		"title": "PTA Online",
+		"about": "The official server: your own garage, jobs and money.",
+		"solo": "Play solo",
+		"script": "res://scripts/modes/online_mode.gd",
+		"menu": false,
+	},
 }
+const ONLINE := "online"
 
 
 static func ids() -> Array:
@@ -27,6 +35,11 @@ static func ids() -> Array:
 
 static func valid(id: String) -> bool:
 	return LIST.has(id)
+
+
+## The modes the welcome menu offers for solo and LAN games.
+static func pickable() -> Array:
+	return LIST.keys().filter(func(id: String) -> bool: return LIST[id].get("menu", true))
 
 
 static func title(id: String) -> String:

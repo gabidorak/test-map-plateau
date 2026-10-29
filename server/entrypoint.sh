@@ -8,7 +8,7 @@ case "$(uname -m)" in
 esac
 PORT="${PORT:-7777}"
 NAME="${SERVER_NAME:-Plateau server}"
-MODE="${GAME_MODE:-sandbox}"   # sandbox or escape (Escape from Plateau)
+MODE="${GAME_MODE:-sandbox}"   # sandbox or escape (Escape from Plateau); the official server plays PTA Online
 # OFFICIAL=1: the PTA Online server, players log in (PLATEAU_ACCOUNTS_URL and PLATEAU_SERVER_SECRET, from compose.yaml)
 OFFICIAL_FLAG=$([ -n "$OFFICIAL" ] && [ "$OFFICIAL" != 0 ] && echo --official)
 cd /data || exit 1
