@@ -61,17 +61,19 @@ class Bar extends Control:
 	var accent := Color.WHITE
 	var _track: StyleBoxFlat
 	var _fill: StyleBoxFlat
+	var _t := 0.0                               # s: the frames' deltas (the clock read after the loader's work jitters)
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		custom_minimum_size = Vector2(0, 6)
 
-	func _process(_delta: float) -> void:
+	func _process(delta: float) -> void:
+		_t += delta
 		queue_redraw()
 
 	func _draw() -> void:
 		var r := size.y * 0.5
-		var t := Time.get_ticks_msec() / 1000.0
+		var t := _t
 		if _track == null:
 			_track = _box(Color(1, 1, 1, 0.1), r)
 			_fill = _box(accent, r)
