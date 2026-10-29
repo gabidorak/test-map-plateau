@@ -113,7 +113,20 @@ reaches it on the Docker network (`http://accounts:8000`) with a shared secret, 
    the security list, and `sudo iptables -I INPUT 6 -p tcp -m multiport --dports 80,443 -j ACCEPT` +
    `sudo netfilter-persistent save`). With Caddy already on the VPS, add the block of `Caddyfile` to its Caddyfile with
    the domain written in, and `sudo systemctl reload caddy`; it proxies to `127.0.0.1:8790`, where compose publishes
-   the service (on this machine only), and refuses the game server's `/v1/server/*` routes. Without Caddy, put
+   the service (on this machine only), and refuses the game server's `/v1/server/*` routes. With Caddy in a container
+   of its own (another compose project), `127.0.0.1:8790` is not reachable from it: put both on a shared Docker
+   network instead. In this folder, a `compose.override.yaml` (git-ignored, compose reads it by itself):
+
+   ```yaml
+   services:
+     accounts:
+       networks: [default, web_gateway]
+   networks:
+     web_gateway:
+       external: true
+   ```
+
+   and in that Caddy's Caddyfile `reverse_proxy plateau-accounts:8000` (the container name, plain HTTP). Without Caddy, put
    `ACCOUNTS_DOMAIN=accounts.your.domain` in `.env` and start compose's own: `docker compose --profile caddy up -d`.
 
 3. `docker compose up -d --build`, then check: `curl https://accounts.your.domain/v1/status` answers
