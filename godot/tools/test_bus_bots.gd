@@ -4,7 +4,7 @@ extends SceneTree
 ## start of each direction every headway, nobody can take their wheel (E), the traffic lights run on the shared clock
 ## (shader global), and, one bus per line left (the others stowed, no more departures), driving with the physics:
 ## - a stop: the right indicator on the way in, the doors open at the pole, closed, the left indicator on the way out;
-## - boarding: the doors held for a player by one outside, closed once they are in, out of the doorway;
+## - boarding: the doors close after the dwell even with a player by one; the player aboard, it sets off;
 ## - a turn: its indicator while turning; the path is followed within LATERAL m, upright;
 ## - a red light: waits before the line, goes on the green;
 ## - a vehicle parked in its lane: stops behind it without touching it, then overtakes it where there is room on the
@@ -199,8 +199,7 @@ func _stop() -> void:
 	_check(left and _front(b) > float(stop["s"]) + 20.0, "left indicator pulling out, then on its way")
 
 
-## At a stop with the player by a door outside it waits for them; once they are in and out of the doorway, it closes its
-## doors (no longer than with nobody there).
+## At a stop with the player by a door it does not wait for them: it closes its doors after its dwell all the same.
 func _board() -> void:
 	var b: Object = _bot("4606")
 	b.may_glide = false
@@ -214,28 +213,18 @@ func _board() -> void:
 			opened = true
 			break
 	var dc: Vector3 = c.door_centres[0]
-	_main.player.teleport(c.to_global(dc + Vector3(signf(dc.x) * 1.5, 0.3, 0.0)))
-	var held := false
+	# in, in the doorway
+	_main.player.teleport(c.to_global(Vector3(dc.x - signf(dc.x) * 0.5, c.interior.position.y + 0.05, dc.z)))
+	var closed_late := INF                  # s past its dwell (closing resets its timer to the dwell: the frame before)
+	var t: float = b._timer
 	for f in 60 * 30:
 		await physics_frame
 		if not c.doors_open:
+			closed_late = t - b._dwell
 			break
-		if b._timer > b._dwell + 3.0:
-			held = true
-			break
-	_check(opened and held, "doors held open past its dwell (%.1f s) while the player stands by one outside" % b._dwell)
-	# in, a couple of metres down the aisle from that door (still within DOOR_REACH of it)
-	var box: AABB = c.interior
-	var z: float = dc.z + 1.8 if dc.z + 1.8 < box.end.z - 0.4 else dc.z - 1.8
-	_main.player.teleport(c.to_global(Vector3(box.get_center().x, box.position.y + 0.05, z)))
-	var closed_after := INF                 # s (it is past its dwell already)
-	for f in 60 * 30:
-		await physics_frame
-		if not c.doors_open:
-			closed_after = f / 60.0
-			break
-	_check(is_instance_valid(_main.player.carrier) and closed_after < 1.0,
-			"the player in, out of the doorway, it closes them (%.1f s later)" % closed_after)
+		t = b._timer
+	_check(is_instance_valid(_main.player.carrier) and closed_late < 0.5,
+			"the player in the doorway, it closes its doors after its dwell all the same (%.1f s late)" % closed_late)
 	var left := false
 	for f in 60 * 30:
 		await physics_frame
