@@ -20,6 +20,7 @@ const Prices = preload("res://scripts/online/prices.gd")
 const Paint = preload("res://scripts/paint.gd")
 const Car = preload("res://scripts/car.gd")
 const Economy = preload("res://scripts/economy.gd")
+const LabelFit = preload("res://scripts/label_fit.gd")
 
 signal answered(ok: bool, text: String)     # the host's answer to our last purchase, repair or repaint
 
@@ -42,7 +43,7 @@ func begin() -> void:
 			c["price"] = Economy.money(price) if price > 0 else "not sold in PTA Online"
 			for l: Label3D in s.find_children("*", "Label3D", false, false):
 				if l.text == old:
-					l.text = "%s\n%s" % [Car.display_name(c["model"]), c["price"]]
+					LabelFit.set_text(l, "%s\n%s" % [Car.display_name(c["model"]), c["price"]])
 
 
 func _showrooms() -> Array:

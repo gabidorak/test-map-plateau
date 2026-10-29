@@ -15,6 +15,7 @@ const Car = preload("res://scripts/car.gd")
 const Marks = preload("res://scripts/race_marks.gd")
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
+const LabelFit = preload("res://scripts/label_fit.gd")
 const DATA := "res://world/garages.json"
 const KINDS := {
 	"public": {"title": "Garage", "colour": Color("#2f6fd6"), "sign": "P", "paint": Color(0.93, 0.93, 0.9)},
@@ -231,12 +232,13 @@ func _kiosk(node: Node3D, g: Dictionary, meshes: bool) -> void:
 	for side: float in [-1.0, 1.0]:
 		var mark := Label3D.new()
 		mark.text = look["sign"]
-		mark.font_size = 96 if str(look["sign"]).length() == 1 else 56
+		mark.font_size = 96
 		mark.pixel_size = 0.008
 		mark.outline_size = 0
 		mark.modulate = Color.WHITE
 		mark.shaded = false
 		mark.double_sided = false
+		LabelFit.fit(mark, Vector2(0.9, 0.9))   # on the 1.05 m panel
 		mark.transform = Transform3D(Basis(Vector3.UP, 0.0 if side > 0.0 else PI), Vector3(0.55, 3.45, side * 0.045))
 		k.add_child(mark)
 	var title := Label3D.new()
@@ -270,12 +272,13 @@ func _paint_bays(node: Node3D, g: Dictionary) -> void:
 		for end: float in [-1.0, 1.0]:      # readable from either end of the bay
 			var mark := Label3D.new()
 			mark.text = text
-			mark.font_size = mini(72, floori((bay["w"] - 0.8) / (text.length() * 0.6 * 0.012)))   # across the bay
+			mark.font_size = 72
 			mark.pixel_size = 0.012
 			mark.outline_size = 0
 			mark.modulate = Color(look["paint"], 0.9)
 			mark.shaded = false
 			mark.double_sided = false
+			LabelFit.fit(mark, Vector2(bay["w"] - 0.8, 2.0))      # across the bay
 			var p: Vector3 = xf * Vector3(0.0, 0.0, end * (hl - 1.1))
 			p.y = Marks.ground(p.x, -p.z) + LIFT + 0.01
 			var turn: float = xf.basis.get_euler().y + (PI if end < 0.0 else 0.0)   # read from beyond that end
