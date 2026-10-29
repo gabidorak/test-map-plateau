@@ -177,6 +177,9 @@ const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "tax
 		"horse", "audi-r8", "mercedes-1928", "bmw-m4", "audi-rs6", "volvo-fh16", "volvo-fh16-trailer", "gaz-tiger", "jet-ski"]
 const REST_LENGTH := 0.2
 const BLINK := 0.75                         # s, indicator period
+const LAMP_DEPTH := 0.45                    # m, furthest a corner lamp sits behind its body box's face (_on_body)
+const KENNEY_HEAD := Vector2i(3, 3)         # the Kenney Car Kit palette's swatch (16 x 4) of the headlights (_own_lamps)
+const KENNEY_TAIL := Vector2i(5, 3)         # and of the tail lamps
 const DOOR_TIME := 1.6                      # s to open or close
 const DOOR_OUT := 0.1                       # plug doors: leaves first swing out this far, then slide
 const STEERING_RATIO := 3.5                 # steering wheel turn per road wheel angle: full lock stays under half a
@@ -325,6 +328,10 @@ var _total_mass := 1200.0                   # both sections
 var _wheel_count := 4
 var _rear_model: Node3D                     # the rear section's part of the model (under the trailer)
 var _hitch := Vector3.ZERO                  # car frame
+var _body_faces := PackedVector3Array()     # the model's triangles but the wheels' (car frame), for _on_body
+static var _lamp_spots := {}                # "<model> <point>" -> the point on the body (_on_body)
+static var _own_lamp_meshes := {}           # model -> [body without its lamps, head lamps, tail lamps] (_own_lamps)
+var _own_head: MeshInstance3D               # a toy car's own headlights, split out of its body (_own_lamps)
 var _towed := false                         # the rear section is a semi-trailer (from the cab file): it does not drive
 var _joint: Generic6DOFJoint3D
 var _bellows := {}                          # profile, in the car frame (layout "bellows")
@@ -912,7 +919,8 @@ func _build_driver() -> void:
 
 
 ## Indicator and brake lamps: the model's named meshes when its layout lists them (and its reversing lamps, if it
-## lists any), else small boxes at the corners of the body box.
+## lists any), else small boxes at the corners of the body box, at the height of a toy car's own head and tail lamps
+## (_own_lamps), which then light up instead of brake lamp boxes.
 func _build_lamps(m: Node3D, box: AABB, layout: Dictionary) -> void:
 	for k: String in ["indicator", "brake"]:
 		var off := StandardMaterial3D.new()
@@ -940,29 +948,48 @@ func _build_lamps(m: Node3D, box: AABB, layout: Dictionary) -> void:
 			rev.emission_energy_multiplier = 4.0
 			_lamp_mats["reverse"] = rev
 	else:
-		var y := box.position.y + box.size.y * 0.45
+		var own := _own_lamps(m, box)
+		var heights := {}                   # face z -> lamp height
+		for e: Array in [["head", box.end.z], ["tail", box.position.z]]:
+			var mi: MeshInstance3D = own.get(e[0])
+			heights[e[1]] = (_in_car(mi) * (mi.mesh as ArrayMesh).custom_aabb).get_center().y if mi else box.position.y + box.size.y * 0.45
 		for side in [1, -1]:
-			for z: float in [box.end.z, box.position.z]:
-				_lamps[side].append(_lamp_box(Vector3(side * (box.size.x * 0.5 - 0.12), y, z), Vector3(0.14, 0.07, 0.04)))
-			_brake_lamps.append(_lamp_box(Vector3(side * (box.size.x * 0.5 - 0.3), y, box.position.z), Vector3(0.2, 0.08, 0.04)))
+			for z: float in heights:
+				_lamps[side].append(_lamp_box(_on_body(m, Vector3(side * (box.size.x * 0.5 - 0.12), heights[z], z)),
+						Vector3(0.14, 0.07, 0.04)))
+			if not own.has("tail"):
+				_brake_lamps.append(_lamp_box(_on_body(m, Vector3(side * (box.size.x * 0.5 - 0.3),
+						heights[box.position.z], box.position.z)), Vector3(0.2, 0.08, 0.04)))
+		if own.has("tail"):
+			_brake_lamps.append(own["tail"])
+			_lamp_mats["brake"][0] = null   # off: its own material
+		_own_head = own.get("head")
 	for side in [1, -1]:
 		for lamp: MeshInstance3D in _lamps[side]:
 			lamp.material_override = _lamp_mats["indicator"][0]
 	for lamp in _brake_lamps:
 		lamp.material_override = _lamp_mats["brake"][0]
 	_build_headlights(m, box, layout)
+	_body_faces = PackedVector3Array()
 
 
 ## Headlights: on a model with a layout or fittings file (the buses, the fire truck), its "headlight" surfaces (only
 ## their front half lights up: the fire truck's reversing lamps share them) and "taillight" ones glow, and each
-## walkable section gets a light over its aisle; else lamp boxes go inboard of the front indicators. The beam starts
-## between the headlights.
+## walkable section gets a light over its aisle; else a toy car's own headlights (_own_lamps) glow, or lamp boxes go
+## inboard of the front indicators. The beam starts between the headlights.
 func _build_headlights(m: Node3D, box: AABB, layout: Dictionary) -> void:
+	if _own_head:
+		_headlight_mats()
+		_lamp_mats["head"][0] = null        # off: its own material
+		_head_lamps.append(_own_head)
+		var lens := _in_car(_own_head) * (_own_head.mesh as ArrayMesh).custom_aabb
+		_add_beam(Vector3(lens.get_center().x, lens.get_center().y, maxf(lens.end.z, box.end.z)))
+		return
 	if layout.is_empty():
 		var y := box.position.y + box.size.y * 0.45
 		var lamps: Array[Vector3] = []
 		for side in [1, -1]:
-			lamps.append(Vector3(side * (box.size.x * 0.5 - 0.42), y, box.end.z))
+			lamps.append(_on_body(m, Vector3(side * (box.size.x * 0.5 - 0.42), y, box.end.z)))
 		add_headlights(lamps, Vector3(0.3, 0.1, 0.04))
 		return
 	if _lamp_shader == null:
@@ -1017,6 +1044,18 @@ void fragment() {
 
 ## Glowing headlight boxes of `size` at `lamps` (car frame, on the front face), and the beam between them.
 func add_headlights(lamps: Array[Vector3], size: Vector3) -> void:
+	_headlight_mats()
+	var centre := Vector3.ZERO
+	for p in lamps:
+		var lamp := _lamp_box(p, size)
+		lamp.material_override = _lamp_mats["head"][0]
+		_head_lamps.append(lamp)
+		centre += p / lamps.size()
+	_add_beam(centre)
+
+
+## The head lamps' materials (off, lit) and the tail lamps' (lit with the headlights).
+func _headlight_mats() -> void:
 	var off := StandardMaterial3D.new()
 	off.albedo_color = Color(0.85, 0.87, 0.82)
 	off.roughness = 0.25
@@ -1031,13 +1070,6 @@ func add_headlights(lamps: Array[Vector3], size: Vector3) -> void:
 	tail.emission = tail.albedo_color
 	tail.emission_energy_multiplier = 1.5
 	_lamp_mats["tail"] = tail
-	var centre := Vector3.ZERO
-	for p in lamps:
-		var lamp := _lamp_box(p, size)
-		lamp.material_override = off
-		_head_lamps.append(lamp)
-		centre += p / lamps.size()
-	_add_beam(centre)
 
 
 ## The headlight beam from `p` (car frame, the front of the lamps), along +Z and a little down.
@@ -1116,6 +1148,109 @@ func _set_reverse_lamps(on: bool) -> void:
 	_reversing = on
 	for lamp in _reverse_lamps:
 		lamp.material_override = _lamp_mats["reverse"] if on else null
+
+
+## `p` (car frame, on the front or back face of the body box) moved along Z onto the body of model `m` (its meshes but
+## the wheels): the bumpers stick out past the panels the lamps go on, so the box's face is in the air there. Where the
+## rounded corners miss the ray, or it only meets the body deep inside (a wheel arch's flare), it moves inboard; where
+## it passes over a van's bonnet to the windscreen, down to the bonnet's front.
+## Cached per model (_lamp_spots): the bots spawn many of each.
+func _on_body(m: Node3D, p: Vector3) -> Vector3:
+	var key := "%s %v" % [model_name, p]
+	if not _lamp_spots.has(key):
+		_lamp_spots[key] = _ray_to_body(m, p)
+	return _lamp_spots[key]
+
+
+func _ray_to_body(m: Node3D, p: Vector3) -> Vector3:
+	if _body_faces.is_empty():
+		for mi: MeshInstance3D in m.find_children("*", "MeshInstance3D", true, false):
+			if "wheel" not in String(mi.name).to_lower():
+				var xf := _in_car(mi)
+				for v in mi.mesh.get_faces():
+					_body_faces.append(xf * v)
+	var dir := Vector3(0.0, 0.0, -signf(p.z))
+	for down in 8:
+		for step in 12:
+			var from := Vector3(p.x - signf(p.x) * 0.05 * step, p.y - 0.1 * down, p.z - dir.z * 1.0)
+			var best := INF
+			for i in range(0, _body_faces.size(), 3):
+				var hit: Variant = Geometry3D.ray_intersects_triangle(from, dir, _body_faces[i], _body_faces[i + 1],
+						_body_faces[i + 2])
+				if hit != null:
+					best = minf(best, from.distance_to(hit))
+			if best < 1.0 + LAMP_DEPTH:
+				return from + dir * best
+	return p
+
+
+## A Kenney Car Kit body's own head and tail lamps: its body is one mesh on the "colormap" palette, so they are its
+## triangles on the lamp swatches (KENNEY_HEAD, KENNEY_TAIL) in the front and back fifths of the car (not the police
+## car's light bar), split out into meshes of their own under it (cached per model, _own_lamp_meshes).
+## {"head": MeshInstance3D, "tail": ...}, either missing when the model has none (the ambulance's tail lamps).
+func _own_lamps(m: Node3D, box: AABB) -> Dictionary:
+	var body := m.find_child(SPECS[model_name].get("body", "body"), true, false) as MeshInstance3D
+	if body == null or body.mesh == null or body.mesh.get_surface_count() != 1:
+		return {}
+	var mat := body.mesh.surface_get_material(0)
+	if mat == null or mat.resource_name != "colormap":
+		return {}
+	if not _own_lamp_meshes.has(model_name):
+		_own_lamp_meshes[model_name] = _split_lamps(body, box)
+	var meshes: Array = _own_lamp_meshes[model_name]
+	var out := {}
+	if meshes.is_empty():
+		return out
+	body.mesh = meshes[0]
+	for i in [1, 2]:
+		if meshes[i] != null:
+			var lamp := MeshInstance3D.new()
+			lamp.name = "HeadLamps" if i == 1 else "TailLamps"
+			lamp.mesh = meshes[i]
+			lamp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			body.add_child(lamp)
+			out["head" if i == 1 else "tail"] = lamp
+	return out
+
+
+## [`body`'s mesh without its lamps, its head lamps, its tail lamps] (see _own_lamps; null for none), [] if it has none.
+func _split_lamps(body: MeshInstance3D, box: AABB) -> Array:
+	var arrays := body.mesh.surface_get_arrays(0)
+	var uv: Variant = arrays[Mesh.ARRAY_TEX_UV]
+	var ind: Variant = arrays[Mesh.ARRAY_INDEX]
+	if not uv is PackedVector2Array or not ind is PackedInt32Array or (ind as PackedInt32Array).is_empty():
+		return []
+	var v: PackedVector3Array = _in_car(body) * (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array)
+	var reach := box.size.z * 0.2
+	var parts := [[], [], []]               # triangle indices: the rest, the head lamps, the tail lamps
+	for t in range(0, ind.size() - 2, 3):
+		var a: int = ind[t]
+		var b: int = ind[t + 1]
+		var c: int = ind[t + 2]
+		var cell := Vector2i(((uv[a] + uv[b] + uv[c]) / 3.0 * Vector2(16.0, 4.0)).floor())
+		var z := (v[a].z + v[b].z + v[c].z) / 3.0
+		var part := 1 if cell == KENNEY_HEAD and z > box.end.z - reach \
+				else 2 if cell == KENNEY_TAIL and z < box.position.z + reach else 0
+		parts[part].append_array([a, b, c])
+	if parts[1].is_empty() and parts[2].is_empty():
+		return []
+	var out := []
+	for p: Array in parts:
+		if p.is_empty():
+			out.append(null)
+			continue
+		var a := arrays.duplicate()
+		a[Mesh.ARRAY_INDEX] = PackedInt32Array(p)
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, a)
+		if out.size() > 0:                  # a lamp: the bounds of its own triangles (get_aabb: of all the vertices)
+			var own := AABB(arrays[Mesh.ARRAY_VERTEX][p[0]], Vector3.ZERO)
+			for i: int in p:
+				own = own.expand(arrays[Mesh.ARRAY_VERTEX][i])
+			mesh.custom_aabb = own
+		mesh.surface_set_material(0, body.mesh.surface_get_material(0))   # the same: paint.gd repaints it
+		out.append(mesh)
+	return out
 
 
 func _lamp_box(p: Vector3, size: Vector3) -> MeshInstance3D:
