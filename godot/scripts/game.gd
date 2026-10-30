@@ -841,7 +841,8 @@ func net_player_state() -> Array:
 		var frame: Transform3D = player.carrier_frame()
 		return [car.net_id, 0 if c == car else 1, frame.affine_inverse() * player.global_position,
 				player.body_yaw() - frame.basis.get_euler().y, flags]
-	return ["", 0, player.global_position, player.body_yaw(), flags]
+	# (driving, the player stays where they got in: the server sends us what is near the vehicle, net.gd _view_of)
+	return ["", 0, driving.global_position if driving else player.global_position, player.body_yaw(), flags]
 
 
 ## Puts the player on the ground at pipeline (x, y).
