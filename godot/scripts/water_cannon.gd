@@ -35,6 +35,9 @@ const WET_SIZE := 2.4                       # m
 
 ## A packet of a `live` cannon hit `collider` (its shape `shape`) at `point`, giving it `impulse` (N·s).
 signal hit(collider: Object, shape: int, point: Vector3, impulse: Vector3)
+## A packet landed at `point`, live or not (a remote copy's too): the host's fires judge the water from these
+## (scripts/online/fires.gd), each truck's jet flown from the states it gets.
+signal splashed(point: Vector3)
 
 var firing := false
 var live := true                            # its hits count (the truck is simulated here)
@@ -178,6 +181,7 @@ func _impact(h: Dictionary, v: Vector3) -> void:
 	var collider: Object = h["collider"]
 	if collider is StaticBody3D and (collider as CollisionObject3D).collision_layer & Layers.SOLID:
 		_wet_patch(p, n)
+	splashed.emit(p)
 	if live:
 		hit.emit(collider, h["shape"], p, v * (PUSH / SPEED))
 

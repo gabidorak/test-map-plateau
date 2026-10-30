@@ -190,17 +190,24 @@ func show_entries(list: Array, message: String) -> void:
 ## The heading of a part of a garage's list (`part`: "duty" the bus lines, "out" the vehicles to get out, "buy" those
 ## on sale), in the garages whose list has more than one part (the bus depot, the fire station).
 func _heading(part: String, list: Array) -> void:
-	var depot := list.any(func(e: Dictionary) -> bool: return e.has("duty"))
-	var head: String = {"duty": "BUS JOB · pick a line: you are on duty, and a bus comes with it",
-			"out": "Or just take a bus out (no job, no pay)" if depot else "Take one out",
-			"buy": "For sale (your own pays ×1.5 on the job)" if depot else "For sale"}[part]
+	var job := list.any(func(e: Dictionary) -> bool: return e.has("duty"))
+	var fire := list.any(func(e: Dictionary) -> bool: return str(e.get("duty", "")) == "fire")
+	var vehicle := "fire truck" if fire else "bus"
+	var head: String = {"duty": "FIREFIGHTER JOB · go on duty: a fire truck comes with it" if fire
+			else "BUS JOB · pick a line: you are on duty, and a bus comes with it",
+			"out": "Or just take a %s out (no job, no pay)" % vehicle if job else "Take one out",
+			"buy": "For sale (your own pays ×1.5 on the job)" if job else "For sale"}[part]
 	var l := UiStyle.label(head, 17, Color(1.0, 0.86, 0.5), HORIZONTAL_ALIGNMENT_LEFT)
 	l.name = "Heading_" + part
 	rows.add_child(l)
 	if part == "duty":
-		var how := UiStyle.label("Then follow the waypoint to the line, stop in each stop's bay, open the doors (%s) " %
-				Settings.key_text("doors") + "until the pay pops in. Any bus does any line.", 14, UiStyle.TEXT_DIM,
-				HORIZONTAL_ALIGNMENT_LEFT)
+		var text := "Then follow the waypoint to the line, stop in each stop's bay, open the doors (%s) " % \
+				Settings.key_text("doors") + "until the pay pops in. Any bus does any line."
+		if fire:
+			text = "Alarms come in while you are on duty (the waypoint, the map): drive there, aim at the flames and " + \
+					"hold %s until they are out. Each fire pays, shared by who hosed it; a quick answer pays more." % \
+					Settings.key_text("fire")
+		var how := UiStyle.label(text, 14, UiStyle.TEXT_DIM, HORIZONTAL_ALIGNMENT_LEFT)
 		how.name = "Heading_how"
 		how.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		how.custom_minimum_size.x = 560
