@@ -129,6 +129,8 @@ func _run_client() -> void:
 		return
 	# its arrival on the shared clock
 	var mark: float = _lozere(tr.service)["s"]["8"]
+	var beside: Transform3D = tr.span_frame(mark - 1.0, mark + 1.0)     # near it (net.gd TRAIN_NEAR), off the track (it brakes)
+	_main.player.teleport(beside.origin + beside.basis.x * 30.0 + Vector3.UP * 3.0)
 	var arrived_at := [NAN]                 # (a lambda captures locals by value: an array to write into)
 	await _until(func() -> bool: return tr.speed > 1.0, 20.0)     # under way to Lozère (not a state from before)
 	await _until(func() -> bool:

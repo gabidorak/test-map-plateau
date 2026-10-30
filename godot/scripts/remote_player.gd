@@ -11,6 +11,7 @@ const PlayerScene = preload("res://scenes/player.tscn")
 const Layers = preload("res://scripts/physics_layers.gd")
 const INSIDE_MARGIN := 0.15                 # m around a walkable interior: in the doorway, or only just left
 const DOOR_MARGIN := 0.7                    # m around it while the doors are open: the step through the body box
+const CAR_REACH := 40.0                     # m, no vehicle is longer: further off from its origin, it is not around their feet
 
 var label: Label3D
 var collider: AnimatableBody3D
@@ -115,10 +116,14 @@ func sit_in(car: Node3D) -> void:
 func update_collision(on: bool, in_car: Node3D, cars: Array) -> void:
 	if _shape.disabled == on:
 		_shape.disabled = not on
+	if not on:
+		return                              # (a shape switched off collides with nothing: drivers cost nothing here)
 	var feet := global_position
 	for car: Node3D in cars:
-		var ignore: bool = car == in_car or car.carrier_at(feet, INSIDE_MARGIN) != null \
-				or (car.doors_open and car.carrier_at(feet, DOOR_MARGIN) != null)
+		var ignore: bool = car == in_car
+		if not ignore and feet.distance_squared_to(car.global_position) < CAR_REACH * CAR_REACH:
+			ignore = car.carrier_at(feet, INSIDE_MARGIN) != null \
+					or (car.doors_open and car.carrier_at(feet, DOOR_MARGIN) != null)
 		if ignore == _ignored.has(car):
 			continue
 		for b: PhysicsBody3D in car.bodies():

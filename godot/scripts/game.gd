@@ -545,6 +545,8 @@ func start_dedicated() -> void:
 	net.message.connect(func(text: String) -> void: print(text))
 	net.chat.connect(func(id: int, text: String) -> void: print("%s: %s" % [net.player_name(id), text]))
 	var err := economy.make_official() if _args.has("official") else ""
+	if _args.has("max-players"):
+		net.max_players = clampi(int(_args["max-players"]), 1, 4095)   # (ENet's limit)
 	if err == "":
 		err = net.host(_args.get("name", "Plateau server"), color, int(_args.get("port", Net.PORT)), true)
 	if err != "":
@@ -563,6 +565,11 @@ func start_dedicated() -> void:
 	_update_poll_t = UPDATE_POLL
 	_start_world()
 	game_mode.begin()
+	if _args.has("stats"):
+		var stats: Node = preload("res://scripts/server_stats.gd").new()
+		stats.name = "Stats"
+		stats.game = self
+		add_child(stats)
 
 
 ## Dedicated server: quits when a newer build is out, once nobody plays or after UPDATE_WAIT; its container restarts it
