@@ -550,6 +550,8 @@ func _run_client() -> void:
 			car = c
 	net.request_drive(car)
 	_check(await _until(func() -> bool: return _main.driving == car, 5.0), "the host let us drive its %s" % car.model_name)
+	_check(_main.net_player_state()[2].distance_to(car.global_position) < 0.01,
+			"driving, our state says where the vehicle is: the server sends us what is near it")
 	_check(not car.remote and not car.freeze, "we simulate it now")
 	var p0: Vector3 = car.global_position
 	_key(KEY_W, true)
