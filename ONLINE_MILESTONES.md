@@ -161,9 +161,9 @@ checked before calling it finished.
 - Map/minimap markers for active fires (firefighters only).
 
 **Done when:**
-- [ ] `tools/test_fires.gd`: fire spawns, spreads, water puts it out, pay shared between two sprayers.
-- [ ] LAN test: client on duty sees fires, hoses one, gets paid.
-- [ ] Perf: 5 fires at once cost < 1 ms per frame on the Iris Xe (PERFORMANCE.md method).
+- [x] `tools/test_fires.gd`: fire spawns, spreads, water puts it out, pay shared between two sprayers.
+- [x] LAN test: client on duty sees fires, hoses one, gets paid (`tools/test_fires.sh`, port 7801: 7796-7800 were taken).
+- [x] Perf: 5 fires at once cost < 1 ms per frame on the Iris Xe (PERFORMANCE.md method): 0.3-0.8 ms, PERFORMANCE.md 3.3.
 
 ## O8 — Balance + admin
 
@@ -192,5 +192,5 @@ a real fire station building at #1289.
 | O4 Shop, repairs, colours | ✅ | `online/shop.gd` + `prices.gd`, `paint.gd` (`car.gd` set_paint, crash damage online), delivery bays `prestige-motors`, PROTOCOL 14. test_online_shop.sh green (107 checks). |
 | O5 Bus job | ✅ | `online/bus_job.gd` (Main/Mode/BusJob), `data/jobs.json`, traffic.gd hold/release, accounts `pay` hourly `cap`, PROTOCOL 15. Bot on the 4606: 14 stops, ~15 200 €/h. test_bus_job.sh green (49 checks). |
 | O6 Stunts | ✅ | `online/stunts.gd` (Main/Mode/Stunts), 10 spots in `world/stunts.json` (`tools/online/stunts.py` + `test_stunts.gd --trial`), accounts `pay` `once` + `firsts`, PROTOCOL 16. test_stunts.sh green. Fixed: a taken-over car could keep a snap's velocity. |
-| O7 Fires + firefighter job | ⬜ | |
+| O7 Fires + firefighter job | ✅ | `online/fires.gd` + `fire_job.gd` (Main/Mode/Fires, FireJob), `fire_fx.gd`, 2 417 spots in `world/fires.json` (`tools/online/fires.py`), jobs.json "fire", water judged from the server's own flight of each jet, PROTOCOL 17. test_fires.sh green. 5 fires 0.3-0.8 ms on the Iris Xe. |
 | O8 Balance + admin | ⬜ | |

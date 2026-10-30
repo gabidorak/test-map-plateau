@@ -956,7 +956,29 @@ static func one_shot(sound: String) -> AudioStreamWAV:
 				var a := float(j) / fade
 				buf[j] = buf[j] * a + buf[buf.size() - fade + j] * (1.0 - a)
 			buf.resize(buf.size() - fade)
-	var s := _to_wav(buf, sound == "gush")
+		"fire":                                             # a blaze: low roar and crackles (loops)
+			buf = _silence(3.0)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 9
+			var lp1 := 0.0
+			var lp2 := 0.0
+			for i in buf.size():
+				var noise := rng.randf_range(-1.0, 1.0)
+				lp1 += (noise - lp1) * 0.06
+				lp2 += (lp1 - lp2) * 0.02
+				var t := float(i) / RATE
+				buf[i] = lp2 * 6.0 * (0.75 + 0.25 * sin(TAU * 0.7 * t) * sin(TAU * 1.9 * t))
+			for k in 70:                                    # crackles: short bright snaps
+				var i0 := rng.randi_range(0, buf.size() - 400)
+				var g := rng.randf_range(0.15, 0.6)
+				for j in rng.randi_range(60, 300):
+					buf[i0 + j] += rng.randf_range(-1.0, 1.0) * g * exp(-j / 40.0)
+			var fade := int(0.05 * RATE)
+			for j in fade:
+				var a := float(j) / fade
+				buf[j] = buf[j] * a + buf[buf.size() - fade + j] * (1.0 - a)
+			buf.resize(buf.size() - fade)
+	var s := _to_wav(buf, sound in ["gush", "fire"])
 	_cache[sound] = s
 	return s
 

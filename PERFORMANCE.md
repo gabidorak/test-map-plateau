@@ -339,6 +339,26 @@ Night mode (Low, no bots, so no headlights): +0.5 to +3 ms GPU at street level, 
 
 ---
 
+### 3.3 PTA Online fires (O7), 2026-10-30
+
+Target from ONLINE_MILESTONES.md O7: 5 fires at once under 1 ms a frame on the Iris Xe. Measured with
+`_tmp_perfprobe.gd` (1080p, the scene's Low state), variant `fires5` = one fire of each kind (`scripts/fire_fx.gd`)
+20-90 m in front of the camera, alternating with `base` in the same run (frame time, ms):
+
+| Viewpoint | Day | Night |
+|---|---|---|
+| telecom_entrance | +0.3 to +0.45 | +0.0 to +0.2 |
+| x_lake | +0.5 | +0.6 |
+| x_main_building | +0.75 | +0.7 to +0.8 |
+
+What it took (first version: +2.1 to +2.7 ms by day):
+- Smoke lit per vertex, not per pixel, fewer and smaller puffs: smoke -0.8 ms.
+- No scorched-ground decal: 4 decals cost ~0.8 ms.
+- No omni light: by day it barely shows; at night a single extra light on top of the street lamps cost ~1 ms whatever
+  its range (0.01 m included), so the night glow is an additive sprite.
+- Flames: unshaded, alpha-blended (additive washed out by day), sRGB vertex colours; ~0.1-0.3 ms.
+- Level of detail: flames and sound within 320 m, smoke within 2.2 km (the column shows where the fire is).
+
 ## 4. The High preset and how the preset is chosen
 
 Measured (frame-time change in ms when the feature is off):

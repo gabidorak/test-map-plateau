@@ -27,6 +27,8 @@ extends "res://scripts/modes/game_mode.gd"
 ## - The bus job (scripts/online/bus_job.gd, O5): duty on a real line from the bus depot's terminal, paid per stop.
 ## - Stunts (scripts/online/stunts.gd, O6): air time, flips, near misses, top speed and the named stunt spots (on the
 ##   maps) pay a bonus on any vehicle.
+## - The firefighter job (scripts/online/fire_job.gd, O7): duty from the fire station's terminal; the host lights fires
+##   (scripts/online/fires.gd) while anyone is on duty, and pays for those put out with the water cannon.
 ## The host (the official server) keeps who owns which vehicle; every peer gets it (`vehicles`) to show the prompts.
 ## Played solo (the tools: PLATEAU_MODE=online), the player's garage is PLATEAU_ONLINE_VEHICLES (models, comma-separated)
 ## and their money PLATEAU_ONLINE_MONEY (the starting money by default), kept here (test_garage, test_money).
@@ -42,6 +44,8 @@ const Shop = preload("res://scripts/online/shop.gd")
 const Paint = preload("res://scripts/paint.gd")
 const BusJob = preload("res://scripts/online/bus_job.gd")
 const Stunts = preload("res://scripts/online/stunts.gd")
+const Fires = preload("res://scripts/online/fires.gd")
+const FireJob = preload("res://scripts/online/fire_job.gd")
 
 signal answered(ok: bool, text: String)     # the host's answer to our last request at a garage terminal
 
@@ -66,6 +70,8 @@ var test_money := 0                         # played solo by the tools: the play
 var shop: Shop
 var bus_job: BusJob
 var stunts: Stunts
+var fires: Fires
+var fire_job: FireJob
 var _leaving := {}                          # host: account -> [net id, s left]
 var _panel: GaragePanel
 var _wallet: Label
@@ -106,6 +112,14 @@ func _ready() -> void:
 	stunts.name = "Stunts"
 	stunts.mode = self
 	add_child(stunts)
+	fires = Fires.new()
+	fires.name = "Fires"
+	fires.mode = self
+	add_child(fires)
+	fire_job = FireJob.new()
+	fire_job.name = "FireJob"
+	fire_job.mode = self
+	add_child(fire_job)
 	multiplayer.peer_disconnected.connect(_on_left)
 	game.economy.logged_in.connect(_on_login)
 
@@ -158,6 +172,9 @@ func extra_help(k: Callable) -> String:
 		return "ON DUTY · stop in each stop's bay, %s open the doors %d s · red lights: %s fine · %s your bus (off duty) · " % [
 				k.call("doors"), int(bus_job.pay.get("doors", 3.0)), Economy.money(int(bus_job.pay.get("red_light_fine", 10))),
 				k.call("vehicle_menu")] + "the next stop is the waypoint"
+	if fire_job.on_duty():
+		return "ON DUTY · firefighter: drive to the fires (the waypoint, on the map), aim at the flames and hold %s · " % \
+				k.call("fire") + "%s your truck (off duty)" % k.call("vehicle_menu")
 	return "%s your vehicle (lock, send back) · the garages are on the map (%s) · buy vehicles at Prestige Motors, " % [
 			k.call("vehicle_menu"), game.letter_key("world_map", "M")] + "repair and paint them at a garage terminal · " + \
 			"stunts pay (jumps, flips, near misses; the stunt spots are on the map)"
@@ -168,7 +185,7 @@ func map_places() -> Array:
 	for g: Dictionary in garages.list:
 		if PLACE_KINDS.has(g["kind"]):
 			out.append([g["name"], PLACE_KINDS[g["kind"]], g["xy"]])
-	return out + stunts.map_places()
+	return out + stunts.map_places() + fire_job.map_places()
 
 
 func ui_open() -> bool:
@@ -243,7 +260,7 @@ func open_garage(id: String) -> void:
 	var sub := {"public": "Your vehicles (not the work ones: buses at the bus depot, fire trucks at the fire station)",
 			"shop": "Your vehicles (not the work ones). Those bought here come out on these bays.",
 			"depot": "Bus drivers earn money here: pick a line below, that's all (no need to get a bus out first).", "fire":
-			"Firefighters: a lent fire truck, or yours; fire trucks for sale"}
+			"Firefighters earn money here: go on duty below, a fire truck comes with it."}
 	_open_panel()
 	_panel.open_garage(id, "%s · %s" % [look["title"], g["name"]] if g["kind"] in Garages.PUBLIC else str(g["name"]),
 			sub[g["kind"]], Settings.key_text("interact"))
@@ -266,7 +283,8 @@ func open_vehicle() -> void:
 	var d := car.global_position.distance_to(game.map_eye())
 	_panel.open_vehicle("Your %s" % Car.common_name(car.model_name), "%d m away" % roundi(d) if d > 8.0
 			else "Right here", vehicles.get(mine, {}).get("locked", true), Settings.key_text("vehicle_menu"),
-			"On duty: line %s" % bus_job.info["ref"] if bus_job.on_duty() else "")
+			"On duty: line %s" % bus_job.info["ref"] if bus_job.on_duty() else "On duty: firefighter"
+			if fire_job.on_duty() else "")
 	game.update_controls()
 
 
@@ -310,7 +328,10 @@ func _build_hud() -> void:
 		_close_panel())
 	_panel.duty.connect(func(ref: String) -> void:
 		_panel.set_status("Going on duty…" if ref != "" else "Going off duty…")
-		bus_job.ask_duty(_panel.garage_id, ref))
+		if ref == "fire" or ref == "" and fire_job.on_duty():
+			fire_job.ask_duty(_panel.garage_id, ref)
+		else:
+			bus_job.ask_duty(_panel.garage_id, ref))
 	_wallet = Label.new()
 	_wallet.name = "Wallet"
 	_wallet.add_theme_font_size_override("font_size", 24)
@@ -384,6 +405,8 @@ func prompt_text() -> String:
 	if not g.is_empty():
 		if g["kind"] == "depot" and not bus_job.on_duty():
 			return "%s  %s · bus job: pick a line" % [Settings.key_text("interact"), g["name"]]
+		if g["kind"] == "fire" and not fire_job.on_duty():
+			return "%s  %s · firefighter job: go on duty" % [Settings.key_text("interact"), g["name"]]
 		return "%s  %s · your vehicles" % [Settings.key_text("interact"), g["name"]]
 	if shop.catalogue_at_hand():
 		return "%s  %s · the catalogue" % [Settings.key_text("interact"), Shop.PRESTIGE_NAME]
@@ -636,6 +659,7 @@ func player_registered(peer: int) -> void:
 	for id: String in vehicles:
 		all[id] = _public(id)
 	send_to(peer, self, "_c_vehicles", [all])
+	fires.player_registered(peer)
 
 
 ## Host: a player's login was checked: their vehicle waiting for them is theirs again.
@@ -713,8 +737,9 @@ func send_garage(peer: int, gid: String, message := "") -> void:
 	if not _near(peer, g):
 		send_to(peer, self, "_c_garage", [gid, [], "Walk up to the garage's terminal."])
 		return
-	send_to(peer, self, "_c_garage", [gid, (bus_job.offer(peer, gid) if g["kind"] == "depot" else []) + offer(g, acc),
-			message])
+	var duty: Array = bus_job.offer(peer, gid) if g["kind"] == "depot" else fire_job.offer(peer, gid) \
+			if g["kind"] == "fire" else []
+	send_to(peer, self, "_c_garage", [gid, duty + offer(g, acc), message])
 
 
 @rpc("any_peer", "call_remote", "reliable")

@@ -20,6 +20,7 @@ const PLACES := {
 	"fire": {"colour": Color("#d23b2f"), "glyph": "flame"},
 	"shop": {"colour": Color("#c9a043"), "glyph": "€"},
 	"stunt": {"colour": Color("#e0662a"), "glyph": "ramp"},
+	"blaze": {"colour": Color("#ff7a00"), "glyph": "flame"},   # PTA Online's fires burning (firefighters on duty)
 }
 
 var game: Node                              # game.gd

@@ -1,6 +1,6 @@
 # PTA Online: an economy on the official server
 
-Status: **being built**: accounts service and login (O1, O2), rules and garages (O3), shop (O4) and bus job (O5) done, see the status table in ONLINE_MILESTONES.md. "Decided" = agreed with Gabriel; *(proposal)* = mine and
+Status: **being built**: accounts service and login (O1, O2), rules and garages (O3), shop (O4), bus job (O5), stunts (O6) and the firefighter job (O7) done, see the status table in ONLINE_MILESTONES.md. "Decided" = agreed with Gabriel; *(proposal)* = mine and
 not agreed yet. Open questions are at the end (Q…).
 
 ## 1. Vision
@@ -241,6 +241,34 @@ depot), fire truck 80 000 (fire station). Not sold: police cars, ambulance, arme
   fires grows with the number of firefighters on duty, so 1 player isn't flooded and 10 aren't bored.
 - Pay per fire put out, shared by the people who sprayed it, plus a response-time bonus.
 - Needs a new fire system: flames + smoke, spreading, hit by the water cannon. The vehicle fire is a start.
+- Built in O7 (my choices): `scripts/online/fires.gd` (the fires, run by the server), `scripts/online/fire_job.gd` (duty,
+  alarms, pay), `scripts/fire_fx.gd` (how a fire looks), pay in `godot/data/jobs.json` "fire". **Spots:**
+  `godot/world/fires.json` from `tools/online/fires.py`: ~2 400 places within 2 km of the fire station that a truck can
+  hose from a road (within 45 m of a bot path, nothing built in between): building fronts facing the road, parked cars
+  in OSM car parks (a burnt-out car shell stands there; off the bots' paths and away from the garages), street bins,
+  lawns and woods. **Duty:** "Firefighter duty" at the fire station's terminal; the truck that comes with it is the
+  fire truck they have out, else their own, else a lent one (as the bus job). Off duty at the terminal, with U, by
+  taking another vehicle out, a wrecked truck, or leaving. **Alarms:** one burning per firefighter on duty (6 at most);
+  the first 10 s after the first goes on duty, then one 45 s after the last one was lit or ended; a spot 120-1 500 m
+  from the nearest firefighter, its kind drawn (buildings 30 %, cars, bins, grass 20 % each, woods 10 %). Nobody on
+  duty: no alarms, and the fires die down in 20 s. **Fires:** start at 35 % heat and grow to full in 30-90 s (by kind,
+  not while hosed); at full heat for 45 s one spreads to the nearest free spot within 9-14 m (the next car in the car
+  park, the same building's next facade), grass and woods over the same ground 6-9 m on; 5 fires an alarm at most; a fire
+  burning 15 min burns out (nothing paid). **Water:** the server flies every fire truck's jet itself, from the truck's
+  state (its position, turret aim and spray switch), so no player says where their water went; a packet landing in a
+  fire takes its heat down: 3 s of a whole jet put out a bin at full heat, 4 s grass, 7 s a car or a wood, 11 s a
+  building front. **Pay** (data/jobs.json "fire"): bin 300 €, grass 380, car 480, wood 480, building 650; a spread fire
+  half; +50 % when the first water came within 40 s + 1 s per 10 m from the nearest firefighter when it was lit (down to
+  nothing at twice that; not for spread fires); shared by the firefighters on duty who sprayed it as their water on it
+  (under 5 %: nothing), ×1.5 for the water from their own truck. Water from players off duty helps and pays nobody.
+  Estimate: an alarm every ~2.5 min (drive, hose, next) at ~620 € on average ≈ 15 000 €/h, inside the jobs' 30 000 €/h
+  cap. **Checks:** a jump of over 25 m in a tick or a speed over the truck's top speed: the player's water counts for
+  nothing 10 s. **HUD:** top right (the nearest fire, how far, how long it has burnt, fires burning and put out, money
+  this duty), the money popping in, the waypoint on the nearest fire, hints (get in the truck, drive to the fire, aim
+  and hold the fire button, how much is left); the fires are on the M map and the minimap for firefighters on duty.
+  **Looks:** flames and smoke (GPU particles), steam once out, a crackling roar, an orange glow at night (a sprite, not
+  a light: one more light at night cost ~1 ms on an Iris Xe); 5 fires at once cost 0.3-0.8 ms a frame on the Iris Xe
+  (PERFORMANCE.md 3.3).
 
 **Stunts** *(built in O6: a bonus layer on any vehicle, not a job; `scripts/online/stunts.gd`)*
 - Air time, flips (front flip, backflip, barrel roll, landed on the wheels), a plane's loops and rolls, near misses,

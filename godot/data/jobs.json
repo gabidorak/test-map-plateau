@@ -40,5 +40,30 @@
     "spot_decay": 0.6,
     "decay": 0.85,
     "min_pay": 5
+  },
+  "fire": {
+    "about": "The firefighter job (scripts/online/fire_job.gd): each fire put out pays its kind's price (bin, grass, car, wood, building; a fire that spread from another times spread_share), + quick_bonus of it when the first water came within quick_base s + quick_speed m/s of the way from the nearest firefighter when it was lit (down to nothing at twice that; not for spread fires), shared by the firefighters on duty who sprayed it as their water on it (under min_share: nothing), each times up to owned for their own truck. Alarms: alarms_per_firefighter burning at once per firefighter on duty (max_alarms at most), the first alarm_first s after the first goes on duty, then alarm_gap s after one is lit or ends; kinds: how often each kind of spot is drawn.",
+    "bin": 300,
+    "grass": 380,
+    "car": 480,
+    "wood": 480,
+    "building": 650,
+    "spread_share": 0.5,
+    "quick_bonus": 0.5,
+    "quick_base": 40,
+    "quick_speed": 10,
+    "min_share": 0.05,
+    "owned": 1.5,
+    "alarms_per_firefighter": 1,
+    "max_alarms": 6,
+    "alarm_first": 10,
+    "alarm_gap": 45,
+    "kinds": {
+      "building": 0.3,
+      "car": 0.2,
+      "bin": 0.2,
+      "grass": 0.2,
+      "wood": 0.1
+    }
   }
 }
