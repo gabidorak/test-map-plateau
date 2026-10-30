@@ -44,7 +44,7 @@ extends Node
 ##   standing in a train sends its position in that car's frame, like in a bus. With the host's bot traffic off the
 ##   trains are stowed and their states go once a second.
 ## - Chat: a message goes to the host, which sends it to everyone with who said it. The host also sends everyone each
-##   player's ping to it every PING_EVERY s (the player list, game.gd Tab).
+##   player's ping to it and its tick rate every PING_EVERY s (the player list, game.gd Tab; the F3 overlay).
 ## - The host announces the game on the LAN (lan_discovery.gd), with its game mode, and sends newcomers the game mode
 ##   (game.gd makes it as Main/Mode before anything of the mode's comes in), the players, the vehicles, and the trees
 ##   bent and props knocked down at that moment (breakables.gd net_snapshot). A game mode's own messages
@@ -69,7 +69,7 @@ signal welcomed                             # client: the host's welcome came in
 const PORT := 7777                          # the host tries the next ones when it is taken
 const PORT_TRIES := 10
 const MAX_PLAYERS := 8
-const PROTOCOL := 18                        # bump when the messages change (build_id: other builds are refused anyway)
+const PROTOCOL := 19                        # bump when the messages change (build_id: other builds are refused anyway)
 const PLAYER_SEND_RATE := 60.0              # player states per second
 const SEATED_SEND_EVERY := 0.2              # s, those of a player driving or in a passenger seat (nothing to see)
 const CAR_SEND_RATE := 30.0                 # vehicle states per second
@@ -140,6 +140,9 @@ var _connect_t := -1.0                      # s since connecting, -1 when not wa
 var _welcome_left := {}                     # client, while joining: net id -> the host's snapshot entry not made yet
 var _pings := {}                            # client: peer id -> its round trip to the host (ms), from the host
 var _ping_t := 0.0
+var _server_tps := -1.0                     # the host's physics ticks a second, from the host; -1 until known
+var _tps_at := 0.0                          # host: when the ticks were last counted (s, _now), 0 before the first time
+var _tps_frames := 0                        # host: the physics frames then
 var _water_out := {}                        # "net id|section" -> [owner, impulse, weighted offset, weight, seconds]
 var _water_t := 0.0
 var _clock_offset := NAN                    # client: the host's clock minus ours (s), from the quickest arrival
@@ -333,6 +336,8 @@ func leave() -> void:
 	driver_of.clear()
 	_car_tracks.clear()
 	_pings.clear()
+	_server_tps = -1.0
+	_tps_at = 0.0
 	_held_players.clear()
 	_held_cars.clear()
 	_views.clear()
@@ -347,10 +352,11 @@ func _process(delta: float) -> void:
 		_ping_t += delta
 		if _ping_t >= PING_EVERY:
 			_ping_t = 0.0
+			_measure_tps()
 			var pings := {}
 			for id: int in players:
 				pings[id] = ping(id)
-			_ping_list.rpc(pings)
+			_ping_list.rpc(pings, _server_tps)
 	if _connect_t >= 0.0:
 		_connect_t += delta
 		if _connect_t > CONNECT_TIMEOUT:
@@ -665,8 +671,19 @@ func ping(id: int) -> int:
 
 
 @rpc("authority", "call_remote", "unreliable")
-func _ping_list(pings: Dictionary) -> void:
+func _ping_list(pings: Dictionary, tps: float) -> void:
 	_pings = pings
+	_server_tps = tps
+
+
+## Host: the physics ticks a second since the last call (the first call only starts counting).
+func _measure_tps() -> void:
+	var now := _now()
+	var frames := Engine.get_physics_frames()
+	if _tps_at > 0.0:
+		_server_tps = (frames - _tps_frames) / (now - _tps_at)
+	_tps_at = now
+	_tps_frames = frames
 
 
 ## Client: the host's clock `t` when it sent this. The quickest arrival gives the offset (it creeps back slowly, so
@@ -1246,12 +1263,14 @@ func _now() -> float:
 	return Time.get_ticks_usec() / 1e6
 
 
-## The F3 overlay (game.gd): frame rate, and for each other player the round trip to them, how late their states
-## arrive and how late they are shown.
+## The F3 overlay (game.gd): frame rate and the server's tick rate, and for each other player the round trip to them,
+## how late their states arrive and how late they are shown.
 func debug_text() -> String:
 	var text := "%d fps" % Engine.get_frames_per_second()
 	if not active:
 		return text
+	if _server_tps >= 0.0:
+		text += " · server %d tps" % roundi(_server_tps)
 	var peer := multiplayer.multiplayer_peer as ENetMultiplayerPeer
 	for id: int in _player_tracks:
 		var track: Track = _player_tracks[id]
