@@ -430,6 +430,8 @@ func _run_client() -> void:
 			"our message comes back through the host")
 	_check(await _until(func() -> bool: return net.ping(1) >= 0 and net.ping(net.me()) >= 0, 10.0),
 			"pings known here (host %d ms, us %d ms)" % [net.ping(1), net.ping(net.me())])
+	_check(await _until(func() -> bool: return " tps" in net.debug_text().get_slice("\n", 0), 5.0),
+			"F3 shows the server's tick rate (%s)" % net.debug_text().get_slice("\n", 0))
 	_key(KEY_TAB, true)
 	await process_frame                     # the list follows Tab in game.gd _process: physics frames may come first
 	await process_frame
