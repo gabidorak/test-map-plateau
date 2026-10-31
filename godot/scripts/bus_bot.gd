@@ -306,10 +306,11 @@ func _trailer_pose(front: Transform3D, d: float) -> Transform3D:
 		st += h2.distance_to(at(st)) - _trailer_reach
 	var a := at(st)
 	var ha := _surface(st, a)
-	var f := (hitch - Vector3(a.x, ha + _ride, -a.y)).normalized()
+	var above := Vector3(a.x, ha + _ride + _hitch.y, -a.y)      # the point of its frame over the axle, as high as the hitch
+	var f := (hitch - above).normalized()
 	var x := Vector3.UP.cross(f).normalized()
 	var basis := Basis(x, f.cross(x), f)
-	return Transform3D(basis, Vector3(a.x, ha + _ride, -a.y) - basis * Vector3(0.0, 0.0, _trailer_axle))
+	return Transform3D(basis, above - basis * Vector3(0.0, _hitch.y, _trailer_axle))
 
 
 # ---------------------------------------------------------------- driving
