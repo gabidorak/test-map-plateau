@@ -169,6 +169,23 @@ func _glide() -> void:
 			if b.s > s0[b][0] + 5.0 or b.route_index != s0[b][1] or b.state != 0:
 				on += 1
 	_check(gliding > 0 and on >= gliding * 0.6, "far from the player they glide along (%d of %d gliding moved on)" % [on, gliding])
+	# an articulated one's rear section stays on the road, along it: its axle at the front's height over the surface
+	var rears := 0
+	var worst_tilt := 0.0
+	var worst_gap := 0.0
+	for b: Object in _main.traffic.bots:
+		if b.gliding and not b.idle and b.state != b.STOWED and b.car.trailer:
+			rears += 1
+			var rear: Transform3D = b.car.trailer.global_transform
+			var axle: Vector3 = rear * Vector3(0.0, 0.0, b._trailer_axle)
+			var over: Vector3 = rear * (b._hitch - b.car.rear_offset)
+			var run := Vector2(over.x - axle.x, over.z - axle.z).length()
+			var slope: float = (b._ground(b.flat(over)) - b._ground(b.flat(axle))) / maxf(run, 0.1)
+			worst_tilt = maxf(worst_tilt, absf(rad_to_deg(atan2(over.y - axle.y - b._hitch.y, run) - atan(slope))))
+			worst_gap = maxf(worst_gap, over.distance_to(b.car.global_transform * b._hitch))
+	print("  rear sections gliding: %d, worst tilt %.2f deg, worst hitch gap %.3f m" % [rears, worst_tilt, worst_gap])
+	_check(rears == 0 or (worst_tilt < 3.0 and worst_gap < 0.3), "gliding, a rear section lies along the road and meets the hitch (%d, worst %.1f deg, %.2f m)" % [
+			rears, worst_tilt, worst_gap])
 
 
 ## Right indicator in, doors at the pole, left indicator out.
