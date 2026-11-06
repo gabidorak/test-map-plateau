@@ -7,6 +7,7 @@ Real map of the Saclay plateau (5.2 × 1.74 km: from Moulon and the Paris-Saclay
 Install [Godot 4.7](https://godotengine.org/download), then:
 
 ```
+python3 tools/map_data.py fetch      # after cloning and after pulls: the generated map (~1 GB download, see "Map data")
 cd godot
 godot --headless --path . --import   # once after cloning: imports the models (the import cache is not in the repo)
 godot --path .                       # play
@@ -151,6 +152,24 @@ IGN LiDAR and orthophotos, Mapillary and Panoramax photos and turns them into `g
 overrides file and the downloaded data) is **not published**, so the map cannot be regenerated from this repository.
 The sections below on the ground, trees, props, buildings, facade colours and landmarks describe how it was made;
 the files they mention under `pipeline/`, `overrides/`, `references/` and `data/` are not included.
+
+### Map data (not in git)
+
+The generated map (~1.9 GB: `godot/world/` heightmaps, ground and `world.json`, `godot/world/base/`,
+`godot/scenes/generated/neighborhood.tscn` and `meshes/`) changes at every map rebuild, so it lives on the
+[`map-data`](https://github.com/gabidorak/test-map-plateau/releases/tag/map-data) prerelease instead of the git
+history, and git ignores it. `map_data.lock` pins the version each commit uses. Python 3.8+, nothing to install:
+
+```
+python3 tools/map_data.py fetch          # after cloning and after each pull that changes map_data.lock
+python3 tools/map_data.py status         # does the map here match map_data.lock?
+python3 tools/map_data.py publish        # after rebuilding the map: uploads the changed shards (needs gh with write
+                                         # access) and rewrites map_data.lock: commit it with the code that uses it
+python3 tools/map_data.py install-hook   # once per clone: refuses to push map edits that were not published
+```
+
+`fetch` downloads only the shards that changed and never overwrites local map edits that were not published
+(`--force` does). `prune --yes` deletes the release's assets that no `map_data.lock` in the history uses.
 
 Models and Godot tools (the generated scene can be rebuilt from `godot/world/`):
 

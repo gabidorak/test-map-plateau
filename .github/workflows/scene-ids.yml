@@ -13,6 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # the generated scene is map data (tools/map_data.py), not in git
+      - name: Map data (generated scene)
+        run: python3 -I tools/map_data.py fetch --only neighborhood.tscn
+
       - name: Check scene ids
         working-directory: godot
         run: python3 tools/check_scene_ids.py .

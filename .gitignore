@@ -17,3 +17,13 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# Generated map data: on the "map-data" release, pinned by map_data.lock (tools/map_data.py fetch / publish)
+/godot/world/world.json
+/godot/world/ground*
+/godot/world/heightmap*
+/godot/world/base/*
+!/godot/world/base/.gdignore
+/godot/scenes/generated/neighborhood.tscn
+/godot/scenes/generated/meshes/
+/.map_data_state.json
