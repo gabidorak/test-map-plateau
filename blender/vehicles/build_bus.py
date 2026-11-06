@@ -105,6 +105,7 @@ class Section:
     text_y: float = None            # "véhicule 100% gaz naturel" in the white band, on both sides
     rest_y: float = None            # pushchair / wheelchair area with a padded rest on the left
     suffix: str = ""                # added to the names of the section's indicators
+    door_count: int = 0             # doors of the whole bus (the nose's door buttons), set by main()
     colliders: list = field(default_factory=list)   # (centre, size, door index in self.doors or None)
 
     @property
@@ -232,6 +233,17 @@ MATERIALS = {
     "button_red": ("#D62828", 0.0, 0.35, 0.4),
     "lamp_white": ("#FFFFFF", 0.0, 0.5, 2.5),
     "dash": ("#2A2D33", 0.0, 0.6, 0.0),
+    "dash_pad": ("#3A3F47", 0.0, 0.75, 0.0),
+    "gauge_face": ("#0D0F12", 0.0, 0.4, 0.0),
+    "gauge_mark": ("#F4F6F8", 0.0, 0.4, 0.8),
+    "needle": ("#FF5A1F", 0.0, 0.35, 1.2),
+    "lcd": ("#6FC8F0", 0.0, 0.3, 1.0),
+    "lcd_dark": ("#0E2233", 0.0, 0.3, 0.25),
+    "telltale": ("#0F3318", 0.0, 0.4, 0.0),
+    "button_door": ("#1E6B35", 0.0, 0.35, 0.0),
+    "button_hazard": ("#9E1F1A", 0.0, 0.35, 0.0),
+    "button_yellow": ("#D9A400", 0.0, 0.4, 0.0),
+    "switch_grey": ("#5A6068", 0.0, 0.5, 0.0),
     "validator": ("#8A919C", 0.2, 0.45, 0.0),
     "screen_green": ("#3DDC84", 0.0, 0.3, 1.5),
     "rubber": ("#1E2023", 0.0, 0.85, 0.0),
@@ -575,6 +587,199 @@ def indicators(s: Section) -> list:
     return objs
 
 
+WHEEL_AXIS = Vector((0, 0.55, 0.84)).normalized()      # steering column: up, leaning back towards the driver
+SPEEDO_MAX = 100.0                  # km/h at the end of the speedometer's sweep
+SPEEDO_SWEEP = 270.0                # degrees, clockwise from 0 km/h at half past seven
+
+
+def wheel_centre(s: Section) -> Vector:
+    return Vector((s.driver[0], s.cab[1] - 0.95, 1.16))
+
+
+def driver_eye(s: Section) -> Vector:
+    return Vector((s.driver[0], s.driver[1] - 0.05, FLOOR_Z + 1.45))
+
+
+def facing(centre, eye) -> Matrix:
+    """Frame of a panel at `centre` turned towards `eye`: local Z towards the eye, X the driver's right (-X), Y up."""
+    c = Vector(centre)
+    z = (Vector(eye) - c).normalized()
+    x = Vector((-1, 0, 0))
+    x = (x - z * z.dot(x)).normalized()
+    y = z.cross(x)
+    return Matrix(((x.x, y.x, z.x, c.x), (x.y, y.y, z.y, c.y), (x.z, y.z, z.z, c.z), (0, 0, 0, 1)))
+
+
+def column_frame(s: Section) -> Matrix:
+    """The steering wheel's frame: local Z up the column towards the driver, +Y 12 o'clock, +X the driver's right."""
+    return Matrix.Translation(wheel_centre(s)) @ WHEEL_AXIS.to_track_quat("Z", "Y").to_matrix().to_4x4()
+
+
+def prism(name, pts, x0, x1, m) -> bpy.types.Object:
+    """Side profile pts [(y, z)] (a convex polygon) extruded across from x0 to x1."""
+    bm = bmesh.new()
+    a = [bm.verts.new((x0, y, z)) for y, z in pts]
+    b = [bm.verts.new((x1, y, z)) for y, z in pts]
+    bm.faces.new(a)
+    bm.faces.new(list(reversed(b)))
+    for i in range(len(pts)):
+        j = (i + 1) % len(pts)
+        bm.faces.new((a[i], b[i], b[j], a[j]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return new_obj(name, bm, [m])
+
+
+def flat(name, pts, m, z=0.0) -> bpy.types.Object:
+    """Flat polygon [(x, y)] (may be concave) facing local +Z."""
+    if sum(pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1] for i in range(len(pts))) < 0:
+        pts = list(reversed(pts))
+    bm = bmesh.new()
+    f = bm.faces.new([bm.verts.new((x, y, z)) for x, y in pts])
+    bmesh.ops.triangulate(bm, faces=[f])
+    return new_obj(name, bm, [m])
+
+
+def pivoted(objs: list, name: str, frame: Matrix) -> bpy.types.Object:
+    """Joins parts built around the local origin into one object named `name`, its origin at `frame`."""
+    o = objs[0]
+    if len(objs) > 1:
+        join(o, objs)
+    o.data.transform(Matrix.Translation(o.location))
+    o.matrix_world = frame
+    o.name = o.data.name = name
+    return o
+
+
+def arrow(name, x, y, left: bool, m, size=0.012, z=0.0045) -> bpy.types.Object:
+    k = -1 if left else 1
+    pts = [(k * size, 0), (k * 0.1 * size, 0.8 * size), (k * 0.1 * size, 0.35 * size), (-k * size, 0.35 * size),
+           (-k * size, -0.35 * size), (k * 0.1 * size, -0.35 * size), (k * 0.1 * size, -0.8 * size)]
+    return flat(name, [(x + px, y + py) for px, py in pts], m, z)
+
+
+def dial(x, y, r, needle_deg=None) -> list:
+    """Round gauge in a panel's local frame (face at z = 0): chrome ring, black face, white ticks over SPEEDO_SWEEP,
+    and a fixed needle at needle_deg (fraction of the sweep) if given."""
+    parts = [cylinder("gauge_ring", (x, y, 0.004), (0, 0, 1), r + 0.008, 0.008, "rim", 32),
+             cylinder("gauge_face", (x, y, 0.0075), (0, 0, 1), r, 0.004, "gauge_face", 32)]
+    for k in range(9):
+        a = math.radians(225 - SPEEDO_SWEEP * k / 8)
+        d = Vector((math.cos(a), math.sin(a), 0))
+        parts.append(bar("tick", Vector((x, y, 0.0098)) + d * (r - 0.016), Vector((x, y, 0.0098)) + d * (r - 0.004),
+                         0.004 if k % 2 else 0.006, 0.001, "gauge_mark"))
+    if needle_deg is not None:
+        a = math.radians(225 - SPEEDO_SWEEP * needle_deg)
+        parts.append(bar("needle", (x, y, 0.0105), (x + math.cos(a) * (r - 0.012), y + math.sin(a) * (r - 0.012), 0.0105),
+                         0.004, 0.0015, "needle"))
+    parts.append(cylinder("needle_hub", (x, y, 0.0125), (0, 0, 1), 0.007, 0.004, "plastic_grey", 12))
+    return parts
+
+
+def dash_frames(s: Section) -> dict:
+    eye = driver_eye(s)
+    return {"pod": facing((s.driver[0], s.y0 + 0.30, 1.25), eye),
+            "switches": facing((0.21, s.y0 + 0.44, 1.10), eye),
+            "terminal": facing((0.15, s.y0 + 0.28, 1.29), eye)}
+
+
+def dashboard(s: Section) -> list:
+    """The fixed parts of the driver's dashboard (joined into the body): the dash itself, below the steering wheel
+    so the wheel turns clear of it, the instrument pod above the wheel's rim (speedometer, air pressure gauge,
+    screen), the column shroud with the wiper stalk, the switch console on the door side and the SAEIV terminal
+    screen. The moving and lit parts are dash_parts()'."""
+    y0, cab = s.y0, s.cab
+    x0, x1 = cab[0] + 0.02, HW - 0.1
+    parts = [prism("dash", [(y0 + 0.10, FLOOR_Z), (y0 + 0.10, 1.04), (y0 + 0.40, 1.07), (y0 + 0.52, 1.055),
+                            (y0 + 0.58, 1.01), (y0 + 0.60, 0.93), (y0 + 0.57, 0.64), (y0 + 0.50, FLOOR_Z)], x0, x1, "dash"),
+             prism("dash_top", [(y0 + 0.10, 1.035), (y0 + 0.10, 1.05), (y0 + 0.40, 1.08), (y0 + 0.525, 1.065),
+                                (y0 + 0.59, 1.012), (y0 + 0.58, 1.005), (y0 + 0.52, 1.052), (y0 + 0.40, 1.066)],
+                   x0 - 0.005, x1 + 0.005, "dash_pad")]
+    f = dash_frames(s)
+
+    # instrument pod: housing, hood, black face, speedometer (its needle is dash_parts'), air pressure, screen
+    pod = [box("pod", (0, 0, -0.045), (0.50, 0.19, 0.09), "dash"),
+           box("pod_hood", (0, 0.105, 0.01), (0.53, 0.025, 0.11), "dash_pad"),
+           box("pod_face", (0, 0, 0.001), (0.48, 0.17, 0.002), "plastic_black"),
+           box("pod_lcd", (0, -0.012, 0.003), (0.125, 0.08, 0.004), "lcd_dark"),
+           box("pod_lcd_bar", (0, -0.042, 0.0055), (0.10, 0.004, 0.001), "lcd")]
+    gear = text("D", 0.032, "lcd", depth=0.001)
+    gear.location = (-width(gear) / 2, -0.024, 0.005)
+    pod.append(gear)
+    pod += [box("pod_cheek", (k * 0.255, 0.012, 0.005), (0.022, 0.21, 0.10), "dash_pad") for k in (-1, 1)]
+    pod += dial(-0.15, -0.005, 0.062) + dial(0.15, -0.005, 0.062, needle_deg=0.62)
+    parts += place(pod, f["pod"])
+    parts.append(bar("pod_stem", f["pod"] @ Vector((0, -0.04, -0.07)), (s.driver[0], y0 + 0.30, 1.04), 0.16, 0.06, "dash"))
+
+    # column shroud (under the wheel) and the wiper stalk on its right
+    col = [box("shroud", (0, 0, -0.20), (0.11, 0.13, 0.30), "plastic_black"),
+           box("shroud_top", (0, 0, -0.055), (0.13, 0.15, 0.03), "plastic_black"),
+           bar("wiper_stalk", (0.06, 0.0, -0.09), (0.21, -0.01, -0.06), 0.016, 0.016, "plastic_black"),
+           cylinder("wiper_knob", (0.215, -0.01, -0.06), (1, 0, 0), 0.014, 0.04, "plastic_grey", 12)]
+    parts += place(col, column_frame(s))
+
+    # switch console on the door side: door buttons and the hazard button are dash_parts'; rocker switches, the
+    # kneeling button, door numbers
+    sw = [box("console", (0, 0, -0.035), (0.27, 0.19, 0.07), "dash"),
+          box("console_face", (0, 0, 0.001), (0.25, 0.17, 0.002), "plastic_black"),
+          box("kneel", (-0.095, -0.068, 0.006), (0.03, 0.022, 0.01), "button_yellow")]
+    for x in (-0.09, -0.05, 0.05, 0.09):
+        sw += [box("switch", (x, 0.05, 0.005), (0.022, 0.034, 0.008), "switch_grey"),
+               box("switch_lamp", (x, 0.062, 0.0095), (0.012, 0.004, 0.001), "lcd")]
+    sw += [cylinder("bezel", (x, -0.025, 0.004), (0, 0, 1), 0.021, 0.008, "rim", 20) for x, _ in door_button_spots(s)]
+    for x, n in door_button_spots(s):
+        t = text(str(n), 0.016, "logo_white", depth=0.001)
+        t.location = (x - width(t) / 2, 0.005, 0.002)
+        sw.append(t)
+    sw.append(box("hazard_bezel", (0, 0.05, 0.004), (0.042, 0.042, 0.008), "rim"))
+    parts += place(sw, f["switches"])
+
+    # SAEIV terminal (the operator's screen: line, stops, messages) on a post right of the pod
+    term = [box("terminal", (0, 0, -0.022), (0.21, 0.14, 0.04), "dash"),
+            box("terminal_screen", (0, 0.005, 0.0), (0.17, 0.10, 0.004), "lcd_dark"),
+            box("terminal_header", (0, 0.043, 0.0025), (0.17, 0.018, 0.001), "screen_green")]
+    for k, w in enumerate((0.12, 0.09, 0.13)):            # text lines: next stops
+        term.append(box("terminal_line", (-0.075 + w / 2, 0.016 - k * 0.022, 0.0025), (w, 0.007, 0.001), "lcd"))
+    term += [box("terminal_key", (-0.06 + k * 0.04, -0.058, 0.0), (0.028, 0.012, 0.006), "switch_grey") for k in range(4)]
+    parts += place(term, f["terminal"])
+    parts.append(bar("terminal_post", f["terminal"] @ Vector((0, -0.05, -0.04)), (0.15, y0 + 0.24, 1.05), 0.03, 0.03, "plastic_black"))
+    return parts
+
+
+def door_button_spots(s: Section) -> list:
+    """[(x in the switch console's frame, door number)]: one door button per door of the whole bus."""
+    n = s.door_count
+    return [((i - (n - 1) / 2) * 0.05, i + 1) for i in range(n)]
+
+
+def dash_parts(s: Section) -> list:
+    """The dashboard's moving and lit parts, objects of their own for car.gd: the speedometer needle (spins about
+    its local Z = glTF Y, clockwise seen from the driver as the speed rises), the indicator stalk (on the column's
+    left, turns about the column's axis: down for left, up for right), the green arrow tell-tales, the door buttons
+    (lit while the doors are open) and the hazard button (blinks with the hazard lights)."""
+    f = dash_frames(s)
+    a = math.radians(225)
+    r = 0.062 - 0.012
+    needle = pivoted([bar("needle", (-0.012 * math.cos(a), -0.012 * math.sin(a), 0), (r * math.cos(a), r * math.sin(a), 0),
+                          0.0045, 0.0015, "needle")], "needle_speed", f["pod"] @ Matrix.Translation((-0.15, -0.005, 0.0105)))
+    stalk = pivoted([bar("stalk", (0, 0, 0), (-0.17, -0.01, 0.03), 0.016, 0.016, "plastic_black"),
+                     cylinder("stalk_knob", (-0.175, -0.01, 0.031), (1, 0, 0), 0.014, 0.045, "plastic_grey", 12),
+                     cylinder("stalk_ring", (-0.155, -0.01, 0.027), (1, 0, 0), 0.0155, 0.008, "indicator", 12)],
+                    "signal_stalk", column_frame(s) @ Matrix.Translation((-0.055, 0.0, -0.09)))
+    tells = []
+    for side, x in (("left", -0.045), ("right", 0.045)):
+        t = arrow(f"telltale_{side}", x, 0.062, side == "left", "telltale")
+        t.matrix_world = f["pod"]
+        t.name = t.data.name = f"telltale_{side}"
+        tells.append(t)
+    caps = [cylinder("door_btn", (x, -0.025, 0.009), (0, 0, 1), 0.016, 0.008, "button_door", 20)
+            for x, _ in door_button_spots(s)]
+    buttons = pivoted(caps, "door_buttons", f["switches"])
+    hz = [box("hazard", (0, 0.05, 0.009), (0.034, 0.034, 0.008), "button_hazard"),
+          flat("hazard_mark", [(-0.011, 0.043), (0.011, 0.043), (0, 0.062)], "logo_white", 0.0132)]
+    hazard = pivoted(hz, "hazard_button", f["switches"])
+    return [needle, stalk, *tells, buttons, hazard]
+
+
 def steering_wheel(s: Section) -> bpy.types.Object:
     """Rim, three spokes (3, 6 and 9 o'clock seen from the seat) and hub around the local Z axis, tilted towards the
     driver; local +Y is 12 o'clock, +X the driver's right. Light spokes and hub and a yellow band at 12 o'clock on the
@@ -602,8 +807,7 @@ def steering_wheel(s: Section) -> bpy.types.Object:
         parts.append(bar("spoke", (0, 0, 0.01), (R * math.cos(t), R * math.sin(t), 0), 0.045, 0.016, "plastic_grey"))
     join(rim, parts)
     rim.name = rim.data.name = "steering"
-    axis = Vector((0, 0.55, 0.84)).normalized()        # up, leaning back towards the driver
-    rim.matrix_world = Matrix.Translation((s.driver[0], s.cab[1] - 0.95, 1.16)) @ axis.to_track_quat("Z", "Y").to_matrix().to_4x4()
+    rim.matrix_world = column_frame(s)
     return rim
 
 
@@ -796,10 +1000,8 @@ def interior(s: Section) -> list:
     # driver cab: dashboards, partition with glass top, cab door, seat; validator by the front door
     if s.nose:
         cab = s.cab
-        parts.append(box("dash", ((cab[0] + HW - 0.1) / 2, y0 + 0.42, (FLOOR_Z + 1.12) / 2), (HW - 0.1 - cab[0], 0.66, 1.12 - FLOOR_Z), "dash"))
+        parts += dashboard(s)
         parts.append(box("dash_r", (-(HW - 0.12) / 2, y0 + 0.30, (FLOOR_Z + 1.02) / 2), (HW - 0.12, 0.42, 1.02 - FLOOR_Z), "dash"))
-        parts.append(box("dash_screen", (s.driver[0], y0 + 0.75, 1.13), (0.36, 0.02, 0.12), "screen_green"))
-        parts.append(bar("column", (s.driver[0], y0 + 0.70, 0.95), (s.driver[0], cab[1] - 0.95, 1.14), 0.07, 0.07, "dash"))
         parts.append(box("partition", ((cab[0] + IN_HW) / 2, cab[1], (FLOOR_Z + 1.25) / 2), (IN_HW - cab[0], 0.05, 1.25 - FLOOR_Z), "panel"))
         parts.append(box("partition_glass", ((cab[0] + IN_HW) / 2 - 0.005, cab[1], 1.605), (IN_HW - cab[0] - 0.02, 0.015, 0.69), "glass"))
         door_a = y0 + 0.75                  # cab door, from the dashboard to the partition
@@ -1122,6 +1324,8 @@ def main() -> None:
         bpy.data.objects.remove(o)
     objs, per_section, doors = [], [], []
     for s in sections:
+        s.door_count = sum(len(t.doors) for t in sections)
+    for s in sections:
         own = [body(s)]
         for y, kind, stem in s.axles:
             w = WHEEL_W[kind]
@@ -1136,6 +1340,7 @@ def main() -> None:
         if s.nose:
             own.append(steering_wheel(s))
             own.append(mirrors(s))
+            own += dash_parts(s)
         objs += own
         per_section.append(own)
         doors.append(door_infos)
@@ -1155,11 +1360,14 @@ def main() -> None:
         "floor_y": FLOOR_Z,
         **section_layout(front, (front.y0, split[0]), doors[0]),
         "driver_seat": gd((dx, dy, FLOOR_Z + 0.47)),
-        "driver_eye": gd((dx, dy - 0.05, FLOOR_Z + 1.45)),
+        "driver_eye": gd(driver_eye(front)),
         "driver_exit": gd((-0.45, dy, FLOOR_Z + 0.05)),
         "indicators": {side: [n for n in lamps if n.startswith("indicator_" + side)] for side in ("left", "right")},
         "brake_lights": ["brake_lights"],
         "steering_wheel": "steering",
+        "dash": {"telltales": {"left": "telltale_left", "right": "telltale_right"}, "stalk": "signal_stalk",
+                 "needle": "needle_speed", "speedo_max": SPEEDO_MAX, "speedo_sweep": SPEEDO_SWEEP,
+                 "door_buttons": ["door_buttons"], "hazard_button": "hazard_button"},
     }
     if len(sections) > 1:
         rear = sections[1]

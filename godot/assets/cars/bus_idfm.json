@@ -477,5 +477,19 @@
  "brake_lights": [
   "brake_lights"
  ],
- "steering_wheel": "steering"
+ "steering_wheel": "steering",
+ "dash": {
+  "telltales": {
+   "left": "telltale_left",
+   "right": "telltale_right"
+  },
+  "stalk": "signal_stalk",
+  "needle": "needle_speed",
+  "speedo_max": 100.0,
+  "speedo_sweep": 270.0,
+  "door_buttons": [
+   "door_buttons"
+  ],
+  "hazard_button": "hazard_button"
+ }
 }

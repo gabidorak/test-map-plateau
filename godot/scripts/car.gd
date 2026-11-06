@@ -241,7 +241,7 @@ var driving := false
 var model_name := ""
 var half_extents := Vector3.ONE             # of the body box, in the car frame (for getting out)
 var camera: Camera3D
-var indicator := 0                          # 1 left, -1 right (same sign as steering), 0 off
+var indicator := 0                          # 1 left, -1 right (same sign as steering), 2 hazard lights, 0 off
 var doors_open := false
 var has_doors := false
 var interior := AABB()                      # walkable volume in the car frame (size 0: not walkable)
@@ -309,6 +309,17 @@ var _carry_ticks := 0                       # ...set again this many ticks (the 
 var _lamp_mats := {}                        # "indicator"/"brake" -> [off, on]
 var _steering_wheel: Node3D
 var _steering_rest := Transform3D.IDENTITY
+var _telltales := {}                        # a bus dash's green arrows: side (1 left, -1 right) -> mesh
+var _stalk: Node3D                          # its indicator stalk, turned about the column for a signal
+var _stalk_rest := Transform3D.IDENTITY
+var _needle: Node3D                         # its speedometer needle, clockwise (seen from the driver) with the speed
+var _needle_rest := Transform3D.IDENTITY
+var _needle_per_speed := 0.0                # rad per m/s
+var _needle_max := 0.0                      # rad at the end of the dial
+var _needle_angle := NAN
+var _door_buttons: Array[MeshInstance3D] = []   # lit while the doors are open
+var _hazard_button: MeshInstance3D          # blinks with the hazard lights
+var _dash_mats := {}                        # "telltale", "door", "hazard" -> lit material
 var _posed_turn := NAN                      # steering wheel turn when last posed (and whether the hands were)
 var _posed_hands := false
 var _doors: Array[Dictionary] = []          # {leaves, closed (positions), dirs (slide sign), slide, shape}
@@ -715,6 +726,8 @@ func _build_cab(m: Node3D, cab: Dictionary) -> void:
 		if _steering_wheel is MeshInstance3D:
 			# rim in the local XZ plane: half the box minus the tube radius
 			_grip_radius = (_steering_wheel as MeshInstance3D).get_aabb().size.x * 0.5 * t.basis.x.length() - 0.024
+	if cab.has("dash"):
+		_build_dash(m, cab["dash"])
 	_cab_camera = Camera3D.new()
 	_cab_camera.fov = 75.0
 	_cab_camera.near = 0.05
@@ -723,6 +736,48 @@ func _build_cab(m: Node3D, cab: Dictionary) -> void:
 	_cab_camera.rotation = Vector3(-0.27 + _cab_pitch, PI, 0.0)
 	add_child(_cab_camera)
 	_build_driver()
+
+
+## A bus dashboard's moving and lit parts (the layout's "dash", see blender/vehicles/build_bus.py dash_parts): the
+## indicator tell-tales and stalk, the speedometer needle, the door buttons and the hazard button.
+func _build_dash(m: Node3D, dash: Dictionary) -> void:
+	var glow := func(c: Color, energy: float) -> StandardMaterial3D:
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = c
+		mat.emission_enabled = true
+		mat.emission = c
+		mat.emission_energy_multiplier = energy
+		return mat
+	_dash_mats = {"telltale": glow.call(Color(0.2, 1.0, 0.3), 4.0), "door": glow.call(Color(0.25, 1.0, 0.4), 3.0),
+			"hazard": glow.call(Color(1.0, 0.25, 0.1), 4.0)}
+	for side: int in [1, -1]:
+		var t := _find_node(m, dash["telltales"]["left" if side == 1 else "right"]) as MeshInstance3D
+		if t:
+			_telltales[side] = t
+	_stalk = _find_node(m, dash.get("stalk", "")) as Node3D
+	if _stalk:
+		_stalk_rest = _stalk.transform
+	_needle = _find_node(m, dash.get("needle", "")) as Node3D
+	if _needle:
+		_needle_rest = _needle.transform
+		_needle_max = deg_to_rad(float(dash["speedo_sweep"]))
+		_needle_per_speed = _needle_max / (float(dash["speedo_max"]) / 3.6)
+	for n: String in dash.get("door_buttons", []):
+		var b := _find_node(m, n) as MeshInstance3D
+		if b:
+			_door_buttons.append(b)
+	_hazard_button = _find_node(m, dash.get("hazard_button", "")) as MeshInstance3D
+
+
+## The speedometer needle, only while someone looks at it from the cab.
+func _update_dash() -> void:
+	if _needle == null:
+		return
+	var a := minf(absf(speed()) * _needle_per_speed, _needle_max)
+	if absf(a - _needle_angle) < 0.003:
+		return
+	_needle_angle = a
+	_needle.transform = _needle_rest * Transform3D(Basis(Vector3.UP, -a), Vector3.ZERO)
 
 
 ## Walkable hull of one section (`body`: this car or its rear section) from its layout entry: a StaticBody3D on the
@@ -1937,6 +1992,9 @@ func set_indicator(side: int) -> void:
 	if side != 0 and driving:
 		audio.play("tick")
 	_light_indicators(side != 0)
+	if _stalk:      # down for left, up for right (as the wheel turns); the hazard lights are a button
+		_stalk.transform = _stalk_rest * Transform3D(Basis(Vector3.UP, 0.2 * side if absi(side) == 1 else 0.0),
+				Vector3.ZERO)
 
 
 func set_doors(open: bool) -> void:
@@ -1944,6 +2002,8 @@ func set_doors(open: bool) -> void:
 		return
 	doors_open = open
 	audio.play("door_open" if open else "door_close")
+	for b in _door_buttons:
+		b.material_override = _dash_mats["door"] if open else null
 
 
 ## Forward speed in m/s (negative when reversing).
@@ -1991,6 +2051,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("signal_right"):
 		set_indicator(0 if indicator == -1 else -1)
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("hazards"):
+		set_indicator(0 if indicator == 2 else 2)
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("doors"):
 		set_doors(not doors_open)
@@ -2240,8 +2303,8 @@ func _update_indicator(delta: float) -> void:
 	if indicator == 0:
 		return
 	# self-cancel once the wheel has turned the signalled way and come back (the driver's peer does it for remote ones)
-	if remote or pilot:
-		pass                                # the bot switches them off itself
+	if remote or pilot or indicator == 2:
+		pass                                # the bot switches them off itself; the hazard lights stay on
 	elif steering * indicator > 0.25:
 		_signal_armed = true
 	elif _signal_armed and steering * indicator < 0.04:
@@ -2258,8 +2321,13 @@ func _update_indicator(delta: float) -> void:
 
 func _light_indicators(on: bool) -> void:
 	for side in [1, -1]:
+		var lit: bool = on and (side == indicator or indicator == 2)
 		for lamp: MeshInstance3D in _lamps[side]:
-			lamp.material_override = _lamp_mats["indicator"][1 if on and side == indicator else 0]
+			lamp.material_override = _lamp_mats["indicator"][1 if lit else 0]
+		if _telltales.has(side):
+			_telltales[side].material_override = _dash_mats["telltale"] if lit else null
+	if _hazard_button:
+		_hazard_button.material_override = _dash_mats["hazard"] if on and indicator == 2 else null
 
 
 func _update_doors(delta: float) -> void:
@@ -2286,6 +2354,8 @@ func _process(delta: float) -> void:
 		_arm.set_physics_process_internal(in_use)
 	if in_use:
 		_update_camera(delta)
+		if cab_view:
+			_update_dash()
 
 
 ## True when the camera is within `d` m (or there is none: tools without one see everything).

@@ -769,7 +769,10 @@ func _process(delta: float) -> void:
 	elif driving:
 		var arrows := ["  ", "  "]
 		if driving.indicator != 0 and fmod(Time.get_ticks_msec() / 1000.0, Car.BLINK) < Car.BLINK * 0.5:
-			arrows[0 if driving.indicator == 1 else 1] = "◀" if driving.indicator == 1 else "▶"
+			if driving.indicator == 2:
+				arrows = ["◀", "▶"]
+			else:
+				arrows[0 if driving.indicator == 1 else 1] = "◀" if driving.indicator == 1 else "▶"
 		var line := "%s  %3d km/h   gear %s  %s" % [arrows[0], roundi(absf(driving.speed()) * 3.6),
 				"R" if driving.speed() < -0.5 else "D" if driving.audio.kind == "electric"
 				else str(driving.audio.gear + 1), arrows[1]]
@@ -1886,9 +1889,9 @@ func _update_help() -> void:
 				k.call("toggle_view"), k.call("reset_vehicle")]) + "%s get off (into the water: swim) · %s" % [
 				k.call("exit_vehicle"), common]
 	elif driving:
-		_help.text = ("DRIVE · %s throttle, %s brake then reverse, %s/%s steer · %s/%s turn signals · %s horn · " % [
+		_help.text = ("DRIVE · %s throttle, %s brake then reverse, %s/%s steer · %s/%s turn signals · %s hazard lights · %s horn · " % [
 				k.call("throttle"), k.call("brake"), k.call("steer_left"), k.call("steer_right"), k.call("signal_left"),
-				k.call("signal_right"), k.call("horn")]) + "%s headlights · %s (held) drift\n" % [k.call("headlights"),
+				k.call("signal_right"), k.call("hazards"), k.call("horn")]) + "%s headlights · %s (held) drift\n" % [k.call("headlights"),
 				k.call("drift")] + \
 				"%s · wheel zoom%s · %s back on wheels · %s%s %s · %s race (in a start circle)\n%s" % [look,
 				" (all the way in: cab view)" if driving.has_cab() else "", k.call("reset_vehicle"),
