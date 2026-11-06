@@ -900,6 +900,7 @@ func _car_control(net_id: String, owner_id: int, driver_id: int) -> void:
 			_welcome_left[net_id][2] = owner_id
 			_welcome_left[net_id][3] = driver_id
 		return
+	var was_owner: int = owner_of.get(net_id, 0)
 	owner_of[net_id] = owner_id
 	driver_of[net_id] = driver_id
 	if owner_id == me() and car.remote:
@@ -911,6 +912,11 @@ func _car_control(net_id: String, owner_id: int, driver_id: int) -> void:
 		_car_tracks.erase(net_id)
 	elif owner_id != me() and not car.remote:
 		car.set_remote(true)
+		_car_tracks[net_id] = Track.new(CAR_SEND_RATE)
+	elif owner_id != me() and owner_id != was_owner:
+		# simulated elsewhere still, by another peer now: its states come stamped with that peer's clock, which may
+		# be behind the old owner's (a client's vs a long-running server's): kept, the old ones would turn them all
+		# away (Track.add) and the vehicle would stay where it was here
 		_car_tracks[net_id] = Track.new(CAR_SEND_RATE)
 	_show_driver(net_id)
 	if driver_id == me() and _pending_drive == net_id:

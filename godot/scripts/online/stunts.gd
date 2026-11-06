@@ -51,7 +51,7 @@ const SPEED_SLACK := 3.0                    # ...+ this, m/s...
 const TOO_FAST := 0.5                       # ...for this many s
 const VOID := 5.0                           # s without stunts after either
 const NEAR_SPEED := 8.0                     # near misses: as bus_job.gd's
-const NEAR_REL := 8.0
+const NEAR_ONCOMING := -0.5                 # (only vehicles going the other way)
 const NEAR_GAP := 0.8
 const NEAR_AGAIN := 10.0
 const TOP_AGAIN := 0.7                      # share of the top speed to drop under before top speed counts again
@@ -333,7 +333,7 @@ func _near_misses(r: Ride, car: Car) -> void:
 		if c.global_position.distance_to(mid) > 25.0:
 			continue
 		var cv: Vector2 = BusBot.velocity_of(c)
-		if cv.length() < 2.0 or (Vector2(r.vel.x, -r.vel.z) - cv).length() < NEAR_REL:
+		if cv.length() < 2.0 or Vector2(r.vel.x, -r.vel.z).normalized().dot(cv.normalized()) >= NEAR_ONCOMING:
 			continue
 		if mine.is_empty():
 			mine = BusJob._rects(car)
