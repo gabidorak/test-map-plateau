@@ -1,7 +1,8 @@
 @tool
 extends RefCounted
 ## Builds res://scenes/generated/neighborhood.tscn from the pipeline output in res://world/ (and the railway,
-## world/rail.json: builder/rail_builder.gd; the building interiors, world/interiors.json: builder/interior_builder.gd).
+## world/rail.json: builder/rail_builder.gd, Massy-Palaiseau's station: builder/massy_builder.gd; the building
+## interiors, world/interiors.json: builder/interior_builder.gd).
 ## Run from the editor (Project > Tools > Rebuild Plateau world) or headless via tools/build_world.gd.
 
 const GroundBuilder = preload("res://scripts/builder/ground_builder.gd")
@@ -12,6 +13,7 @@ const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
 const FarBuilder = preload("res://scripts/builder/far_builder.gd")
 const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
 const BridgeBuilder = preload("res://scripts/builder/bridge_builder.gd")
+const MassyBuilder = preload("res://scripts/builder/massy_builder.gd")
 const InteriorBuilder = preload("res://scripts/builder/interior_builder.gd")
 const Water = preload("res://scripts/water.gd")
 const GroundHeights = preload("res://scripts/ground_heights.gd")
@@ -79,6 +81,7 @@ func build_and_save() -> Error:
 	if err != OK:
 		root.free()
 		return err
+	MassyBuilder.new().build(root, world, heights, MESH_DIR)     # Massy-Palaiseau's station (rail.json massy)
 	var collision := CollisionBuilder.new()
 	collision.terrain(root, world, heights, MESH_DIR)
 	collision.boundary(root, world)

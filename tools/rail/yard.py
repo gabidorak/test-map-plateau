@@ -3,7 +3,8 @@ track spacing stops fitting (Massy-Palaiseau: four platform tracks, the terminus
 the RER C beside), every track is a line of its own.
 
 - Tracks: the OSM railway tracks inside the map's ground (world.json meta.data_area) that the alignment does not
-  carry, merged between switches into lines, resampled every metre and smoothed (OSM draws them in kinks); the RER B's
+  carry and that are not in a tunnel (the TGV line runs under Massy's bus station: its rails were drawn on the
+  bus lanes), merged between switches into lines, resampled every metre and smoothed (OSM draws them in kinks); the RER B's
   tracks 1 and 2 continue the alignment's from its end (the first point is the alignment track's, the shape eases onto
   OSM's over BLEND m) and run on straight past the OSM data so that hidden trains can start there. Tracks running
   alongside the alignment (within ALONG m of its tracks: they would stand in its formation) are left out.
@@ -146,6 +147,8 @@ def build(osm: dict, A: rg.Alignment, spacing: float, rail_above: float, H: rg.H
     for wid, w in osm["ways"].items():
         t = w.get("tags", {})
         if t.get("railway") not in ("rail", "light_rail") or wid in main_ids or "geometry" not in w:
+            continue
+        if t.get("tunnel") == "yes":            # under the ground (the TGV line under Massy's bus station): not drawn
             continue
         p = way_line(w)
         ln = LineString(p)

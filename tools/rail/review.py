@@ -19,7 +19,8 @@ import railgeo as rg
 
 ZONE_COLOURS = {"trackbed": (120, 112, 104), "platform": (70, 74, 82), "slope": (196, 170, 120),
                 "landing": (170, 150, 120), "platform_blend": (150, 150, 140), "stairwell": (230, 120, 40),
-                "road_trench": (240, 160, 40), "island": (60, 64, 110), "yard": (140, 120, 104)}
+                "road_trench": (240, 160, 40), "island": (60, 64, 110), "yard": (140, 120, 104),
+                "regrade": (120, 170, 120)}
 
 
 def _font(size):

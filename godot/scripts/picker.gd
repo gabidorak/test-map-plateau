@@ -254,6 +254,17 @@ func describe(info: Dictionary) -> String:
 			lines.append(" · ".join(extra))
 		"building_roof":
 			lines.append("Roof of %s (%s, drawn by the rail builder)" % [info["name"] if info["name"] else info["id"], info["shape"]])
+		"station_structure":
+			var kinds := {"deck": "Concourse of the footbridges", "edge": "Footbridge wall", "flight": "Stairs or escalator",
+					"pier": "Footbridge pier", "frame": "Bus station canopy frame", "lift": "Lift", "hall": "Station hall",
+					"l18_hall": "Line 18 station hall", "l18_box": "Line 18 station (underground)", "post": "Corten posts",
+					"station": "Station"}
+			lines.append("%s · %s%s" % [info.get("station", "Station"), kinds.get(info.get("kind", ""), "Station structure"),
+					("  \"%s\"" % info["name"]) if info.get("name") else ""])
+			var more: PackedStringArray = [String(info["id"])]
+			if info.get("osm"):
+				more.append("osm:%s" % str(info["osm"]))
+			lines.append(" · ".join(more))
 		_:
 			lines.append(str(info.get("id", "unknown object")))
 	lines.append("hit x %.1f  y %.1f  z %.1f (altitude %.1f m) · %.0f m away" % [
