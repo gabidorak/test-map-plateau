@@ -18,6 +18,9 @@ the tracks and every other railway track there (the decorative tracks: yards, th
 --west: the line on south-west through Le Guichet out of the map's west box (2026-10-21), into osm_rail_west.json,
 read under the other two likewise: BOX_WEST, the tracks, their platforms (ways and multipolygons) and railway nodes
 within 80 m, and the same highways, buildings and barriers.
+--station: Massy-Palaiseau's station precinct (2026-11-06), into osm_massy_station.json, which massy_station.py reads
+for the footbridges, halls and the line 18 station it rebuilds: everything in BOX_STATION (buildings and their
+parts, highways with the footbridges, steps, escalators and lifts, railways, platforms, entrances, bus stations).
 Overpass answers 406 without a User-Agent, hence USER_AGENT. Data © OpenStreetMap contributors (ODbL).
 """
 import argparse
@@ -67,6 +70,28 @@ way["railway"="rail"]["name"="Ligne de Sceaux"]({bbox})->.tracks;
 );
 out body geom;
 """
+BOX_STATION = (4150.0, 1050.0, 4720.0, 1560.0)
+QUERY_STATION = """[out:json][timeout:180];
+(
+  way["building"]({bbox});
+  way["building:part"]({bbox});
+  relation["building"]({bbox});
+  relation["building:part"]({bbox});
+  way["highway"]({bbox});
+  node["highway"="elevator"]({bbox});
+  node["railway"]({bbox});
+  node["public_transport"]({bbox});
+  node["entrance"]({bbox});
+  way["railway"]({bbox});
+  way["public_transport"="platform"]({bbox});
+  relation["public_transport"="platform"]({bbox});
+  way["man_made"="bridge"]({bbox});
+  way["amenity"="bus_station"]({bbox});
+  way["area:highway"]({bbox});
+  way["indoor"]({bbox});
+);
+out body geom;
+"""
 BOX_WEST = (-1150.0, -1700.0, -150.0, -650.0)
 QUERY_WEST = """[out:json][timeout:180];
 way["railway"="rail"]["name"="Ligne de Sceaux"]({bbox})->.tracks;
@@ -102,12 +127,16 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--massy", action="store_true", help="the extension to Massy-Palaiseau (osm_rail_massy.json)")
     ap.add_argument("--west", action="store_true", help="the line on through Le Guichet (osm_rail_west.json)")
+    ap.add_argument("--station", action="store_true",
+                    help="Massy-Palaiseau's station precinct, every building and way (osm_massy_station.json)")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
-    name = "osm_rail_massy.json" if a.massy else "osm_rail_west.json" if a.west else "osm_rail.json"
+    name = ("osm_rail_massy.json" if a.massy else "osm_rail_west.json" if a.west else
+            "osm_massy_station.json" if a.station else "osm_rail.json")
     a.out = a.out or str(Path(__file__).resolve().parent / name)
     query = (QUERY_MASSY.format(bbox=bbox(BOX_MASSY), near=NEAR) if a.massy else
-             QUERY_WEST.format(bbox=bbox(BOX_WEST), near=NEAR) if a.west else QUERY.format(bbox=bbox(), near=NEAR))
+             QUERY_WEST.format(bbox=bbox(BOX_WEST), near=NEAR) if a.west else
+             QUERY_STATION.format(bbox=bbox(BOX_STATION)) if a.station else QUERY.format(bbox=bbox(), near=NEAR))
     data = None
     for url in OVERPASS:
         req = urllib.request.Request(url, data=urllib.parse.urlencode({"data": query}).encode(),

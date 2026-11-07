@@ -344,9 +344,11 @@ class Design:
         if zone is None:
             return self.ground(p)
         kind = zone["kind"]
-        if kind == "yard":                  # a yard track's ballast strip: the ground as it is (yard.py)
+        # a yard track's ballast strip: the ground as it is (yard.py); a repair (massy_station.py): the repaired
+        # ground this Design was given
+        if kind in ("yard", "regrade", "regrade_floor", "regrade_gravel"):
             return self.ground(p)
-        if kind in ("stairwell", "road_trench", "island"):
+        if kind in ("stairwell", "road_trench", "island", "bus_island"):
             for k, z in enumerate(self.zones):
                 if z[5] is zone:
                     return self.zone_z(k, p)

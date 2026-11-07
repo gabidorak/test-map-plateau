@@ -192,6 +192,7 @@ blender -b --factory-startup -P blender/vehicles/build_train.py -- --preview=$PW
 .venv/Scripts/python tools/rail/fetch_osm.py      # optional: refetch the OSM extract tools/rail/osm_rail.json (Overpass)
 .venv/Scripts/python tools/rail/fetch_osm.py --massy   # optional: the same for the line on to Massy-Palaiseau (osm_rail_massy.json)
 .venv/Scripts/python tools/rail/fetch_osm.py --west    # optional: the same for the line on through Le Guichet (osm_rail_west.json)
+.venv/Scripts/python tools/rail/fetch_osm.py --station # optional: Massy-Palaiseau's station precinct, every building and way (osm_massy_station.json)
 .venv/Scripts/python tools/rail/build_rail.py     # OSM + LiDAR -> godot/world/rail.json, tools/rail/review/*.png (~1 min)
 .venv/Scripts/python tools/rail/patch_world.py    # godot/world/base/ + rail.json -> godot/world/ (~25 min, ~6 GB RAM), then build_world.gd
 
@@ -527,7 +528,8 @@ committed scripts that regenerate everything from data (commands above).
   with rails and sleepers on ballast ground (`yard` zones: the ground kept); the two islands between tracks 1 and A
   and between B and 2 are raised platforms (`island` zones) with their copings and furniture; tracks 1 and 2 carry the
   trains on out of the map. A building standing over a track trains run on, its roof well above them (Palaiseau's
-  station hall over the cutting, Massy's footbridge halls), keeps only what is above 6.2 m over the rail.
+  station hall over the cutting), keeps only what is above 6.2 m over the rail (Massy's footbridges and halls are
+  rebuilt instead: below).
 - The line on through Le Guichet (2026-10-21, the map's west box): `fetch_osm.py --west` keeps `osm_rail_west.json`
   (read under the other two). A west section (`X_FAR_WEST` to `X_WEST`) is fitted backwards from the first stretch's
   start (`ReversedSection`: the smoothing spline pinned to its start and heading), so the first stretch keeps its fit;
@@ -538,11 +540,28 @@ committed scripts that regenerate everything from data (commands above).
   the right-of-way fences stop at them. The builder draws the bridges and platforms one mesh each, and the station
   furniture, signal masts, kilometre posts and wall copings one mesh per far cell: a mesh along the whole line was
   culled where it is drawn (Godot measures a visibility range from the mesh's centre).
+- Massy-Palaiseau's station precinct (2026-11-06): `fetch_osm.py --station` keeps `osm_massy_station.json` (every
+  building and way round the station) and `tools/rail/massy_station.py` (called by `build_rail.py`, its docstring has
+  the details) writes `rail.json` `massy`. The three footbridges (le Lien, the historic one, the Atlantis bus station
+  walkway) share one concourse deck at their real level, 43 steps of 0.17 m over the forecourts (OSM's step counts),
+  ~6.4 m clear under its structure over the RER tracks and the bus lanes (the map pipeline had them on the LiDAR's
+  heights: a deck sagging over the tracks, the walkway on the ground, halls cut into floating boxes); le Lien under
+  its pointed glass vault on white ribs, glass walls, halls with grey roofs, the walkway under its white canopy on
+  portal frames over red girders; the stairs and escalators from the OSM step ways, glazed lifts, piers kept off
+  the tracks and the roads. Massy TGV after the photo of its forecourt (glazed gable, tent roof, masts and stays,
+  canopies, name and clock). The line 18 station (opened 2026): the surface hall (curtain walls behind fins, a roof
+  of three bands rising to the north-east, the white block, corten posts), reached by stairs from le Lien, and 22 m
+  under it the station box the next patch runs the metro in (two side platforms behind half-height platform doors,
+  the tracks into the tunnel mouths, a mezzanine over them reached down an open shaft from the hall). The ground is
+  repaired there: the LiDAR was flown while the line 18 station was dug (two pits ~21 m deep) and saw le Lien's main
+  hall as ground (a 4 m hump). `scripts/builder/massy_builder.gd` draws it all (glass in `toy_prop_glass.gdshader`).
 - The map, `patch_world.py`: from the pipeline's files kept in `godot/world/base/` (never from patched ones: running
   it twice gives the same bytes; `world.json` `meta.rail` holds the version and the inputs' SHA-1) it draws the
   railway's ground into the heightmap and the ground mesh (cliff cells keep each side's plane, with skirts; the mesh
   stays watertight), adds the ground pieces (trackbed, platforms, steps, the covered road), removes the 110 trees and
-  moves the 10 props in the way, adds the right-of-way fences and restyles the station building after the photos
+  moves the 10 props in the way, adds the right-of-way fences and restyles the station building after the photos; at
+  Massy-Palaiseau it repairs the ground (`regrade` zones), opens the line 18 shaft (a stairwell zone whose walls start
+  at the box's ceiling: `portals`) and drops the map's footbridge decks and halls `massy_builder.gd` replaces
   (`tools/rail/review/patch.md` lists it all). The bus and car routes are unchanged; the bot cars do not use the
   covered road (their routes cannot be regenerated without the pipeline), the players can drive through it.
 - Godot: `scripts/builder/rail_builder.gd` draws the track (ballast bed, rails, sleepers per 96 m chunk, streamed with
@@ -566,9 +585,11 @@ committed scripts that regenerate everything from data (commands above).
   synthesized (`vehicle_audio.gd`: traction whine, rail rumble, horn, door warning, brake squeal). In LAN games the
   host runs the trains and sends their states on the shared clock; the others pose them from the same routes.
 - Known differences from the real stations: at Massy-Palaiseau only the RER B's two islands are platforms (the RER C
-  and TGV platforms are the map's ground), the terminus, depot and TGV tracks have no catenary and no trains, and the
-  station's concourse is the map's footbridge decks and halls; the new stations have the rule-made furniture (lamps,
-  name boards, benches, bins, screens) rather than their own.
+  and TGV platforms are the map's ground), the terminus, depot and TGV tracks have no catenary and no trains; its
+  concourse is one level for the three footbridges (in reality the historic footbridge is closed, `access=no`); the
+  halls' heights, the line 18 box's layout (side platforms, mezzanine, shaft) and sizes are assumed (no source gives
+  them), and its lifts and escalators do not move; the new stations have the rule-made furniture (lamps, name boards,
+  benches, bins, screens) rather than their own.
 - Known differences from the real Lozère station: the station building is a toy approximation of the real one (cream render
   with brick under a slate gable, after the photos); the entrances have validator pillars (as in the photos) rather
   than gates; the footbridges are open steel decks with bar railings; the south platform's long stone-clad wall

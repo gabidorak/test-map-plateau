@@ -45,6 +45,8 @@ to the north; levels are absolute map z):
 - services: [{id, track, direction, step, pts [[x, y, z]], heading, cant [rad], v [m/s per step for the front of the
   train], stops [{name, s (front, per train length), side}], signals [{id, s}], blocks, enter, exit, headway, phase}].
 - clearance: trees and props removed or moved, with the reason.
+- massy: Massy-Palaiseau's footbridges at their concourse level, their halls, Massy TGV's hall, the line 18 station
+  (surface hall and underground box) and the ground repairs there (massy_station.py; its docstring).
 """
 import json
 import math
@@ -2535,6 +2537,21 @@ def main() -> None:
     zunion = unary_union([zunion] + [_Pg(pg[0], pg[1:]) for z in yz for pg in z["polygons"]])
     log("yard: %d tracks (%d of the RER B), %d islands (%s)" % (len(Y["tracks"]), sum(t["rer"] for t in Y["tracks"]),
                                                              len(Y["islands"]), ", ".join(i["id"] for i in Y["islands"])))
+    # Massy-Palaiseau's footbridges, halls and line 18 station (massy_station.py): its zones (the line 18 shaft, the
+    # ground repairs) come after the railway's own and never take ground from them
+    import massy_station as mst
+    th = np.asarray(A.heading)
+    nrm = np.c_[-np.sin(th), np.cos(th)]
+    tracks_xy = [("track:1", A.pts - nrm * spacing / 2, z_rail), ("track:2", A.pts + nrm * spacing / 2, z_rail)]
+    tracks_xy += [(t["id"], np.asarray(t["pts"]), np.asarray(t["z"])) for t in Y["tracks"]]
+    MASSY, mz = mst.build(world, H, tracks_xy, [(_Pg(i["ring"]).buffer(0), i["top"]) for i in Y["islands"]])
+    for z in mz:
+        g = unary_union([_Pg(pg[0], pg[1:]).buffer(0) for pg in z["polygons"]]).difference(zunion)
+        z["polygons"] = [[np.asarray(p.exterior.coords)[:-1]] + [np.asarray(h.coords)[:-1] for h in p.interiors]
+                         for p in getattr(g, "geoms", [g]) if p.geom_type == "Polygon" and p.area > 0.05]
+        if z["polygons"]:
+            zs.append(z)
+            zunion = unary_union([zunion, g])
     # props on the islands ride up with them; elsewhere on the railway's hard ground they move off it
     hard = unary_union([_Pg(pg[0], pg[1:]) for z in zs if z["kind"] in ("trackbed", "platform", "stairwell",
                                                                          "road_trench", "yard") for pg in z["polygons"]])
@@ -2637,11 +2654,14 @@ def main() -> None:
         "landing": land,
         "fences": [dict(f, id="fence:rail:%d" % (i + 1)) for i, f in enumerate(row_fences)],
         "clearance": clear,
+        "massy": MASSY,
         "train": {"model": "mi79", "cars": 8, "length": TRAIN_LENGTHS["8"], "accel": ACCEL,
                   "service_brake": SERVICE_BRAKE, "max_service_brake": MAX_SERVICE_BRAKE, "emergency_brake": EMERGENCY_BRAKE},
     }
     text = json.dumps(r3(rail), ensure_ascii=False, separators=(",", ":"))
-    rg.RAIL_JSON.write_text(text + "\n", encoding="utf-8")
+    # bytes, not text: on Windows write_text would end it with CRLF and the patch stamp (its SHA-1) would not be the one
+    # a checkout elsewhere has (.gitattributes keeps godot/world/*.json LF)
+    rg.RAIL_JSON.write_bytes((text + "\n").encode("utf-8"))
     log("wrote %s (%.1f MB) in %.0f s" % (rg.RAIL_JSON.relative_to(rg.ROOT), len(text) / 1e6, time.time() - t_start))
     import review
     review.draw(rail, world, H)
