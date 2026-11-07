@@ -27,9 +27,12 @@ taken as the new base), never from patched ones, so running it twice gives the s
   to the eaves, rail_builder.gd adds the gabled roof).
 A report goes to tools/rail/review/patch.md.
 """
+import gc
 import hashlib
 import json
 import math
+import multiprocessing
+import os
 import sys
 import time
 import zlib
@@ -96,6 +99,16 @@ def restyle_station(b: dict) -> None:
 
 def log(*a):
     print(*a, flush=True)
+
+
+def grid_window(x_axis: np.ndarray, y_axis: np.ndarray, geom) -> tuple:
+    """The rows and columns (r0, r1, c0, c1) of a regular grid (x_axis rising along columns, y_axis falling along rows)
+    that geom's bounds cover: a point outside them is never inside geom, so testing the window gives the same mask as
+    testing the whole grid, in the time of the window."""
+    x0, y0, x1, y1 = geom.bounds
+    c0, c1 = np.searchsorted(x_axis, x0), np.searchsorted(x_axis, x1, side="right")
+    r0, r1 = np.searchsorted(-y_axis, -y1), np.searchsorted(-y_axis, -y0, side="right")
+    return r0, max(r1, r0), c0, max(c1, c0)
 
 
 # ---------------------------------------------------------------- zones and heights
@@ -609,6 +622,32 @@ def rebuild_chunk(d: dict, ctx: dict) -> tuple:
         cf[:, 1] += dz
     nd["colf"] = cf.astype(np.float32)
     return nd, cliffs, stats, rebuilt
+
+
+_JOB = {}                      # the chunks' data and the context, inherited by the forked workers (never pickled)
+
+
+def _rebuild_job(k: int) -> tuple:
+    return rebuild_chunk(_JOB["datas"][k], _JOB["ctx"])
+
+
+def rebuild_chunks(touched: list, datas: dict, ctx: dict) -> list:
+    """rebuild_chunk() of every touched chunk, in `touched` order. The chunks are independent (rebuild_chunk only reads
+    ctx), so they go to worker processes forked after ctx is built. PATCH_WORKERS sets their number (default: half the
+    cores, at most 8: each worker holds a few hundred MB); 1 runs in this process."""
+    n = int(os.environ.get("PATCH_WORKERS", min(8, max((os.cpu_count() or 2) // 2, 1))))
+    n = min(n, len(touched))
+    if n <= 1 or "fork" not in multiprocessing.get_all_start_methods():
+        return [rebuild_chunk(datas[k], ctx) for k in touched]
+    _JOB["datas"], _JOB["ctx"] = datas, ctx
+    gc.collect()
+    gc.freeze()                                 # keep the collector from touching (copying) the inherited pages
+    try:
+        with multiprocessing.get_context("fork").Pool(n) as pool:
+            return list(pool.imap(_rebuild_job, touched, chunksize=1))
+    finally:
+        gc.unfreeze()
+        _JOB.clear()
 
 
 def repair_t_junctions(chunks: dict, grid: Grid, rebuilt: set) -> int:
@@ -1154,6 +1193,7 @@ def main() -> None:
     cc, rr = np.meshgrid(np.arange(c0, c1 + 1), np.arange(r0, r1 + 1))
     xs = H_old.ox + cc * H_old.cell
     ys = H_old.oy - rr * H_old.cell
+    x_axis, y_axis = xs[0], ys[:, 0]
     lab = zones.label_grid(xs, ys)
     new = H_old.data.copy()
     changed = 0
@@ -1232,8 +1272,7 @@ def main() -> None:
     all_rebuilt = set()
     totals = {}
     new_chunks = {}
-    for k in touched:
-        nd, cl, st, rb = rebuild_chunk(datas[k], ctx)
+    for k, (nd, cl, st, rb) in zip(touched, rebuild_chunks(touched, datas, ctx)):
         new_chunks[k] = nd
         all_cliffs |= cl
         all_rebuilt |= rb
@@ -1389,8 +1428,10 @@ def main() -> None:
         world["ground"].append({"kind": g["kind"], "material": g["material"], "src": g["src"], "rings": rings,
                                 "tris": tris})
         pieces.append(list(index["pieces"][gi]))
-        m = shapely.contains_xy(p, xs.ravel(), ys.ravel()).reshape(xs.shape) & (lab < 0)
-        ids[rr[m], cc[m]] = len(pieces)
+        r0, r1, c0, c1 = grid_window(x_axis, y_axis, p)
+        w = (slice(r0, r1), slice(c0, c1))
+        m = shapely.contains_xy(p, xs[w].ravel(), ys[w].ravel()).reshape(xs[w].shape) & (lab[w] < 0)
+        ids[rr[w][m], cc[w][m]] = len(pieces)
     # the new pieces, in piece order
     m_ = world["meta"]
     ground_outline = Polygon(m_["data_area"][0], m_["data_area"][1:]) if m_.get("data_area") else box(*m_["bounds"])
@@ -1429,8 +1470,10 @@ def main() -> None:
             final_pieces.append(list(pieces[pi]))
             final_ground.append(e)
             pg = Polygon(e["rings"][0], e["rings"][1:])
-            m = shapely.contains_xy(pg, xs.ravel(), ys.ravel()).reshape(xs.shape) & (ids[rr, cc] == pi + 1)
-            ids[rr[m], cc[m]] = k_new + 1
+            r0, r1, c0, c1 = grid_window(x_axis, y_axis, pg)
+            w = (slice(r0, r1), slice(c0, c1))
+            m = shapely.contains_xy(pg, xs[w].ravel(), ys[w].ravel()).reshape(xs[w].shape) & (ids[rr[w], cc[w]] == pi + 1)
+            ids[rr[w][m], cc[w][m]] = k_new + 1
     assert all(id_map[pi] == pi for pi in order)
     world["ground"] = final_ground
     (rg.WORLD / ids_info["file"]).write_bytes(zlib.compress(ids.astype("<u2").tobytes(), 9))
