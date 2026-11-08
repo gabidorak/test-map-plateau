@@ -237,6 +237,7 @@ tools/test_fires.sh   # PTA Online fires and firefighter job: solo checks (the s
 (cd ../server/accounts && ../../.venv/bin/python -m pytest -q)   # the accounts service: every route, username/password rules, look-alikes, lockouts, sign-up limit, renames, the internal API's secret, money, admin CLI, backups (~4 s)
 godot --headless --fixed-fps 60 --path . --script res://tools/test_trains.gd  # RER B: departures, entering the map, the stop at Lozère (±1 m, doors on the platform side), door hold, a ride to the map edge, signals, a car on the track, LODs, tick cost (PLATEAU_TEST_ONLY=stop,hold,ride,signals,obstacle,...)
 godot --headless --fixed-fps 60 --path . --script res://tools/test_parked_trains.gd  # RER B trains stabled in Massy-Palaiseau's yard: on garage tracks, bogies on the rails, no overlap, clear of switches and running lines, collision boxes, merged meshes
+godot --headless --fixed-fps 60 --path . --script res://tools/test_logements_x.gd  # the École polytechnique's new housing: the plots' heights and collision, the open porch, the car park flat, the sidewalk's kerb, walking the paths, the bollards
 tools/test_lan_trains.sh   # RER B in a LAN game: the client gets the host's trains, sees one stop at Lozère when the host does, rides it
 godot --path . --script res://tools/train_shots.gd -- --milestone=rerb_E [--night]   # trains standing at Lozère, from the station and on board -> data/review/shots/rerb_E/train_*.png
 godot --path . --script res://tools/screenshots_all.gd -- --milestone=M2  # viewpoints -> data/review/shots/M2/
@@ -589,6 +590,21 @@ committed scripts that regenerate everything from data (commands above).
   4606's way out on the RER side lane between Îlots C and B (the stop at Îlot B, the turnaround, out along the Massy
   side); `scripts/builder/hangar_builder.gd` draws the markings, kerbs, walls, lamps, the depot and its fence,
   `world_builder.gd` plants its trees and hedge (`vegetation_builder.gd` add_rail_greenery).
+- The École polytechnique's new student housing (2026-11-08, Thomas's plan and photos in `ref/logementsX/`; lot S3.2
+  of the ZAC du quartier de l'École polytechnique: CDC Habitat, Dietrich | Untertrifaller, 6 plots R+5, roof at
+  19.80 m): `tools/rail/logements_x.py` (called by `build_rail.py`, its docstring has the details; `rail.json`
+  `logements_x`) replaces the building site at x 785, y -339: the six plots on OSM's footprints, 19.8 m (a 4 m ground
+  floor, five 3 m floors, a 0.9 m parapet), their world.json masses restyled by `patch_world.py` (a white concrete
+  ground floor core with the entrance corner cut out under the overhang, a floating upper body in khaki ribbed panels,
+  a green roof) and `scripts/builder/logements_x_builder.gd` drawing the projecting white slab bands, white window
+  surrounds, windows in pairs or alone (lit at night: `shaders/toy_window.gdshader`), the ground floor's glazing and
+  piers, the bike shelter (mesh, red hoops) and porch (glazed door, the plot's number on a black hexagon), skylights
+  and roof plant; a car park on the west strip (156 bays in four rows on two aisles, planted islands, a planted
+  border with trees all round, street lamps, one entrance from the boulevard); gardens on one smooth ground (a winding
+  3 m promenade, 2 m paths to the zebra and the ring residences, small squares with benches and bins, light bollards,
+  path lamps, young staked trees on mulch rings, the LiDAR's poplars kept, boulders); the boulevard's north sidewalk
+  redone at 3 m behind a smooth kerb, dropped at the zebras and the car park's entrance, with street trees.
+  `patch_world.py` consumes it like any site (`apply_site`). `godot/tools/test_logements_x.gd` checks it.
 - The map, `patch_world.py`: from the pipeline's files kept in `godot/world/base/` (never from patched ones: running
   it twice gives the same bytes; `world.json` `meta.rail` holds the version and the inputs' SHA-1) it draws the
   railway's ground into the heightmap and the ground mesh (cliff cells keep each side's plane, with skirts; the mesh

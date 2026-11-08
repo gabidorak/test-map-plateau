@@ -50,6 +50,8 @@ to the north; levels are absolute map z):
 - clearance: trees and props removed or moved, with the reason.
 - massy: Massy-Palaiseau's footbridges at their concourse level, their halls, Massy TGV's hall, the line 18 station
   (surface hall and underground box) and the ground repairs there (massy_station.py; its docstring).
+- logements_x: the École polytechnique's new student housing, its car park, gardens and the boulevard's north sidewalk
+  (logements_x.py; its docstring): its ground repair, the world.json changes (`site`), the builder's details.
 """
 import json
 import math
@@ -2601,6 +2603,11 @@ def main() -> None:
         % (nw, len(row_fences), sum(_way_len(np.asarray(f["pts"])) for f in row_fences), len(clear["trees"]),
            len(clear["props"]),
            {a: sum(1 for p in clear["props"] if p["action"] == a) for a in ("dropped", "moved", "kept")}))
+    # the École polytechnique's new housing (logements_x.py): its zones after all the others (they take no ground
+    # from them, the railway's clearance and landing spots never saw them)
+    import logements_x as lxm
+    LOGX, lz = lxm.build(world, H, zunion)
+    zs += lz
     box = world["meta"]["bounds"]
     rail = {
         "schema": RAIL_SCHEMA,
@@ -2663,6 +2670,7 @@ def main() -> None:
         "fences": [dict(f, id="fence:rail:%d" % (i + 1)) for i, f in enumerate(row_fences)],
         "clearance": clear,
         "massy": MASSY,
+        "logements_x": LOGX,
         "train": {"model": "mi79", "cars": 8, "length": TRAIN_LENGTHS["8"], "accel": ACCEL,
                   "service_brake": SERVICE_BRAKE, "max_service_brake": MAX_SERVICE_BRAKE, "emergency_brake": EMERGENCY_BRAKE},
     }

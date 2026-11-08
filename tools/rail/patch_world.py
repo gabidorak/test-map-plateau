@@ -32,6 +32,9 @@ taken as the new base), never from patched ones, so running it twice gives the s
   massy bus_station, bus_station.py): their zones (regrade zones with a ground piece of their own, `piece`, that take
   the pipeline's raised pieces, kerbs and markings in, `absorb`), its props moved onto the quays or dropped, the map's
   fences across its lanes dropped, world.json kerbs cut back.
+- Sites laid out after the pipeline (rail.json logements_x, logements_x.py: the École polytechnique's new housing):
+  their zones like the others (their ground from their repair), and apply_site: trees, props, fences, kerb lines, kit
+  modules, the buildings swapped for the site's records.
 A report goes to tools/rail/review/patch.md.
 """
 import gc
@@ -53,8 +56,9 @@ from shapely.ops import polygonize, unary_union
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import railgeo as rg  # noqa: E402
 
-PATCH_VERSION = 4              # 3: Massy-Palaiseau's ground repairs, line 18 shaft and replaced decks and halls;
-                               # 4: the yard's ground lowered under its tracks' ballast beds (railgeo.YardBed)
+PATCH_VERSION = 5              # 3: Massy-Palaiseau's ground repairs, line 18 shaft and replaced decks and halls;
+                               # 4: the yard's ground lowered under its tracks' ballast beds (railgeo.YardBed);
+                               # 5: sites laid out after the pipeline (rail.json logements_x: apply_site)
 HARD = {"trackbed": ("railway", "ballast"), "platform": ("platform", "asphalt"), "stairwell": ("steps", "concrete"),
         "road_trench": ("road", "asphalt"), "island": ("platform", "asphalt"), "yard": ("railway", "ballast"),
         # Massy-Palaiseau's repaired ground with a ground of its own (massy_station.py): the line 18 hall's floor and
@@ -1230,11 +1234,13 @@ def main() -> None:
     # the ground the design follows: the base one, repaired at Massy-Palaiseau (massy_station.py: its `regrade` zones
     # take it, so do the yard's strips there)
     H_fix = H_old
-    if rail.get("massy"):
+    # (and the sites laid out after it: rail.json logements_x, logements_x.py)
+    repairs = rail.get("massy", {}).get("repairs", []) + rail.get("logements_x", {}).get("repairs", [])
+    if repairs:
         import massy_station as mst
         H_fix = rg.Heights.__new__(rg.Heights)
         H_fix.__dict__.update({k: v for k, v in H_old.__dict__.items() if not k.startswith("_nodes")})
-        H_fix.data = mst.apply_repairs(H_old, rail["massy"]["repairs"])
+        H_fix.data = mst.apply_repairs(H_old, repairs)
     design = rg.Design(rail["earthworks"], A, H_fix, [z for z in rail["zones"] if "axis" in z])
     if rail.get("yard", {}).get("bed"):
         design.yard_bed = rg.YardBed(rail["yard"])     # the yard's ground under its tracks' ballast beds
@@ -1636,6 +1642,8 @@ def main() -> None:
             Point(b["pts"][len(b["pts"]) // 2][0], b["pts"][len(b["pts"]) // 2][1]))]
         log("massy: %d buildings, %d kit modules and %d footbridge decks replaced" % (
             len(gone), n_mod - len(world["building_modules"]), n_br0 - len(world["bridges"])))
+    if rail.get("logements_x"):                 # the École polytechnique's new housing (logements_x.py)
+        log("logements X: %s" % apply_site(world, rail["logements_x"]["site"]))
     lifted, dropped_b = over_tracks(world, rail)
     # the map's bridge decks the railway builds itself (Lozère's footbridges: rail.json footbridges)
     own_fb = {o for fb in rail.get("footbridges", []) for o in fb["osm"]}
@@ -1721,6 +1729,52 @@ def main() -> None:
         "- collision holes: %d samples, covered by raised faces over %d cells" % (len(holes), len(cover)), ""]
     (rg.TOOLS / "review" / "patch.md").write_text("\n".join(report) + "\n", encoding="utf-8")
     log("patched godot/world/ in %.0f s (report: tools/rail/review/patch.md)" % (time.time() - t0))
+
+
+def apply_site(world: dict, site: dict) -> str:
+    """world.json changes of a site laid out after the pipeline (rail.json logements_x `site`, logements_x.py): its
+    trees gone and added, its props moved (with their lift onto a raised surface), gone and added, its fences gone,
+    the map's kerb lines cut back inside `clear`, the kit modules inside `modules_clear` gone, its buildings swapped
+    for the given records (same ids). Returns a summary."""
+    gone_t = set(site.get("trees_gone", []))
+    world["trees"] = [t for t in world["trees"] if t["id"] not in gone_t] + list(site.get("trees_add", []))
+    moved, gone_p, lift = site.get("props_moved", {}), set(site.get("props_gone", [])), site.get("props_lift", {})
+    props = []
+    for p in world["props"]:
+        if p["id"] in gone_p:
+            continue
+        if p["id"] in moved or p["id"] in lift:
+            p = dict(p)
+            if p["id"] in moved:
+                p["x"], p["y"] = moved[p["id"]]
+            if p["id"] in lift:
+                p["lift"] = lift[p["id"]]
+        props.append(p)
+    world["props"] = props + list(site.get("props_add", []))
+    gone_f = set(site.get("fences_gone", []))
+    n_f = len(world["fences"])
+    world["fences"] = [f for f in world["fences"] if f["id"] not in gone_f]
+    cut = unary_union([Polygon(r).buffer(0) for r in site.get("clear", [])])
+    kerbs = []
+    for kb in world["kerbs"]:
+        if len(kb["pts"]) < 2 or not LineString(kb["pts"]).intersects(cut):
+            kerbs.append(kb)
+            continue
+        rest = LineString(kb["pts"]).difference(cut)
+        for part in getattr(rest, "geoms", [rest]):
+            if part.geom_type == "LineString" and part.length > 0.3:
+                kerbs.append(dict(kb, pts=[[round(x, 3), round(y, 3)] for x, y in part.coords]))
+    n_k = len(world["kerbs"])
+    world["kerbs"] = kerbs
+    mc = unary_union([Polygon(r).buffer(0) for r in site.get("modules_clear", [])])
+    n_m = len(world["building_modules"])
+    if not mc.is_empty:
+        world["building_modules"] = [m for m in world["building_modules"] if not mc.contains(Point(m["x"], m["y"]))]
+    new_b = {b["id"]: b for b in site.get("buildings", [])}
+    world["buildings"] = [new_b.get(b["id"], b) for b in world["buildings"]]
+    return ("trees -%d +%d, props %d moved -%d +%d, fences -%d, kerbs %d -> %d, kit modules -%d, buildings %d" % (
+        len(gone_t), len(site.get("trees_add", [])), len(moved), len(gone_p), len(site.get("props_add", [])),
+        n_f - len(world["fences"]), n_k, len(kerbs), n_m - len(world["building_modules"]), len(new_b)))
 
 
 GAUGE_HALF = 1.75              # m from a track centre (godot/tools/check_world.gd)
