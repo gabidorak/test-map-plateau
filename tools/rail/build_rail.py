@@ -44,6 +44,9 @@ to the north; levels are absolute map z):
 - footbridges, underpasses, road_tunnel, fences, station (entrances, furniture), signals, pk, catenary.
 - services: [{id, track, direction, step, pts [[x, y, z]], heading, cant [rad], v [m/s per step for the front of the
   train], stops [{name, s (front, per train length), side}], signals [{id, s}], blocks, enter, exit, headway, phase}].
+- yard: Massy-Palaiseau's station yard (yard.py): tracks [{id, ref, osm, rer, main, pts, z (rail top), heading, drawn
+  [first, last point on the map's ground], bed [[first, last] runs with a ballast bed]}], islands, bed (the beds'
+  section and the cap of the ground under them).
 - clearance: trees and props removed or moved, with the reason.
 - massy: Massy-Palaiseau's footbridges at their concourse level, their halls, Massy TGV's hall, the line 18 station
   (surface hall and underground box) and the ground repairs there (massy_station.py; its docstring).
@@ -2640,12 +2643,17 @@ def main() -> None:
         "station": {"name": "Lozère", "osm": "n5838690254", "furniture": furn["items"]},
         "stations": STATIONS,
         "yard": {"about": "tools/rail/yard.py: the tracks beyond the alignment (each its own line: points every metre, "
-                          "rail top, heading; `main`: the RER B's tracks 1 and 2 going on from the alignment's end) and "
-                          "the islands between them (ring, the platform edges along each track, top level)",
+                          "rail top, heading; `main`: the RER B's tracks 1 and 2 going on from the alignment's end; `bed`: "
+                          "the [first, last] point runs with a ballast bed, on the yard zones), the islands between "
+                          "them (ring, the platform edges along each track, top level) and `bed`, the ballast beds' "
+                          "section (below_rail: rail top to bed top; drop, flat, rise: the ground's cap under them, "
+                          "railgeo.YardBed; depth: of their sloped sides)",
                  "s_start": Y["s_start"],
                  "tracks": [{"id": t["id"], "ref": t["ref"], "osm": t["osm"], "rer": t["rer"], "main": t["main"],
-                             "pts": t["pts"], "z": t["z"], "heading": t["heading"], "drawn": drawn_range(t["pts"])}
+                             "pts": t["pts"], "z": t["z"], "heading": t["heading"], "drawn": drawn_range(t["pts"]),
+                             "bed": t.get("bed", [])}
                             for t in Y["tracks"]],
+                 "bed": Y["bed"],
                  "islands": [{k: v for k, v in i.items()} for i in Y["islands"]]},
         "signals": sigs,
         "pk": pk,

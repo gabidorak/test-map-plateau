@@ -214,6 +214,7 @@ func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_di
 	_track(node, root)
 	_rail_bridges(node)
 	_yard(node)
+	_yard_beds(node, root)
 	_islands(node)
 	_platforms(node)
 	_furniture(node)
@@ -1066,7 +1067,7 @@ func _rail_bridges(node: Node3D) -> void:
 # ---------------------------------------------------------------- the yard (tools/rail/yard.py)
 
 ## The yard's tracks beyond the alignment (rail.json yard tracks: each its own line, rail top per metre): rails and
-## sleepers per CHUNK m chunk; the ballast is the patched ground's ("yard" zones), the sleepers' tops show above it.
+## sleepers per CHUNK m chunk; the ballast is each track's bed (_yard_beds) on the patched ground ("yard" zones).
 func _yard(node: Node3D) -> void:
 	var yard: Dictionary = _rail.get("yard", {})
 	if yard.is_empty():
@@ -1147,6 +1148,99 @@ func _yard(node: Node3D) -> void:
 		mmi.visibility_range_end_margin = 10.0
 		mmi.set_meta("plateau", {"type": "rail_track", "id": "rail:yard_sleepers_%d_%d" % [ck.x, ck.y]})
 		chunk.add_child(mmi)
+
+
+## The yard tracks' ballast beds (rail.json yard tracks `bed` runs, yard `bed` section): a prism per track as the
+## alignment's bed, its top `below_rail` under the rail top (the sleepers' tops show SLEEPER_SHOW above it) out to the
+## shoulder, its sides sloping down `depth` m at the ballast slope, its ends sloped too; the patched ground under it is
+## lowered (railgeo.YardBed), so the LiDAR ground never covers the sleepers. Drawn with the ground's material per
+## CHUNK m chunk, walkable (terrain layer).
+func _yard_beds(node: Node3D, root: Node3D) -> void:
+	var yard: Dictionary = _rail.get("yard", {})
+	var bed: Dictionary = yard.get("bed", {})
+	if bed.is_empty():
+		return
+	var tr: Dictionary = _rail["track"]
+	var hw := float(tr["sleeper"]["length"]) * 0.5 + float(tr["ballast"]["shoulder"])
+	var depth: float = bed["depth"]
+	var run := depth * float(tr["ballast"]["slope"])
+	var below: float = bed["below_rail"]
+	var ballast_id := GroundBuilder.MATERIALS.find("ballast")
+	var track_node := node.get_node("Track")
+	var parts := {}                         # chunk -> [Strip, collision faces]
+	for t: Dictionary in yard.get("tracks", []):
+		var pts: Array = t["pts"]
+		var zs: Array = t["z"]
+		var hs: Array = t["heading"]
+		for r: Array in t.get("bed", []):
+			var i0 := int(r[0])
+			var i1 := mini(int(r[1]), pts.size() - 1)
+			if i1 <= i0:
+				continue
+			var idx := []                   # every SEG m, and the run's last point
+			var i := i0
+			while i < i1:
+				idx.append(i)
+				i += int(SEG)
+			idx.append(i1)
+			var prev := PackedVector3Array()
+			for k in idx.size():
+				var j: int = idx[k]
+				var p := Vector2(pts[j][0], pts[j][1])
+				var th: float = hs[j]
+				var nl := Vector2(-sin(th), cos(th))
+				var top: float = float(zs[j]) - below
+				var sec := PackedVector3Array()
+				for q: Vector2 in [Vector2(-hw - run, top - depth), Vector2(-hw, top), Vector2(hw, top),
+						Vector2(hw + run, top - depth)]:
+					var m := p + nl * q.x
+					sec.append(_g(m.x, m.y, q.y))
+				var ck := Vector2i(floori(p.x / CHUNK), floori(p.y / CHUNK))
+				if not parts.has(ck):
+					parts[ck] = [Strip.new(), PackedVector3Array()]
+				var part: Array = parts[ck]
+				if k == 0 or k == idx.size() - 1:
+					# the end: sloped down to the toe `run` m beyond it
+					var out := Vector2(cos(th), sin(th)) * (-1.0 if k == 0 else 1.0) * run
+					var e0 := sec[0] + _gd(out)
+					var e3 := sec[3] + _gd(out)
+					var el := sec[1] + _gd(out) + Vector3(0.0, -depth, 0.0)
+					var er := sec[2] + _gd(out) + Vector3(0.0, -depth, 0.0)
+					part[1] = _ballast_quads(part[0], part[1], PackedVector3Array([sec[0], sec[1], sec[2], sec[3]]),
+							PackedVector3Array([e0, el, er, e3]))
+				if not prev.is_empty():
+					part[1] = _ballast_quads(part[0], part[1], prev, sec)
+				prev = sec
+	if parts.is_empty():
+		return
+	var body := StaticBody3D.new()
+	body.name = "YardBallast"
+	body.collision_layer = Layers.TERRAIN
+	body.collision_mask = 0
+	body.set_meta("plateau", {"type": "rail_track", "id": "rail:yard_ballast"})
+	root.add_child(body)
+	for ck: Vector2i in parts:
+		var chunk := _chunk(track_node, ck)
+		var tag := "%d_%d" % [ck.x, ck.y]
+		var info := {"type": "rail_track", "id": "rail:yard_ballast_" + tag}
+		var p: Array = parts[ck]
+		var mi := MeshInstance3D.new()
+		mi.name = "YardBallast"
+		mi.mesh = MeshUtils.save((p[0] as Strip).commit(_ground_mat, _ballast_col, ballast_id),
+				_mesh_dir + "rail_yard_ballast_%s.res" % tag)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.position = -chunk.position
+		mi.set_meta("plateau", info)
+		chunk.add_child(mi)
+		var shape := ConcavePolygonShape3D.new()
+		shape.backface_collision = true
+		shape.set_faces(p[1])
+		MeshUtils.save(shape, _mesh_dir + "rail_col_yard_ballast_%s.res" % tag)
+		var cs := CollisionShape3D.new()
+		cs.name = "YardBallast_" + tag
+		cs.shape = shape
+		cs.set_meta("plateau", info)
+		body.add_child(cs)
 
 
 ## The yard's islands (rail.json yard islands; their raised top is the patched ground's "island" zone): the edge

@@ -26,6 +26,7 @@ const GroundHeights = preload("res://scripts/ground_heights.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
 const LabelFit = preload("res://scripts/label_fit.gd")
+const HangarBuilder = preload("res://scripts/builder/hangar_builder.gd")
 const RAIL_PATH := "res://world/rail.json"
 const PROP_SHADER := "res://shaders/toy_prop.gdshader"
 const GLASS_SHADER := "res://shaders/toy_prop_glass.gdshader"
@@ -72,6 +73,7 @@ var _level := 0.0
 var _depth := 0.9
 var _meshers := {}                          # name -> [Mesher, material, visibility range, casts shadows]
 var _box_faces := PackedVector3Array()      # the line 18 box's floors and walls (lambdas cannot append to a local)
+var _lamp_lights := PackedVector3Array()    # night.gd lights the bus station and the hangar from these (node meta)
 
 
 func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_dir: String) -> void:
@@ -121,6 +123,9 @@ func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_di
 	_tgv()
 	_l18_hall()
 	_l18_box()
+	if _M.has("bus_station"):              # the Atlantis bus station's finish and the bus hangar
+		HangarBuilder.new().build(self, _M["bus_station"])
+	_node.set_meta("lamp_lights", _lamp_lights)
 	for name: String in _meshers:
 		var e: Array = _meshers[name]
 		_emit(name, e[0], e[1], e[2], e[3])

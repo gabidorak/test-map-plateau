@@ -29,8 +29,8 @@ below), then
   (once every 30 days); **Play PTA Online** joins the official server, where you play under your username. Its address
   is in `godot/data/online.json` (empty: this build has no PTA Online). `-- --online` joins with the login kept.
   There, vehicles belong to your account and only come out at **garages** (`scripts/modes/online_mode.gd`, the spots in
-  `godot/world/garages.json` from `tools/online/garages.py`): nine car parks over the map, the bus depot at
-  Massy-Palaiseau (buses, lent) and the fire station at Polytechnique (fire trucks, lent), all on the M map and the
+  `godot/world/garages.json` from `tools/online/garages.py`): nine car parks over the map, the bus depot under
+  its roof by Massy-Palaiseau's bus station (buses, lent) and the fire station at Polytechnique (fire trucks, lent), all on the M map and the
   minimap. E at a garage's terminal lists your vehicles; the one picked comes out on a free bay, and sends the one you
   had out back. It comes out locked (others ride along, never drive) until you unlock it (U); it stays 30 s after you
   leave. No vehicle menu, no C, no fly camera, no armed vehicles there; your wallet shows top right. Stunts pay a
@@ -194,6 +194,8 @@ blender -b --factory-startup -P blender/vehicles/build_train.py -- --preview=$PW
 .venv/Scripts/python tools/rail/fetch_osm.py --west    # optional: the same for the line on through Le Guichet (osm_rail_west.json)
 .venv/Scripts/python tools/rail/fetch_osm.py --station # optional: Massy-Palaiseau's station precinct, every building and way (osm_massy_station.json)
 .venv/Scripts/python tools/rail/build_rail.py     # OSM + LiDAR -> godot/world/rail.json, tools/rail/review/*.png (~1 min)
+.venv/Scripts/python tools/rail/bus_routes.py     # then: the 4606 on Massy-Palaiseau's bus station lanes (bus_routes.json, ~2 s)
+.venv/Scripts/python tools/online/garages.py --only=bus-depot   # then: the bus depot under the depot's roof (garages.json)
 .venv/Scripts/python tools/rail/patch_world.py    # godot/world/base/ + rail.json -> godot/world/ (~25 min, ~6 GB RAM), then build_world.gd
 
 cd godot
@@ -234,6 +236,7 @@ tools/test_stunts.sh   # PTA Online stunts: solo checks (the spots tried and on 
 tools/test_fires.sh   # PTA Online fires and firefighter job: solo checks (the spots, no fire off duty, duty at the fire station, an alarm on the maps and the HUD, a car fire spreading to the next car and a grass fire over the grass, the truck's real jet putting a building fire out and paying, two sprayers sharing a fire, own truck ×1.5 and a quick answer +50 %, a teleported truck's water refused, the fires dying down off duty), then an official server: on duty, the server's alarm shows, hosed out with the lent truck (the jet flown again on the server), paid by the accounts service (~2 min; --lan-only skips the solo part)
 (cd ../server/accounts && ../../.venv/bin/python -m pytest -q)   # the accounts service: every route, username/password rules, look-alikes, lockouts, sign-up limit, renames, the internal API's secret, money, admin CLI, backups (~4 s)
 godot --headless --fixed-fps 60 --path . --script res://tools/test_trains.gd  # RER B: departures, entering the map, the stop at Lozère (±1 m, doors on the platform side), door hold, a ride to the map edge, signals, a car on the track, LODs, tick cost (PLATEAU_TEST_ONLY=stop,hold,ride,signals,obstacle,...)
+godot --headless --fixed-fps 60 --path . --script res://tools/test_parked_trains.gd  # RER B trains stabled in Massy-Palaiseau's yard: on garage tracks, bogies on the rails, no overlap, clear of switches and running lines, collision boxes, merged meshes
 tools/test_lan_trains.sh   # RER B in a LAN game: the client gets the host's trains, sees one stop at Lozère when the host does, rides it
 godot --path . --script res://tools/train_shots.gd -- --milestone=rerb_E [--night]   # trains standing at Lozère, from the station and on board -> data/review/shots/rerb_E/train_*.png
 godot --path . --script res://tools/screenshots_all.gd -- --milestone=M2  # viewpoints -> data/review/shots/M2/
@@ -523,9 +526,13 @@ committed scripts that regenerate everything from data (commands above).
   road (`rail_bridges`) leave the ground under them alone and get a concrete deck. Roads and paths over the line are
   the map's bridge decks (`world.json` `bridges`): no catenary portal under them, the contact wire lowered where they
   leave less room. Beyond the alignment (x 4030) `tools/rail/yard.py` builds the station yard of Massy-Palaiseau:
-  every OSM track (the RER B's four platform tracks, the terminus tracks, the depot, the TGV line, the RER C) is a
-  line of its own with its rail level from the LiDAR (humps such as the concourse over the tracks left out), drawn
-  with rails and sleepers on ballast ground (`yard` zones: the ground kept); the two islands between tracks 1 and A
+  every OSM track at the surface (the RER B's four platform tracks, its terminus and tail tracks, garage and depot
+  tracks, the RER C and its sidings; the TGV line, LGV Atlantique, runs in a tunnel under the station and the bus
+  station and is not drawn, and no surface track joins it) is a line of its own with its rail level from the LiDAR
+  (humps such as the concourse over the tracks left out), drawn with rails and sleepers on a ballast bed (a prism as
+  on the line, its top 4 cm under the sleepers' tops; the `yard` zones' ground lowered under it: the LiDAR ground,
+  drawn on 2 m nodes, rose over the sleepers almost everywhere and over the rails here and there before
+  2026-11-07); the two islands between tracks 1 and A
   and between B and 2 are raised platforms (`island` zones) with their copings and furniture; tracks 1 and 2 carry the
   trains on out of the map. A building standing over a track trains run on, its roof well above them (Palaiseau's
   station hall over the cutting), keeps only what is above 6.2 m over the rail (Massy's footbridges and halls are
@@ -555,6 +562,33 @@ committed scripts that regenerate everything from data (commands above).
   the tracks into the tunnel mouths, a mezzanine over them reached down an open shaft from the hall). The ground is
   repaired there: the LiDAR was flown while the line 18 station was dug (two pits ~21 m deep) and saw le Lien's main
   hall as ground (a 4 m hump). `scripts/builder/massy_builder.gd` draws it all (glass in `toy_prop_glass.gdshader`).
+- The Atlantis bus station (2026-11-07): `tools/rail/bus_station.py` (called by `massy_station.py`,
+  its docstring has the details; `rail.json` `massy` `bus_station`) lays the bus station out again along the quays'
+  common axis: straight quays (Îlots C, B, A) with 18 cm bus kerbs, the RER side lane 8.5 m wide (two buses side by
+  side), the Massy side one 5.5 m (a bus and a half), a raised sidewalk along it, a turnaround round Îlot B's north-east
+  nose (the buses' path 10 m from its centre, 12.6 m of asphalt: an 18 m bus turns round), all on one smooth profile
+  along the axis (flat across: the LiDAR's bumps gone), the fence to the tracks straight; OSM's 2 m wall along the
+  avenue becomes a straight retaining wall with a parapet; markings (lane lines, arrows, stop bays with yellow zigzags
+  and BUS, zebras, a hatched nose); lamps.
+- The bus depot (2026-11-08, Thomas's plan, after Gent's bus station): `tools/rail/bus_depot.py` (called by
+  `bus_station.py`, its docstring has the details; `rail.json` `massy` `bus_station` `depot`) replaces the brick hangar
+  and the herringbone bus layover there. One thin flat roof 49.5 x 21.6 m (light grey, smooth underside, bevelled
+  edge, 6 m clear) on slender inclined columns in V pairs, no walls, over a flat floor at -70.8 m (~2 m over the bus
+  lanes): the drivers' walkway along the Avenue Carnot side, a 6 m passage lane, three lanes of two 21 m bays (the
+  buses facing south-west). A ramp in at the north-east from the Massy side lane (36.5 m, ~7.7 % at most, rounded
+  ends), widening to the roof's width; a ramp out at the south-west (28 m, ~7.6 %) narrowing to the lane; a straight
+  retaining wall along the lane, a wall between the ramp out and the car park (11 spaces in two rows along the avenue,
+  a dropped kerb, stairs down to the walkway); a green 2 m welded-mesh fence round it, open at the ramps' feet and
+  the car park's entrance; downlights under the roof (lit at night), lamp posts in the car park, "Hangar de la gare
+  routière" on both long fascias, a "Nous recrutons !" panel facing the avenue. Round it: a new 3 m north sidewalk on
+  Avenue Carnot (a straight kerb, into the existing one east), Nouvelle Voie's east sidewalk redone at a constant
+  width round the junction's corner into it (the busway w1049745371 and cycleway w1430094866 gone), one planted talus
+  at the south-west, a planted talus at the north-east, a hedge and trees along the avenue; the green is a harmonic
+  surface between the hard parts (a grid repair), walls where it stands higher. `tools/online/garages.py` puts the
+  bus job's depot under the roof (its terminal by the stairs, the six bays); `tools/rail/bus_routes.py` starts the
+  4606's way out on the RER side lane between Îlots C and B (the stop at Îlot B, the turnaround, out along the Massy
+  side); `scripts/builder/hangar_builder.gd` draws the markings, kerbs, walls, lamps, the depot and its fence,
+  `world_builder.gd` plants its trees and hedge (`vegetation_builder.gd` add_rail_greenery).
 - The map, `patch_world.py`: from the pipeline's files kept in `godot/world/base/` (never from patched ones: running
   it twice gives the same bytes; `world.json` `meta.rail` holds the version and the inputs' SHA-1) it draws the
   railway's ground into the heightmap and the ground mesh (cliff cells keep each side's plane, with skirts; the mesh
@@ -584,8 +618,17 @@ committed scripts that regenerate everything from data (commands above).
   signals' aspects and the departure screens, and puts a player riding off the map down by the line. Sounds are
   synthesized (`vehicle_audio.gd`: traction whine, rail rumble, horn, door warning, brake squeal). In LAN games the
   host runs the trains and sends their states on the shared clock; the others pose them from the same routes.
+- Stabled trains (2026-11-07): `scripts/parked_trains.gd` (made by `train_traffic.gd` on every peer, from the same
+  `rail.json`: no network state) stands MI 79 R trains still, as at off-peak, on the RER B's garage tracks at
+  Massy-Palaiseau (the yard tracks with OSM track numbers 46-76 and 4T, south-west and north-east of the station):
+  along each, the stretch clear of every other track (4.0 m between centres, 4.3 m from a running line: the switches'
+  fouling zones left out, 4 m beyond them, 5 m before a buffer stop), an 8-car train where one fits, else a 4-car unit,
+  pushed against the buffer stop, a quarter of the tracks left empty; each car between its bogies on the rails. Drawn
+  as one MultiMesh per merged part and 4-car unit (the running trains' visibility ranges), one box per car for
+  collision (BUILDINGS layer); nothing per frame. Today: 10 trains, 72 cars on 10 of 14 usable tracks.
 - Known differences from the real stations: at Massy-Palaiseau only the RER B's two islands are platforms (the RER C
-  and TGV platforms are the map's ground), the terminus, depot and TGV tracks have no catenary and no trains; its
+  and TGV platforms are the map's ground), the terminus, depot and TGV tracks have no catenary and no trains (the RER B
+  garage tracks have stabled trains, without catenary either); its
   concourse is one level for the three footbridges (in reality the historic footbridge is closed, `access=no`); the
   halls' heights, the line 18 box's layout (side platforms, mezzanine, shaft) and sizes are assumed (no source gives
   them), and its lifts and escalators do not move; the new stations have the rule-made furniture (lamps, name boards,

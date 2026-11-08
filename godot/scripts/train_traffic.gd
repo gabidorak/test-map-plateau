@@ -25,6 +25,7 @@ extends Node
 
 const Train = preload("res://scripts/train.gd")
 const TrainBot = preload("res://scripts/train_bot.gd")
+const ParkedTrains = preload("res://scripts/parked_trains.gd")
 const RailMap = preload("res://scripts/rail_map.gd")
 const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
@@ -79,6 +80,9 @@ func _ready() -> void:
 	if not rail is Dictionary:
 		return
 	_rm = RailMap.get_map(RAIL)
+	var parked := ParkedTrains.new()        # the trains stabled in Massy-Palaiseau's yard, on every peer
+	parked.setup(rail)
+	add_child(parked)
 	services = rail["services"]
 	spec = rail["train"]
 	_landing = rail.get("landing", {})

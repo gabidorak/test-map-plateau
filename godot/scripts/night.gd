@@ -158,6 +158,7 @@ func _lamp_shows(k: int) -> bool:
 func _build_lamps() -> void:
 	_lamps_built = true
 	_build_rail_lamps()
+	_build_massy_lamps()
 	var props := world_root.get_node_or_null("Props") if world_root else null
 	if props == null:
 		return
@@ -217,6 +218,32 @@ func _build_rail_lamps() -> void:
 		spot.distance_fade_length = 30.0
 		spot.position = p
 		station.add_child(spot)
+		_lamps.append([spot, null, 0])
+
+
+## Massy-Palaiseau's (massy_builder.gd, hangar_builder.gd: MassyPalaiseau, its "lamp_lights" meta): the Atlantis bus
+## station's lamps and the bus hangar's light the ground under them; their diffusers glow.
+func _build_massy_lamps() -> void:
+	var massy := world_root.get_node_or_null("MassyPalaiseau") if world_root else null
+	if massy == null:
+		return
+	for mi: MeshInstance3D in massy.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh:
+			_glow_box(mi.mesh)
+	for p: Vector3 in massy.get_meta("lamp_lights", PackedVector3Array()):
+		var spot := SpotLight3D.new()
+		spot.spot_range = RAIL_LAMP[1]
+		spot.spot_angle = RAIL_LAMP[2]
+		spot.spot_angle_attenuation = 0.5
+		spot.rotation = Vector3(-PI * 0.5, 0.0, 0.0)
+		spot.light_color = LAMP_COLOR
+		spot.light_energy = RAIL_LAMP[0]
+		spot.light_specular = 0.3
+		spot.distance_fade_enabled = true
+		spot.distance_fade_begin = LAMP_FADE
+		spot.distance_fade_length = 30.0
+		spot.position = p
+		massy.add_child(spot)
 		_lamps.append([spot, null, 0])
 
 

@@ -1,7 +1,8 @@
 extends SceneTree
 ## PTA Online's bus job (ONLINE_MILESTONES.md O5, scripts/online/bus_job.gd). The role is the first argument after `--`:
-## - `--check`: played solo (PLATEAU_MODE=online, an empty garage): the depot's lines, going on duty (a lent 18 m bus
-##   comes out), duty refused away from the depot; a bot drives the whole 4606 to the west edge (towards Christ de Saclay) on duty: every stop served,
+## - `--check`: played solo (PLATEAU_MODE=online, an empty garage): the depot's lines (its terminal and bays under the
+##   bus depot's roof by the Atlantis bus station, rail.json massy bus_station depot), going on duty (a lent 18 m bus
+##   comes out under the roof, on its floor, facing its way out), duty refused away from the depot; a bot drives the whole 4606 to the west edge (towards Christ de Saclay) on duty: every stop served,
 ##   no penalty, the pay per hour within PAY_BAND; then skipped stops, off the route, a teleport (the stretch pays
 ##   nothing), the hourly cap; off duty; with the bot buses running, duty holds one of them off the map and off duty
 ##   brings it back. ~4 min.
@@ -253,6 +254,34 @@ func _events(d: Object, kind: String) -> Array:
 	return d.events.filter(func(e: Array) -> bool: return e[0] == kind)
 
 
+## The depot's terminal and the lent bus under the bus depot's roof (rail.json massy bus_station depot,
+## tools/rail/bus_depot.py), the bus on its floor, facing south-west (its way out, the ramp out).
+func _in_depot(car: Node) -> void:
+	var rail: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://world/rail.json"))
+	var B: Dictionary = rail.get("massy", {}).get("bus_station", {})
+	if not B.has("depot"):
+		_check(false, "rail.json has the bus depot")
+		return
+	var o := Vector2(B["frame"]["o"][0], B["frame"]["o"][1])
+	var dd := Vector2(B["frame"]["d"][0], B["frame"]["d"][1]).normalized()
+	var nn := Vector2(-dd.y, dd.x)
+	var Dp: Dictionary = B["depot"]
+	var r: Array = Dp["roof"]
+	var inside := func(p: Vector2) -> bool:
+		var u := (p - o).dot(dd) - float(Dp["s0"])
+		var v := (p - o).dot(nn) - float(Dp["t0"])
+		return u > float(r[0]) and u < float(r[1]) and v > float(r[2]) - 0.6 and v < float(r[3])
+	var g: Dictionary = _mode.garages.get_garage("bus-depot")
+	_check(inside.call(g["xy"]), "the depot's terminal is under its roof (%.1f, %.1f)" % [g["xy"].x, g["xy"].y])
+	await _frames(60)
+	var c: Vector3 = car.global_position
+	var fwd: Vector3 = car.global_transform.basis.z
+	var f2 := Vector2(fwd.x, -fwd.z).normalized()
+	_check(inside.call(Vector2(c.x, -c.z)) and absf(c.y - float(Dp["floor"])) < 1.5 and f2.dot(-dd) > 0.95,
+			"the lent bus comes out under the depot's roof on its floor, facing its way out (%.1f, %.1f, %.2f m; floor %.2f m)" % [
+			c.x, -c.z, c.y, Dp["floor"]])
+
+
 ## Drives on (`bot` at the wheel) until `done` or `minutes` of simulated time.
 func _drive_until(done: Callable, minutes: float) -> bool:
 	for i in int(minutes * 3600.0):
@@ -290,6 +319,7 @@ func _solo() -> void:
 			"on duty on the 4606 with nothing out: a lent 18 m bus comes out (%s)" % r[1])
 	if d == null or car == null:
 		return
+	await _in_depot(car)
 	await process_frame
 	_check(_job.hud_text().contains("4606") and _job.hud_text().contains("Drive to the line"),
 			"the HUD shows the line: %s" % _job.hud_text().replace("\n", " | "))

@@ -68,6 +68,7 @@ func build_and_save() -> Error:
 		return err
 	BuildingBuilder.new().build(root, world, MESH_DIR)
 	InteriorBuilder.new().build(root, world, heights, MESH_DIR)
+	VegetationBuilder.add_rail_greenery(world)      # the bus depot's trees and hedge (rail.json)
 	err = VegetationBuilder.new().build(root, world, heights, MESH_DIR)
 	if err != OK:
 		root.free()

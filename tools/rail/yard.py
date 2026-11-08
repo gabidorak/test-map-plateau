@@ -14,7 +14,12 @@ the RER C beside), every track is a line of its own.
   tracks on either side over OSM's extent along them, its edges PLATFORM_EDGE from both track centres, its top
   PLATFORM_HEIGHT above the higher rail.
 - Zones for patch_world.py: "yard" (the tracks' ballast strips: ground kept as it is, ballast material) and "island"
-  (the raised platform: its own flat top along an axis)."""
+  (the raised platform: its own flat top along an axis).
+- Ballast beds (2026-11-07): each track's `bed` runs (where its centre is on the "yard" zones) get a ballast prism in
+  rail_builder.gd, its top BED_SHOW under the sleepers' tops, as the alignment's; the patch lowers the strips' ground
+  under it (railgeo.YardBed: BED_DROP under the bed top out to BED_FLAT m, then rising BED_RISE per metre). The LiDAR
+  ground kept as it was rose over the sleepers almost everywhere and over the rails here and there (the strips are
+  drawn on 2 m nodes; the rail level is a smoothed profile)."""
 import math
 
 import numpy as np
@@ -29,7 +34,15 @@ SMOOTH = 4.0                    # m, Gaussian sigma of the track lines
 LEVEL_SMOOTH = 12.0             # m, of the level profiles
 HUMP = 0.35                     # m over the smooth fit of a level profile that is no trackbed (yard.level_profile)
 STRIP = 1.9                     # m either side of a track centre: its ballast strip (the sleepers are 2.41 m long)
+GAP_FILL = 3.0                  # m: narrower gaps between strips are ballast too (between tracks under ~6.8 m apart,
+                                # the wedges at switches: the map's own ground showed there in dark strips)
 MIN_TRACK = 15.0                # m: shorter merged pieces are left out (switch stubs)
+BED_SHOW = 0.04                 # m of the sleepers' tops above the ballast bed (rail_builder.gd SLEEPER_SHOW)
+BED_DROP = 0.30                 # m: the strips' ground at least this far under the bed top near a track...
+BED_FLAT = 1.25                 # ...out to this far from its centre (the sleeper ends)...
+BED_RISE = 0.5                  # ...then rising this much per metre (a 2 m node 2.8 m off still holds the ground
+                                # under the sleepers: within 0.5 % of the bed's width, never under the sleepers)
+BED_DEPTH = 1.0                 # m: the bed's sloped sides reach this far down (they meet the ground)
 
 
 def way_line(w: dict) -> np.ndarray:
@@ -183,7 +196,9 @@ def build(osm: dict, A: rg.Alignment, spacing: float, rail_above: float, H: rg.H
     for k, tr in enumerate(tracks):
         tr["id"] = "yard:%s" % ("main" + tr["ref"] if tr["main"] else str(k))
     islands = build_islands(osm, tracks, platform_edge, platform_height, data_area)
-    return {"tracks": tracks, "islands": islands, "s_start": s_end}
+    bed = {"below_rail": rail_above + BED_SHOW, "show": BED_SHOW, "drop": BED_DROP, "flat": BED_FLAT,
+           "rise": BED_RISE, "depth": BED_DEPTH}
+    return {"tracks": tracks, "islands": islands, "s_start": s_end, "bed": bed}
 
 
 def build_islands(osm: dict, tracks: list, edge: float, height: float, data_area) -> list:
@@ -260,6 +275,16 @@ def build_islands(osm: dict, tracks: list, edge: float, height: float, data_area
     return out
 
 
+def bed_runs(pts: np.ndarray, area) -> list:
+    """[first, last] point index of each run (two points or more) of `pts` inside `area` (None: none)."""
+    import shapely
+    if area is None or len(pts) == 0:
+        return []
+    ins = shapely.contains_xy(area, pts[:, 0], pts[:, 1])
+    edges = np.flatnonzero(np.diff(np.r_[0, ins.astype(np.int8), 0]))
+    return [[int(a), int(b) - 1] for a, b in zip(edges[::2], edges[1::2]) if b - a >= 2]
+
+
 def zones(yard: dict, taken, data_area=None, streets=None) -> list:
     """patch_world zones: the islands (axis zones: their flat top along the spine) and the tracks' ballast strips
     ("yard": the ground kept, ballast material), outside what the alignment's zones already take (`taken`).
@@ -282,6 +307,7 @@ def zones(yard: dict, taken, data_area=None, streets=None) -> list:
                                                                             for h in p.interiors] for p in polys],
                         "axis": isl["spine"], "axis_z": np.full(len(isl["spine"]), isl["top"]), "portals": []})
     strips = unary_union([LineString(t["pts"]).buffer(STRIP, cap_style=2) for t in yard["tracks"]])
+    strips = strips.buffer(GAP_FILL / 2).buffer(-GAP_FILL / 2)
     if data_area is not None:                   # on the map's ground only (the mains run on past it, hidden)
         strips = strips.intersection(data_area)
     if streets is not None:                     # only the RER's own tracks keep their ballast through a street
@@ -290,6 +316,12 @@ def zones(yard: dict, taken, data_area=None, streets=None) -> list:
     g = strips if used is None else strips.difference(used)
     g = shapely.set_precision(g, 0.001)
     polys = [x for x in getattr(g, "geoms", [g]) if x.geom_type == "Polygon" and x.area > 0.05]
+    # each track's ballast bed: the runs of its points on these strips (rail_builder.gd draws the bed there)
+    gp = shapely.union_all(polys) if polys else None
+    if gp is not None:
+        shapely.prepare(gp)
+    for t in yard["tracks"]:
+        t["bed"] = bed_runs(np.asarray(t["pts"]), gp)
     if polys:
         out.append({"kind": "yard", "side": None, "source": "rail",
                     "polygons": [[np.asarray(p.exterior.coords)[:-1]] + [np.asarray(h.coords)[:-1] for h in p.interiors]

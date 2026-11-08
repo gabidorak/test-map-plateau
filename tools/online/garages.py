@@ -6,7 +6,9 @@ The only places a player's vehicle appears online. Each garage is a row of spawn
 beside the row's first bay:
 - public garages on OSM car parks, spread so one is never far on the campus (fewer along the Massy and west
   corridors); a "big" bay takes the long and wide vehicles (truck + trailer, biplane);
-- the bus depot at Massy-Palaiseau station (buses only, bus drivers);
+- the bus depot at Massy-Palaiseau station (buses only, bus drivers): under the bus depot's roof by the Atlantis bus
+  station (tools/rail/bus_depot.py, rail.json massy bus_station depot depot: its terminal on the drivers' walkway by
+  the stairs, its six bays on the three lanes, facing the ramp out), when rail.json has it;
 - the fire station at Polytechnique, building #1289 "SPIS" (osm:w1063984911, an open canopy 2.9 m high: the 3.1 m
   fire truck doesn't fit under it, so the bays are beside it), fire trucks only;
 - Prestige Motors' delivery bays, by its main door (the shop, scripts/online/shop.gd: a vehicle bought there comes out
@@ -71,7 +73,7 @@ GARAGES = [
      "bays": [BIG, CAR, CAR]},
     {"id": "massy", "name": "Massy-Palaiseau", "kind": "public", "osm": ["w26250186"], "bays": [CAR, CAR, CAR]},
     {"id": "bus-depot", "name": "Bus depot - Massy-Palaiseau", "kind": "depot", "near": (4378.0, 1188.0, 140.0),
-     "bays": [BUS, BUS]},
+     "bays": [BUS, BUS], "rail_depot": True},
     {"id": "fire-station", "name": "Fire station - Polytechnique", "kind": "fire", "near": (830.0, -151.0, 45.0),
      "bays": [TRUCK, TRUCK]},
     {"id": "prestige-motors", "name": "Prestige Motors", "kind": "shop", "near": (276.3, 18.0, 70.0),
@@ -175,7 +177,21 @@ def terminal_spot(x: float, y: float, yaw: float, bays: list) -> tuple:
     return tx, ty, (yaw + 90.0) % 360.0           # facing the bays (east of the terminal when the row faces north)
 
 
+def rail_depot(g: dict) -> dict | None:
+    """The bus depot under the depot's roof (rail.json massy bus_station depot depot), or None."""
+    h = json.loads(RAIL.read_text(encoding="utf-8")).get("massy", {}).get("bus_station", {}).get("depot")
+    if not h:
+        return None
+    d = h["depot"]
+    return {"id": g["id"], "name": g["name"], "kind": g["kind"], "osm": [], "terminal": dict(d["terminal"]),
+            "bays": [dict(b) for b in d["bays"]]}
+
+
 def place(g: dict, world: dict) -> dict | None:
+    if g.get("rail_depot"):
+        done = rail_depot(g)
+        if done is not None:
+            return done
     if "osm" in g:
         parts = [p for o in g["osm"] for p in world["parks"].get(o, [])]
         if not parts:
@@ -302,8 +318,8 @@ def main() -> None:
         out.append(done)
         b = done["bays"][0]
         print("%-14s %-30s bays at (%.0f, %.0f) yaw %.0f" % (done["id"], done["name"], b["x"], b["y"], b["yaw"]))
-    OUT.write_text(json.dumps({"schema": 1, "about": "PTA Online garages: tools/online/garages.py", "garages": out},
-                              ensure_ascii=False, indent=1) + "\n")
+    OUT.write_bytes((json.dumps({"schema": 1, "about": "PTA Online garages: tools/online/garages.py", "garages": out},
+                                ensure_ascii=False, indent=1) + "\n").encode("utf-8"))   # LF: godot/world/*.json
     print("%d garages -> %s" % (len(out), OUT.relative_to(ROOT)))
     if opt["plot"]:
         plot(opt["plot"], world, out)

@@ -23,6 +23,24 @@ const HEDGE_STEP := 0.5                 # m between hedge profile rings
 const HEDGE_PROFILE := 12               # points of the rounded cross-section
 
 
+## Adds to world's trees and hedges those world/rail.json plants (massy bus_station `greenery`: the bus depot's
+## talus, bed and avenue, tools/rail/bus_depot.py), once; world_builder.gd before building, check_world.gd before
+## checking.
+static func add_rail_greenery(world: Dictionary) -> void:
+	if world.get("_rail_greenery", false) or not FileAccess.file_exists("res://world/rail.json"):
+		return
+	world["_rail_greenery"] = true
+	var rail = JSON.parse_string(FileAccess.get_file_as_string("res://world/rail.json"))
+	if not rail is Dictionary:
+		return
+	var g: Dictionary = rail.get("massy", {}).get("bus_station", {}).get("greenery", {})
+	var arch: Dictionary = world["tree_archetypes"]
+	for t: Dictionary in g.get("trees", []):
+		if arch.has(t["arch"]):
+			world["trees"].append(t)
+	world["hedges"].append_array(g.get("hedges", []))
+
+
 func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_dir: String) -> Error:
 	var manifest = JSON.parse_string(FileAccess.get_file_as_string(MODELS_DIR + "models.json"))
 	if not manifest is Dictionary:
