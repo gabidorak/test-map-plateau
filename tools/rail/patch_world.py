@@ -28,7 +28,10 @@ taken as the new base), never from patched ones, so running it twice gives the s
 - Massy-Palaiseau (rail.json `massy`, massy_station.py): the ground repaired where the LiDAR saw the line 18
   station's excavation and le Lien's hall (`regrade` zones: the repaired ground, the material kept), the line 18
   shaft opened down to the mezzanine (a stairwell zone), and the map's footbridge decks, halls and the line 18 and
-  TGV buildings there dropped (massy_builder.gd draws them).
+  TGV buildings there dropped (massy_builder.gd draws them). The Atlantis bus station and the bus hangar (rail.json
+  massy bus_station, bus_station.py): their zones (regrade zones with a ground piece of their own, `piece`, that take
+  the pipeline's raised pieces, kerbs and markings in, `absorb`), its props moved onto the quays or dropped, the map's
+  fences across its lanes dropped, world.json kerbs cut back.
 A report goes to tools/rail/review/patch.md.
 """
 import hashlib
@@ -47,7 +50,8 @@ from shapely.ops import polygonize, unary_union
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import railgeo as rg  # noqa: E402
 
-PATCH_VERSION = 3              # 3: Massy-Palaiseau's ground repairs, line 18 shaft and replaced decks and halls
+PATCH_VERSION = 4              # 3: Massy-Palaiseau's ground repairs, line 18 shaft and replaced decks and halls;
+                               # 4: the yard's ground lowered under its tracks' ballast beds (railgeo.YardBed)
 HARD = {"trackbed": ("railway", "ballast"), "platform": ("platform", "asphalt"), "stairwell": ("steps", "concrete"),
         "road_trench": ("road", "asphalt"), "island": ("platform", "asphalt"), "yard": ("railway", "ballast"),
         # Massy-Palaiseau's repaired ground with a ground of its own (massy_station.py): the line 18 hall's floor and
@@ -60,6 +64,16 @@ AXIS_KINDS = ("stairwell", "road_trench", "island", "bus_island")   # zones whos
 # zones that take the pipeline's raised pieces (and their kerbs, skirts, markings) inside them into their own surface:
 # the bus islands, whose OSM outlines the pipeline had partly raised as platforms
 ABSORB = ("bus_island",)
+
+
+def hard_of(z: dict):
+    """(piece kind, material) of zone z's new ground piece, None when it keeps the ground's (a regrade zone may name
+    one: `piece`, bus_station.py), and whether it absorbs the pipeline's raised pieces (`absorb`)."""
+    return tuple(z["piece"]) if z.get("piece") else HARD.get(z["kind"])
+
+
+def absorbs(z: dict) -> bool:
+    return z["kind"] in ABSORB or bool(z.get("absorb"))
 BALLAST_COLOUR = "#8c8379"      # toy ballast: rust-stained crushed granite (photos of the station), lightened like the
                                 # rest of the palette
 # The station building as the photos show it (Wikimedia Commons, "Gare Lozère RER IdF Ligne B - Palaiseau (FR91) -
@@ -123,7 +137,10 @@ class Zones:
             shapely.prepare(g)
             self.geoms.append(g)
         self.union = unary_union(self.geoms)
-        self.hard = unary_union([g for g, z in zip(self.geoms, self.list) if z["kind"] in HARD])
+        self.hard = unary_union([g for g, z in zip(self.geoms, self.list) if hard_of(z)])
+        # the zones that take the pipeline's raised pieces into their own surface: its raised collision faces go too
+        self.absorb = unary_union([g for g, z in zip(self.geoms, self.list) if absorbs(z)])
+        shapely.prepare(self.absorb)
         shapely.prepare(self.union)
         shapely.prepare(self.hard)
         # every zone's outline as short segments in one tree: a 2 m cell takes only the few near it (the yard's
@@ -202,6 +219,8 @@ def project(A: rg.Alignment, x: np.ndarray, y: np.ndarray) -> tuple:
 def zone_heights(design: rg.Design, zone: dict, s: np.ndarray, u: np.ndarray, x: np.ndarray, y: np.ndarray):
     """Vectorized railgeo.Design.zone_fn for many points of one zone."""
     kind = zone["kind"]
+    if kind == "yard" and design.yard_bed is not None:     # under the yard tracks' ballast beds (yard.py)
+        return np.minimum(design.H.at(x, y), design.yard_bed.cap(x, y))
     if kind == "yard" or kind in REGRADE:       # the yard's ballast strips keep the ground (tools/rail/yard.py), a
         return design.H.at(x, y)                # repair takes the repaired ground (design.H: massy_station.py)
     if kind in AXIS_KINDS:
@@ -411,7 +430,7 @@ def rebuild_chunk(d: dict, ctx: dict) -> tuple:
         stats["cells"] += 1
         rebuilt.add(key)
         surface, raised, overlay = [], [], []     # the tiling (raised sidewalks kept whole) and what lies on it
-        absorb = [k for k in local if zones.list[k]["kind"] in ABSORB]
+        absorb = [k for k in local if absorbs(zones.list[k])]
         for t in ts:
             a, b, c = tri[t]
             m, f = int(cus[a, 0]), int(cus[a, 1])
@@ -523,7 +542,7 @@ def rebuild_chunk(d: dict, ctx: dict) -> tuple:
             col = d["col"][a].astype(np.float64)
             cu = d["cus"][a].copy()
             zone = zones.list[zk] if zk >= 0 else None
-            if zone is not None and zone["kind"] in HARD:
+            if zone is not None and hard_of(zone):
                 col, cu = ctx["piece_attr"][zk]
             # Godot front faces are clockwise seen from above (map y flipped): keep the old winding's sense
             (x0, y0, _), (x1, y1, _), (x2, y2, _) = pts
@@ -539,11 +558,13 @@ def rebuild_chunk(d: dict, ctx: dict) -> tuple:
                     k2 = tuple(sorted([(round(p[0], 7), round(p[1], 7)), (round(q[0], 7), round(q[1], 7))]))
                     a_, b_ = (p, q) if (round(p[0], 7), round(p[1], 7)) == k2[0] else (q, p)
                     edges.setdefault(k2, []).append((a_, b_, zk, cen))
-            scol, scu = ctx["skirt_attr"]
             for k2, lst in edges.items():
                 if len(lst) != 2 or lst[0][2] == lst[1][2]:
                     continue
                 e0, e1 = lst
+                # the yard strips' edges (their ground lowered under the ballast beds): a ballast step, not a kerb
+                yardish = any(e[2] >= 0 and zones.list[e[2]]["kind"] == "yard" for e in lst)
+                scol, scu = ctx["yard_skirt_attr" if yardish else "skirt_attr"]
                 if max(abs(e0[0][2] - e1[0][2]), abs(e0[1][2] - e1[1][2])) < 0.005:
                     continue
                 low, high = (e0, e1) if e0[0][2] + e0[1][2] < e1[0][2] + e1[1][2] else (e1, e0)
@@ -628,6 +649,13 @@ def rebuild_chunk(d: dict, ctx: dict) -> tuple:
     if len(cf):
         dz = ctx["H_new"].at(cf[:, 0], -cf[:, 2], ctx["nodes_new"]) - ctx["H_old"].at(cf[:, 0], -cf[:, 2], ctx["nodes_old"])
         cf[:, 1] += dz
+        # inside a zone that took the raised pieces in (the bus station's quays, lanes...): the pipeline's raised
+        # faces of those pieces (an old kerb's) go, the zone's ground is the terrain's (or the cliff cells' covers)
+        if not ctx["zones"].absorb.is_empty:
+            T3 = cf.reshape(-1, 3, 3)
+            c = T3.mean(axis=1)
+            keep = ~shapely.contains_xy(ctx["zones"].absorb, c[:, 0], -c[:, 2])
+            cf = T3[keep].reshape(-1, 3)
     nd["colf"] = cf.astype(np.float32)
     return nd, cliffs, stats, rebuilt
 
@@ -1181,6 +1209,8 @@ def main() -> None:
         H_fix.__dict__.update({k: v for k, v in H_old.__dict__.items() if not k.startswith("_nodes")})
         H_fix.data = mst.apply_repairs(H_old, rail["massy"]["repairs"])
     design = rg.Design(rail["earthworks"], A, H_fix, [z for z in rail["zones"] if "axis" in z])
+    if rail.get("yard", {}).get("bed"):
+        design.yard_bed = rg.YardBed(rail["yard"])     # the yard's ground under its tracks' ballast beds
     zones = Zones(rail)
     grid = Grid(H_old)
     report = ["# Rail patch report", "", "Generated by tools/rail/patch_world.py from godot/world/base/ and "
@@ -1224,9 +1254,9 @@ def main() -> None:
     piece_of_zone = {}
     key_piece = {}
     for k, z in enumerate(zones.list):
-        if z["kind"] not in HARD:
+        if not hard_of(z):
             continue
-        pk, mat = HARD[z["kind"]]
+        pk, mat = hard_of(z)
         key = (pk, z.get("source", ""), z.get("side"))
         if key not in key_piece:
             src = z.get("source", "") or "rail"
@@ -1244,6 +1274,9 @@ def main() -> None:
         cu = np.array([mats.index(mat), 0, (pi * 37) % 256, 0], dtype=np.uint8)
         piece_attr[k] = (col, cu)
     skirt_attr = (srgb_col(SKIRT_COLOUR), np.array([KERB, FLAG_SIDE, 0, 0], dtype=np.uint8))
+    # the yard strips' steps: ballast-coloured, still kerb skirts (check_world.gd and the ground's hole check know
+    # those lie over the surface)
+    yard_skirt_attr = (srgb_col(BALLAST_COLOUR), np.array([KERB, FLAG_SIDE, 0, 0], dtype=np.uint8))
 
     # --- ground mesh
     files = {}                                  # ground.bin and its parts (a chunk's "file"), as read
@@ -1255,7 +1288,8 @@ def main() -> None:
     orig_xy = set()
     ctx = {"grid": grid, "zones": zones, "design": design, "A": A, "H_new": H_new, "H_old": H_old,
            "nodes_new": H_new.nodes(), "nodes_old": H_old.nodes(), "snapper": Snapper(zones, grid),
-           "orig_xy": orig_xy, "piece_attr": piece_attr, "skirt_attr": skirt_attr}
+           "orig_xy": orig_xy, "piece_attr": piece_attr, "skirt_attr": skirt_attr,
+           "yard_skirt_attr": yard_skirt_attr}
     chunks = []
     for c in gm["chunks"]:
         a = c["aabb"]
@@ -1499,6 +1533,36 @@ def main() -> None:
             q = dict(p)
             q["x"], q["y"] = a["to"]
             props.append(q)
+    # the Atlantis bus station's lanes and the bus hangar (rail.json massy bus_station, bus_station.py): props there
+    # onto the quays and sidewalks or gone, the map's fences across them (OSM's wall along the avenue) gone, its kerbs
+    # (the pipeline's raised pieces there are the zones' own ground now) cut back
+    bst = rail.get("massy", {}).get("bus_station")
+    if bst:
+        bacts = {p["id"]: p for p in bst["props"]}
+        kept = []
+        for p in props:
+            a = bacts.get(p["id"])
+            if a is None:
+                kept.append(p)
+            elif a["action"] == "moved":
+                kept.append(dict(p, x=a["to"][0], y=a["to"][1]))
+        props = kept
+        gone_f = set(bst["fences_gone"])
+        world["fences"] = [f for f in world["fences"] if f["id"] not in gone_f]
+        cut = unary_union([Polygon(r).buffer(0) for r in bst["clear"]])
+        kerbs = []
+        for kb in world["kerbs"]:
+            if len(kb["pts"]) < 2 or not LineString(kb["pts"]).intersects(cut):
+                kerbs.append(kb)
+                continue
+            rest = LineString(kb["pts"]).difference(cut)
+            for part in getattr(rest, "geoms", [rest]):
+                if part.geom_type == "LineString" and part.length > 0.3:
+                    kerbs.append(dict(kb, pts=[[round(x, 3), round(y, 3)] for x, y in part.coords]))
+        log("bus station: %d props moved, %d dropped, fences gone %s, kerbs %d -> %d" % (
+            sum(a["action"] == "moved" for a in bacts.values()), sum(a["action"] == "dropped" for a in bacts.values()),
+            sorted(gone_f), len(world["kerbs"]), len(kerbs)))
+        world["kerbs"] = kerbs
     dropped = len(world["props"]) - len(props)
     world["props"] = props
     nf = 0

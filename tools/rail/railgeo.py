@@ -222,6 +222,56 @@ class Alignment:
         return out
 
 
+class YardBed:
+    """The ground under the yard tracks' ballast beds (rail.json yard `bed`: tools/rail/yard.py; rail_builder.gd draws
+    each track's bed as a prism, its top SHOW under the sleepers' tops, like the alignment's): the patched ground in
+    the "yard" zones may not rise above cap(x, y), DROP under the nearest bed top out to FLAT m from the track centre,
+    then rising RISE per metre. The ground mesh is draped on 2 m nodes, so a node up to ~2.8 m off a track shapes the
+    ground under its sleepers: with the ground kept as the LiDAR saw it (yard.py before 2026-11-07) it rose over the
+    sleepers along 89 % of the yard and over the rails at 7 %."""
+
+    REACH = 7.0                     # m: tracks further off do not cap a point (RISE * (REACH - FLAT) > any hump)
+
+    def __init__(self, yard: dict):
+        from scipy.spatial import cKDTree
+        bed = yard.get("bed", {})
+        self.drop, self.flat, self.rise = float(bed["drop"]), float(bed["flat"]), float(bed["rise"])
+        below = float(bed["below_rail"])                # rail top -> bed top
+        P, T, Hd = [], [], []
+        for t in yard["tracks"]:
+            pts, z, hd = np.asarray(t["pts"], dtype=np.float64), np.asarray(t["z"], dtype=np.float64), \
+                np.asarray(t["heading"], dtype=np.float64)
+            for a, b in t.get("bed", []):
+                P.append(pts[a:b + 1])
+                T.append(z[a:b + 1] - below)
+                Hd.append(hd[a:b + 1])
+        self.ok = bool(P)
+        if self.ok:
+            self.P, self.T, self.Hd = np.vstack(P), np.concatenate(T), np.concatenate(Hd)
+            self.tree = cKDTree(self.P)
+
+    def cap(self, x, y) -> np.ndarray:
+        """Highest ground allowed at map points (arrays; +inf where no bed is within REACH)."""
+        q = np.c_[np.atleast_1d(np.asarray(x, dtype=np.float64)), np.atleast_1d(np.asarray(y, dtype=np.float64))]
+        out = np.full(len(q), np.inf)
+        if not self.ok:
+            return out
+        for a in range(0, len(q), 20000):
+            qq = q[a:a + 20000]
+            dd, ii = self.tree.query(qq, k=48, distance_upper_bound=self.REACH)
+            ok = np.isfinite(dd)
+            ii = np.where(ok, ii, 0)
+            v = qq[:, None, :] - self.P[ii]
+            tx, ty = np.cos(self.Hd[ii]), np.sin(self.Hd[ii])
+            along = np.abs(v[..., 0] * tx + v[..., 1] * ty)
+            across = np.abs(v[..., 1] * tx - v[..., 0] * ty)
+            d = np.sqrt(across ** 2 + np.maximum(along - 0.5, 0.0) ** 2)     # each point stands for its metre
+            c = self.T[ii] - self.drop + np.maximum(d - self.flat, 0.0) * self.rise
+            c[~ok] = np.inf
+            out[a:a + 20000] = c.min(axis=1)
+        return out
+
+
 class Design:
     """The ground the railway shapes, from rail.json `earthworks` and `zones` (or the same in memory): z(s, u, p) is
     the designed height at map point p, which is at (s, u) on the alignment, or the existing ground `H` where the
@@ -246,6 +296,7 @@ class Design:
         self.sides = {k: {a: np.asarray(v, dtype=np.float64) for a, v in ew[k].items() if a != "why"}
                       for k in ("left", "right")}
         self.n = len(self.F)
+        self.yard_bed = None            # YardBed: caps the "yard" zones' ground (patch_world.py sets it)
         self.zones = []
         for z in zones:
             self.add_zone(z)
@@ -344,8 +395,10 @@ class Design:
         if zone is None:
             return self.ground(p)
         kind = zone["kind"]
-        # a yard track's ballast strip: the ground as it is (yard.py); a repair (massy_station.py): the repaired
-        # ground this Design was given
+        # a yard track's ballast strip: the ground as it is (yard.py), under the ballast beds' cap (YardBed); a repair
+        # (massy_station.py): the repaired ground this Design was given
+        if kind == "yard" and self.yard_bed is not None:
+            return min(self.ground(p), float(self.yard_bed.cap(p[0], p[1])[0]))
         if kind in ("yard", "regrade", "regrade_floor", "regrade_gravel"):
             return self.ground(p)
         if kind in ("stairwell", "road_trench", "island", "bus_island"):

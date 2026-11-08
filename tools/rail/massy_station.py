@@ -41,6 +41,9 @@ What it decides, from tools/rail/osm_massy_station.json (fetch_osm.py --station)
   from the hall through an open shaft (two flights and a landing; patch_world.py opens it in the ground as a
   stairwell zone whose floor is the mezzanine), stairs down to each platform, the tunnel mouths at both ends. The
   next patch runs the metro in it (Paris Metro line 18: 45 m trains, platforms for 60 m).
+- The Atlantis bus station and the bus depot (`bus_station`): bus_station.py, bus_depot.py (their docstrings): its repairs come after
+  these, its zones (quays, sidewalks, the depot, the lanes, the eased ground round them) before them; the flights land
+  on its quays, the piers keep off its lanes, its fence runs straight along the RER side lane.
 Assumed (no source): the side platforms, the box's sizes, the shaft's layout, the halls' heights."""
 import json
 import math
@@ -204,6 +207,11 @@ def apply_repairs(H: rg.Heights, repairs: list, data: np.ndarray = None) -> np.n
             # easing is needed and it may run up to a trackbed's edge
             cx, cy, a, b, c = rp["plane"]
             sub[inside] = np.maximum(sub[inside], a + b * (X[inside] - cx) + c * (Y[inside] - cy))
+            continue
+        if rp["method"] == "axis":
+            # the Atlantis bus station's lanes and the bus hangar (bus_station.py): the height along an axis
+            import bus_station
+            sub[inside] = bus_station.axis_repair(rp, X[inside], Y[inside], sub[inside])
             continue
         d = shapely.distance(pg.exterior, shapely.points(X[inside], Y[inside]))
         w = np.clip(d / BLEND, 0.0, 1.0)
@@ -917,6 +925,10 @@ def build(world: dict, H: rg.Heights, tracks_xy: list, islands: list) -> tuple:
     raised platforms."""
     osm = load()
     reps = repairs(osm, H)
+    # the Atlantis bus station and the bus hangar laid out again (bus_station.py): their ground repairs come last
+    import bus_station as bst
+    BP = bst.plan(H, tracks_xy)
+    reps = reps + bst.repairs(BP)
     Hf = rg.Heights.__new__(rg.Heights)
     Hf.__dict__.update({k: v for k, v in H.__dict__.items() if not k.startswith("_nodes")})
     Hf.data = apply_repairs(H, reps)
@@ -925,8 +937,7 @@ def build(world: dict, H: rg.Heights, tracks_xy: list, islands: list) -> tuple:
     level = g0 + LEVEL1_STEPS * STEP_RISE
     # the bus station's raised islands: the flights landing on them start from their top
     bus_zone, surf_tracks, busways = bus_area(osm, tracks_xy)
-    bus = bus_islands(osm, Hf, world, surf_tracks)
-    islands = list(islands) + [(Polygon(b["ring"]), b["top"]) for b in bus]
+    islands = list(islands) + bst.island_tops(BP)
     # the deck's parts
     lien = wpoly(osm, 417349802)
     vault = wpoly(osm, 1286041252)
@@ -992,13 +1003,14 @@ def build(world: dict, H: rg.Heights, tracks_xy: list, islands: list) -> tuple:
     for p in polys(atl):
         a, b, w = axis_of(p)
         spines.append((a, b, min(w / 2 - 0.5, 3.0)))
-    pr = piers(spines, tracks, roads, level, Hf, deck)
+    pr = piers(spines, tracks, unary_union([roads, BP.m_lanes, BP.m_depot_hard]), level, Hf, deck)   # not on a bus lane
     # the fence between the bus station and the tracks, open at every quay and access
     fence_gaps = [isl[0].buffer(FENCE_GAP) for isl in islands]
     fence_gaps += [LineString(f["pts"]).buffer(f["width"] / 2 + FENCE_GAP, cap_style=2) for f in flights]
     fence_gaps += [Polygon(lf["ring"]).buffer(FENCE_GAP) for lf in lifts_]
     fence_gaps += [Point(p[0], p[1]).buffer(1.0) for p in pr]
-    fences = rer_fences(osm, Hf, world, surf_tracks, bus_zone, busways, fence_gaps)
+    fences = bst.merge_fences(BP, Hf, rer_fences(osm, Hf, world, surf_tracks, bus_zone, busways, fence_gaps),
+                              fence_gaps, world)
     roofs = {"vault": {"a": r3([va])[0], "b": r3([vb])[0], "width": round(vw, 3), "spring": round(level + VAULT_SPRING, 3),
                        "apex": round(level + VAULT_SPRING + VAULT_RISE, 3), "rib_step": RIB_STEP},
              # the halls' roofs reach into the vault until they meet its glass (no gap between them)
@@ -1028,14 +1040,14 @@ def build(world: dict, H: rg.Heights, tracks_xy: list, islands: list) -> tuple:
     zones = [l18_zone(st),
              {"kind": "regrade_floor", "side": None, "source": "massy:l18-hall", "polygons": [[st["hall"]["ring"]]]}]
     zones += [{"kind": "regrade_gravel" if rp["id"] == "repair:l18" else "regrade", "side": None, "source": rp["id"],
-               "polygons": [[rp["ring"]]]} for rp in reps]
+               "polygons": [[rp["ring"]]]} for rp in reps
+               if not rp["id"].startswith("repair:bus-")]   # bus_station.zones() has its own
     # the bus station: its raised islands before the repairs (one runs under le Lien's hall's), its fence
-    zones[2:2] = bus_island_zones(bus)
-    out["bus_islands"] = bus
+    zones[2:2] = bst.zones(BP)
+    out["bus_station"] = bst.finish(BP, Hf, world, flights, lifts_, pr, deck)
     out["fences"] = fences
-    log("massy: %d bus islands (%s), %d fence runs between the bus station and the tracks (%.0f m)" % (
-        len(bus), ", ".join("%s %.0f m² at %.2f m" % (b["id"], b["area"], b["top"]) for b in bus), len(fences),
-        sum(f["length"] for f in fences)))
+    log("massy: bus station %s, %d fence runs between the bus station and the tracks (%.0f m)" % (
+        bst.summary(BP, out["bus_station"]), len(fences), sum(f["length"] for f in fences)))
     log("massy: concourse at %.2f m (forecourts %.2f m + %d steps), %s, deck %.0f m², %d flights, %d lifts, %d piers, "
         "%d edge runs" % (level, g0, LEVEL1_STEPS, "%.2f m clear over the rails at least (%s)" % clear if clear else
                           "no track under the deck", deck.area, len(flights), len(lifts_), len(pr), len(ed)))

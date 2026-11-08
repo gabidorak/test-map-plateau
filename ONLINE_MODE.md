@@ -129,6 +129,8 @@ typing.
   - ~8 public garages spread over the map, so one is never more than ~400-500 m away on the campus (fewer in the long
     Massy and west corridors, where the bus and RER B get you around). Picked among the OSM car parks.
   - **Bus depot** at **Massy-Palaiseau station**: a garage reserved for bus drivers (lent buses + your own buses).
+    Since 2026-11-07 inside the bus hangar by the Atlantis bus station (tools/rail/bus_station.py): the terminal on the
+    walkway by its north-east doors, the bays on its lanes; the 4606 starts in the hangar and drives out of those doors.
   - **Fire station** at **École Polytechnique**: building #1289 "SPIS" (osm:w1063984911, local ≈ (830, −151)), the
     open canopy where the real fire vehicles are kept (not tagged as a fire station in OSM). A garage reserved for
     firefighters (lent fire truck + yours); firefighters on duty spawn there. The canopy has 2.9 m clearance, so the

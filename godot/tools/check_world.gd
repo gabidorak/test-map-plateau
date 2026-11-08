@@ -41,6 +41,7 @@ const IMAGE_EXT := ["jpg", "jpeg", "png", "webp", "tif", "tiff", "bmp", "tga", "
 var _failures: PackedStringArray = []
 var _seen := {}
 var _rail_box := Rect2()                   # map x, y around the line: ground triangles kept there for the railway checks
+var _beds_rect := Rect2()                  # map x, y around the yard's ballast beds: ground triangles kept there too
 var _rail_tris := {}                       # Vector2i 2 m cell -> PackedVector3Array of map-space triangles over it
 
 
@@ -50,6 +51,7 @@ func _initialize() -> void:
 	var rail = JSON.parse_string(FileAccess.get_file_as_string(RAIL)) if FileAccess.file_exists(RAIL) else null
 	if rail is Dictionary:
 		_rail_box = _line_box(rail, world)
+		_beds_rect = _beds_box(rail)
 	_check_files()
 	_check_json(world, "world.json")
 	var root: Node = load(SCENE).instantiate()
@@ -195,7 +197,8 @@ func _check_ground(root: Node, world: Dictionary) -> void:
 			var b := Vector2(v[idx[t + 1]].x, v[idx[t + 1]].z)
 			var c := Vector2(v[idx[t + 2]].x, v[idx[t + 2]].z)
 			area += absf((b - a).cross(c - a)) / 2.0
-			if _rail_box.has_area() and _rail_box.has_point(Vector2(a.x, -a.y)):
+			var am := Vector2(a.x, -a.y)
+			if (_rail_box.has_area() and _rail_box.has_point(am)) or (_beds_rect.has_area() and _beds_rect.has_point(am)):
 				_keep_triangle(v[idx[t]], v[idx[t + 1]], v[idx[t + 2]])
 			tris += 1
 			for e in [[a, b], [b, c], [c, a]]:
@@ -282,6 +285,7 @@ func _check_runtime(root: Node) -> void:
 # --- 4. vegetation ------------------------------------------------------------------------------
 
 func _check_vegetation(root: Node, world: Dictionary) -> void:
+	preload("res://scripts/builder/vegetation_builder.gd").add_rail_greenery(world)   # as world_builder.gd
 	var n_trees: int = world["trees"].size()
 	var trees := root.get_node_or_null("Vegetation/Trees")
 	if trees == null:
@@ -573,6 +577,44 @@ func _check_railway(world: Dictionary, rail: Dictionary) -> void:
 				_fail("%s at s %.0f: the ground in front of the wall is %.3f, the top %.3f" % [pf["id"], s, below, on])
 	print("railway: %d trackbed samples (%d off the trackbed, worst %.3f m from the formation), %d objects in the gauge, %d platform samples" % [
 			samples, off_bed, worst, in_gauge, platform_samples])
+	# 4. the yard's ballast beds (rail_builder.gd _yard_beds): the drawn ground under the sleepers stays under the bed's
+	# top, never over the sleepers' tops (the LiDAR ground kept as it was covered them, tools/rail/yard.py)
+	var bed: Dictionary = rail.get("yard", {}).get("bed", {})
+	if not bed.is_empty():
+		var below_rail: float = bed["below_rail"]
+		var show: float = bed["show"]
+		var bed_samples := 0
+		var over_bed := 0
+		var over_sleepers := 0
+		var worst_bed := -INF
+		for t: Dictionary in rail["yard"]["tracks"]:
+			var pts: Array = t["pts"]
+			for r: Array in t.get("bed", []):
+				for i in range(int(r[0]) + 2, int(r[1]) - 1, 3):       # the run's end metres: the bed's sloped end
+					var th: float = t["heading"][i]
+					for u: float in [-1.2, -0.6, 0.0, 0.6, 1.2]:
+						var p := Vector2(pts[i][0], pts[i][1]) + Vector2(-sin(th), cos(th)) * u
+						var z := _mesh_z(p)
+						var piece: int = map.piece_at(p.x, p.y)
+						if is_nan(z) or piece < 0 or map.pieces[piece][0] != "railway":
+							continue                # off the yard's ballast (a street, the map's edge, a slope)
+						bed_samples += 1
+						var dz := z - (float(t["z"][i]) - below_rail)
+						worst_bed = maxf(worst_bed, dz)
+						if dz > 0.005:
+							over_bed += 1
+						if dz > show + 0.01:
+							over_sleepers += 1
+							if over_sleepers <= 5:
+								print("  yard track %s at (%.1f, %.1f): the ground %.3f m over its ballast bed" % [
+										t["id"], p.x, p.y, dz])
+		print("yard: %d bed samples, %d with the ground over the bed's top, %d over the sleepers (worst %.3f m)" % [
+				bed_samples, over_bed, over_sleepers, worst_bed])
+		# a few samples at a strip's edge (a street crossing the track: the 2 m cell beyond is the street's) may touch
+		# the sleepers' ends; the ballast never covers the sleepers along a track, nor reaches the rail heads
+		if over_sleepers > maxi(10, bed_samples / 1000) or worst_bed > below_rail:
+			_fail("yard: the ground covers the sleepers at %d of %d samples (worst %.3f m over the ballast bed)" % [
+					over_sleepers, bed_samples, worst_bed])
 
 
 ## Map-space box around the line inside the world box, RAIL_SPAN wide either side.
@@ -584,6 +626,18 @@ func _line_box(rail: Dictionary, world: Dictionary) -> Rect2:
 			continue
 		var q := Rect2(p[0] - RAIL_SPAN, p[1] - RAIL_SPAN, 2.0 * RAIL_SPAN, 2.0 * RAIL_SPAN)
 		r = q if not r.has_area() else r.merge(q)
+	return r
+
+
+## Map-space box around the yard's ballast beds (rail.json yard tracks `bed` runs).
+func _beds_box(rail: Dictionary) -> Rect2:
+	var r := Rect2()
+	for t: Dictionary in rail.get("yard", {}).get("tracks", []):
+		for run: Array in t.get("bed", []):
+			for i in range(int(run[0]), int(run[1]) + 20, 20):
+				var p: Array = t["pts"][mini(i, int(run[1]))]
+				var q := Rect2(p[0] - 5.0, p[1] - 5.0, 10.0, 10.0)
+				r = q if not r.has_area() else r.merge(q)
 	return r
 
 
