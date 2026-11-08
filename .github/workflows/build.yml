@@ -17,6 +17,52 @@ env:
   GODOT_RELEASE: stable
 
 jobs:
+  # Map data, once for every export: the shard archives of map_data.lock (tools/map_data.py fetch --cache), kept in
+  # the Actions cache under the lock's hash. The exports take them from there instead of downloading 1.9 GB each from
+  # the "map-data" release (build 66: the release host stalled one export's download for minutes). After a map change
+  # the previous version's cache supplies the unchanged shards and only the new ones are downloaded. The archives, not
+  # the unpacked files: their names hold their content id and fetch checks them, so a cache can never put stale map
+  # files (or old copies of the tracked files next to them in godot/world/) into a checkout.
+  map-data:
+    name: Map data
+    runs-on: ubuntu-latest
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache key
+        id: key
+        run: echo "key=map-data-${{ hashFiles('map_data.lock') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Look up the map data cache
+        id: lookup
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/plateau-map-data
+          key: ${{ steps.key.outputs.key }}
+          lookup-only: true
+
+      - name: Restore the previous map data cache
+        if: steps.lookup.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/plateau-map-data
+          key: ${{ steps.key.outputs.key }}
+          restore-keys: map-data-
+
+      # also drops the archives map_data.lock no longer names
+      - name: Download the new shards
+        if: steps.lookup.outputs.cache-hit != 'true'
+        run: python3 -I tools/map_data.py fetch --cache ~/.cache/plateau-map-data
+
+      - name: Save the map data cache
+        if: steps.lookup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/plateau-map-data
+          key: ${{ steps.key.outputs.key }}
+
   # Import, once for every export: Godot's scene import is not deterministic (bus_idfm.glb gives other bytes at each
   # import), and the platforms must ship the same data (the Release job compares their data ids). Build 65 changed the
   # bus models: each export missed the cache and imported them on its own, so no two platforms had the same data. This
@@ -86,7 +132,7 @@ jobs:
 
   export:
     name: Export (${{ matrix.preset }})
-    needs: [scene-ids, import]
+    needs: [scene-ids, import, map-data]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -118,8 +164,16 @@ jobs:
       - uses: actions/checkout@v4
 
       # The generated map is not in git: map_data.lock pins the shards of the "map-data" release (tools/map_data.py).
+      # The Map data job's archives; on a cache miss (evicted, say) fetch downloads what is missing. Either way the
+      # same bytes: fetch checks every shard against map_data.lock.
+      - name: Restore the map data cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/plateau-map-data
+          key: ${{ needs.map-data.outputs.key }}
+
       - name: Map data
-        run: python3 -I tools/map_data.py fetch
+        run: python3 -I tools/map_data.py fetch --cache ~/.cache/plateau-map-data
 
       - name: Install Godot and export templates
         run: |

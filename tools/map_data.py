@@ -8,6 +8,8 @@ content as an asset of the "map-data" prerelease (downloads are free and unmeter
 in git, names the shards' contents a commit uses, so every commit still pins its map exactly.
 
     python3 tools/map_data.py fetch      after a clone or a pull: download the shards that differ from map_data.lock
+                                         (--cache DIR: keep the downloaded shard archives there and take them from
+                                         there next time, as CI does with its actions/cache)
     python3 tools/map_data.py status     which shards differ from map_data.lock (exit 1 if any)
     python3 tools/map_data.py publish    after rebuilding the map: upload the changed shards, rewrite map_data.lock
                                          (needs gh, logged in with write access); then commit map_data.lock
@@ -192,20 +194,38 @@ def cmd_status(args) -> int:
 
 # --- fetch -------------------------------------------------------------------------------------------------------
 
+ATTEMPTS = 7                    # with the waits below: ~4 min of a stalled download server before giving up (CI build
+                                # 66: the release host stalled one runner's downloads for minutes, 4 quick tries failed)
+
+
 def download(url: str, dest: str) -> None:
-    for attempt in range(4):
+    """Downloads url to dest, resuming a cut transfer where it stopped (HTTP Range; a server that ignores it sends the
+    whole file again). The content is checked afterwards (unpack), so a bad resume cannot slip through."""
+    err = None
+    for attempt in range(ATTEMPTS):
+        have = os.path.getsize(dest) if os.path.exists(dest) else 0
+        headers = {"User-Agent": "plateau-map-data"}
+        if have:
+            headers["Range"] = "bytes=%d-" % have
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "plateau-map-data"})
-            with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as f:
-                shutil.copyfileobj(r, f, 1 << 20)
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as r:
+                with open(dest, "ab" if have and r.status == 206 else "wb") as f:
+                    shutil.copyfileobj(r, f, 1 << 20)
             return
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 raise SystemExit("%s: not found. Was this map version published? (tools/map_data.py publish)" % url)
+            if e.code == 416 and os.path.exists(dest):     # the range is past the end: start again from nothing
+                os.remove(dest)
             err = e
         except (urllib.error.URLError, OSError) as e:
             err = e
-        time.sleep(2 * (attempt + 1))
+        if attempt + 1 < ATTEMPTS:
+            wait = min(5 * 2 ** attempt, 60)
+            print("  %s: %s, try %d/%d in %d s" % (os.path.basename(dest), err, attempt + 2, ATTEMPTS, wait),
+                  file=sys.stderr, flush=True)
+            time.sleep(wait)
     raise SystemExit("%s: %s" % (url, err))
 
 
@@ -246,16 +266,33 @@ def cmd_fetch(args) -> int:
     total = sum(lock["shards"][s]["bytes"] for s in differ)
     if differ:
         print("Downloading %d shard(s), %s of map data" % (len(differ), human(total)))
-    def get(s: str) -> tuple[dict[str, bytes], float]:
+    cache = args.cache
+    if cache:
+        os.makedirs(cache, exist_ok=True)
+    def get(s: str) -> tuple[dict[str, bytes], float, bool]:
         t = time.time()
         info = lock["shards"][s]
+        if cache:
+            # an asset's name holds its content id, so a cached archive is that content or unreadable (then fetched)
+            path = os.path.join(cache, info["asset"])
+            if os.path.exists(path):
+                try:
+                    return unpack(path, s, info["hash"]), time.time() - t, True
+                except (SystemExit, Exception) as e:       # wrong content, or a cut or corrupt archive
+                    print("  %s: cached archive unusable (%s), downloading it" % (info["asset"], e), file=sys.stderr)
+                    os.remove(path)
+            part = os.path.join(cache, "." + info["asset"] + ".part")
+        else:
+            part = path = os.path.join(tmp, info["asset"])
         url = "https://github.com/%s/releases/download/%s/%s" % (
             lock.get("repo", REPO), lock.get("release", RELEASE), info["asset"])
-        path = os.path.join(tmp, info["asset"])
-        download(url, path)
-        files = unpack(path, s, info["hash"])
-        os.remove(path)
-        return files, time.time() - t
+        download(url, part)
+        files = unpack(part, s, info["hash"])
+        if cache:
+            os.replace(part, path)
+        else:
+            os.remove(part)
+        return files, time.time() - t, False
 
     # a few downloads at once (one stream rarely fills the line); the files are written here, one shard at a time
     with tempfile.TemporaryDirectory(prefix="map_data_") as tmp, \
@@ -264,7 +301,7 @@ def cmd_fetch(args) -> int:
         for i, job in enumerate(concurrent.futures.as_completed(jobs), 1):
             s = jobs[job]
             info = lock["shards"][s]
-            files, secs = job.result()
+            files, secs, cached = job.result()
             for rel in local_files().get(s, []):
                 if rel not in files:
                     os.remove(os.path.join(ROOT, rel))
@@ -277,13 +314,20 @@ def cmd_fetch(args) -> int:
                 os.replace(part, dest)
             state[s] = info["hash"]
             write_json(STATE, state)
-            print("  [%d/%d] %-28s %9s  %.1fs" % (i, len(differ), s, human(info["bytes"]), secs))
+            print("  [%d/%d] %-28s %9s  %.1fs%s" % (i, len(differ), s, human(info["bytes"]), secs,
+                                                    "  (cache)" if cached else ""))
     for s in extra:
         for rel in local_files().get(s, []):
             os.remove(os.path.join(ROOT, rel))
         state.pop(s, None)
         print("  removed %s (not in map_data.lock)" % s)
     write_json(STATE, state)
+    if cache and only is None:
+        # the archives of other map versions go (a cache restored from an older lock would otherwise grow forever)
+        keep = {v["asset"] for v in lock["shards"].values()}
+        for name in os.listdir(cache):
+            if name not in keep:
+                os.remove(os.path.join(cache, name))
     if not differ and not extra:
         print("Map data already matches map_data.lock")
     return 0
@@ -457,6 +501,7 @@ def main() -> int:
     s = sub.add_parser("fetch")
     s.add_argument("--force", action="store_true", help="overwrite local map edits that were not published")
     s.add_argument("--only", nargs="+", metavar="SHARD", help="only these shards (names as in map_data.lock)")
+    s.add_argument("--cache", metavar="DIR", help="keep the shard archives in DIR, and take them from there")
     sub.add_parser("publish")
     s = sub.add_parser("prune")
     s.add_argument("--yes", action="store_true")
