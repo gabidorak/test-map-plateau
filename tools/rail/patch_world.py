@@ -261,7 +261,10 @@ def zone_heights(design: rg.Design, zone: dict, s: np.ndarray, u: np.ndarray, x:
     side = zone.get("side")
     sides = np.where(u >= 0, 0, 1) if side is None else np.full(len(u), 0 if side == "left" else 1)
     vals = {}
-    for key in ("kind", "edge", "level", "reach", "top"):
+    for key in ("kind", "edge", "level", "reach", "top", "far"):
+        if key == "far" and "far" not in ew.sides["left"]:
+            vals["far"] = vals["top"]           # older rail.json: flat landings
+            continue
         arr = np.stack([ew.sides["left"][key], ew.sides["right"][key]])
         a0, a1 = arr[sides, j], arr[sides, j + 1]
         same = ew.sides["left"]["kind"][j] == ew.sides["left"]["kind"][j + 1]
@@ -274,7 +277,10 @@ def zone_heights(design: rg.Design, zone: dict, s: np.ndarray, u: np.ndarray, x:
     if kind == "slope":
         w = np.clip((a - vals["edge"]) / np.maximum(vals["reach"] - vals["edge"], 1e-6), 0, 1)
         return vals["level"] + (vals["top"] - vals["level"]) * w
-    if kind in ("landing", "platform"):
+    if kind == "landing":
+        w = np.clip((a - vals["edge"]) / np.maximum(vals["reach"] - vals["edge"], 1e-6), 0, 1)
+        return vals["top"] + (vals["far"] - vals["top"]) * w
+    if kind == "platform":
         return vals["top"]
     if kind == "platform_blend":
         sg = np.where(sides == 0, 1.0, -1.0)
