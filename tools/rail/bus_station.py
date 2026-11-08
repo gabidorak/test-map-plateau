@@ -109,6 +109,55 @@ def polys(g) -> list:
     return [p for p in getattr(g, "geoms", [g]) if p.geom_type == "Polygon" and p.area > 0.05]
 
 
+SEAM_TOL = 2e-3                 # m: a zone's outline this close to an earlier zone's runs on it (seams())
+
+
+def seam_on(g, refs: list, tol: float = SEAM_TOL):
+    """g with its outline put on the outlines of the polygons `refs` where it runs along them (within tol): its
+    vertices there that are not theirs and lie on the line through their neighbours dropped, then theirs put in it
+    (shapely.snap). The two then share the same vertices along their common edge."""
+    ref = shapely.GeometryCollection(refs)
+    edge = shapely.MultiLineString([r for p in refs for r in [p.exterior] + list(p.interiors)])
+    shapely.prepare(edge)
+    keep_pts = {tuple(c) for c in shapely.get_coordinates(ref).tolist()}
+
+    def clean(c):
+        c = np.asarray(c)[:-1]
+        out = []
+        for i, p in enumerate(c):
+            q = out[-1] if out else c[i - 1]
+            r = c[(i + 1) % len(c)]
+            if tuple(p.tolist()) not in keep_pts and edge.distance(Point(p)) < tol:
+                d = r - q
+                L = float(np.hypot(d[0], d[1]))
+                if L > 1e-9 and abs(d[0] * (p[1] - q[1]) - d[1] * (p[0] - q[0])) / L < tol * 0.5:
+                    continue
+            out.append(p)
+        return out if len(out) >= 3 else c
+
+    res = [Polygon(clean(p.exterior.coords), [clean(h.coords) for h in p.interiors]) for p in polys(g)]
+    return shapely.snap(shapely.MultiPolygon(res) if len(res) != 1 else res[0], ref, tol)
+
+
+def seams(zs: list) -> list:
+    """Each zone's outline put on the earlier zones' where it runs along them (seam_on; patch_world.py: first wins).
+    Where two zones met, the later one's vertices stood a fraction of a mm off the earlier one's edge (the lanes' Massy
+    edge kept its 0.5 m samples where the sidewalks' simplified kerb line and the depot's ramps have none, then both were
+    rounded to the mm): patch_world.py cut hair-thin slivers along those kerbs, ground edges used three times and
+    cracks."""
+    done = []
+    for z in zs:
+        g = unary_union([Polygon(p[0], p[1:]) for p in z["polygons"]])
+        near = [p for q in done for p in polys(q) if p.distance(g) < SEAM_TOL]
+        if near:
+            g2 = seam_on(g, near)
+            if g2.is_valid and abs(g2.area - g.area) < 1e-3 * max(g.area, 1.0) and len(polys(g2)) == len(polys(g)):
+                z["polygons"] = _pg(polys(g2))
+                g = g2
+        done.append(g)
+    return zs
+
+
 # ---------------------------------------------------------------- the ground
 
 def fit_profile(H: rg.Heights) -> tuple:
@@ -315,7 +364,7 @@ def zones(P: Plan) -> list:
     ps = polys(P.m_band)
     if ps:
         out.append({"kind": "regrade", "side": None, "source": "repair:bus-station", "polygons": _pg(ps)})
-    return out
+    return seams(out)
 
 
 def plan(H: rg.Heights, tracks_xy: list) -> Plan:

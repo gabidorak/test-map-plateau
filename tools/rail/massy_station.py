@@ -1032,7 +1032,8 @@ def build(world: dict, H: rg.Heights, tracks_xy: list, islands: list) -> tuple:
            "edges": ed, "roofs": roofs, "flights": flights, "lifts": lifts_, "piers": pr, "pier_size": PIER_SIZE,
            "names": {"lien": "Passerelle « le Lien »", "hist": "Passerelle historique",
                      "atlantis": "Passerelle de la gare routière Atlantis"},
-           "replaces": {"buildings": sorted(replaced),
+           # (and the OSM lift shafts the map drew as buildings: massy_builder.gd draws their glazed shafts there)
+           "replaces": {"buildings": sorted(replaced | {"osm:" + lf["osm"] for lf in lifts_}),
                         "bridges_near": [ring(deck.buffer(8.0).convex_hull)]},
            "tgv": tgv(osm, Hf), "l18": st}
     # the shaft first, then the line 18 hall's concrete floor, its site's gravel (OSM still says a building site

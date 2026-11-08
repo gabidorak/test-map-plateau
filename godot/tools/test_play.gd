@@ -134,6 +134,26 @@ func _wall_top(b: Dictionary) -> float:
 	return tiers[0]["top"] if tiers else b["base_z"] + b["height"]
 
 
+## How far the ground tier's wall stands back from the outline at map point p (0 when p is on or inside it, or the
+## ground tier floats): a ground floor set back under the floors over it (tools/rail/logements_x.py CORE_IN, 0.25 m)
+## stops the player that much further in. At most MAX_SETBACK: more is another shape, not a setback.
+const MAX_SETBACK := 0.5
+
+func _ground_setback(b: Dictionary, p: Vector2) -> float:
+	var tiers: Array = b["toy"]["tiers"]
+	if tiers.is_empty() or tiers[0]["floating"] or (tiers[0]["rings"] as Array).is_empty():
+		return 0.0
+	var poly := PackedVector2Array()
+	for pt: Array in tiers[0]["rings"][0]:
+		poly.append(Vector2(pt[0], pt[1]))
+	if Geometry2D.is_point_in_polygon(p, poly):
+		return 0.0
+	var d := INF
+	for i in poly.size():
+		d = minf(d, Geometry2D.get_closest_point_to_segment(p, poly[i], poly[(i + 1) % poly.size()]).distance_to(p))
+	return d if d <= MAX_SETBACK else 0.0
+
+
 # --- 1. picker ---------------------------------------------------------------------------------
 
 func _test_picker() -> void:
@@ -342,7 +362,7 @@ func _test_walls() -> void:
 			var here := Vector2(_player.global_position.x, -_player.global_position.z)
 			closest = minf(closest, (here - mid).dot(out))
 		_player.scripted_input = Vector2.ZERO
-		if closest < 0.2:
+		if closest < 0.2 - _ground_setback(b, mid):
 			_fail("walked through the wall of #%d %s (%.2f m past it)" % [b["num"], b["id"], -closest])
 	print("walls: walked into %d walls" % tested)
 	if tested < 150:
