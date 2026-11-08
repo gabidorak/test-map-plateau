@@ -215,8 +215,8 @@ depot), fire truck 80 000 (fire station). Not sold: police cars, ambulance, arme
   the depot's door), and puts the waypoint on the next stop. **Stop served:** front of the bus in the bay (14 m short
   of the bots' stop mark to 12 m past it, so a 12 m and an 18 m bus both fit), under 1 m/s, doors open 3 s on end.
   **Pay per stop:** 90 € + 210 €/km of route since the last stop; +25 % when that stretch took at most 1.2× the bots'
-  planned driving time; + the stretch's bonuses (air time 100 €/s from 0.4 s, near miss 40 €, overtake 60 €, drift
-  80 €/s from 0.6 s); × combo (+0.1 per stop served up to ×2, back to ×1 at a penalty); ×1.5 own bus; +20 % per other
+  planned driving time; + the stretch's bonuses (air time 100 €/s from 0.4 s, near miss 40 € (oncoming vehicles
+  only), overtake 60 €, drift 80 €/s from 0.6 s); × combo (+0.1 per stop served up to ×2, back to ×1 at a penalty); ×1.5 own bus; +20 % per other
   player riding (3 at most). A bot driving the whole 4606 (14 stops, ~22 min, no other traffic) earns ~15 200 €/h.
   **Penalties** (taken from the next stops' pay, never from the wallet): skipped stop 150 €, hard crash (15 % of the
   health at once) 300 €, off the route (over 12 m from its path for 4 s, or 40 m at once) 200 €: the job then waits
@@ -273,9 +273,9 @@ depot), fire truck 80 000 (fire station). Not sold: police cars, ambulance, arme
   (PERFORMANCE.md 3.3).
 
 **Stunts** *(built in O6: a bonus layer on any vehicle, not a job; `scripts/online/stunts.gd`)*
-- Air time, flips (front flip, backflip, barrel roll, landed on the wheels), a plane's loops and rolls, near misses,
-  top speed, plus fixed **stunt spots** (`godot/world/stunts.json`: named jumps found on the map's own ground by
-  `tools/online/stunts.py`, kept only when a car really flies off them in the game; a big reward the first time,
+- Air time, flips (front flip, backflip, barrel roll, landed on the wheels), a plane's loops and rolls, near misses
+  (oncoming vehicles only), top speed, plus fixed **stunt spots** (`godot/world/stunts.json`: named jumps found on
+  the map's own ground by `tools/online/stunts.py`, kept only when a car really flies off them in the game; a big reward the first time,
   small after that). Pay in `godot/data/jobs.json` "stunts", inside the jobs' hourly cap.
 - Diminishing returns per hour: each stunt kind pays ×0.85 per time it already paid this hour, each spot ×0.6, so one
   ramp can't be farmed. A crash landing, a landing on the roof or a flight with a teleport in it pays nothing.

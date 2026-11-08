@@ -65,7 +65,8 @@ const CRASH_AGAIN := 2.0                    # s before another crash counts
 const LOOK_EVERY := 0.1                     # s between looks for bonuses
 const SEARCH_EVERY := 0.5                   # s between looks for the bus on the route
 const NEAR_SPEED := 8.0                     # m/s at least for a near miss...
-const NEAR_REL := 8.0                       # ...passing a moving vehicle this much faster or the other way...
+const NEAR_ONCOMING := -0.5                 # ...passing a moving vehicle going the other way (cos of the angle between
+                                            # the two ways: within 60° of head-on)...
 const NEAR_GAP := 0.8                       # ...within this many m, without touching it
 const NEAR_AGAIN := 10.0                    # s before the same vehicle counts again
 const PASS_SIDE := 5.5                      # m between the middles of the bus and a vehicle it overtakes
@@ -657,8 +658,8 @@ func _bonuses(d: Duty, car: Car, delta: float) -> void:
 					_bonus(d, "overtake", "Overtake", int(pay["overtake"]))
 		else:
 			d.ahead.erase(c)
-		if v > NEAR_SPEED and cv.length() > 2.0 and (d.vel - cv).length() > NEAR_REL and d.near.get(c, 0.0) <= time \
-				and d.crash_t <= 0.0:   # near misses
+		if v > NEAR_SPEED and cv.length() > 2.0 and d.vel.normalized().dot(cv.normalized()) < NEAR_ONCOMING \
+				and d.near.get(c, 0.0) <= time and d.crash_t <= 0.0:   # near misses
 			if mine.is_empty():
 				mine = _rects(car)
 			var g := _gap(mine, _rects(c))
