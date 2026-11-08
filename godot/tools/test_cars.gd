@@ -7,8 +7,9 @@ extends SceneTree
 ## Bus: a passenger is not shoved by a pole a remote (LAN) copy of the bus drives through, and holds still against
 ## its front wall as it moves; E near the driver seat from inside takes the wheel, in the cab view when the player was in first person;
 ## the steering wheel turns with the steering, the driver's hands on its rim; the wheel zooms out of the cab view
-## and back into it, and first person carries over when leaving the seat; Q/E turn signals (self-cancel after a turn);
-## full steering lock at a standstill; O opens the doors (door colliders off); Space while moving leaves
+## and back into it, and first person carries over when leaving the seat; Q/E turn signals (self-cancel after a turn)
+## with the dash's arrow and stalk, J hazard lights (both arrows, the hazard button; no self-cancel);
+## full steering lock at a standstill; O opens the doors (door colliders off, the dash's door buttons lit); Space while moving leaves
 ## the seat into the aisle and the player keeps standing and walking inside the rolling bus; once it has
 ## stopped, the player walks out of the front door onto the ground and back in over the step.
 ## Articulated bus: parked straight on its 6 wheels, it drives and turns with the rear section following (the joint
@@ -362,9 +363,27 @@ func _bus_checks() -> void:
 	_press(KEY_Q)
 	await _frames(2)
 	_check(bus.indicator == 1, "Q (A on AZERTY) signals left")
+	_check(bus._telltales[1].material_override != null and bus._telltales[-1].material_override == null
+			and bus._stalk.transform != bus._stalk_rest, "the dash's left arrow lights, the stalk is down")
 	_press(KEY_E)
 	await _frames(2)
 	_check(bus.indicator == -1, "E signals right")
+	_press(KEY_J)
+	await _frames(2)
+	var both: bool = bus._telltales[1].material_override != null and bus._telltales[-1].material_override != null
+	_check(bus.indicator == 2 and both and bus._hazard_button.material_override != null
+			and bus._stalk.transform.is_equal_approx(bus._stalk_rest),
+			"J switches the hazard lights on: both arrows and the hazard button lit, the stalk back")
+	_key(KEY_D, true)
+	await _frames(40)
+	_key(KEY_D, false)
+	await _frames(60)
+	_check(bus.indicator == 2, "the hazard lights do not cancel after a turn")
+	_press(KEY_J)
+	await _frames(2)
+	_check(bus.indicator == 0 and bus._hazard_button.material_override == null, "J switches them off")
+	_press(KEY_E)
+	await _frames(2)
 	_key(KEY_D, true)
 	await _frames(40)
 	_key(KEY_D, false)
@@ -378,6 +397,8 @@ func _bus_checks() -> void:
 		if c is CollisionShape3D and c.disabled:
 			shapes_off += 1
 	_check(bus.doors_open and shapes_off == 3, "O opens the 3 doors (%d door colliders off)" % shapes_off)
+	_check(bus._door_buttons.size() == 1 and bus._door_buttons[0].material_override != null,
+			"the dash's door buttons light up")
 	await _shot("bus_doors.png")
 	_press(KEY_O)
 	await _frames(120)

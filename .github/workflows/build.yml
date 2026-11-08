@@ -17,6 +17,56 @@ env:
   GODOT_RELEASE: stable
 
 jobs:
+  # Import, once for every export: Godot's scene import is not deterministic (bus_idfm.glb gives other bytes at each
+  # import), and the platforms must ship the same data (the Release job compares their data ids). Build 65 changed the
+  # bus models: each export missed the cache and imported them on its own, so no two platforms had the same data. This
+  # job saves the import under the commit's exact key; the exports restore that and find nothing left to import.
+  # The map data holds nothing Godot imports (.bin, .f32, .json, .tscn, .res), so it is not fetched here.
+  import:
+    name: Import
+    runs-on: ubuntu-latest
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # every imported source has its .import file (all of them under assets/ so far)
+      - name: Cache key
+        id: key
+        run: |
+          echo "key=godot-import-${GODOT_VERSION}-${{ hashFiles('godot/assets/**', 'godot/**/*.import', 'godot/project.godot') }}" \
+              >> "$GITHUB_OUTPUT"
+
+      - name: Restore import data
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: godot/.godot
+          key: ${{ steps.key.outputs.key }}
+          restore-keys: godot-import-${{ env.GODOT_VERSION }}-
+
+      - name: Install Godot
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          name="Godot_v${GODOT_VERSION}-${GODOT_RELEASE}"
+          curl -fsSL -o godot.zip \
+              "https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/${name}_linux.x86_64.zip"
+          unzip -q godot.zip
+          sudo install -m 755 "${name}_linux.x86_64" /usr/local/bin/godot
+          rm godot.zip
+
+      - name: Import project
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: godot
+        run: godot --headless --path . --import
+
+      - name: Save import data
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: godot/.godot
+          key: ${{ steps.key.outputs.key }}
+
   # Scene ids: a .tscn node without unique_id gets a random id at each export, so --export-patch (a second export, the
   # "Data patch" step) converts it to other bytes than this build's game.pck and the patch fails its check (build 46:
   # hand-written scenes/loading.tscn). Seconds of Python, so the exports wait for it.
@@ -36,7 +86,7 @@ jobs:
 
   export:
     name: Export (${{ matrix.preset }})
-    needs: scene-ids
+    needs: [scene-ids, import]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -85,17 +135,27 @@ jobs:
           mv templates/templates/* "$dir/"
           rm -rf godot.zip templates.tpz templates
 
-      - name: Cache import data
-        uses: actions/cache@v4
+      # The Import job's cache, this exact key only (an older one would have each export import the changes itself)
+      - name: Restore import data
+        uses: actions/cache/restore@v4
         with:
           path: godot/.godot
-          key: godot-import-${{ env.GODOT_VERSION }}-${{ hashFiles('godot/assets/**', 'godot/project.godot') }}
-          restore-keys: godot-import-${{ env.GODOT_VERSION }}-
+          key: ${{ needs.import.outputs.key }}
+          fail-on-cache-miss: true
 
-      # The import cache is not in the repository, models and textures must be imported first.
+      # Only Godot's file lists (filesystem and uid caches) get rewritten here: an export that imported something on
+      # its own would ship other bytes than the other platforms, so it stops (the cache does not cover that file).
       - name: Import project
         working-directory: godot
-        run: godot --headless --path . --import
+        run: |
+          touch "$RUNNER_TEMP/import-start"
+          godot --headless --path . --import
+          changed=$(find .godot/imported -type f -newer "$RUNNER_TEMP/import-start")
+          if [ -n "$changed" ]; then
+            echo "::error::Imported here, not in the Import job (each platform would ship other bytes):"
+            echo "$changed"
+            exit 1
+          fi
 
       # The release tag, run number and commit, written into the packed builds' pack/manifest.json by pack_game.sh
       # (builds without them never look for updates), and the launcher id into pack/launcher.json (scripts/delta.gd).

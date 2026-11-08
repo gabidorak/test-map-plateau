@@ -40,6 +40,7 @@ const ACTIONS := [
 	["drift", "Drift (held)", "Driving", [KEY_X]],
 	["signal_left", "Left turn signal", "Driving", [KEY_Q]],
 	["signal_right", "Right turn signal", "Driving", [KEY_E]],
+	["hazards", "Hazard lights", "Driving", [KEY_J]],
 	["horn", "Horn (horse: neigh)", "Driving", [KEY_G]],
 	["doors", "Doors (bus)", "Driving", [KEY_O]],
 	["bell", "Gong (bus), siren (fire truck, police car)", "Driving", [KEY_B]],

@@ -210,6 +210,7 @@ func _on_info(info: Dictionary) -> void:
 		return
 	if str(info.get("data", {}).get("id", "")) == _installed["id"]:
 		if not launcher_changes:
+			_adopt_build(info)
 			_set_state(State.UP_TO_DATE)
 			return
 		_patches = []
@@ -240,6 +241,30 @@ func _on_chain(chain: Dictionary) -> void:
 		return
 	_patches = path
 	_start_delta()
+
+
+## The latest build has exactly this launcher and data (its commit changed neither: CI, tools, docs): nothing to
+## download, but its tag and commit are what a host compares (Net.build_id) and the menu shows. Without this, a player
+## on build 60 stays "up to date" and is refused by a server that moved to build 62. The pointer takes the new build's
+## identity over (same data file), and so does this running game.
+func _adopt_build(info: Dictionary) -> void:
+	var tag := str(info.get("tag", ""))
+	var commit := str(info.get("commit", ""))
+	var run := int(info.get("run", 0))
+	var path: String = _installed["path"]
+	if tag == "" or commit == "" or commit == _commit or run <= int(_installed["run"]) \
+			or not Delta.has_file(path, int(_installed["size"])):
+		return
+	if not Delta.write_pointer(_installed["launcher"], path, _installed["id"], tag, run, commit):
+		push_warning("Updater: can't write " + Delta.pointer(_installed["launcher"]))
+		return
+	_installed["tag"] = tag
+	_installed["run"] = run
+	_installed["commit"] = commit
+	version = tag
+	_commit = commit
+	ProjectSettings.set_setting("application/config/version", tag)
+	ProjectSettings.set_setting("application/config/commit", commit)
 
 
 func _start_delta() -> void:
