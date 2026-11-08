@@ -224,6 +224,12 @@ func _build_rail_lamps() -> void:
 ## Massy-Palaiseau's (massy_builder.gd, hangar_builder.gd: MassyPalaiseau, its "lamp_lights" meta): the Atlantis bus
 ## station's lamps and the bus hangar's light the ground under them; their diffusers glow.
 func _build_massy_lamps() -> void:
+	# (and the École polytechnique's new housing: logements_x_builder.gd, LogementsX: its bollards' heads glow)
+	var logx := world_root.get_node_or_null("LogementsX") if world_root else null
+	if logx != null:
+		for mi: MeshInstance3D in logx.find_children("*", "MeshInstance3D", true, false):
+			if mi.mesh:
+				_glow_box(mi.mesh)
 	var massy := world_root.get_node_or_null("MassyPalaiseau") if world_root else null
 	if massy == null:
 		return
