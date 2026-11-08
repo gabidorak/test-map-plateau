@@ -1911,6 +1911,8 @@ def clearance(world: dict, A: rg.Alignment, design: rg.Design, zones_union, hard
 
 FENCE_HEIGHT = 2.0              # RATP-style welded mesh along the right of way; assumed (photos: green mesh panels)
 RAILING_HEIGHT = 1.1            # platform back railings; assumed (photos: white bar railings)
+LINE_MESH_FENCES = False        # the right-of-way mesh along the open line: off (it climbed steep slopes, bridges and
+                                # roads); the station platforms' railings and Massy-Palaiseau's own fences are kept
 
 
 def fences(ew: dict, A: rg.Alignment, world: dict, platforms: list, structures: dict, furniture_items: list,
@@ -2633,7 +2635,9 @@ def main() -> None:
     yard_rer = unary_union([LineString(t["pts"]) for t in Y["tracks"] if t["rer"]])
     clear = clearance(world, A, design, soft, hard, spacing, platforms, yard_rer)
     row_fences = fences(ew_json, A, world, platforms, structures, furn["items"], spans)
-    fenced = unary_union([soft] + [LineString(f["pts"]).buffer(1.0) for f in row_fences])
+    if not LINE_MESH_FENCES:            # the platforms' back railings stay; Massy-Palaiseau has its own (massy.fences)
+        row_fences = [f for f in row_fences if f["style"] != "mesh"]
+    fenced =unary_union([soft] + [LineString(f["pts"]).buffer(1.0) for f in row_fences])
     ss_all = np.arange(0.0, A.length, 2.0)
     track_lines = unary_union([LineString(A.point(ss_all, np.full(len(ss_all), u))) for u in (-spacing / 2, spacing / 2)]
                               + [LineString(t["pts"]) for t in Y["tracks"]])
