@@ -37,8 +37,9 @@ to the north; levels are absolute map z):
 - track: gauge, rail, pad, sleeper, ballast and formation dimensions.
 - tracks: [{ref, side (+1 north, -1 south), offset (u of its centre), direction, osm ways, maxspeed}].
 - earthworks: step, s0, sides {left|right: {edge [u of the formation edge], level [formation edge z], kind [0 slope,
-  1 wall, 2 platform, 3 none], reach [u where the design meets the ground]}}; walls [{id, side, pts [[x, y]], top [z],
-  bottom [z], kind}].
+  1 wall, 2 platform, 3 none], reach [u where the design meets the ground], top [z there; a wall's: its coping],
+  far [a wall's landing: z at reach, the landing runs from top at the wall to it]}}; walls [{id, side, pts [[x, y]],
+  top [z], bottom [z], kind}].
 - platforms: [{id, track, side, s0, s1 (first and last metre: top [z] and back [u] per metre), ends (the platform runs
   half a metre beyond them, as the earthworks switch kind halfway between metres), edge, wall, coping, height}].
 - footbridges, underpasses, road_tunnel, fences, station (entrances, furniture), signals, pk, catenary.
@@ -1084,12 +1085,14 @@ class Corridor:
         self.kinds = kinds
         self.tree = STRtree(geoms)
 
-    def limit(self, a: np.ndarray, b: np.ndarray) -> tuple:
-        """First hit along the segment a -> b (map points): (fraction, what) or (1.0, '')."""
+    def limit(self, a: np.ndarray, b: np.ndarray, only: str = "") -> tuple:
+        """First hit along the segment a -> b (map points): (fraction, what) or (1.0, ''); `only`: of that kind."""
         from shapely.geometry import LineString, Point
         ln = LineString([a, b])
         best = (1.0, "")
         for i in self.tree.query(ln):
+            if only and not self.kinds[i].startswith(only):
+                continue
             inter = ln.intersection(self.geoms[i])
             if inter.is_empty:
                 continue
@@ -1131,12 +1134,52 @@ def _runs(mask: np.ndarray) -> list:
     return out
 
 
+WALL_TOP_GRADE = 0.8            # m per m: the steepest a wall's coping climbs or falls along it
+WALL_TOP_SPIKE = 3              # m: narrower bumps of the ground behind a wall are noise (trees, posts, LiDAR)
+WALL_TOP_DIP = 9                # m: narrower dips are too (the line of sight between two bridge decks, a drain)
+LANDING_MIN = 1.0               # m: the landing behind a wall runs at least this far ...
+LANDING_MAX = 6.0               # ... and at most this far, to where the ground is closest to the coping's height
+
+
+def smooth_wall_top(raw: np.ndarray, level: np.ndarray) -> np.ndarray:
+    """A wall's top per metre (the LiDAR ground behind it) made a clean line: narrow spikes cut off and narrow dips
+    filled on the wall's high side (above a cutting's formation, below an embankment's), smoothed, and its grade
+    capped at WALL_TOP_GRADE by raising (the wall never ends up lower than the ground it holds)."""
+    from scipy.ndimage import gaussian_filter1d, grey_closing, grey_opening
+    sgn = 1.0 if np.median(raw - level) >= 0.0 else -1.0
+    x = sgn * np.asarray(raw, dtype=float)
+    if len(x) >= 3:
+        x = grey_opening(x, size=min(WALL_TOP_SPIKE, len(x)), mode="nearest")
+        x = grey_closing(x, size=min(WALL_TOP_DIP, len(x)), mode="nearest")
+        x = gaussian_filter1d(x, 1.5, mode="nearest")
+    for rng in (range(1, len(x)), range(len(x) - 2, -1, -1)):
+        for j in rng:
+            prev = x[j - 1] if rng.step > 0 else x[j + 1]
+            x[j] = max(x[j], prev - WALL_TOP_GRADE)
+    return sgn * x
+
+
+def landing_reach(A: rg.Alignment, H: rg.Heights, corridor, s: float, sg: float, edge: float, top: float) -> tuple:
+    """(reach, ground there) of a wall's landing: from the coping (top at the wall) out to where the ground behind is
+    closest to the coping's height (preferring near), between LANDING_MIN and LANDING_MAX, never into a building."""
+    us = edge + np.arange(LANDING_MIN, LANDING_MAX + 1e-6, 0.25)
+    q = A.point(np.full(len(us), s), sg * us)
+    f, _what = corridor.limit(q[0], q[-1], only="building")
+    T = H.at(q[:, 0], q[:, 1])
+    cost = np.abs(T - top) + 0.15 * (us - us[0])
+    cost[us > us[0] + f * (us[-1] - us[0]) - 0.3] = np.inf
+    k = int(np.argmin(cost)) if np.isfinite(cost).any() else 0
+    return float(us[k]), float(T[k])
+
+
 def earthworks(al: dict, A: rg.Alignment, H: rg.Heights, corridor: Corridor, platforms: list, caps: list,
                spacing: float) -> dict:
     """Per metre and side inside the map: the formation edge, then a 3:2 slope to the LiDAR ground (embankment or
     cutting), or a retaining wall at the formation edge where the slope would run into a building, a road or a path,
     or would not meet the ground within SLOPE_REACH. Smaller steps than WALL_MIN are always sloped; wall runs shorter
-    than WALL_RUN_MIN are sloped unless a building or road is right there, gaps under 6 m between walls are walled.
+    than WALL_RUN_MIN are sloped unless a building or road is right there, shorter gaps between walls are walled
+    (a slope notch between two walls cuts a trench through what they hold: an abutment, a road). Each wall's top is
+    smoothed (smooth_wall_top), its landing runs from the coping to the ground (landing_reach).
     Platforms take the place of the formation edge on their side."""
     sec = section_dims()
     s_all = al["s"]
@@ -1197,10 +1240,18 @@ def earthworks(al: dict, A: rg.Alignment, H: rg.Heights, corridor: Corridor, pla
             d0, u_end, z_end, q, us, T = slope_reach(s, sg, uf, ze)
             lim_f, lim_what = corridor.limit(q[0], q[-1])
             u_lim = uf + lim_f * SLOPE_REACH
-            if abs(d0) < WALL_MIN or (u_end <= u_lim and u_end < uf + SLOPE_REACH):
+            meets = u_end <= u_lim and u_end < uf + SLOPE_REACH
+            z_w = float(np.interp(uf + 1.5, us, T))
+            if meets:
                 kind[j] = 0
-                reach[j] = min(u_end, uf + SLOPE_REACH)
-                top[j] = z_end if math.isfinite(u_end) else float(T[-1])
+                reach[j] = u_end
+                top[j] = z_end
+            elif abs(d0) < WALL_MIN and abs(z_w - ze) < WALL_MIN:
+                # a small step at the edge and the ground keeps going: a short blend to the ground, never a plane
+                # running SLOPE_REACH out through whatever stands there (an abutment, a road)
+                kind[j] = 0
+                reach[j] = uf + 1.5
+                top[j] = z_w
             else:
                 kind[j] = 1
                 reach[j] = uf + 1.5
@@ -1218,14 +1269,22 @@ def earthworks(al: dict, A: rg.Alignment, H: rg.Heights, corridor: Corridor, pla
                 why[j] = ""
         runs = _runs(kind == 1)
         for (a, b), (c, d) in zip(runs, runs[1:]):
-            if c - b < 6 and all(kind[j] == 0 for j in range(b, c)):
+            if c - b < WALL_RUN_MIN and all(kind[j] == 0 for j in range(b, c)):
                 for j in range(b, c):
                     kind[j] = 1
                     reach[j] = edge[j] + 1.5
                     q = A.point(np.array([s_all[k0 + j]]), np.array([sg * reach[j]]))
                     top[j] = float(H.at(q[:, 0], q[:, 1])[0])
                     why[j] = why[b - 1]
-        out["sides"][side] = {"edge": edge, "level": level, "kind": kind, "reach": reach, "top": top, "why": why}
+        # the walls' tops: a clean line along each wall, and behind it a landing from the coping to the ground
+        far = top.copy()
+        for a, b in _runs(kind == 1):
+            top[a:b] = smooth_wall_top(top[a:b], level[a:b])
+            for j in range(a, b):
+                s = float(s_all[k0 + j])
+                reach[j], far[j] = landing_reach(A, H, corridor, s, sg, edge[j], top[j])
+        out["sides"][side] = {"edge": edge, "level": level, "kind": kind, "reach": reach, "top": top, "far": far,
+                              "why": why}
         for a, b in _runs(kind == 1):
             ss = s_all[k0 + a:k0 + b]
             out["walls"].append({"side": side, "s0": float(ss[0]), "s1": float(ss[-1]),

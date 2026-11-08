@@ -276,8 +276,8 @@ class Design:
     """The ground the railway shapes, from rail.json `earthworks` and `zones` (or the same in memory): z(s, u, p) is
     the designed height at map point p, which is at (s, u) on the alignment, or the existing ground `H` where the
     railway leaves it alone. Per side, each metre: kind 0, the formation then a straight slope from its edge (edge,
-    level) to where it meets the ground (reach, top); kind 1, the formation up to a wall at its edge, then a landing at
-    the wall's top out to reach; kind 2, a platform: the formation up to the platform wall (edge), the platform top
+    level) to where it meets the ground (reach, top); kind 1, the formation up to a wall at its edge, then a landing from
+    the wall's top out to reach, where it meets the ground (far); kind 2, a platform: the formation up to the platform wall (edge), the platform top
     (top) out to its back (reach), blended into the ground over BLEND_RUN when it is within BLEND_STEP of it. Zones
     (stairwells, the road's open trench, the yard's islands) override: their height runs along an axis; the yard's
     ballast strips keep the ground."""
@@ -354,6 +354,20 @@ class Design:
         lerp = lambda a: a[j] * (1 - t) + a[j + 1] * t
         return (k0, lerp(sd["edge"]), lerp(sd["level"]), lerp(sd["reach"]), lerp(sd["top"]), F)
 
+    def landing_far(self, s: float, side: str, top: float, want: int = 1) -> float:
+        """The ground height a wall's landing runs down (or up) to at its reach (`far`; older rail.json: flat)."""
+        sd = self.sides[side]
+        if "far" not in sd:
+            return top
+        f = (s - self.s0) / self.step
+        j = int(np.clip(math.floor(f), 0, self.n - 2))
+        t = float(np.clip(f - j, 0.0, 1.0))
+        k0, k1 = int(sd["kind"][j]), int(sd["kind"][j + 1])
+        if k0 != k1:
+            jj = (j if k0 == want else j + 1) if want in (k0, k1) else (j if t < 0.5 else j + 1)
+            return float(sd["far"][jj])
+        return float(sd["far"][j] * (1 - t) + sd["far"][j + 1] * t)
+
     def z(self, s: float, u: float, p, zones=True):
         """Designed height at p (= alignment (s, u)), or None where the railway leaves the ground alone."""
         if zones and self.zones:
@@ -372,7 +386,10 @@ class Design:
                 return None
             return level + (top - level) * (a - edge) / max(reach - edge, 1e-6)
         if kind == 1:
-            return top if a <= reach + 1e-9 else None
+            if a > reach + 1e-9:
+                return None
+            far = self.landing_far(s, side, top)
+            return top + (far - top) * min(max((a - edge) / max(reach - edge, 1e-6), 0.0), 1.0)
         if kind == 2:
             if a <= reach:
                 return top
@@ -417,7 +434,10 @@ class Design:
         if kind == "slope":
             w = min(max((a - edge) / max(reach - edge, 1e-6), 0.0), 1.0)
             return level + (top - level) * w
-        if kind in ("landing", "platform"):
+        if kind == "landing":
+            far = self.landing_far(s, side, top, want)
+            return top + (far - top) * min(max((a - edge) / max(reach - edge, 1e-6), 0.0), 1.0)
+        if kind == "platform":
             return top
         if kind == "platform_blend":
             q = self.A.point(s, (1.0 if side == "left" else -1.0) * reach)

@@ -4,7 +4,10 @@ extends RefCounted
 ## mesh leaves out (the ground runs on under them, down to the road, railway or stream they cross). Per bridge, in the
 ## toy prop style: the deck slab along its points (top at the deck height, the way's material), parapets on car
 ## roads and railings on paths, a dashed centre line on two-way roads, and piers where the ground falls away under
-## it (never on a road, the railway, a platform or water). Collision: the deck top, its edges and the parapets, on the terrain layer (one StaticBody3D "BridgeCollision",
+## it (never on a road, the railway, a platform or water). A path deck running alongside a road deck (within JOIN_GAP of
+## its edge, near parallel: the busway's bridge over the RER B at Massy and the Massy - Saclay path beside it) is joined
+## to it as one deck: the path's deck widens over the gap to the road deck's edge, the road keeps a kerb there instead
+## of its parapet, the path its railing on the outside only. Collision: the deck top, its edges and the parapets, on the terrain layer (one StaticBody3D "BridgeCollision",
 ## each shape tagged for the picker), so vehicles drive and players walk on it.
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
@@ -22,6 +25,9 @@ const POST_STEP := 2.0              # m between railing posts
 const PIER_STEP := 18.0             # m between piers along the deck
 const PIER_GAP := 1.2               # m of clear height under the deck that calls for a pier
 const PIER_END := 4.0               # m from the ends with no pier (the abutments)
+const JOIN_GAP := 4.0               # m: a path deck at most this far from a road deck's edge is joined to it
+const JOIN_COS := 0.96              # ... when their directions are within ~16 degrees
+const KERB := 0.2                   # m, the kerb between a road and the path joined to it
 const DASH := Vector2(3.0, 3.0)     # m, centre line dash and gap
 const LINE_WIDTH := 0.12
 const PAINT_LIFT := 0.015
@@ -50,6 +56,7 @@ func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_di
 	var node := Node3D.new()
 	node.name = "Bridges"
 	root.add_child(node)
+	var joins := _joins(bridges)
 	var body := StaticBody3D.new()
 	body.name = "BridgeCollision"
 	body.collision_layer = Layers.TERRAIN
@@ -62,7 +69,7 @@ func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_di
 		var m := RailBuilder.Mesher.new()
 		var faces := PackedVector3Array()
 		var top := Color.html(ground_pal.get(b["material"], ground_pal["asphalt"]))
-		_deck(m, faces, b, top)
+		_deck(m, faces, b, top, joins.get(b["id"], []))
 		if m.is_empty():
 			continue
 		var tag: String = String(b["id"]).replace(":", "_")
@@ -113,21 +120,96 @@ static func _frames(pts: Array) -> Array:
 	return out
 
 
-func _deck(m: RailBuilder.Mesher, faces: PackedVector3Array, b: Dictionary, top: Color) -> void:
+## The joins between path and road decks: {bridge id: [the other bridges joined to it]}.
+static func _joins(bridges: Array) -> Dictionary:
+	var out := {}
+	for pb: Dictionary in bridges:
+		if pb["kind"] == "road" or pb["pts"].size() < 2:
+			continue
+		var pd := _chord(pb["pts"])
+		for rb: Dictionary in bridges:
+			if rb["kind"] != "road" or rb["pts"].size() < 2 or int(rb.get("layer", 1)) != int(pb.get("layer", 1)):
+				continue
+			if absf(pd.dot(_chord(rb["pts"]))) < JOIN_COS:
+				continue
+			var near := 0
+			for q in pb["pts"]:
+				if not _join_edge(rb, Vector2(q[0], q[1]), float(pb["width"])).is_empty():
+					near += 1
+			if near >= 3 and near * 10 >= pb["pts"].size() * 3:
+				out[pb["id"]] = out.get(pb["id"], []) + [rb]
+				out[rb["id"]] = out.get(rb["id"], []) + [pb]
+	return out
+
+
+static func _chord(pts: Array) -> Vector2:
+	return (Vector2(pts[-1][0], pts[-1][1]) - Vector2(pts[0][0], pts[0][1])).normalized()
+
+
+## The nearest point of a bridge's polyline to p: {"q", "d2", "z" (deck height there), "end" (true at one of its ends)}.
+static func _nearest(pts: Array, p: Vector2) -> Dictionary:
+	var best := {"d2": INF}
+	for i in pts.size() - 1:
+		var a := Vector2(pts[i][0], pts[i][1])
+		var ab := Vector2(pts[i + 1][0], pts[i + 1][1]) - a
+		var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 1e-9), 0.0, 1.0)
+		var q := a + ab * t
+		if p.distance_squared_to(q) < float(best["d2"]):
+			best = {"d2": p.distance_squared_to(q), "q": q, "z": lerpf(pts[i][2], pts[i + 1][2], t),
+					"end": (i == 0 and t <= 0.0) or (i == pts.size() - 2 and t >= 1.0)}
+	return best
+
+
+## Where a path of width `pw` centred on p meets road deck rb's edge (beside it, not past its ends): {"edge": the
+## point on the road deck's edge, "z": its height there}, or {} when it is not beside it.
+static func _join_edge(rb: Dictionary, p: Vector2, pw: float) -> Dictionary:
+	var n := _nearest(rb["pts"], p)
+	if n["end"]:
+		return {}
+	var wr: float = rb["width"] * 0.5 + PARAPET.x
+	var d := sqrt(float(n["d2"]))
+	if d < wr + pw * 0.5 - 0.05 or d > wr + pw * 0.5 + JOIN_GAP:
+		return {}
+	var q: Vector2 = n["q"]
+	return {"edge": q + (p - q) / d * (wr - 0.02), "z": n["z"]}
+
+
+func _deck(m: RailBuilder.Mesher, faces: PackedVector3Array, b: Dictionary, top: Color, joined: Array = []) -> void:
 	var fr := _frames(b["pts"])
 	if fr.size() < 2:
 		return
 	var road: bool = b["kind"] == "road"
 	var w: float = b["width"] * 0.5 + (PARAPET.x if road else 0.15)      # the parapets stand on the deck's edges
-	var depth := ROAD_DECK if road else PATH_DECK
+	var depth := ROAD_DECK if road or not joined.is_empty() else PATH_DECK
 	var side_col := CONCRETE
+	# per point, its two edges: a path joined to a road deck reaches over the gap to the road deck's edge there
+	var lv := []
+	var rv := []
+	for f: Dictionary in fr:
+		f["js"] = 0.0
+		var el: Vector3 = _g(f["p"] + f["left"] * w, f["z"])
+		var er: Vector3 = _g(f["p"] - f["left"] * w, f["z"])
+		if not road:
+			for rb: Dictionary in joined:
+				var j := _join_edge(rb, f["p"], float(b["width"]))
+				if j.is_empty():
+					continue
+				var e: Vector2 = j["edge"]
+				if (e - (f["p"] as Vector2)).dot(f["left"]) > 0.0:
+					el = _g(e, j["z"])
+					f["js"] = 1.0
+				else:
+					er = _g(e, j["z"])
+					f["js"] = -1.0
+		lv.append(el)
+		rv.append(er)
 	for i in fr.size() - 1:
 		var a: Dictionary = fr[i]
 		var c: Dictionary = fr[i + 1]
-		var al: Vector3 = _g(a["p"] + a["left"] * w, a["z"])
-		var ar: Vector3 = _g(a["p"] - a["left"] * w, a["z"])
-		var cl: Vector3 = _g(c["p"] + c["left"] * w, c["z"])
-		var cr: Vector3 = _g(c["p"] - c["left"] * w, c["z"])
+		var al: Vector3 = lv[i]
+		var ar: Vector3 = rv[i]
+		var cl: Vector3 = lv[i + 1]
+		var cr: Vector3 = rv[i + 1]
 		var down := Vector3(0.0, -depth, 0.0)
 		var up := (cl - al).cross(ar - al).normalized()
 		if up.y < 0.0:
@@ -141,11 +223,12 @@ func _deck(m: RailBuilder.Mesher, faces: PackedVector3Array, b: Dictionary, top:
 		m.quad(al + down, ar + down, cr + down, cl + down, Vector3.DOWN, Color(side_col.r, side_col.g, side_col.b, 0.6))
 		faces.append_array([al, cl, cl + down, al, cl + down, al + down, ar, cr, cr + down, ar, cr + down, ar + down])
 		if road:
-			_parapet(m, faces, a, c, w, 1.0)
-			_parapet(m, faces, a, c, w, -1.0)
+			for side in [1.0, -1.0]:
+				_parapet(m, faces, a, c, w, side, KERB if _path_beside(joined, a, c, w, side) else PARAPET.y)
 		else:
-			_rail_strip(m, faces, a, c, w - 0.05, 1.0)
-			_rail_strip(m, faces, a, c, w - 0.05, -1.0)
+			for side in [1.0, -1.0]:
+				if a["js"] != side or c["js"] != side:
+					_rail_strip(m, faces, a, c, w - 0.05, side)
 	if road and not b.get("oneway", false) and float(b["width"]) >= 5.0:
 		_centre_line(m, fr)
 	if not road:
@@ -153,9 +236,21 @@ func _deck(m: RailBuilder.Mesher, faces: PackedVector3Array, b: Dictionary, top:
 	_piers(m, fr, b["width"], depth)
 
 
-## A parapet along one edge (`side` +1 left, -1 right) of segment a -> c: inner and outer faces, its top.
-func _parapet(m: RailBuilder.Mesher, faces: PackedVector3Array, a: Dictionary, c: Dictionary, w: float, side: float) -> void:
-	var h := Vector3(0.0, PARAPET.y, 0.0)
+## Whether a path deck joined to this road runs along its `side` edge over segment a -> c.
+static func _path_beside(joined: Array, a: Dictionary, c: Dictionary, w: float, side: float) -> bool:
+	var e: Vector2 = ((a["p"] + a["left"] * w * side) + (c["p"] + c["left"] * w * side)) * 0.5
+	for pb: Dictionary in joined:
+		var n := _nearest(pb["pts"], e)
+		if not n["end"] and sqrt(float(n["d2"])) < float(pb["width"]) * 0.5 + JOIN_GAP + 0.1:
+			return true
+	return false
+
+
+## A parapet (or a kerb: `height`) along one edge (`side` +1 left, -1 right) of segment a -> c: inner and outer faces,
+## its top.
+func _parapet(m: RailBuilder.Mesher, faces: PackedVector3Array, a: Dictionary, c: Dictionary, w: float, side: float,
+		height: float = PARAPET.y) -> void:
+	var h := Vector3(0.0, height, 0.0)
 	var oa: Vector3 = _g(a["p"] + a["left"] * w * side, a["z"])
 	var oc: Vector3 = _g(c["p"] + c["left"] * w * side, c["z"])
 	var ia: Vector3 = _g(a["p"] + a["left"] * (w - PARAPET.x) * side, a["z"])
@@ -188,6 +283,8 @@ func _posts(m: RailBuilder.Mesher, fr: Array, w: float) -> void:
 	for k in n + 1:
 		var f := _at(fr, length * k / n)
 		for side in [1.0, -1.0]:
+			if f.get("js", 0.0) == side:
+				continue
 			var p: Vector2 = f["p"] + f["left"] * w * side
 			var xf := Transform3D(Basis(), _g(p, f["z"] + RAILING * 0.5))
 			m.box(xf, Vector3(0.06, RAILING, 0.06), RAIL_METAL)
@@ -240,5 +337,6 @@ static func _at(fr: Array, d: float) -> Dictionary:
 		if d <= float(c["d"]) or i == fr.size() - 2:
 			var t := clampf((d - float(a["d"])) / maxf(float(c["d"]) - float(a["d"]), 1e-6), 0.0, 1.0)
 			return {"p": (a["p"] as Vector2).lerp(c["p"], t), "z": lerpf(a["z"], c["z"], t),
-					"left": (a["left"] as Vector2).lerp(c["left"], t), "dir": (a["dir"] as Vector2).lerp(c["dir"], t)}
+					"left": (a["left"] as Vector2).lerp(c["left"], t), "dir": (a["dir"] as Vector2).lerp(c["dir"], t),
+					"js": (a if t < 0.5 else c).get("js", 0.0)}
 	return fr[0]
