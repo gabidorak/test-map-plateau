@@ -99,7 +99,7 @@ def ring_polygon(rings: list) -> Polygon | None:
 
 
 def load() -> dict:
-    w = json.loads(WORLD.read_text())
+    w = json.loads(WORLD.read_text(encoding="utf-8"))
     paved, parks, water, rails = [], {}, [], []
     for g in w["ground"]:
         p = ring_polygon(g["rings"])
@@ -134,16 +134,16 @@ def load() -> dict:
         obstacles.append(p.buffer(CLEAR["water"]))
     for p in rails:
         obstacles.append(p.buffer(1.0))
-    for s in json.loads(RAIL.read_text())["services"]:
+    for s in json.loads(RAIL.read_text(encoding="utf-8"))["services"]:
         obstacles.append(LineString([(q[0], q[1]) for q in s["pts"]]).buffer(CLEAR["rail"]))
-    for r in json.loads(RACES.read_text())["races"]:
+    for r in json.loads(RACES.read_text(encoding="utf-8"))["races"]:
         for key in ("start", "finish"):
             c = r.get(key)
             if c:
                 obstacles.append(Point(c["x"], c["y"]).buffer(c["r"] + 2.0))
     routes = []
     for path in (BUS_ROUTES, CAR_ROUTES):
-        for r in json.loads(path.read_text())["routes"].values():
+        for r in json.loads(path.read_text(encoding="utf-8"))["routes"].values():
             if len(r["pts"]) >= 2:
                 routes.append(LineString([(p[0], p[1]) for p in r["pts"]]))
     return {"paved": paved, "parks": parks, "obstacles": obstacles, "routes": routes, "water": water}
@@ -305,7 +305,7 @@ def plot(path: str, world: dict, garages: list) -> None:
 def main() -> None:
     opt = args()
     world = load()
-    old = {g["id"]: g for g in json.loads(OUT.read_text())["garages"]} if OUT.exists() and opt["only"] else {}
+    old = {g["id"]: g for g in json.loads(OUT.read_text(encoding="utf-8"))["garages"]} if OUT.exists() and opt["only"] else {}
     out = []
     for g in GARAGES:
         if opt["only"] and g["id"] not in opt["only"]:

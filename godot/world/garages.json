@@ -4,7 +4,7 @@
  "garages": [
   {
    "id": "telecom",
-   "name": "TÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©com Paris",
+   "name": "Télécom Paris",
    "kind": "public",
    "osm": [
     "w648440416"
@@ -234,7 +234,7 @@
   },
   {
    "id": "centrale",
-   "name": "CentraleSupÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©lec",
+   "name": "CentraleSupélec",
    "kind": "public",
    "osm": [
     "w48240404"
