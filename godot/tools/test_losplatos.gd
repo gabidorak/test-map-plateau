@@ -64,11 +64,11 @@ func _run() -> void:
 		_check(info.get("type", "") == "custom_garage", "its roof over %s (%s)" % [c, info.get("type", info.get("name", "nothing"))])
 	_check(lp.floor_z >= 1.0, "its floor over the ground: %.2f m" % lp.floor_z)
 	# the sidewalk and the ramp: solid, from the road's edge up to the facade
-	for c: Vector3 in [Vector3(6.0, 0, -1.5), Vector3(21.5, 0, -1.5), Vector3(21.5, 0, -0.3), Vector3(29.0, 0, -2.5)]:
+	for c: Vector3 in [Vector3(6.2, 0, -1.3), Vector3(21.3, 0, -1.6), Vector3(21.3, 0, -0.3), Vector3(29.2, 0, -2.4)]:   # (off the paving grid's vertices)
 		var q := PhysicsRayQueryParameters3D.create(f * (c + Vector3(0, 5, 0)), f * (c + Vector3(0, -3, 0)), Layers.SOLID)
 		var hit := space.intersect_ray(q)
 		var info: Dictionary = hit["collider"].get_meta("plateau", {}) if not hit.is_empty() and hit["collider"] else {}
-		_check(info.get("type", "") == "custom_garage", "paved at %s" % c)
+		_check(info.get("type", "") == "custom_garage", "paved at %s (%s)" % [c, hit.get("collider", "nothing")])
 
 	# the door: shut with no one about, open for a car coming up
 	m.to_garage(Vector2(764, -333))
