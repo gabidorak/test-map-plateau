@@ -176,6 +176,56 @@ checked before calling it finished.
 **Done when:**
 - [ ] Report runs on a test database with generated payments.
 
+## O9 — Properties *(proposal: Thomas's choices of 2026-11-09, not agreed with Gabriel yet)*
+
+**Goal:** homes to buy, with an interior the owner is teleported into, a spawn point and a private garage.
+
+- **Addresses:** a hand-picked list in `world/properties.json` (written by `tools/online/properties.py`, like
+  `garages.json`): id, address, tier (`standard`, `apartment`, `luxury`), price, the real building (OSM id), its front
+  door (a point on the facade and the way it faces), the private parking bays in front (1 / 2 / 4 by tier).
+- **Shared ownership:** an address is not exclusive. Every player who buys it owns their own copy of the interior
+  behind the same door (like flats in a block), so no address ever runs out.
+- **Several per player, one main home:** a player may own several properties and picks the main one, where they
+  appear when they log in.
+- **Prices:** studio ~50 000 €, apartment ~250 000 €, luxury ~1 000 000 € (in `data/prices.json`).
+- **Buying:** a "For sale" sign at the door; E shows the price and what comes with it (panel like Prestige Motors'
+  catalogue). Charged by the server, like a vehicle.
+- **Interiors:** built where the flat really is, behind the building's real windows (the view out is the real one),
+  one instance per owned (address, owner) pair, made only on the machine of a player inside it (never on the server,
+  nor for the others). All the instances of an address are at the same place: the host keeps which one each player
+  is in and every peer shows only the players in the same one as itself (`net.gd hidden_peers`). E at the front door: in (teleport); E at the inside door: back out in front of the
+  building. Three templates: a plain studio, a finished apartment, a refined luxury interior (glass, noble
+  materials, a view).
+- **Home:** log in at the main home (inside it); the in-game menu adds "Go home".
+- **Private garage:** the bays in front of the property are the owner's; a terminal there gets their vehicles out
+  (the public garages' rules, scripts/online/garages.gd, with an owner check). For a residence (step 1, the Logements
+  de l'X): a residents' terminal and purple bays at its car park (garage kind `residence`, any owner of a flat
+  there), and the **garage option** (+10 000 €): a private lift in the flat's hall (a hidden garage of kind `private`)
+  that takes the owner straight to the wheel of the vehicle they pick, on a residents' bay.
+- **Prestige:** the front door locks (the door panel): locked (the default), only the owner enters; open, while the
+  owner is in the game, other players may visit their flat from the entrance's panel ("Visit X's flat") and they
+  see each other there.
+- **Server:** an accounts table `properties (id, account, property, main, locked, bought)` and
+  `/v1/server/property` (buy, set main, lock), like `/v1/server/vehicle`; the account data sent to the game server
+  lists them. Admin: `plateau-admin add-property` / `remove-property`.
+- **Test mode** (`--online-test`): buying works with the test wallet; the in-game menu adds "Test: go to a property".
+
+**Steps:**
+1. Data, doors, buy / enter / leave, the standard interior: all of it in the offline test mode.
+2. Server: accounts table + API, LAN and official server (PROTOCOL bump).
+3. Main home spawn + "Go home", private garage.
+4. Apartment and luxury interiors, door lock and visits.
+
+**Done when:**
+- [ ] `tools/test_properties.gd`: buy, enter, leave, main home spawn, private garage spawn, refused when too poor
+      (step 1 done: buy, refused when too poor, enter, leave, the view out of the windows, the residents' car park,
+      the garage option's lift).
+- [ ] pytest: property routes (buy twice, set main, lock, someone else's property refused).
+- [x] Online test (`tools/test_properties_online.sh`: accounts service, official server, owners from
+      PLATEAU_ONLINE_HOMES until step 2): out of sight between flats, a visitor refused a locked flat, visiting an
+      open one, the owner leaving by the lift at the wheel.
+- [x] Perf: an interior costs nothing while nobody is inside it (built only on the machine of a player inside).
+
 ## Later
 
 Bus upgrades and liveries, bot passengers at stops, more jobs (race prizes, taxi, delivery, police, ambulance),
@@ -194,3 +244,4 @@ a real fire station building at #1289.
 | O6 Stunts | ✅ | `online/stunts.gd` (Main/Mode/Stunts), 10 spots in `world/stunts.json` (`tools/online/stunts.py` + `test_stunts.gd --trial`), accounts `pay` `once` + `firsts`, PROTOCOL 16. test_stunts.sh green. Fixed: a taken-over car could keep a snap's velocity. |
 | O7 Fires + firefighter job | ✅ | `online/fires.gd` + `fire_job.gd` (Main/Mode/Fires, FireJob), `fire_fx.gd`, 2 417 spots in `world/fires.json` (`tools/online/fires.py`), jobs.json "fire", water judged from the server's own flight of each jet, PROTOCOL 17. test_fires.sh green. 5 fires 0.3-0.8 ms on the Iris Xe. |
 | O8 Balance + admin | ⬜ | |
+| O9 Properties | 🟡 | Proposal (branch `proprietesOnline`). Step 1 under way: the studio of the Logements de l'X 19 (3rd floor, north face, ~50 m²) in the offline test: `online/properties.gd`, `studio_builder.gd`, `property_panel.gd`, `data/properties.json`, open window frames in `logements_x_builder.gd`; the residents' car park and the garage option's lift (garage kinds `residence` and `private` in `garages.gd`); instances (players seen only in the same flat) and visits (doors open / locked). test_properties.gd green, test_properties_online.sh green (2 players). Online owners come from PLATEAU_ONLINE_HOMES until step 2. |

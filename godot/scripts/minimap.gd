@@ -21,6 +21,8 @@ const PLACES := {
 	"shop": {"colour": Color("#c9a043"), "glyph": "€"},
 	"stunt": {"colour": Color("#e0662a"), "glyph": "ramp"},
 	"blaze": {"colour": Color("#ff7a00"), "glyph": "flame"},   # PTA Online's fires burning (firefighters on duty)
+	"home": {"colour": Color("#7a4fc4"), "glyph": "house"},    # PTA Online's properties (scripts/online/properties.gd)
+	"residence": {"colour": Color("#7a4fc4"), "glyph": "P"},   # ...and their residents' car parks
 }
 
 var game: Node                              # game.gd
@@ -123,7 +125,7 @@ func _draw_marks() -> void:
 	if net and net.active:
 		for id: int in net.players:
 			var avatar: Node3D = net.avatar(id)
-			if avatar == null or not avatar.is_inside_tree():
+			if avatar == null or not avatar.is_inside_tree() or net.hidden_peers.has(id):
 				continue
 			var p := _on_disc(Vector2(avatar.global_position.x, -avatar.global_position.z), 8.0)
 			_marks.draw_circle(p, 5.5, INK)
@@ -167,6 +169,11 @@ static func draw_place(canvas: CanvasItem, font: Font, p: Vector2, kind: String,
 			canvas.draw_colored_polygon(PackedVector2Array([p + Vector2(0.0, -0.72) * r, p + Vector2(0.45, -0.05) * r,
 					p + Vector2(0.4, 0.38) * r, p + Vector2(0.0, 0.62) * r, p + Vector2(-0.4, 0.38) * r,
 					p + Vector2(-0.45, 0.0) * r, p + Vector2(-0.18, -0.25) * r]), Color.WHITE)
+		"house":
+			canvas.draw_colored_polygon(PackedVector2Array([p + Vector2(0.0, -0.66) * r, p + Vector2(0.62, -0.05) * r,
+					p + Vector2(0.44, -0.05) * r, p + Vector2(0.44, 0.52) * r, p + Vector2(-0.44, 0.52) * r,
+					p + Vector2(-0.44, -0.05) * r, p + Vector2(-0.62, -0.05) * r]), Color.WHITE)
+			canvas.draw_rect(Rect2(p + Vector2(-0.12, 0.12) * r, Vector2(0.24, 0.4) * r), look["colour"])
 		_:
 			var fs := roundi(r * 1.55)
 			var w := font.get_string_size(look["glyph"], HORIZONTAL_ALIGNMENT_LEFT, -1, fs)

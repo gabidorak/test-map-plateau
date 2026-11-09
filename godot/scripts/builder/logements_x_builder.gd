@@ -51,6 +51,8 @@ const STAGGER := [0.0, -1.4, 0.7, -0.6, 1.0]    # m: a lone window's shift from 
 const WIN_W := 1.45                         # m, a window with its frame
 const PIER_W := 0.3                         # m, the white surround either side
 const PAIR := 1.85                          # m between the centres of a pair
+const FRAME_BAR := 0.07                     # m, a window frame's bars (the pane fills the opening between them)
+const PORCH_DOOR := 2.3                     # m from the recess's inner corner to the porch's entrance door
 
 var _mesh_dir := ""
 var _mat: ShaderMaterial
@@ -211,19 +213,85 @@ static func _fquad(m: RailBuilder.Mesher, o: Vector2, along: Vector2, out: Vecto
 	m.quad(_gp(a, z0), _gp(b, z0), _gp(b, z1), _gp(a, z1), _gd(out), col)
 
 
-## A window: its frame (a dark box), the pane in it (window material: the colour's alpha is its random draw for the
-## lights at night), a mullion; `d` out of the face.
+## A window: its frame (four dark bars round an opening, so that a flat built behind the facade sees out: the pane and
+## the building's walls are drawn from the outside only), the pane in it (window material: the colour's alpha is its
+## random draw for the lights at night), a mullion; `d` out of the face.
 func _window(o: Vector2, along: Vector2, out: Vector2, u0: float, u1: float, z0: float, z1: float, d := 0.0,
 		mullions := 1) -> void:
 	var m := _mesher("Plots")
 	var w := _mesher("Plots_Windows", 700.0)
-	_fbox(m, o, along, out, u0, u1, d, d + 0.05, z0, z1, FRAME)
+	var f := FRAME_BAR
+	_fbox(m, o, along, out, u0, u0 + f, d, d + 0.05, z0, z1, FRAME)
+	_fbox(m, o, along, out, u1 - f, u1, d, d + 0.05, z0, z1, FRAME)
+	_fbox(m, o, along, out, u0 + f, u1 - f, d, d + 0.05, z0, z0 + f, FRAME)
+	_fbox(m, o, along, out, u0 + f, u1 - f, d, d + 0.05, z1 - f, z1, FRAME)
 	var tint := CURTAIN if _rng.randf() < 0.25 else PANE
 	tint.a = _rng.randf()
-	_fquad(w, o, along, out, u0 + 0.07, u1 - 0.07, d + 0.055, z0 + 0.07, z1 - 0.07, tint)
+	_fquad(w, o, along, out, u0 + f, u1 - f, d + 0.055, z0 + f, z1 - f, tint)
 	for k in range(1, mullions + 1):
 		var u := u0 + (u1 - u0) * k / (mullions + 1)
 		_fbox(m, o, along, out, u - 0.03, u + 0.03, d + 0.05, d + 0.08, z0 + 0.05, z1 - 0.05, FRAME)
+
+
+# ---------------------------------------------------------------- where things are (also for scripts/online/properties.gd)
+
+## Face `i` of plot `pl`'s upper body: [its first corner, the unit vector along it, its outward normal, its length]
+## (map coordinates).
+static func face(pl: Dictionary, i: int) -> Array:
+	var p := _v2(pl["ring"][i])
+	var q := _v2(pl["ring"][(i + 1) % 4])
+	var L := p.distance_to(q)
+	var along := (q - p) / L
+	return [p, along, Vector2(along.y, -along.x), L]
+
+
+## The window layout of face `i` of plot `pl`: [[centre along a 19.7 m face, 1 alone / 2 a pair], ...].
+static func layout(pl: Dictionary, i: int) -> Array:
+	return LAYOUTS[(i + int(pl["num"])) % LAYOUTS.size()]
+
+
+## Window slot `j` of floor `k` (1 the first upper floor) on face `i` of plot `pl`: [its centre along the face, 1 alone
+## / 2 a pair].
+static func slot(pl: Dictionary, i: int, k: int, j: int) -> Array:
+	var lay := layout(pl, i)
+	var L: float = face(pl, i)[3]
+	var c: float = lay[j][0] * L / 19.7
+	var n: int = lay[j][1]
+	if n == 1 and j % 2 == 1:
+		c += STAGGER[(k + j + int(pl["num"])) % STAGGER.size()]
+	var half := WIN_W * 0.5 + (PAIR * 0.5 if n == 2 else 0.0)
+	return [clampf(c, half + PIER_W + 0.6, L - half - PIER_W - 0.6), n]
+
+
+## The windows of slot `j`, floor `k`, face `i`: [[u0, u1], ...] along the face (frames included).
+static func slot_windows(pl: Dictionary, i: int, k: int, j: int) -> Array:
+	var s := slot(pl, i, k, j)
+	var c: float = s[0]
+	if s[1] == 2:
+		return [[c - PAIR * 0.5 - WIN_W * 0.5, c - PAIR * 0.5 + WIN_W * 0.5],
+				[c + PAIR * 0.5 - WIN_W * 0.5, c + PAIR * 0.5 + WIN_W * 0.5]]
+	return [[c - WIN_W * 0.5, c + WIN_W * 0.5]]
+
+
+## Floor `k` (1 the first upper floor) of plot `pl`: [its floor level, the windows' bottom, the windows' top (frames
+## included)], heights in Godot y.
+static func floor_levels(pl: Dictionary, dims: Dictionary, k: int) -> Array:
+	var zp: float = pl["zp"]
+	var zk: float = zp + float(dims["ground"]) + float(dims["floor"]) * (k - 1)
+	var z1: float = (zk + float(dims["floor"]) - 0.3) if k < int(dims["floors"]) else (zp + float(dims["height"]) - 1.1)
+	return [zk, zk + 0.42, z1 - 0.02]
+
+
+## Plot `pl`'s entrance door (in the porch, beside the plot's number): [its middle on the wall (map), the way out of
+## the wall (unit, map), the porch's floor height].
+static func porch(pl: Dictionary) -> Array:
+	var P := _v2(pl["ring"][int(pl["corner"])])
+	var ea := _v2(pl["ea"])
+	var eb := _v2(pl["eb"])
+	var ci: float = pl["core_in"]
+	var ru: float = float(pl["recess"][0]) + ci
+	var rv: float = float(pl["recess"][1]) + ci
+	return [P + ea * (ru - PORCH_DOOR) + eb * rv, -eb, float(pl["zp"])]
 
 
 # ---------------------------------------------------------------- the plots
@@ -238,7 +306,6 @@ func _plot(pl: Dictionary) -> void:
 	var nf: int = _D["floors"]
 	var H: float = _D["height"]
 	var deck: float = zp + H - float(_D["parapet"])
-	var seed := int(pl["num"])
 	var m := _mesher("Plots")
 	var name := "Logements élèves %s" % pl["num"]
 	var info := _info("plot", "logx:plot-%s" % pl["num"], name)
@@ -257,18 +324,16 @@ func _plot(pl: Dictionary) -> void:
 		_fbox(m, p, along, out, -0.4, L + 0.4, -0.32, 0.4, zp + H, zp + H + 0.05, _white.lightened(0.04))
 		_fquad(m, p, along, -out, 0.3, L - 0.3, 0.31, deck - 0.02, zp + H, _white.darkened(0.04))
 		# the floors' windows and their white surrounds
-		var lay: Array = LAYOUTS[(i + seed) % LAYOUTS.size()]
+		var lay := layout(pl, i)
 		for k in range(1, nf + 1):
 			var zk := zp + G + F * (k - 1)
 			var z0 := zk + 0.4
 			var z1 := (zk + F - 0.3) if k < nf else (zp + H - 1.1)
 			for j in lay.size():
-				var c: float = lay[j][0] * L / 19.7
-				var n: int = lay[j][1]
-				if n == 1 and j % 2 == 1:
-					c += STAGGER[(k + j + seed) % STAGGER.size()]
+				var sl := slot(pl, i, k, j)
+				var c: float = sl[0]
+				var n: int = sl[1]
 				var half := WIN_W * 0.5 + (PAIR * 0.5 if n == 2 else 0.0)
-				c = clampf(c, half + PIER_W + 0.6, L - half - PIER_W - 0.6)
 				_fbox(m, p, along, out, c - half - PIER_W, c - half, 0.0, 0.14, z0, z1, _white)
 				_fbox(m, p, along, out, c + half, c + half + PIER_W, 0.0, 0.14, z0, z1, _white)
 				if n == 2:
@@ -317,7 +382,7 @@ func _ground_floor(pl: Dictionary, R: Array[Vector2], zp: float, info: Dictionar
 		if inner:
 			# the porch's wall (along the entrance face, beyond the shelter): the door and the number
 			if absf(va - vb) < 0.1:
-				var u_door := ru - 2.3
+				var u_door := ru - PORCH_DOOR
 				var s0 := (P + ea * (u_door - 0.9) - a).dot(along)
 				var s1 := (P + ea * (u_door + 0.9) - a).dot(along)
 				_window(a, along, out, minf(s0, s1), maxf(s0, s1), zp + 0.05, zp + 2.6, 0.0, 1)

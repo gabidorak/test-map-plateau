@@ -201,6 +201,8 @@ func _solo() -> void:
 	_check(Vector2(depot["xy"]).distance_to(Vector2(4381, 1189)) < 150.0, "the bus depot is by Massy-Palaiseau's bus stop")
 	var space: PhysicsDirectSpaceState3D = _main.get_world_3d().direct_space_state
 	for g: Dictionary in gs:
+		if g.get("hidden", false):
+			continue                        # a flat's lift (scripts/online/properties.gd): its bays are a car park's
 		var steep := 0.0
 		var clear := true
 		for bay: Dictionary in g["bays"]:

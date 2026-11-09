@@ -214,7 +214,7 @@ func _draw_marks() -> void:
 	if net and net.active:
 		for id: int in net.players:
 			var avatar: Node3D = net.avatar(id)
-			if avatar == null or not avatar.is_inside_tree():
+			if avatar == null or not avatar.is_inside_tree() or net.hidden_peers.has(id):
 				continue
 			var p := _to_px(Vector2(avatar.global_position.x, -avatar.global_position.z))
 			_marks.draw_circle(p, 7.0, INK)

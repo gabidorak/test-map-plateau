@@ -6,7 +6,9 @@ extends Node3D
 ## Kinds: "public" (car parks spread over the map: any vehicle but the work ones; a "big" bay takes the truck with its
 ## trailer and the biplane), "depot" (the bus depot at Massy-Palaiseau: buses only), "fire" (the fire station at
 ## Polytechnique: fire trucks only), "shop" (Prestige Motors' delivery bays by its door: a vehicle bought there comes
-## out on them; otherwise a public garage).
+## out on them; otherwise a public garage), "residence" (a residence's car park: its residents' vehicles, PTA Online's
+## properties: scripts/online/properties.gd), "private" (a flat's lift down to the residents' bays: "hidden", no kiosk,
+## its terminal the lift in the flat). The properties add theirs to `list` before `build`.
 ## Positions in the file are map coordinates (x east, y north; Godot = (x, height, -y)) and yaws in degrees (0 north,
 ## clockwise); heights come from the ground (scripts/ground_map.gd), so the server has them too. The dedicated server
 ## makes no meshes, only the kiosks' collision.
@@ -22,6 +24,8 @@ const KINDS := {
 	"depot": {"title": "Bus depot", "colour": Color("#2e9d57"), "sign": "BUS", "paint": Color(1.0, 0.82, 0.2)},
 	"fire": {"title": "Fire station", "colour": Color("#d23b2f"), "sign": "18", "paint": Color(0.92, 0.25, 0.2)},
 	"shop": {"title": "Deliveries", "colour": Color("#c9a043"), "sign": "€", "paint": Color(1.0, 0.82, 0.42)},
+	"residence": {"title": "Residents' car park", "colour": Color("#7a4fc4"), "sign": "P", "paint": Color(0.8, 0.7, 1.0)},
+	"private": {"title": "Your garage", "colour": Color("#7a4fc4"), "sign": "P", "paint": Color(0.8, 0.7, 1.0)},
 }
 const PUBLIC := ["public", "shop"]          # kinds any of a player's vehicles but the work ones come out at
 const LINE := 0.12                          # m, painted bay lines
@@ -56,6 +60,8 @@ func _ready() -> void:
 ## Puts the garages in the world: the kiosks (with collision everywhere) and, `meshes`, their looks.
 func build(meshes: bool) -> void:
 	for g: Dictionary in list:
+		if g.get("hidden", false):
+			continue
 		var node := Node3D.new()
 		node.name = "Garage_" + str(g["id"]).replace("-", "_")
 		add_child(node)
@@ -78,6 +84,8 @@ func terminal_near(p: Vector3, reach: float) -> Dictionary:
 	var best := {}
 	var best_d := reach
 	for g: Dictionary in list:
+		if g.get("hidden", false):
+			continue
 		var t: Vector3 = g["terminal"]
 		var d := Vector2(t.x - p.x, t.z - p.z).length()
 		if d <= best_d and absf(t.y - p.y) < 3.0:
@@ -115,10 +123,12 @@ static func size_of(model: String) -> Array:
 	return _sizes[model]
 
 
-## Whether `model` fits a bay of `bay` (its lines kept clear by BAY_MARGIN).
+## Whether `model` fits a bay of `bay` (its lines kept clear by BAY_MARGIN, or the bay's own "margin": a car park's
+## real bays, narrower than ours).
 static func fits(model: String, bay: Dictionary) -> bool:
 	var half: Vector3 = size_of(model)[0]
-	return half.x * 2.0 + BAY_MARGIN * 2.0 <= bay["w"] and half.z * 2.0 + BAY_MARGIN * 2.0 <= bay["l"]
+	var margin: float = bay.get("margin", BAY_MARGIN)
+	return half.x * 2.0 + margin * 2.0 <= bay["w"] and half.z * 2.0 + margin * 2.0 <= bay["l"]
 
 
 ## Whether any bay of garage `g` fits `model`.
@@ -242,7 +252,8 @@ func _kiosk(node: Node3D, g: Dictionary, meshes: bool) -> void:
 		mark.transform = Transform3D(Basis(Vector3.UP, 0.0 if side > 0.0 else PI), Vector3(0.55, 3.45, side * 0.045))
 		k.add_child(mark)
 	var title := Label3D.new()
-	title.text = "%s\n%s" % [look["title"], g["name"]] if g["kind"] in PUBLIC else str(g["name"])
+	title.text = "%s\n%s" % [look["title"], g["name"]] if g["kind"] in PUBLIC or g["kind"] == "residence" \
+			else str(g["name"])
 	title.font_size = 44
 	title.pixel_size = 0.01
 	title.outline_size = 12
@@ -268,7 +279,7 @@ func _paint_bays(node: Node3D, g: Dictionary) -> void:
 		for e in 4:
 			_line(st, xf * corners[e], xf * corners[(e + 1) % 4])
 		var text: String = "%s %d" % [look["sign"], n] if g["kind"] in PUBLIC else str(look["sign"]) if g["kind"] == "depot" \
-				else "POMPIERS"
+				else "RÉSIDENTS" if g["kind"] == "residence" else "POMPIERS"
 		for end: float in [-1.0, 1.0]:      # readable from either end of the bay
 			var mark := Label3D.new()
 			mark.text = text

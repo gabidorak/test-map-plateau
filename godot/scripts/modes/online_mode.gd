@@ -49,6 +49,7 @@ const BusJob = preload("res://scripts/online/bus_job.gd")
 const Stunts = preload("res://scripts/online/stunts.gd")
 const Fires = preload("res://scripts/online/fires.gd")
 const FireJob = preload("res://scripts/online/fire_job.gd")
+const Properties = preload("res://scripts/online/properties.gd")
 
 signal answered(ok: bool, text: String)     # the host's answer to our last request at a garage terminal
 
@@ -58,7 +59,8 @@ const KEEP := 30.0                          # s a player's vehicle waits for the
 const REACH := 2.5                          # m from a terminal for E
 const SERVER_REACH := 8.0                   # m the server allows (the player's position reaches it a little late)
 const PROMPT_REACH := 3.0                   # m from a vehicle for its owner's prompt
-const PLACE_KINDS := {"public": "garage", "depot": "depot", "fire": "fire"}   # (the shop's: Prestige Motors already)
+const PLACE_KINDS := {"public": "garage", "depot": "depot", "fire": "fire", "residence": "residence"}   # (the shop's:
+											# Prestige Motors already; a flat's private lift: none)
 const TOW := 15.0                           # s a broken player vehicle stays before it is towed back (PLATEAU_ONLINE_TOW)
 const TEST_MONEY := 10_000_000              # € in the PTA Online test's wallet, at start and at each refill
 const TEST_TRIPS := [["the bus depot", "depot"], ["the fire station", "fire"], ["Prestige Motors", "shop"]]
@@ -78,7 +80,8 @@ var bus_job: BusJob
 var stunts: Stunts
 var fires: Fires
 var fire_job: FireJob
-var _leaving := {}                          # host: account -> [net id, s left]
+var properties: Properties
+var _leaving := {}                         # host: account -> [net id, s left]
 var _panel: GaragePanel
 var _wallet: Label
 var _prompt: Label
@@ -134,6 +137,10 @@ func _ready() -> void:
 	fire_job.name = "FireJob"
 	fire_job.mode = self
 	add_child(fire_job)
+	properties = Properties.new()
+	properties.name = "Properties"
+	properties.mode = self
+	add_child(properties)
 	multiplayer.peer_disconnected.connect(_on_left)
 	game.economy.logged_in.connect(_on_login)
 
@@ -154,6 +161,7 @@ func begin() -> void:
 		return
 	_build_hud()
 	shop.begin()
+	properties.begin()
 	if not game.net.active:
 		game.economy.balance = test_money
 	game.economy.wallet_changed.connect(_show_wallet)
@@ -177,6 +185,12 @@ func player_actions() -> Array:
 			out.append(["Test: go to %s" % trip[0], func() -> void:
 				var here: Vector3 = game.map_eye()
 				to_garage(Vector2(here.x, -here.z), [trip[1]])])
+		for p: Dictionary in properties.list:
+			out.append(["Test: go to the %s (%s)" % [str(p["short"]).to_lower(), p["id"]], properties.go_to.bind(p["id"])])
+		if not garages.get_garage(Properties.RESIDENTS_ID).is_empty():
+			out.append(["Test: go to the residents' car park (Logements de l'X)", func() -> void:
+				var g := garages.get_garage(Properties.RESIDENTS_ID)
+				to_garage(g["xy"], ["residence"])])
 	return out
 
 
@@ -214,14 +228,17 @@ func map_places() -> Array:
 	for g: Dictionary in garages.list:
 		if PLACE_KINDS.has(g["kind"]):
 			out.append([g["name"], PLACE_KINDS[g["kind"]], g["xy"]])
-	return out + stunts.map_places() + fire_job.map_places()
+	return out + stunts.map_places() + fire_job.map_places() + properties.map_places()
 
 
 func ui_open() -> bool:
-	return _panel != null and _panel.visible
+	return (_panel != null and _panel.visible) or (properties != null and properties.ui_open())
 
 
 func close_ui() -> bool:
+	if properties.ui_open():
+		properties.close_panel()
+		return true
 	if not ui_open():
 		return false
 	_close_panel()
@@ -266,12 +283,18 @@ func handle_input(event: InputEvent) -> bool:
 	if game.mode == "server" or _panel == null:
 		return false
 	var keys := event.is_action_pressed("interact") or event.is_action_pressed("vehicle_menu")
+	if properties.ui_open():
+		if keys:
+			properties.close_panel()
+		return keys
 	if ui_open():
 		if keys:
 			_close_panel()
 		return keys
 	var on_foot: bool = game.driving == null and game.riding == null and not game.flying
 	if event.is_action_pressed("interact") and on_foot:
+		if properties.interact():
+			return true
 		var g := terminal_at_hand()
 		if not g.is_empty():
 			open_garage(g["id"])
@@ -292,9 +315,12 @@ func open_garage(id: String) -> void:
 	var sub := {"public": "Your vehicles (not the work ones: buses at the bus depot, fire trucks at the fire station)",
 			"shop": "Your vehicles (not the work ones). Those bought here come out on these bays.",
 			"depot": "Bus drivers earn money here: pick a line below, that's all (no need to get a bus out first).", "fire":
-			"Firefighters earn money here: go on duty below, a fire truck comes with it."}
+			"Firefighters earn money here: go on duty below, a fire truck comes with it.",
+			"residence": "Residents' vehicles (not the work ones): they come out on the purple bays.",
+			"private": "The lift takes you down to the residents' car park: pick a vehicle and drive off."}
 	_open_panel()
-	_panel.open_garage(id, "%s · %s" % [look["title"], g["name"]] if g["kind"] in Garages.PUBLIC else str(g["name"]),
+	_panel.open_garage(id, "%s · %s" % [look["title"], g["name"]] if g["kind"] in Garages.PUBLIC or g["kind"] == "residence"
+			else str(g["name"]),
 			sub[g["kind"]], Settings.key_text("interact"))
 	game.update_controls()
 	to_host(self, "_h_open", [id])
@@ -433,12 +459,20 @@ func prompt_text() -> String:
 		var v: Dictionary = vehicles.get(game.driving.net_id, {})
 		return "" if v.is_empty() or game.driving.net_id == mine else "%s's %s (unlocked)" % [v["owner"],
 				Car.common_name(v["model"])]
+	var home := properties.prompt()
+	if home != "":
+		return home
+	if properties.inside != "":
+		return ""
 	var g := terminal_at_hand()
 	if not g.is_empty():
 		if g["kind"] == "depot" and not bus_job.on_duty():
 			return "%s  %s · bus job: pick a line" % [Settings.key_text("interact"), g["name"]]
 		if g["kind"] == "fire" and not fire_job.on_duty():
 			return "%s  %s · firefighter job: go on duty" % [Settings.key_text("interact"), g["name"]]
+		if g["kind"] == "residence":
+			return "%s  Residents' car park · %s" % [Settings.key_text("interact"), "your vehicles"
+					if properties.refusal(g) == "" else "residents only"]
 		return "%s  %s · your vehicles" % [Settings.key_text("interact"), g["name"]]
 	if shop.catalogue_at_hand():
 		return "%s  %s · the catalogue" % [Settings.key_text("interact"), Shop.PRESTIGE_NAME]
@@ -482,7 +516,8 @@ func account(peer: int) -> Dictionary:
 ## last, with "buy" (€; "vehicle" -1).
 func offer(g: Dictionary, acc: Dictionary) -> Array:
 	var kind: String = g["kind"]
-	var public: bool = kind in Garages.PUBLIC
+	var public: bool = kind in Garages.PUBLIC or kind in ["residence", "private"]
+	var refused: String = properties.refusal(g, acc) if properties else ""   # a residence's: residents only
 	var out := []
 	for m: String in WORK.get(kind, []):
 		out.append({"vehicle": 0, "model": m, "label": "%s (lent)" % Car.display_name(m), "note": ""})
@@ -498,7 +533,9 @@ func offer(g: Dictionary, acc: Dictionary) -> Array:
 		var wrecked: bool = v.get("wrecked", false)
 		if not public and m not in WORK[kind]:
 			continue                        # the depot and the fire station only show their own kind
-		if public and m in WORK["depot"]:
+		if refused != "":
+			note = refused
+		elif public and m in WORK["depot"]:
 			note = "At the bus depot (Massy-Palaiseau)"
 		elif public and m in WORK["fire"]:
 			note = "At the fire station (Polytechnique)"
@@ -692,10 +729,12 @@ func player_registered(peer: int) -> void:
 		all[id] = _public(id)
 	send_to(peer, self, "_c_vehicles", [all])
 	fires.player_registered(peer)
+	properties.player_registered(peer)
 
 
 ## Host: a player's login was checked: their vehicle waiting for them is theirs again.
 func _on_login(peer: int) -> void:
+	properties.player_logged_in(peer)
 	var acc := account(peer)
 	var id := _vehicle_of(int(acc.get("account", -1)))
 	if id == "":
@@ -709,6 +748,7 @@ func _on_login(peer: int) -> void:
 func _on_left(peer: int) -> void:
 	if not hosting:
 		return
+	properties.player_left(peer)
 	for id: String in vehicles:
 		if vehicles[id]["peer"] == peer:
 			vehicles[id]["peer"] = 0

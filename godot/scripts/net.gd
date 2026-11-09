@@ -119,6 +119,8 @@ var players := {}                           # peer id -> {"name": String, "color
 var cars := {}                              # net id -> Car, all of them (simulated here or elsewhere)
 var owner_of := {}                          # net id -> peer simulating it
 var driver_of := {}                         # net id -> peer driving it, 0 nobody
+var hidden_peers := {}                      # peer id -> true: players a game mode keeps out of sight here (PTA Online:
+											# those in another flat than ours, scripts/online/properties.gd)
 
 var _profile := {}                          # client: our {"name", "color"} until the host welcomes us
 var _remotes := {}                          # peer id -> RemotePlayer
@@ -334,6 +336,7 @@ func leave() -> void:
 	_car_ids.clear()
 	owner_of.clear()
 	driver_of.clear()
+	hidden_peers.clear()
 	_car_tracks.clear()
 	_pings.clear()
 	_server_tps = -1.0
@@ -612,7 +615,7 @@ func _pose_remote(id: int, a: Array, b: Array, w: float) -> void:
 		a = b
 	var pos: Vector3 = (a[2] as Vector3).lerp(b[2], w)
 	var yaw := lerp_angle(a[3], b[3], minf(w, 1.0))
-	var shown: bool = b[4] & 1 == 0
+	var shown: bool = b[4] & 1 == 0 and not hidden_peers.has(id)
 	var car: Car = null
 	if String(b[0]).begins_with("train:"):          # standing in an RER B car: b[1] is the car
 		var tr: Node3D = null
