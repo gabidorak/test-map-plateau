@@ -190,12 +190,13 @@ func _gable(x0: float, x1: float, z0: float, z1: float) -> void:
 	var a1 := Vector3(x0, H - 0.04, z1)
 	var b1 := Vector3(x1, H - 0.04, z1)
 	var c1 := Vector3(x1, H + RISE - 0.04, z1)
-	for tri: Array in [[a0, c0, b0, Vector3(0, 0, -1)], [a1, b1, c1, Vector3(0, 0, 1)]]:
+	# (wound clockwise seen from outside: Godot's front faces, one-sided: a double-sided face shadows itself)
+	for tri: Array in [[a0, b0, c0, Vector3(0, 0, -1)], [a1, c1, b1, Vector3(0, 0, 1)]]:
 		for p: int in 3:
 			st.set_normal(tri[3])
 			st.add_vertex(tri[p])
 	var slope := (c0 - a0).cross(Vector3(0, 0, 1)).normalized() * -1.0
-	for p: Vector3 in [a0, a1, c1, a0, c1, c0]:
+	for p: Vector3 in [a0, c1, a1, a0, c0, c1]:
 		st.set_normal(slope)
 		st.add_vertex(p)
 	var shape := ConvexPolygonShape3D.new()
@@ -997,7 +998,6 @@ func _mat(name: String) -> Material:
 			m = _textured("cladding", Vector3(1.0 / 2.0, 1.0 / 2.0, 1.0 / 2.0), 0.55)
 			m.metallic = 0.45
 			m.uv1_triplanar_sharpness = 24.0
-			m.cull_mode = BaseMaterial3D.CULL_DISABLED
 		"roof_metal":
 			m = _textured("roof_ribs", Vector3(1.0 / 2.0, 1.0 / 2.0, 1.0 / 2.0), 0.5)
 			m.metallic = 0.45
