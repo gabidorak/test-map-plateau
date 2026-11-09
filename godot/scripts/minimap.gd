@@ -23,6 +23,9 @@ const PLACES := {
 	"blaze": {"colour": Color("#ff7a00"), "glyph": "flame"},   # PTA Online's fires burning (firefighters on duty)
 	"home": {"colour": Color("#7a4fc4"), "glyph": "house"},    # PTA Online's properties (scripts/online/properties.gd)
 	"residence": {"colour": Color("#7a4fc4"), "glyph": "P"},   # ...and their residents' car parks
+	"custom": {"colour": Color("#d8343a"), "glyph": "wrench"}, # Losplatos Custom (scripts/losplatos/)
+	"tow": {"colour": Color("#e07b1a"), "glyph": "D"},         # its tow truck terminal (scripts/online/tow_job.gd)
+	"breakdown": {"colour": Color("#e07b1a"), "glyph": "!"},   # a breakdown for a tow truck driver on duty
 }
 
 var game: Node                              # game.gd
@@ -169,6 +172,12 @@ static func draw_place(canvas: CanvasItem, font: Font, p: Vector2, kind: String,
 			canvas.draw_colored_polygon(PackedVector2Array([p + Vector2(0.0, -0.72) * r, p + Vector2(0.45, -0.05) * r,
 					p + Vector2(0.4, 0.38) * r, p + Vector2(0.0, 0.62) * r, p + Vector2(-0.4, 0.38) * r,
 					p + Vector2(-0.45, 0.0) * r, p + Vector2(-0.18, -0.25) * r]), Color.WHITE)
+		"wrench":
+			var a := p + Vector2(-0.42, 0.42) * r
+			var b := p + Vector2(0.3, -0.3) * r
+			canvas.draw_line(a, b, Color.WHITE, 0.26 * r)
+			canvas.draw_circle(b, 0.3 * r, Color.WHITE)
+			canvas.draw_circle(b + Vector2(0.12, -0.12) * r, 0.14 * r, look["colour"])
 		"house":
 			canvas.draw_colored_polygon(PackedVector2Array([p + Vector2(0.0, -0.66) * r, p + Vector2(0.62, -0.05) * r,
 					p + Vector2(0.44, -0.05) * r, p + Vector2(0.44, 0.52) * r, p + Vector2(-0.44, 0.52) * r,

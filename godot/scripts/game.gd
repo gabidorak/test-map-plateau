@@ -97,6 +97,7 @@ const JetSki = preload("res://scripts/jet_ski.gd")
 const Water = preload("res://scripts/water.gd")
 const PlaneGuns = preload("res://scripts/plane_guns.gd")
 const FireTruck = preload("res://scripts/fire_truck.gd")
+const TowTruck = preload("res://scripts/tow_truck.gd")
 const ArmoredCar = preload("res://scripts/armored_car.gd")
 const PoliceCar = preload("res://scripts/police_car.gd")
 const WaterCannon = preload("res://scripts/water_cannon.gd")
@@ -110,6 +111,7 @@ const Chat = preload("res://scripts/chat.gd")
 const PlayerList = preload("res://scripts/player_list.gd")
 const Traffic = preload("res://scripts/traffic.gd")
 const Night = preload("res://scripts/night.gd")
+const Losplatos = preload("res://scripts/losplatos/losplatos.gd")
 const Races = preload("res://scripts/races.gd")
 const Economy = preload("res://scripts/economy.gd")
 const Accounts = preload("res://scripts/accounts.gd")
@@ -154,6 +156,7 @@ var picker: Picker
 var breakables: Breakables
 var traffic: Traffic
 var night: Night
+var losplatos: Losplatos                    # Losplatos Custom, the repair and paint shop (scripts/losplatos/)
 var races: Races
 var economy: Economy                        # Main/Economy: PTA Online logins (and money, later)
 var online := false                         # client: playing PTA Online on the official server (start_online)
@@ -235,6 +238,9 @@ func _ready() -> void:
 	traffic.name = "Traffic"
 	traffic.game = self
 	add_child(traffic)
+	losplatos = Losplatos.new()
+	losplatos.game = self
+	add_child(losplatos)
 	if staged:
 		await get_tree().process_frame      # (the loader's screen moves on: the trains have read the whole line)
 	net.message.connect(_show_toast)
@@ -1154,7 +1160,7 @@ static func new_vehicle(model: String) -> Car:
 	var car: Car = Horse.new() if spec.get("horse", false) else JetSki.new() if spec.get("jet_ski", false) \
 			else Biplane.new() if spec.get("plane", false) \
 			else FireTruck.new() if spec.has("fittings") else PoliceCar.new() if spec.get("police", false) \
-			else ArmoredCar.new() if spec.get("roof_gun", false) else Car.new()
+			else ArmoredCar.new() if spec.get("roof_gun", false) else TowTruck.new() if spec.get("tow", false) else Car.new()
 	car.setup(model)
 	return car
 
@@ -1528,9 +1534,9 @@ func set_waypoint(xy: Variant) -> void:
 
 
 ## The places the full-screen map and the minimap mark: [[name, kind, pipeline Vector2]] (minimap.gd PLACES):
-## the showrooms (Prestige Motors), and the game mode's (PTA Online's garages).
+## the showrooms (Prestige Motors), Losplatos Custom, and the game mode's (PTA Online's garages).
 func map_places() -> Array:
-	var out := []
+	var out := [[Losplatos.NAME, "custom", losplatos.map_xy()]] if losplatos else []
 	for s in get_tree().get_nodes_in_group("showroom"):
 		if s.dealer != "" and not s.outline.is_empty():
 			var mid := Vector2.ZERO

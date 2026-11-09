@@ -50,16 +50,19 @@ const Stunts = preload("res://scripts/online/stunts.gd")
 const Fires = preload("res://scripts/online/fires.gd")
 const FireJob = preload("res://scripts/online/fire_job.gd")
 const Properties = preload("res://scripts/online/properties.gd")
+const CustomShop = preload("res://scripts/online/custom_shop.gd")
+const TowJob = preload("res://scripts/online/tow_job.gd")
 
 signal answered(ok: bool, text: String)     # the host's answer to our last request at a garage terminal
 
 const ARMED := ["biplane-armed", "biplane-gunner", "gaz-tiger"]
-const WORK := {"depot": ["bus-idfm", "bus-idfm-artic"], "fire": ["fire-truck"]}   # lent there, and only out there
+const WORK := {"depot": ["bus-idfm", "bus-idfm-artic"], "fire": ["fire-truck"], "tow": ["tow-truck"]}   # lent there,
+											# and only out there
 const KEEP := 30.0                          # s a player's vehicle waits for them after they leave (PLATEAU_ONLINE_KEEP)
 const REACH := 2.5                          # m from a terminal for E
 const SERVER_REACH := 8.0                   # m the server allows (the player's position reaches it a little late)
 const PROMPT_REACH := 3.0                   # m from a vehicle for its owner's prompt
-const PLACE_KINDS := {"public": "garage", "depot": "depot", "fire": "fire", "residence": "residence"}   # (the shop's:
+const PLACE_KINDS := {"public": "garage", "depot": "depot", "fire": "fire", "residence": "residence", "tow": "tow"}   # (the shop's:
 											# Prestige Motors already; a flat's private lift: none)
 const TOW := 15.0                           # s a broken player vehicle stays before it is towed back (PLATEAU_ONLINE_TOW)
 const TEST_MONEY := 10_000_000              # € in the PTA Online test's wallet, at start and at each refill
@@ -81,6 +84,8 @@ var stunts: Stunts
 var fires: Fires
 var fire_job: FireJob
 var properties: Properties
+var custom: CustomShop                      # Losplatos Custom's repairs and paint
+var tow_job: TowJob                         # Losplatos Custom's tow trucks
 var _leaving := {}                         # host: account -> [net id, s left]
 var _panel: GaragePanel
 var _wallet: Label
@@ -141,6 +146,14 @@ func _ready() -> void:
 	properties.name = "Properties"
 	properties.mode = self
 	add_child(properties)
+	custom = CustomShop.new()
+	custom.name = "CustomShop"
+	custom.mode = self
+	add_child(custom)
+	tow_job = TowJob.new()
+	tow_job.name = "TowJob"
+	tow_job.mode = self
+	add_child(tow_job)
 	multiplayer.peer_disconnected.connect(_on_left)
 	game.economy.logged_in.connect(_on_login)
 
@@ -162,6 +175,7 @@ func begin() -> void:
 	_build_hud()
 	shop.begin()
 	properties.begin()
+	custom.begin()
 	if not game.net.active:
 		game.economy.balance = test_money
 	game.economy.wallet_changed.connect(_show_wallet)
@@ -187,6 +201,11 @@ func player_actions() -> Array:
 				to_garage(Vector2(here.x, -here.z), [trip[1]])])
 		for p: Dictionary in properties.list:
 			out.append(["Test: go to the %s (%s)" % [str(p["short"]).to_lower(), p["id"]], properties.go_to.bind(p["id"])])
+		if game.losplatos:
+			out.append(["Test: go to Losplatos Custom", func() -> void:
+				var xy: Vector2 = game.losplatos.map_xy()
+				to_garage(xy)
+				game.player.teleport(Vector3(xy.x, Marks.ground(xy.x, xy.y) + 0.1, -xy.y) - game.losplatos.frame.basis.z * 3.0)])
 		if not garages.get_garage(Properties.RESIDENTS_ID).is_empty():
 			out.append(["Test: go to the residents' car park (Logements de l'X)", func() -> void:
 				var g := garages.get_garage(Properties.RESIDENTS_ID)
@@ -215,6 +234,9 @@ func extra_help(k: Callable) -> String:
 		return "ON DUTY · stop in each stop's bay, %s open the doors %d s · red lights: %s fine · %s your bus (off duty) · " % [
 				k.call("doors"), int(bus_job.pay.get("doors", 3.0)), Economy.money(int(bus_job.pay.get("red_light_fine", 10))),
 				k.call("vehicle_menu")] + "the next stop is the waypoint"
+	if tow_job.on_duty():
+		return "ON DUTY · tow truck: drive to the breakdown (the waypoint), back up to it, %s hook / set down; " % \
+				k.call("doors") + "bring it to Losplatos Custom's yard · %s your truck (off duty)" % k.call("vehicle_menu")
 	if fire_job.on_duty():
 		return "ON DUTY · firefighter: drive to the fires (the waypoint, on the map), aim at the flames and hold %s · " % \
 				k.call("fire") + "%s your truck (off duty)" % k.call("vehicle_menu")
@@ -228,16 +250,20 @@ func map_places() -> Array:
 	for g: Dictionary in garages.list:
 		if PLACE_KINDS.has(g["kind"]):
 			out.append([g["name"], PLACE_KINDS[g["kind"]], g["xy"]])
-	return out + stunts.map_places() + fire_job.map_places() + properties.map_places()
+	return out + stunts.map_places() + fire_job.map_places() + properties.map_places() + tow_job.map_places()
 
 
 func ui_open() -> bool:
-	return (_panel != null and _panel.visible) or (properties != null and properties.ui_open())
+	return (_panel != null and _panel.visible) or (properties != null and properties.ui_open()) \
+			or (custom != null and custom.ui_open())
 
 
 func close_ui() -> bool:
 	if properties.ui_open():
 		properties.close_panel()
+		return true
+	if custom.ui_open():
+		custom.close()
 		return true
 	if not ui_open():
 		return false
@@ -287,6 +313,13 @@ func handle_input(event: InputEvent) -> bool:
 		if keys:
 			properties.close_panel()
 		return keys
+	if custom.ui_open():
+		if keys:
+			custom.close()
+		return keys
+	if event.is_action_pressed("vehicle_menu") and custom.at_hand():   # (U: E is the right turn signal at the wheel)
+		custom.open()
+		return true
 	if ui_open():
 		if keys:
 			_close_panel()
@@ -317,6 +350,7 @@ func open_garage(id: String) -> void:
 			"depot": "Bus drivers earn money here: pick a line below, that's all (no need to get a bus out first).", "fire":
 			"Firefighters earn money here: go on duty below, a fire truck comes with it.",
 			"residence": "Residents' vehicles (not the work ones): they come out on the purple bays.",
+			"tow": "Tow truck drivers earn money here: go on duty below, a tow truck comes with it.",
 			"private": "The lift takes you down to the residents' car park: pick a vehicle and drive off."}
 	_open_panel()
 	_panel.open_garage(id, "%s · %s" % [look["title"], g["name"]] if g["kind"] in Garages.PUBLIC or g["kind"] == "residence"
@@ -386,7 +420,9 @@ func _build_hud() -> void:
 		_close_panel())
 	_panel.duty.connect(func(ref: String) -> void:
 		_panel.set_status("Going on duty…" if ref != "" else "Going off duty…")
-		if ref == "fire" or ref == "" and fire_job.on_duty():
+		if ref == "tow" or ref == "" and tow_job.on_duty():
+			tow_job.ask_duty(_panel.garage_id, ref)
+		elif ref == "fire" or ref == "" and fire_job.on_duty():
 			fire_job.ask_duty(_panel.garage_id, ref)
 		else:
 			bus_job.ask_duty(_panel.garage_id, ref))
@@ -456,6 +492,12 @@ func prompt_text() -> String:
 	if game.ui_open() or game.flying or game.riding:
 		return ""
 	if game.driving:
+		var towing := tow_job.hint_text()
+		if towing != "":
+			return towing
+		var at_custom := custom.prompt()
+		if at_custom != "":
+			return at_custom
 		var v: Dictionary = vehicles.get(game.driving.net_id, {})
 		return "" if v.is_empty() or game.driving.net_id == mine else "%s's %s (unlocked)" % [v["owner"],
 				Car.common_name(v["model"])]
@@ -468,6 +510,8 @@ func prompt_text() -> String:
 	if not g.is_empty():
 		if g["kind"] == "depot" and not bus_job.on_duty():
 			return "%s  %s · bus job: pick a line" % [Settings.key_text("interact"), g["name"]]
+		if g["kind"] == "tow" and not tow_job.on_duty():
+			return "%s  %s · tow truck job: go on duty" % [Settings.key_text("interact"), g["name"]]
 		if g["kind"] == "fire" and not fire_job.on_duty():
 			return "%s  %s · firefighter job: go on duty" % [Settings.key_text("interact"), g["name"]]
 		if g["kind"] == "residence":
@@ -539,6 +583,8 @@ func offer(g: Dictionary, acc: Dictionary) -> Array:
 			note = "At the bus depot (Massy-Palaiseau)"
 		elif public and m in WORK["fire"]:
 			note = "At the fire station (Polytechnique)"
+		elif public and m in WORK["tow"]:
+			note = "At Losplatos Custom's yard (tow truck duty)"
 		elif m in ARMED:
 			note = "Not allowed in PTA Online"
 		elif wrecked:
@@ -810,7 +856,7 @@ func send_garage(peer: int, gid: String, message := "") -> void:
 		send_to(peer, self, "_c_garage", [gid, [], "Walk up to the garage's terminal."])
 		return
 	var duty: Array = bus_job.offer(peer, gid) if g["kind"] == "depot" else fire_job.offer(peer, gid) \
-			if g["kind"] == "fire" else []
+			if g["kind"] == "fire" else tow_job.offer(peer, gid) if g["kind"] == "tow" else []
 	send_to(peer, self, "_c_garage", [gid, duty + offer(g, acc), message])
 
 

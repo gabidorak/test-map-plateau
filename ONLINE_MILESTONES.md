@@ -226,6 +226,32 @@ checked before calling it finished.
       open one, the owner leaving by the lift at the wheel.
 - [x] Perf: an interior costs nothing while nobody is inside it (built only on the machine of a player inside).
 
+## O10 — Losplatos Custom *(Thomas's idea of 2026-11-09)*
+
+**Goal:** a repair and paint shop to drive into, in place of building #758 (the LadHyX), after Thomas's references
+(ref/LosPalaisosCustom/, corrections.png): grey blocks under anthracite ribbed steel cladding, a sawtooth roof of four
+teeth glazed to the north, a roll-up door in the west facade facing the road that rolls up when someone comes near, two
+shop windows (the workshop's, the customers' lounge's), two neon signs on poles at the facade's ends, a paved sidewalk
+along the road with a lowered kerb and a concrete ramp to the door; inside, the workshop (cream blocks over a yellow
+band, blue steel, fluorescent tubes, benches, tyres, posters of made-up brands, its own logo) and the lounge (counter,
+leather sofa, coffee, a rack of rims in the window).
+
+- `scripts/losplatos/`: the shop drawn at runtime on #758's footprint in every mode (`losplatos.gd`: door, service bay;
+  `losplatos_builder.gd`: its geometry); `builder/world_builder.gd` leaves #758 out of the world (map rebuilt).
+- PTA Online (`scripts/online/custom_shop.gd`, `custom_panel.gd`): one's own vehicle stopped in the yellow bay, U (E is
+  a turn signal at the wheel):
+  repair the bodywork (paid by the damage: the wreck repair's price times the health lost, 50 € at least) and paint it
+  (a coat at the repaint price), charged by the host like the garage terminals' (accounts server: no change).
+- Round it (Thomas's plan vueDessus.png): straight paved sidewalks (level with the floor at the doors), granite kerbs as
+  at Massy-Palaiseau, new asphalt to the road, along the north end and over the yard behind.
+- The tow truck job (`scripts/online/tow_job.gd`, `scripts/tow_truck.gd`): duty at the tow terminal in the yard, a lent
+  tow truck (the Volvo FH16 tractor made a wrecker: boom, cable, hook, light bar); breakdowns on the bot car routes
+  (250 m to 1.4 km away, the waypoint); O hooks one by its front or back (lifted, pinned, rolling on its other wheels;
+  online the host hands its simulation to the driver), O sets it down; in the yard it pays base + per_km of the way
+  (data/jobs.json "tow").
+- Tests: `tools/test_losplatos.gd` (the roof in place of #758's, the paving, the door, the bay, repair, paint),
+  `tools/test_tow.gd` (duty, a breakdown, hooked and towed, delivered and paid, the next one, off duty).
+
 ## Later
 
 Bus upgrades and liveries, bot passengers at stops, more jobs (race prizes, taxi, delivery, police, ambulance),
@@ -245,3 +271,4 @@ a real fire station building at #1289.
 | O7 Fires + firefighter job | ✅ | `online/fires.gd` + `fire_job.gd` (Main/Mode/Fires, FireJob), `fire_fx.gd`, 2 417 spots in `world/fires.json` (`tools/online/fires.py`), jobs.json "fire", water judged from the server's own flight of each jet, PROTOCOL 17. test_fires.sh green. 5 fires 0.3-0.8 ms on the Iris Xe. |
 | O8 Balance + admin | ⬜ | |
 | O9 Properties | 🟡 | Proposal (branch `proprietesOnline`). Step 1 under way: the studio of the Logements de l'X 19 (3rd floor, north face, ~50 m²) in the offline test: `online/properties.gd`, `studio_builder.gd`, `property_panel.gd`, `data/properties.json`, open window frames in `logements_x_builder.gd`; the residents' car park and the garage option's lift (garage kinds `residence` and `private` in `garages.gd`); instances (players seen only in the same flat) and visits (doors open / locked). test_properties.gd green, test_properties_online.sh green (2 players). Online owners come from PLATEAU_ONLINE_HOMES until step 2. |
+| O10 Losplatos Custom | 🟡 | Branch `losplatosCustom`: the shop in place of #758, its door, repairs and paint, its paved site, the tow truck job. test_losplatos.gd and test_tow.gd green. Needs the map rebuilt (#758 left out). |

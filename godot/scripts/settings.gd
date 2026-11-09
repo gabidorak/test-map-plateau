@@ -42,7 +42,7 @@ const ACTIONS := [
 	["signal_right", "Right turn signal", "Driving", [KEY_E]],
 	["hazards", "Hazard lights", "Driving", [KEY_J]],
 	["horn", "Horn (horse: neigh)", "Driving", [KEY_G]],
-	["doors", "Doors (bus)", "Driving", [KEY_O]],
+	["doors", "Doors (bus), hook (tow truck)", "Driving", [KEY_O]],
 	["bell", "Gong (bus), siren (fire truck, police car)", "Driving", [KEY_B]],
 	["race", "Race in a start circle alone, join a race you are invited to, give up (twice)", "Driving", [KEY_T]],
 	["race_invite", "Race with the other drivers in the start circle, decline an invitation", "Driving", [KEY_Y]],

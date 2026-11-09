@@ -26,6 +26,8 @@ const KINDS := {
 	"shop": {"title": "Deliveries", "colour": Color("#c9a043"), "sign": "€", "paint": Color(1.0, 0.82, 0.42)},
 	"residence": {"title": "Residents' car park", "colour": Color("#7a4fc4"), "sign": "P", "paint": Color(0.8, 0.7, 1.0)},
 	"private": {"title": "Your garage", "colour": Color("#7a4fc4"), "sign": "P", "paint": Color(0.8, 0.7, 1.0)},
+	"custom": {"title": "Losplatos Custom", "colour": Color("#d8343a"), "sign": "C", "paint": Color(1.0, 0.8, 0.3)},
+	"tow": {"title": "Tow trucks", "colour": Color("#e07b1a"), "sign": "D", "paint": Color(1.0, 0.8, 0.3)},
 }
 const PUBLIC := ["public", "shop"]          # kinds any of a player's vehicles but the work ones come out at
 const LINE := 0.12                          # m, painted bay lines
@@ -66,7 +68,7 @@ func build(meshes: bool) -> void:
 		node.name = "Garage_" + str(g["id"]).replace("-", "_")
 		add_child(node)
 		_kiosk(node, g, meshes)
-		if meshes:
+		if meshes and not g.get("no_paint", false):
 			_paint_bays(node, g)
 
 

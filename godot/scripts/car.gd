@@ -145,6 +145,12 @@ const SPECS := {
 			"mass": 16000.0, "power": 0.32, "max_speed": 28.0, "max_steer": 0.8, "steer_fade_speed": 11.0,
 			"fittings": "fire_truck.json",
 			"sound": "truck", "credit": "6x6 airport crash tender, built by blender/vehicles/build_fire_truck.py"},
+	# Losplatos Custom's tow truck: the tractor below made a wrecker (scripts/tow_truck.gd: body, boom, hook)
+	"tow-truck": {"label": "Tow truck", "file": "volvo_fh16/volvo_fh16.gltf", "scale": 1.0,
+			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
+			"traction_from": 2, "mass": 8500.0, "power": 0.85, "max_speed": 25.0, "max_steer": 0.75,
+			"steer_fade_speed": 10.0, "cab": "volvo_fh16/volvo_fh16.json", "sound": "diesel6", "tow": true,
+			"credit": "the Volvo FH16 tractor with a wrecker body, boom and hook built by scripts/tow_truck.gd"},
 	# 4x2 tractor unit, unladen: rear-wheel drive, 750 hp, the EU limiter's 90 km/h, a truck's lock
 	"volvo-fh16": {"label": "Volvo FH16 truck", "file": "volvo_fh16/volvo_fh16.gltf", "scale": 1.0,
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
@@ -174,7 +180,7 @@ const SPECS := {
 }
 const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "taxi", "suv", "police", "hatchback-sports", "van",
 		"sedan-sports", "suv-luxury", "delivery", "ambulance", "compact-hatchback", "family-suv", "police-hatchback", "renault-zoe", "fire-truck", "biplane", "biplane-armed", "biplane-gunner",
-		"horse", "audi-r8", "mercedes-1928", "bmw-m4", "audi-rs6", "volvo-fh16", "volvo-fh16-trailer", "gaz-tiger", "jet-ski"]
+		"horse", "audi-r8", "mercedes-1928", "bmw-m4", "audi-rs6", "volvo-fh16", "volvo-fh16-trailer", "gaz-tiger", "jet-ski", "tow-truck"]
 const REST_LENGTH := 0.2
 const BLINK := 0.75                         # s, indicator period
 const LAMP_DEPTH := 0.45                    # m, furthest a corner lamp sits behind its body box's face (_on_body)
@@ -269,6 +275,7 @@ var max_health := HEALTH
 var broken := false                         # health 0: engine dead, black smoke
 var crash_damage := false                   # hard knocks take health (PTA Online's player vehicles)
 var repairs_itself := true                  # broken: repaired REPAIR_AFTER s later or by the water cannon
+var towed := false                          # hanging from a tow truck's hook (scripts/tow_truck.gd): no handbrake
 var paint := ""                             # its colour (scripts/paint.gd id; "" its own: set_paint)
 var _crash_v := Vector3.ZERO                # velocity at the last tick's crash check (_check_crash)
 var _crash_frame := -2                      # physics frame of that check
@@ -2118,8 +2125,8 @@ func _physics_process(delta: float) -> void:
 			engine_force = engine_per_wheel * pedals[0]
 		brake = maxf(max_brake * pedals[1], 1.5 if pedals[0] == 0.0 else 0.0)
 	elif not driving:
-		# nobody at the wheel: roll on (passengers may be walking inside), handbrake once slow
-		brake = 1.5 if absf(v) > 1.0 else max_brake * 0.5
+		# nobody at the wheel: roll on (passengers may be walking inside), handbrake once slow (not on a tow truck's hook)
+		brake = 0.3 if towed else 1.5 if absf(v) > 1.0 else max_brake * 0.5
 	elif throttle > 0.0:
 		if v < -0.5:
 			brake = max_brake

@@ -25,6 +25,10 @@ const KINDS := {
 
 @export var index_path := GroundMap.DEFAULT_INDEX
 
+## Map polygons (x east, y north) kept free of tufts: what runtime builds pave over the ground (Losplatos Custom's
+## apron, scripts/losplatos/losplatos.gd). Set before the chunks round them are built.
+static var keep_out: Array[PackedVector2Array] = []
+
 var _map: RefCounted
 var _kinds: Array = []              # [material id, settings, mesh, material, colour]
 var _chunks := {}                   # Vector2i -> Node3D
@@ -111,7 +115,7 @@ func _build_chunk(key: Vector2i) -> Node3D:
 					continue
 				if _map.material_at(x, y) != id or _map.material_at(x + EDGE, y) != id \
 						or _map.material_at(x - EDGE, y) != id or _map.material_at(x, y + EDGE) != id \
-						or _map.material_at(x, y - EDGE) != id or _map.in_cliff(x, y):
+						or _map.material_at(x, y - EDGE) != id or _map.in_cliff(x, y) or _kept_out(x, y):
 					continue
 				var b := Basis(Vector3.UP, yaw).scaled(Vector3(s, s, s))
 				var z: float = _map.height(x, y) - 0.02
@@ -141,6 +145,13 @@ func _build_chunk(key: Vector2i) -> Node3D:
 
 
 ## One tuft: blades in a ring, each a tapered strip leaning outwards. COLOR.r = height along the blade.
+static func _kept_out(x: float, y: float) -> bool:
+	for poly: PackedVector2Array in keep_out:
+		if Geometry2D.is_point_in_polygon(Vector2(x, y), poly):
+			return true
+	return false
+
+
 func _tuft_mesh(k: Dictionary, rng: RandomNumberGenerator, mat: Material) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
