@@ -114,7 +114,8 @@ func _shell() -> void:
 	_wall_open(0.0, L, H, 0.0, T, [BAR_WINDOWS[0], BAR_WINDOWS[1], LOUNGE_GLASS, LOUNGE_DOOR, [DOOR.x, DOOR.y, 0.0, DOOR.z]])
 	_wall(0.0, L, 0.0, H, W - T, W)
 	_wall(0.0, T, 0.0, H, T, W - T)
-	_wall(L - T, L, 0.0, H + RISE, 0.0, W)
+	_wall(L - T, L, 0.0, H, 0.0, W)
+	_wall(L - T, L, H, H + RISE, T, W - T)          # (over the side walls: between the gables, not in their planes)
 	# the workshop | the lounge and the store: up to the roof, a doorway into the lounge
 	var top := _roof_at(HALL_X + T)
 	_wall(HALL_X, HALL_X + T, 0.0, top, T, PASS_Z.x)
