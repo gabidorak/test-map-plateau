@@ -26,6 +26,7 @@ signal host
 signal mode_picked(id: String)              # the game mode chosen (game.gd previews its night behind the menu)
 signal join(address: String, port: int)
 signal online                               # PTA Online: join the official server with the login kept (accounts.gd)
+signal online_test                          # PTA Online test: play it solo, offline (debug builds only)
 signal quit
 
 ## Shown once by the next menu: why the last game ended ("The host closed the game.").
@@ -595,10 +596,21 @@ func _build_online_page() -> VBoxContainer:
 	_online_status = UiStyle.label("", 16, UiStyle.TEXT_WARN)
 	_online_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_online_status)
+	var bc := CenterContainer.new()
+	var brow := HBoxContainer.new()
+	brow.add_theme_constant_override("separation", 8)
+	bc.add_child(brow)
+	if OS.is_debug_build():                 # run from the editor: the offline test, for developers only
+		var test := UiStyle.button("Test offline", _looks, Vector2(160, 38))
+		test.tooltip_text = "PTA Online solo, without the server or a login: 10 M €, every vehicle in your garage, " \
+				+ "fly camera, shortcuts to the jobs in the in-game menu (Esc)"
+		test.pressed.connect(func() -> void:
+			if not _busy and not _online_busy:
+				online_test.emit())
+		brow.add_child(test)
 	var back := UiStyle.button("Back", _looks, Vector2(140, 38))
 	back.pressed.connect(show_online_page.bind(false))
-	var bc := CenterContainer.new()
-	bc.add_child(back)
+	brow.add_child(back)
 	box.add_child(bc)
 	_set_signup(false)
 	return box
