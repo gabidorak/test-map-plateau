@@ -167,8 +167,8 @@ func _roof() -> void:
 		var xf := Transform3D(basis, Vector3((x0 + x1) * 0.5, H + RISE * 0.5, W * 0.5) + up * 0.1)
 		_box_xf("roof_metal", xf, Vector3(length + 0.1, 0.2, W + 0.3), Vector3.ZERO)
 		_col_xf(xf, Vector3(length, 0.2, W))
-		_box_xf("dark_steel", xf, Vector3(length + 0.1, 0.26, 0.08), Vector3(0, 0, -W * 0.5 - 0.15))
-		_box_xf("dark_steel", xf, Vector3(length + 0.1, 0.26, 0.08), Vector3(0, 0, W * 0.5 + 0.15))
+		_box_xf("dark_steel", xf, Vector3(length + 0.14, 0.26, 0.08), Vector3(0, 0, -W * 0.5 - 0.15))
+		_box_xf("dark_steel", xf, Vector3(length + 0.14, 0.26, 0.08), Vector3(0, 0, W * 0.5 + 0.15))
 		_gable(x0, x1, 0.0, T)
 		_gable(x0, x1, W - T, W)
 		if k < TEETH - 1:
@@ -254,8 +254,8 @@ func _site(ground: Callable) -> void:
 	_root.set_meta("paved", paved)
 	# the ramp's guide lines, the threshold's steel edge, the yellow bollards by the door
 	for gx: float in [DOOR.x + 0.4, DOOR.y - 0.4]:
-		var a := Vector3(gx, float(sw.call(gx, -0.3)) + 0.008, -0.3)
-		var b := Vector3(gx, float(sw.call(gx, -FRONT_W + 0.4)) + 0.008, -FRONT_W + 0.4)
+		var a := Vector3(gx, float(sw.call(gx, -0.3)) + 0.015, -0.3)
+		var b := Vector3(gx, float(sw.call(gx, -FRONT_W + 0.4)) + 0.015, -FRONT_W + 0.4)
 		var side := Vector3(0.06, 0, 0)
 		_tris("white_paint", [a - side, b - side, b + side, a - side, b + side, a + side])
 	_box("steel", DOOR.x, DOOR.y, -0.01, 0.015, -0.05, T)
@@ -333,20 +333,20 @@ func _kerb(a: Vector2, b: Vector2, out: Vector2, sw: Callable, tar: Callable) ->
 	for i in n:
 		var p := a.lerp(b, float(i) / n)
 		var q := a.lerp(b, float(i + 1) / n)
-		var p_top := Vector3(p.x, float(sw.call(p.x, p.y)) + 0.006, p.y)
-		var q_top := Vector3(q.x, float(sw.call(q.x, q.y)) + 0.006, q.y)
-		var p_in := Vector3(p.x + inward.x, float(sw.call(p.x + inward.x, p.y + inward.y)) + 0.006, p.y + inward.y)
-		var q_in := Vector3(q.x + inward.x, float(sw.call(q.x + inward.x, q.y + inward.y)) + 0.006, q.y + inward.y)
+		var p_top := Vector3(p.x, float(sw.call(p.x, p.y)) + 0.022, p.y)
+		var q_top := Vector3(q.x, float(sw.call(q.x, q.y)) + 0.022, q.y)
+		var p_in := Vector3(p.x + inward.x, float(sw.call(p.x + inward.x, p.y + inward.y)) + 0.022, p.y + inward.y)
+		var q_in := Vector3(q.x + inward.x, float(sw.call(q.x + inward.x, q.y + inward.y)) + 0.022, q.y + inward.y)
 		_tris("kerb_top", [p_top, q_top, q_in, p_top, q_in, p_in])
 		var p_foot := Vector3(p.x, float(tar.call(p.x, p.y)) - 0.02, p.y)
 		var q_foot := Vector3(q.x, float(tar.call(q.x, q.y)) - 0.02, q.y)
 		var face := [p_foot, q_foot, q_top, p_foot, q_top, p_top]
 		_tris("kerb_face", face)
 		faces.append_array(PackedVector3Array(face))
-		var po := Vector3(p.x + out.x * 0.3, float(tar.call(p.x + out.x * 0.3, p.y + out.y * 0.3)) + 0.004, p.y + out.y * 0.3)
-		var qo := Vector3(q.x + out.x * 0.3, float(tar.call(q.x + out.x * 0.3, q.y + out.y * 0.3)) + 0.004, q.y + out.y * 0.3)
-		var pg := Vector3(p.x, float(tar.call(p.x, p.y)) + 0.004, p.y)
-		var qg := Vector3(q.x, float(tar.call(q.x, q.y)) + 0.004, q.y)
+		var po := Vector3(p.x + out.x * 0.3, float(tar.call(p.x + out.x * 0.3, p.y + out.y * 0.3)) + 0.012, p.y + out.y * 0.3)
+		var qo := Vector3(q.x + out.x * 0.3, float(tar.call(q.x + out.x * 0.3, q.y + out.y * 0.3)) + 0.012, q.y + out.y * 0.3)
+		var pg := Vector3(p.x, float(tar.call(p.x, p.y)) + 0.012, p.y)
+		var qg := Vector3(q.x, float(tar.call(q.x, q.y)) + 0.012, q.y)
 		_tris("gutter", [pg, qg, qo, pg, qo, po])
 	return faces
 
@@ -360,7 +360,7 @@ func _paint_line(a: Vector2, b: Vector2, w: float, tar: Callable) -> void:
 		var q := a.lerp(b, float(i + 1) / n)
 		var pts := []
 		for c: Vector2 in [p - side, q - side, q + side, p + side]:
-			pts.append(Vector3(c.x, float(tar.call(c.x, c.y)) + 0.006, c.y))
+			pts.append(Vector3(c.x, float(tar.call(c.x, c.y)) + 0.014, c.y))
 		_tris("yellow_paint_floor", [pts[0], pts[1], pts[2], pts[0], pts[2], pts[3]])
 
 
@@ -405,8 +405,8 @@ func _door() -> void:
 		_root.add_child(mi)
 		slats.append(mi)
 	_root.set_meta("slats", slats)
-	_box("dark_steel", DOOR.x - 0.12, DOOR.x, 0.0, DOOR.z + 0.1, -0.04, T + 0.04)
-	_box("dark_steel", DOOR.y, DOOR.y + 0.12, 0.0, DOOR.z + 0.1, -0.04, T + 0.04)
+	_box("dark_steel", DOOR.x - 0.12, DOOR.x + 0.02, 0.0, DOOR.z + 0.1, -0.04, T + 0.04)
+	_box("dark_steel", DOOR.y - 0.02, DOOR.y + 0.12, 0.0, DOOR.z + 0.1, -0.04, T + 0.04)
 	_box("dark_steel", DOOR.x - 0.12, DOOR.y + 0.12, DOOR.z, DOOR.z + 0.12, -0.04, 0.0)
 	_box("door_housing", DOOR.x - 0.2, DOOR.y + 0.2, DOOR.z, DOOR.z + 0.6, T, T + 0.55)
 	var cs := CollisionShape3D.new()
@@ -451,6 +451,9 @@ func _shop_window(g: Array) -> void:
 	var y0: float = g[2]
 	var y1: float = g[3]
 	var z := T * 0.5
+	x0 += 0.01                                  # (1 cm inside the opening: not in its reveals' planes)
+	x1 -= 0.01
+	y1 -= 0.01
 	_box("glass", x0, x1, y0, y1, z - 0.006, z + 0.006)
 	for e: Array in [[x0, x0 + 0.08, y0, y1], [x1 - 0.08, x1, y0, y1], [x0, x1, y0, y0 + 0.08], [x0, x1, y1 - 0.08, y1]]:
 		_box("dark_steel", e[0], e[1], e[2], e[3], z - 0.05, z + 0.05)
@@ -459,7 +462,7 @@ func _shop_window(g: Array) -> void:
 		var mx := x0 + (x1 - x0) * k / n
 		_box("dark_steel", mx - 0.04, mx + 0.04, y0, y1, z - 0.05, z + 0.05)
 	_box("dark_steel", x0, x1, y0 + 2.2 - 0.03, y0 + 2.2 + 0.03, z - 0.04, z + 0.04)
-	_box("sill_out", x0 - 0.05, x1 + 0.05, y0 - 0.06, y0, -0.1, T + 0.05)
+	_box("sill_out", x0 - 0.05, x1 + 0.05, y0 - 0.06, y0 + 0.012, -0.1, T + 0.05)
 	_col(x0, x1, y0, y1, z - 0.03, z + 0.03)
 
 
@@ -468,7 +471,8 @@ func _glazed_door(g: Array) -> void:
 	var x0: float = g[0]
 	var x1: float = g[1]
 	var y1: float = g[3]
-	for e: Array in [[x0 - 0.06, x0, 0.0, y1 + 0.06], [x1, x1 + 0.06, 0.0, y1 + 0.06], [x0, x1, y1, y1 + 0.06]]:
+	for e: Array in [[x0 - 0.06, x0 + 0.02, 0.0, y1 + 0.06], [x1 - 0.02, x1 + 0.06, 0.0, y1 + 0.06],
+			[x0, x1, y1 - 0.02, y1 + 0.06]]:
 		_box("dark_steel", e[0], e[1], e[2], e[3], -0.03, T + 0.03)
 	var w := (x1 - x0) * 0.5
 	for leaf: Array in [[x0 - w + 0.05, x0 + 0.05], [x1 - 0.05, x1 + w - 0.05]]:
@@ -487,8 +491,13 @@ func _barred_window(g: Array) -> void:
 	var y0: float = g[2]
 	var y1: float = g[3]
 	var z := T * 0.5
-	_box("glass", x0, x1, y0, y1, z - 0.006, z + 0.006)
-	for e: Array in [[x0, x0 + 0.07, y0, y1], [x1 - 0.07, x1, y0, y1], [x0, x1, y0, y0 + 0.07], [x0, x1, y1 - 0.07, y1]]:
+	var gx0 := x0 + 0.01                         # (1 cm inside the opening: not in its reveals' planes)
+	var gx1 := x1 - 0.01
+	var gy0 := y0 + 0.01
+	var gy1 := y1 - 0.01
+	_box("glass", gx0, gx1, gy0, gy1, z - 0.006, z + 0.006)
+	for e: Array in [[gx0, gx0 + 0.07, gy0, gy1], [gx1 - 0.07, gx1, gy0, gy1], [gx0, gx1, gy0, gy0 + 0.07],
+			[gx0, gx1, gy1 - 0.07, gy1]]:
 		_box("dark_steel", e[0], e[1], e[2], e[3], z - 0.04, z + 0.04)
 	_box("dark_steel", (x0 + x1) * 0.5 - 0.035, (x0 + x1) * 0.5 + 0.035, y0, y1, z - 0.04, z + 0.04)
 	_col(x0, x1, y0, y1, z - 0.03, z + 0.03)
@@ -554,7 +563,8 @@ func _pole_sign(p: Vector3, ground: Callable) -> void:
 	var h := 2.0
 	for side: float in [1.0, -1.0]:
 		var xf := Transform3D(Basis(Vector3.UP, PI * 0.5 if side > 0.0 else -PI * 0.5), c)
-		_box_xf("navy", xf, Vector3(w, h, 0.3), Vector3.ZERO)
+		if side > 0.0:
+			_box_xf("navy", xf, Vector3(w, h, 0.3), Vector3.ZERO)     # (the board once: both its faces)
 		var b := xf.basis
 		_label("LOSPLATOS", Transform3D(b, c + b * Vector3(0, 0.38, 0.16)), 96, 0.0074, Color(1.6, 0.5, 0.55),
 				Color(0.3, 0.02, 0.05), 10)
@@ -587,11 +597,11 @@ func _hall() -> void:
 	var bz0 := BAY.z - BAY_SIZE.y * 0.5
 	var bz1 := BAY.z + BAY_SIZE.y * 0.5
 	for ln: Array in [[bx0, bx0 + 0.12, bz0, bz1], [bx1 - 0.12, bx1, bz0, bz1], [bx0, bx1, bz1 - 0.12, bz1]]:
-		_box("yellow", ln[0], ln[1], 0.004, 0.008, ln[2], ln[3])
+		_box("yellow", ln[0], ln[1], 0.004, 0.014, ln[2], ln[3])
 	for k in 6:
 		var zz := bz0 + 0.3 + k * 0.5
-		_box("yellow", bx0 - 0.5, bx0 - 0.15, 0.004, 0.008, zz, zz + 0.18, Vector3(0, 0.6, 0))
-		_box("yellow", bx1 + 0.15, bx1 + 0.5, 0.004, 0.008, zz, zz + 0.18, Vector3(0, -0.6, 0))
+		_box("yellow", bx0 - 0.5, bx0 - 0.15, 0.004, 0.014, zz, zz + 0.18, Vector3(0, 0.6, 0))
+		_box("yellow", bx1 + 0.15, bx1 + 0.5, 0.004, 0.014, zz, zz + 0.18, Vector3(0, -0.6, 0))
 	# the walls' lining: cream blocks over a yellow band, blue steel columns, the beams and a duct under the roof
 	var d := 0.012
 	var w0: Array = BAR_WINDOWS[0]
@@ -627,9 +637,9 @@ func _hall() -> void:
 			["ORSAY MOTORS", Color("#b3202a"), Color.WHITE], ["YVETTE PARTS", Color("#e8e2d0"), Color("#1f5fa8")],
 			["X-RACING", Color("#f2c230"), Color("#202020")]]
 	for k in posters.size():
-		var px := x0 + 1.2 + k * 2.4
+		var px := x0 + 1.2 + k * 2.2
 		if px > DOOR.x - 1.0:
-			px += 6.5
+			px += 7.0
 		var po: Array = posters[k]
 		_poster(Vector3(px, 2.6, z1 - 0.02), po[0], po[1], po[2])
 	_workbench()
@@ -685,7 +695,7 @@ func _stock() -> void:
 		var n := 3 + int(_rng.randi() % 3)
 		for k in n:
 			_cyl("tyre", s + Vector3(0, k * 0.26, 0), 0.45, 0.24, 20)
-			_cyl("rim", s + Vector3(0, k * 0.26 + 0.24, 0), 0.22, 0.004, 14)
+			_cyl("rim", s + Vector3(0, k * 0.26 + 0.24, 0), 0.22, 0.012, 14)
 		_col(s.x - 0.45, s.x + 0.45, 0.0, n * 0.26, s.z - 0.45, s.z + 0.45)
 	for k in 4:
 		var dp := Vector3(x + 0.5 + (k % 2) * 0.65, 0, 11.0 + floorf(k / 2.0) * 0.65)
@@ -780,7 +790,7 @@ func _lounge() -> void:
 	_cyl("ceramic", Vector3(2.8, 0.42, 3.3), 0.045, 0.1, 12)
 	# the TV over the sofa
 	_box("black", x0 + d, x0 + 0.06, 1.55, 2.4, 2.4, 3.95)
-	_box("screen_on", x0 + 0.06, x0 + 0.062, 1.58, 2.37, 2.43, 3.92)
+	_box("screen_on", x0 + 0.066, x0 + 0.068, 1.58, 2.37, 2.43, 3.92)
 	# coffee on the back wall
 	_box("lounge_cabinet", 2.2, 3.4, 0.0, 0.9, z1 - 0.6, z1 - d)
 	_col(2.2, 3.4, 0.0, 0.9, z1 - 0.6, z1)
