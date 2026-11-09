@@ -32,6 +32,9 @@ extends "res://scripts/modes/game_mode.gd"
 ## The host (the official server) keeps who owns which vehicle; every peer gets it (`vehicles`) to show the prompts.
 ## Played solo (the tools: PLATEAU_MODE=online), the player's garage is PLATEAU_ONLINE_VEHICLES (models, comma-separated)
 ## and their money PLATEAU_ONLINE_MONEY (the starting money by default), kept here (test_garage, test_money).
+## The PTA Online test (game.gd online_test: --online-test, or the account page's button in debug builds) is that solo
+## game for people: TEST_MONEY € (a refill in the in-game menu), every unarmed vehicle in the garage, the fly camera, and
+## the in-game menu's shortcuts to the bus depot, the fire station and Prestige Motors. Every other rule is the server's.
 
 const Garages = preload("res://scripts/online/garages.gd")
 const GaragePanel = preload("res://scripts/online/garage_panel.gd")
@@ -57,8 +60,11 @@ const SERVER_REACH := 8.0                   # m the server allows (the player's 
 const PROMPT_REACH := 3.0                   # m from a vehicle for its owner's prompt
 const PLACE_KINDS := {"public": "garage", "depot": "depot", "fire": "fire"}   # (the shop's: Prestige Motors already)
 const TOW := 15.0                           # s a broken player vehicle stays before it is towed back (PLATEAU_ONLINE_TOW)
+const TEST_MONEY := 10_000_000              # € in the PTA Online test's wallet, at start and at each refill
+const TEST_TRIPS := [["the bus depot", "depot"], ["the fire station", "fire"], ["Prestige Motors", "shop"]]
 
 var hosting := false                        # this peer keeps the garages (solo, host, official server)
+var testing := false                        # the PTA Online test (game.gd online_test): solo, test wallet, fly camera
 var garages: Garages
 var vehicles := {}                          # net id -> {"owner": username, "model", "locked"}; the host's also have
 											# "account", "peer" (0: left) and "vehicle" (garage id, 0 lent)
@@ -84,10 +90,13 @@ var _next_solo := 0
 
 
 func allows(feature: String) -> bool:
+	if testing and feature == "fly_camera":
+		return true
 	return feature not in ["debug_cars", "vehicle_menu", "park_car", "clear_vehicles", "fly_camera", "armed_vehicles"]
 
 
 func _ready() -> void:
+	testing = game != null and game.online_test
 	garages = Garages.new()
 	garages.name = "Garages"
 	add_child(garages)
@@ -98,8 +107,13 @@ func _ready() -> void:
 	for m in OS.get_environment("PLATEAU_ONLINE_VEHICLES").split(",", false):
 		test_garage.append({"id": test_garage.size() + 1, "model": m.strip_edges(), "colour": "", "wrecked": false,
 				"upgrades": {}})
+	if testing and test_garage.is_empty():
+		for m: String in Car.MODELS:
+			if m not in ARMED:
+				test_garage.append({"id": test_garage.size() + 1, "model": m, "colour": "", "wrecked": false,
+						"upgrades": {}})
 	var money := OS.get_environment("PLATEAU_ONLINE_MONEY")
-	test_money = int(money) if money != "" else Prices.start_money()
+	test_money = int(money) if money != "" else TEST_MONEY if testing else Prices.start_money()
 	shop = Shop.new()
 	shop.name = "Shop"
 	shop.mode = self
@@ -150,13 +164,28 @@ func begin() -> void:
 
 func pause_info() -> String:
 	var who: String = game.economy.username if game.economy.username != "" else game.nickname
-	return "PTA Online · %s · %s" % [who, Economy.money(game.economy.balance)]
+	return "PTA Online%s · %s · %s" % [" test (offline)" if testing else "", who, Economy.money(game.economy.balance)]
 
 
 func player_actions() -> Array:
-	return [["Back to the nearest garage", func() -> void:
+	var out := [["Back to the nearest garage", func() -> void:
 		var here: Vector3 = game.map_eye()
 		to_garage(Vector2(here.x, -here.z))]]
+	if testing:
+		out.append(["Test: refill the wallet (%s)" % Economy.money(TEST_MONEY), refill])
+		for trip: Array in TEST_TRIPS:
+			out.append(["Test: go to %s" % trip[0], func() -> void:
+				var here: Vector3 = game.map_eye()
+				to_garage(Vector2(here.x, -here.z), [trip[1]])])
+	return out
+
+
+## PTA Online test: the wallet back to TEST_MONEY.
+func refill() -> void:
+	test_money = TEST_MONEY
+	game.economy.balance = test_money
+	game.economy.wallet_changed.emit()
+	game.toast("Wallet refilled: %s" % Economy.money(TEST_MONEY))
 
 
 func walk_help(k: Callable) -> String:
@@ -216,13 +245,16 @@ func terminal_at_hand() -> Dictionary:
 	return g
 
 
-## Puts the player on foot by the public garage nearest to map point `xy`, facing its terminal.
-func to_garage(xy: Vector2) -> void:
+## Puts the player on foot by the garage of one of `kinds` (the public ones by default) nearest to map point `xy`,
+## facing its terminal.
+func to_garage(xy: Vector2, kinds := Garages.PUBLIC) -> void:
 	if game.driving:
 		game.exit_car()
 	if game.riding:
 		game.leave_ride()
-	var g := garages.nearest(Vector3(xy.x, 0.0, -xy.y))
+	if game.flying:
+		game.set_flying(false)
+	var g := garages.nearest(Vector3(xy.x, 0.0, -xy.y), kinds)
 	if g.is_empty():
 		return
 	var spot := garages.stand_spot(g)
@@ -358,7 +390,7 @@ func _build_hud() -> void:
 
 func _show_wallet() -> void:
 	if _wallet:
-		_wallet.text = Economy.money(game.economy.balance)
+		_wallet.text = Economy.money(game.economy.balance) + (" · test" if testing else "")
 		_wallet.visible = game.economy.username != "" or not game.net.active
 
 

@@ -77,6 +77,9 @@ extends Node3D
 ## vehicles belong to accounts and come out at garages (E at a terminal), one per player, locked to others (U); no
 ## vehicle menu, no C, no fly camera, no armed vehicles; the wallet shows top right. The maps mark Prestige Motors and the
 ## game mode's places (map_places: the garages).
+## PTA Online test (offline): PTA Online played solo, no server, no login, to try the jobs, the shop and the stunts while
+## developing them: --online-test on the command line (godot/tools/online_test.sh), or the button the account page shows
+## in debug builds (run from the editor). The wallet and the garage are made up (online_mode.gd testing).
 
 signal world_staged                         # the loader has put the whole world in the tree (see `staged`)
 signal set_up                               # _ready has done all but placing the player: the loader lets it run
@@ -154,6 +157,7 @@ var night: Night
 var races: Races
 var economy: Economy                        # Main/Economy: PTA Online logins (and money, later)
 var online := false                         # client: playing PTA Online on the official server (start_online)
+var online_test := false                    # solo: PTA Online test, offline (--online-test, start_online_test)
 var hud: CanvasLayer
 var _help: Label
 var _dash: Label                            # speed, gear, indicators, doors while driving
@@ -285,8 +289,10 @@ func _ready() -> void:
 	mode_id = _args.get("mode", OS.get_environment("PLATEAU_MODE") if get_tree().current_scene != self else profile[2])
 	if not Modes.valid(mode_id):
 		mode_id = Modes.DEFAULT
-	# PTA Online is the official server's mode, and its only one (the tools may play it solo: PLATEAU_MODE)
-	if _args.has("official"):
+	# PTA Online is the official server's mode, and its only one (the tools may play it solo: PLATEAU_MODE; and anyone
+	# offline, to test it: --online-test)
+	online_test = _args.has("online-test")
+	if _args.has("official") or online_test:
 		mode_id = Modes.ONLINE
 	elif mode_id == Modes.ONLINE and get_tree().current_scene == self:
 		mode_id = Modes.DEFAULT
@@ -303,7 +309,7 @@ func _ready() -> void:
 	for s in get_tree().get_nodes_in_group("showroom"):
 		s.game = self
 	var welcome := get_tree().current_scene == self and not (_args.has("solo") or _args.has("host") or _args.has("join") \
-			or _args.has("dedicated") or _args.has("online"))
+			or _args.has("dedicated") or _args.has("online") or online_test)
 	fly_camera.active = false
 	if welcome:
 		_open_main_menu()
@@ -343,6 +349,7 @@ func _open_main_menu() -> void:
 	menu.host.connect(func() -> void: _take_profile(); start_host())
 	menu.join.connect(func(address: String, port: int) -> void: _take_profile(); start_join(address, port))
 	menu.online.connect(func() -> void: _take_profile(); start_online())
+	menu.online_test.connect(func() -> void: _take_profile(); start_online_test())
 	menu.quit.connect(get_tree().quit)
 	menu.mode_picked.connect(_preview_mode)
 	_preview_mode(menu.mode_id)
@@ -612,6 +619,13 @@ func start_online() -> void:
 	online = true
 	nickname = Accounts.saved()["username"]
 	start_join(where[0], where[1])
+
+
+## PTA Online test: the mode played solo, offline, with the test wallet and garage (online_mode.gd testing).
+func start_online_test() -> void:
+	online_test = true
+	mode_id = Modes.ONLINE
+	start_solo()
 
 
 ## What a failed PTA Online join means for the player (net.gd fail_kind).
