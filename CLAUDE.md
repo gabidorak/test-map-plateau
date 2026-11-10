@@ -15,3 +15,12 @@ and `map_data.lock` pins the version each commit uses. Details: "Map data (not i
   from `map_data.lock`.
 - Never commit the map files themselves, and never push from a clone made before 2026-11-06 (its history still holds
   the old map files).
+
+## Changes to the map are lots
+
+Any building replaced, restyled or added, any garden or ground reworked, is a **lot**: `godot/data/lots/<id>.json`
+ties its terraforming (`godot/data/terraform/`, made by `tools/terraform.py`), its removals (its script's `drop()`) and
+its building (its node, or its restyled specs in `godot/data/restyle/`), run in that order by
+`godot/scripts/builder/lots.gd`. Add a lot rather than hooking a new build into `world_builder.gd`, `ground_builder.gd`
+or `game.gd`; ask Thomas the terraforming questions first (is the ground flat? the grass mown? trees, hedges, paths?).
+How it works, and the railway's lots still to migrate: [LOTS.md](LOTS.md).
