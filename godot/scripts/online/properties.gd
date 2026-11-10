@@ -22,6 +22,11 @@ extends Node
 ## - The garage option (garage_price more): a private lift in the flat's hall (a hidden garage of kind "private" whose
 ##   terminal is the lift and whose bays are the residents'): E by it lists the owner's vehicles; the one picked comes
 ##   out on a residents' bay with the player at the wheel.
+## - Villa Luxe (a property whose site is "villa", scripts/villa/): a whole estate. Its "front door" is the plaque by
+##   its gate (the panel there); going in lets the player through the gate (villa.gd `allowed`: its owners and those
+##   let in), its rooms are where they stand; its owners are let in by themselves as they come to the gate, and are
+##   out once they leave its grounds. Its garage (the terminal by the utility room, a hidden garage of kind "private")
+##   gets their vehicles out on its three bays. Players not let in are put back outside the gate.
 ## Who owns what: solo (the PTA Online test, --online-test), `owned`, bought with the test wallet. Online, buying comes
 ## with step 2 (the accounts server keeps them); until then the host reads its owners from PLATEAU_ONLINE_HOMES
 ## ("name=property[+garage];...", for tests) and tells each player theirs.
@@ -33,12 +38,16 @@ const Garages = preload("res://scripts/online/garages.gd")
 const Car = preload("res://scripts/car.gd")
 const Economy = preload("res://scripts/economy.gd")
 const Marks = preload("res://scripts/race_marks.gd")
+const Villa = preload("res://scripts/villa/villa_data.gd")
+const VillaHouse = preload("res://scripts/villa/villa_house.gd")
 const DATA := "res://data/properties.json"
 const RAIL := "res://world/rail.json"
 const REACH := 2.6                          # m from a front door for E
 const EXIT_REACH := 1.2                     # m from the flat's own front door (or its lift), inside, for E
 const STAND := 1.3                          # m out of the entrance where the player is put back
 const GARAGE_PRICE := 10000                 # € the garage option, when the data doesn't say
+const VILLA_REACH := 16.0                   # m from the villa's gate within which its owners are let in
+const VILLA_OUT := 24.0                     # m from it, outside its wall, beyond which they are out
 ## The Logements de l'X's residents' car park, in its car park's (a, b) (tools/rail/logements_x.py: a north along it,
 ## b east across it): the terminal at the mouth of the path from the residence (the planted island across the east
 ## row), facing north; two of its real bays either side of the path in the east row (drawn 0.6 m longer, into the
@@ -68,6 +77,7 @@ var _mouse := Input.MOUSE_MODE_VISIBLE
 var _signs := {}                            # id -> Label3D
 var _lift := false                          # the lift's garage panel is open: a vehicle out is driven off
 var _drive_t := 0.0                         # s left to wait for that vehicle to show up
+var _villa_ask_t := 0.0                     # s before asking again to be let into the villa
 
 
 func _ready() -> void:
@@ -87,6 +97,9 @@ func _load() -> void:
 	var lx: Dictionary = rail["logements_x"]
 	for e: Dictionary in data["properties"]:
 		var b: Dictionary = e["building"]
+		if str(b.get("site", "")) == "villa":
+			_load_villa(e)
+			continue
 		if str(b.get("site", "")) != "logements_x":
 			continue
 		var pl := {}
@@ -119,8 +132,44 @@ func _load() -> void:
 				"garage_price": int(e.get("garage_price", GARAGE_PRICE)), "about": str(e.get("about", "")),
 				"floor": k, "site": "logements_x", "door2": door2, "door": Vector3(door2.x, float(po[2]), -door2.y),
 				"out": _gd(dout), "stand2": door2 + dout * STAND, "frame": frame, "windows": windows})
-	if not list.is_empty() and lx.has("car_park"):
+	if lx.has("car_park") and list.any(func(p: Dictionary) -> bool: return p["site"] == "logements_x"):
 		_garages(lx["car_park"])
+	_villa_garage()
+
+
+## The villa (its node: game.gd villa): its entry in the list, its plaque by the gate as its front door.
+func _load_villa(e: Dictionary) -> void:
+	var v: Node = _villa()
+	if v == null:
+		return
+	var door: Vector3 = v.plaque_point()
+	var out: Vector3 = v.road_out()
+	var door2 := Vector2(door.x, -door.z)
+	list.append({"id": str(e["id"]), "name": str(e["name"]), "short": str(e.get("short", "Villa")),
+			"tier": str(e.get("tier", "luxury")), "price": int(e["price"]), "garage_price": int(e.get("garage_price", 0)),
+			"about": str(e.get("about", "")), "floor": 0, "site": "villa", "door2": door2, "door": door, "out": out,
+			"stand2": door2 + Vector2(out.x, -out.z) * STAND, "frame": v.frame, "windows": []})
+
+
+func _villa() -> Node:
+	return mode.game.get("villa") if mode and mode.game else null
+
+
+## The villa's garage: a hidden garage of kind "private" (its owners: their vehicles out on its three bays).
+func _villa_garage() -> void:
+	var v: Node = _villa()
+	if v == null or mode == null or mode.garages == null:
+		return
+	for p: Dictionary in list:
+		if p["site"] != "villa":
+			continue
+		var bays := []
+		for xf: Transform3D in v.garage_bays():
+			bays.append({"xf": xf, "w": 3.0, "l": 5.6, "margin": 0.1})
+		var t: Vector3 = v.frame * (VillaHouse.GARAGE_TERMINAL + Vector3(0.8, 0.0, 0.0))
+		_add_garage({"id": garage_id(p["id"]), "name": "Your garage · %s" % p["name"], "kind": "private", "hidden": true,
+				"property": p["id"], "site": "villa", "xy": Vector2(t.x, -t.z), "terminal": t, "facing": Vector3.RIGHT,
+				"bays": bays, "about": "Your vehicles come out on the garage's three bays: pick one, then drive out."})
 
 
 ## The residents' terminal and bays at the Logements de l'X's car park `cp` (rail.json), and each flat's private lift
@@ -142,6 +191,8 @@ func _garages(cp: Dictionary) -> void:
 	_add_garage({"id": RESIDENTS_ID, "name": "Logements de l'X", "kind": "residence", "site": "logements_x", "xy": t,
 			"terminal": Garages._at(t.x, t.y), "facing": _gd(d), "bays": bays})
 	for p: Dictionary in list:
+		if p["site"] != "logements_x":
+			continue
 		_add_garage({"id": garage_id(p["id"]), "name": "Your garage · %s" % p["name"], "kind": "private",
 				"hidden": true, "property": p["id"], "site": p["site"], "xy": p["door2"],
 				"terminal": (p["frame"] as Transform3D) * StudioBuilder.LIFT, "facing": Vector3.FORWARD, "bays": bays})
@@ -165,6 +216,11 @@ static func instance(id: String, owner: String) -> String:
 ## Map vector -> Godot vector.
 static func _gd(v: Vector2) -> Vector3:
 	return Vector3(v.x, 0.0, -v.y)
+
+
+## The villa's entry, {} none.
+func get_villa() -> Dictionary:
+	return get_property(Villa.ID)
 
 
 ## The property `id` (its list entry), {} none.
@@ -222,7 +278,13 @@ func _exit_tree() -> void:
 ## After the world is in (not on the dedicated server, which draws nothing): the signs and the panel.
 func begin() -> void:
 	for p: Dictionary in list:
-		_sign(p)
+		if p["site"] == "villa":
+			_update_sign(p["id"])
+		else:
+			_sign(p)
+	var v: Node = _villa()
+	if v and not get_villa().is_empty():
+		v.allowed = func() -> bool: return is_owned(Villa.ID) or inside == Villa.ID
 	_panel = PropertyPanel.new()
 	mode.game.hud.add_child(_panel)
 	_panel.buy.connect(buy)
@@ -263,6 +325,10 @@ func _sign(p: Dictionary) -> void:
 
 func _update_sign(id: String) -> void:
 	var p := get_property(id)
+	if not p.is_empty() and p["site"] == "villa" and _villa():
+		_villa().set_plaque("%s\n%s" % [str(p["name"]).to_upper(), "YOUR HOME" if is_owned(id)
+				else "FOR SALE · %s" % Economy.money(int(p["price"]))])
+		return
 	if p.is_empty() or not _signs.has(id):
 		return
 	var label: Label3D = _signs[id]
@@ -321,6 +387,9 @@ func interact() -> bool:
 	if lift_at_hand():
 		take_lift()
 		return true
+	if villa_garage_at_hand():
+		mode.open_garage(garage_id(Villa.ID))
+		return true
 	if exit_at_hand():
 		leave()
 		return true
@@ -331,18 +400,32 @@ func interact() -> bool:
 	return true
 
 
+## Whether the player, in their own villa on foot, stands by its garage's terminal.
+func villa_garage_at_hand() -> bool:
+	if not has_garage(Villa.ID) or mode.game.driving or mode.game.flying:
+		return false
+	var g: Dictionary = mode.garages.get_garage(garage_id(Villa.ID)) if mode.garages else {}
+	if g.is_empty():
+		return false
+	var t: Vector3 = g["terminal"]
+	var here := _player_pos()
+	return Vector2(here.x - t.x, here.z - t.z).length() < 1.6 and absf(here.y - t.y) < 1.5
+
+
 ## The line over the bottom of the screen ("" none).
 func prompt() -> String:
 	var k := Settings.key_text("interact")
 	if lift_at_hand():
 		return "%s  Garage lift: leave by car" % k
+	if villa_garage_at_hand():
+		return "%s  Your garage: get a vehicle out" % k
 	if exit_at_hand():
 		return "%s  Leave the flat" % k
 	var p := door_at_hand()
 	if p.is_empty():
 		return ""
 	if is_owned(p["id"]):
-		return "%s  %s · your home: go in" % [k, p["short"]]
+		return "%s  %s · your home%s" % [k, p["short"], ": the gate opens for you" if p["site"] == "villa" else ": go in"]
 	var guests := visits(p["id"]).size()
 	return "%s  %s for sale · %s%s" % [k, p["short"], Economy.money(int(p["price"])),
 			" · %d open to visits" % guests if guests > 0 else ""]
@@ -401,6 +484,8 @@ func buy(id: String, garage := false) -> void:
 	if mode.game.net.active:
 		_panel.set_status("Homes can be bought in the offline test for now: online, they come with the next update.")
 		return
+	if p["site"] == "villa":
+		garage = true                       # (its garage comes with it)
 	var price := int(p["garage_price"]) if is_owned(id) else int(p["price"]) + (int(p["garage_price"]) if garage else 0)
 	if mode.test_money < price:
 		_panel.set_status("Not enough money: %s needed, you have %s." % [Economy.money(price),
@@ -413,7 +498,10 @@ func buy(id: String, garage := false) -> void:
 	owned[id] = {"garage": garage}
 	_update_sign(id)
 	_show_panel(p)
-	if added:
+	if p["site"] == "villa":
+		_panel.set_status("Félicitations! %s is yours (−%s): its gate opens for you, your vehicles come out in its garage." %
+				[p["name"], Economy.money(price)])
+	elif added:
 		_panel.set_status("The garage is yours (−%s): the lift in your hall takes you to your car." % Economy.money(price))
 	else:
 		_panel.set_status("Félicitations! The %s is yours (−%s).%s" % [str(p["short"]).to_lower(), Economy.money(price),
@@ -446,6 +534,12 @@ func enter(id: String, owner := "") -> bool:
 func _go_in(id: String, owner: String, garage: bool) -> void:
 	var p := get_property(id)
 	if p.is_empty():
+		return
+	if p["site"] == "villa":
+		_free_interior()
+		inside = id
+		inside_owner = owner
+		mode.game.toast("Welcome home: the gate opens" if owner == my_name() else "%s lets you in: the gate opens" % owner)
 		return
 	_free_interior()
 	interior = StudioBuilder.new().build(p["windows"], garage)
@@ -565,6 +659,7 @@ func _process(delta: float) -> void:
 			_drive_t = 0.0
 			_drive_off(car)
 			return
+	_villa_process(delta)
 	if inside == "" or interior == null:
 		return
 	# taken out some other way (a garage, a respawn, the fly camera): the interior goes
@@ -574,6 +669,24 @@ func _process(delta: float) -> void:
 		_drop_interior()
 		return
 	_daylight()
+
+
+## The villa: its owners let in as they come to its gate (or are in its grounds); out once they have left them.
+func _villa_process(delta: float) -> void:
+	var v: Node = _villa()
+	if v == null or get_villa().is_empty():
+		return
+	var me: Node3D = mode.game.driving if mode.game.driving else mode.game.player
+	var at: Vector3 = me.global_position
+	var near_gate := at.distance_to(v.gate_point()) < VILLA_REACH
+	if inside == Villa.ID:
+		if not v.in_grounds(at) and at.distance_to(v.gate_point()) > VILLA_OUT:
+			_drop_interior()
+		return
+	_villa_ask_t -= delta
+	if is_owned(Villa.ID) and inside == "" and _villa_ask_t <= 0.0 and (near_gate or v.in_grounds(at)) and not mode.game.flying:
+		_villa_ask_t = 2.0
+		mode.to_host(self, "_h_enter", [Villa.ID, my_name()])
 
 
 ## Shows only the players in the same flat as us (or, out of every flat, those out too): net.gd hidden_peers.
@@ -593,7 +706,8 @@ func _hide_others() -> void:
 func map_places() -> Array:
 	var out := []
 	for p: Dictionary in list:
-		out.append([p["name"], "home", p["door2"]])
+		if p["site"] != "villa":
+			out.append([p["name"], "home", p["door2"]])
 	return out
 
 

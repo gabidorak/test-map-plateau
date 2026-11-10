@@ -88,21 +88,25 @@ func open(p: Dictionary, owned: bool, garage: bool, close_keys: String, visits :
 	_title.text = str(p["name"])
 	_sub.text = "%s · %s" % [str(p["short"]), ("your home · garage" if garage else "your home") if owned else "for sale"]
 	_about.text = str(p.get("about", ""))
+	var estate := str(p.get("site", "")) == "villa"
 	_price.text = ("You own it, with its garage" if garage else "You own it") if owned else \
-			"%s · garage option +%s (a private lift down to your car)" % [Economy.money(price), Economy.money(extra)]
+			("%s · its garage for three cars comes with it" % Economy.money(price) if estate else
+			"%s · garage option +%s (a private lift down to your car)" % [Economy.money(price), Economy.money(extra)])
 	_buy.visible = not owned
 	_buy.text = "Buy · %s" % Economy.money(price)
-	_buy_garage.visible = not garage
+	_buy_garage.visible = not garage and not estate
 	_buy_garage.text = "Add the garage · %s" % Economy.money(extra) if owned else \
 			"Buy + garage · %s" % Economy.money(price + extra)
 	_enter.visible = owned
+	_enter.text = "Open the gate" if estate else "Go in"
 	_door_open = door_open
 	_door.visible = owned
-	_door.text = "Door open to visitors · lock it" if door_open else "Door locked · open it to visitors"
+	_door.text = ("Gate open to visitors · lock it" if door_open else "Gate locked · open it to visitors") if estate else \
+			("Door open to visitors · lock it" if door_open else "Door locked · open it to visitors")
 	for b: Node in _visits.get_children():
 		b.queue_free()
 	for owner: String in visits:
-		var b := UiStyle.button("Visit %s's flat" % owner, _looks, Vector2(420, 40), 16)
+		var b := UiStyle.button("Visit %s's %s" % [owner, "villa" if estate else "flat"], _looks, Vector2(420, 40), 16)
 		b.pressed.connect(func() -> void: visit.emit(property_id, owner))
 		b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		_visits.add_child(b)

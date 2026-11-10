@@ -355,7 +355,7 @@ func open_garage(id: String) -> void:
 	_open_panel()
 	_panel.open_garage(id, "%s · %s" % [look["title"], g["name"]] if g["kind"] in Garages.PUBLIC or g["kind"] == "residence"
 			else str(g["name"]),
-			sub[g["kind"]], Settings.key_text("interact"))
+			str(g.get("about", sub[g["kind"]])), Settings.key_text("interact"))
 	game.update_controls()
 	to_host(self, "_h_open", [id])
 

@@ -113,6 +113,7 @@ const Traffic = preload("res://scripts/traffic.gd")
 const Night = preload("res://scripts/night.gd")
 const Losplatos = preload("res://scripts/losplatos/losplatos.gd")
 const AllSuites = preload("res://scripts/allsuites/allsuites.gd")
+const Villa = preload("res://scripts/villa/villa.gd")
 const Races = preload("res://scripts/races.gd")
 const Economy = preload("res://scripts/economy.gd")
 const Accounts = preload("res://scripts/accounts.gd")
@@ -159,6 +160,7 @@ var traffic: Traffic
 var night: Night
 var losplatos: Losplatos                    # Losplatos Custom, the repair and paint shop (scripts/losplatos/)
 var allsuites: AllSuites                    # All Suites Study, the students' residence in place of #184 (scripts/allsuites/)
+var villa: Villa                            # Villa Luxe, the stone manor for sale (scripts/villa/)
 var races: Races
 var economy: Economy                        # Main/Economy: PTA Online logins (and money, later)
 var online := false                         # client: playing PTA Online on the official server (start_online)
@@ -245,6 +247,9 @@ func _ready() -> void:
 	add_child(losplatos)
 	allsuites = AllSuites.new()
 	add_child(allsuites)
+	villa = Villa.new()
+	villa.game = self
+	add_child(villa)
 	if staged:
 		await get_tree().process_frame      # (the loader's screen moves on: the trains have read the whole line)
 	net.message.connect(_show_toast)
@@ -1541,6 +1546,8 @@ func set_waypoint(xy: Variant) -> void:
 ## the showrooms (Prestige Motors), Losplatos Custom, and the game mode's (PTA Online's garages).
 func map_places() -> Array:
 	var out := [[Losplatos.NAME, "custom", losplatos.map_xy()]] if losplatos else []
+	if villa:
+		out.append([Villa.NAME, "villa", villa.map_xy()])
 	for s in get_tree().get_nodes_in_group("showroom"):
 		if s.dealer != "" and not s.outline.is_empty():
 			var mid := Vector2.ZERO
