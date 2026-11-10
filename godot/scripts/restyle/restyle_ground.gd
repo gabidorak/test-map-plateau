@@ -1,15 +1,22 @@
 extends RefCounted
 ## The ground of restyled grounds smoothed (a spec's site.garden.flatten, from tools/restyle.py garden): heights eased
-## onto a smooth surface (a quadratic fitted to the LiDAR ground, or its median: flat), fully `blend` m inside the
-## grounds' outline, the map's at it. Applied alike everywhere heights are made: the heightmap when the map is built
-## (its collision, water, trees, props: builder/world_builder.gd), the ground's mesh (builder/ground_builder.gd), the
-## heights read in the game (ground_map.gd height()). No preloads (ground_map.gd uses it).
+## onto a smooth surface (a quadratic fitted to the LiDAR ground, or its median: flat) by the garden's weight grid
+## (site.garden.grid: 0 at the grounds' outline, full `blend` m in). Applied alike everywhere heights are made: the
+## heightmap when the map is built (its collision, water, trees, props: builder/world_builder.gd), the ground's mesh
+## (builder/ground_builder.gd), the heights read in the game (ground_map.gd height()). No preloads (ground_map.gd uses
+## it).
 
 const DIR := "res://data/restyle/"
 
-static var _zones: Array = []                # [{"poly", "box", "o", "c", "blend"}]
+static var _zones: Array = []                # [{"box", "o", "c", "x0", "y0", "cell", "w", "h", "wt"}]
 static var _loaded := false
 static var original: RefCounted              # (the map being built: its heights before, for the ground's mesh)
+
+
+## A garden's grid layer (base64 of deflated bytes, w x h).
+static func layer(grid: Dictionary, key: String) -> PackedByteArray:
+	return Marshalls.base64_to_raw(str(grid[key])).decompress(int(grid["w"]) * int(grid["h"]),
+			FileAccess.COMPRESSION_DEFLATE)
 
 
 static func zones() -> Array:
@@ -22,17 +29,17 @@ static func zones() -> Array:
 				var s: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + f))
 				if not (s is Dictionary):
 					continue
-				var fl: Dictionary = s.get("site", {}).get("garden", {}).get("flatten", {})
-				if fl.is_empty():
+				var garden: Dictionary = s.get("site", {}).get("garden", {})
+				var fl: Dictionary = garden.get("flatten", {})
+				var grid: Dictionary = garden.get("grid", {})
+				if fl.is_empty() or grid.is_empty():
 					continue
-				var poly := PackedVector2Array()
-				for q: Array in fl["poly"]:
-					poly.append(Vector2(q[0], q[1]))
-				var box := Rect2(poly[0], Vector2.ZERO)
-				for p in poly:
-					box = box.expand(p)
-				_zones.append({"poly": poly, "box": box, "o": Vector2(fl["origin"][0], fl["origin"][1]),
-						"c": fl["coef"], "blend": float(fl.get("blend", 8.0))})
+				var cell := float(grid["cell"])
+				var x0 := float(grid["origin"][0])
+				var y0 := float(grid["origin"][1])
+				_zones.append({"box": Rect2(x0, y0 - cell * int(grid["h"]), cell * int(grid["w"]), cell * int(grid["h"])),
+						"o": Vector2(fl["origin"][0], fl["origin"][1]), "c": PackedFloat32Array(fl["coef"]), "x0": x0,
+						"y0": y0, "cell": cell, "w": int(grid["w"]), "h": int(grid["h"]), "wt": layer(grid, "weight")})
 	return _zones
 
 
@@ -40,23 +47,28 @@ static func zones() -> Array:
 static func delta(x: float, y: float, h: float) -> float:
 	if _loaded and _zones.is_empty():
 		return 0.0
-	var p := Vector2(x, y)
 	for z: Dictionary in zones():
-		if not (z["box"] as Rect2).has_point(p):
+		if not (z["box"] as Rect2).has_point(Vector2(x, y)):
 			continue
-		var poly: PackedVector2Array = z["poly"]
-		if not Geometry2D.is_point_in_polygon(p, poly):
-			continue
-		var d := INF
-		for i in poly.size():
-			d = minf(d, p.distance_to(Geometry2D.get_closest_point_to_segment(p, poly[i], poly[(i + 1) % poly.size()])))
-		var c: Array = z["c"]
+		var w: int = z["w"]
+		var fx := (x - float(z["x0"])) / float(z["cell"]) - 0.5
+		var fy := (float(z["y0"]) - y) / float(z["cell"]) - 0.5
+		var i := clampi(floori(fx), 0, w - 2)
+		var j := clampi(floori(fy), 0, int(z["h"]) - 2)
+		var u := clampf(fx - i, 0.0, 1.0)
+		var v := clampf(fy - j, 0.0, 1.0)
+		var wt: PackedByteArray = z["wt"]
+		var k := j * w + i
+		var a := lerpf(wt[k], wt[k + 1], u)
+		var b := lerpf(wt[k + w], wt[k + w + 1], u)
+		var weight := lerpf(a, b, v) / 255.0
+		if weight <= 0.0:
+			return 0.0
+		var c: PackedFloat32Array = z["c"]
 		var o: Vector2 = z["o"]
-		var u := (x - o.x) / 100.0
-		var v := (y - o.y) / 100.0
-		var s := float(c[0]) + float(c[1]) * u + float(c[2]) * v + float(c[3]) * u * u + float(c[4]) * u * v \
-				+ float(c[5]) * v * v
-		return smoothstep(0.0, z["blend"], d) * (s - h)
+		var uu := (x - o.x) / 100.0
+		var vv := (y - o.y) / 100.0
+		return weight * (c[0] + c[1] * uu + c[2] * vv + c[3] * uu * uu + c[4] * uu * vv + c[5] * vv * vv - h)
 	return 0.0
 
 

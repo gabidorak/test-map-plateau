@@ -9,8 +9,10 @@ Trees: the peaks of the canopy's distance to its edge (a crown each, its radius 
 Paths: polygons (with their holes) and their triangles. The ground: a quadratic fitted to the map's LiDAR ground in the
 grounds (bumps and pads ignored), "smooth"; or its median, "flat".
 """
+import base64
 import json
 import os
+import zlib
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -132,6 +134,38 @@ def ground_fit(area_poly, building_polys, mode):
     return origin, [round(float(c), 4) for c in coef], float(np.sqrt(np.mean(r[ok] ** 2)))
 
 
+def _b64(a):
+    return base64.b64encode(zlib.compress(np.ascontiguousarray(a, np.uint8).tobytes(), 9)).decode()
+
+
+def grid(area, meadows, paths, grass, blend, cell=1.0):
+    """The game's lookups over the grounds, `cell` m, row 0 north (scripts/restyle/): the ground's kind (0 out, 1 lawn,
+    2 meadow, 3 path) and the smoothing's weight (0..255: 0 at the outline, 255 from `blend` m in)."""
+    minx, miny, maxx, maxy = Polygon(area).bounds
+    gw, gh = int(np.ceil((maxx - minx) / cell)) + 1, int(np.ceil((maxy - miny) / cell)) + 1
+    g = lambda pts: [((p[0] - minx) / cell, (maxy - p[1]) / cell) for p in pts]
+
+    def mask(polys, holes=()):
+        im = Image.new("L", (gw, gh), 0)
+        d = ImageDraw.Draw(im)
+        for q in polys:
+            d.polygon(g(q), fill=1)
+        for q in holes:
+            d.polygon(g(q), fill=0)
+        return np.array(im, dtype=bool)
+    inside = mask([area])
+    kind = np.where(inside, 2 if grass == "meadow" else 1, 0).astype(np.uint8)
+    kind[mask(meadows) & inside] = 2
+    on_path = np.zeros_like(inside)
+    for pa in paths:
+        on_path |= mask([pa["pts"]], pa.get("holes", []))
+    kind[on_path & inside] = 3
+    t = np.clip(ndi.distance_transform_edt(inside) * cell / blend, 0.0, 1.0)
+    weight = np.round(t * t * (3.0 - 2.0 * t) * 255.0)
+    return {"origin": [round(minx, 2), round(maxy, 2)], "cell": cell, "w": gw, "h": gh, "kind": _b64(kind),
+            "weight": _b64(weight)}
+
+
 def read(spec, world, image, pairs, meadow_px=None, flatten="smooth", grass="mowed", dark=0.43, debug=None):
     M, Mi, res, mpp = fit(pairs)
     img = np.asarray(Image.open(image).convert("RGB"), dtype=np.float32) / 255.0
@@ -234,6 +268,7 @@ def read(spec, world, image, pairs, meadow_px=None, flatten="smooth", grass="mow
         origin, coef, rms = ground_fit(area_poly, [Polygon(r[0]) for r in blds], flatten)
         garden["flatten"] = {"mode": flatten, "poly": area, "origin": origin, "coef": coef, "blend": 8.0}
         garden["flatten_rms"] = round(rms, 2)
+    garden["grid"] = grid(area, meadows, paths, grass, 8.0)
     if debug:
         dbg = (img * 0.35 * 255).astype(np.uint8)
         dbg[path] = [235, 235, 235]
