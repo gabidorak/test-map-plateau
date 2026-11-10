@@ -30,8 +30,12 @@ const LEAF := 2.55                          # m, each leaf
 const OLD_TRACK := 25.0
 
 
-static func repaint(verts: PackedVector3Array, ids: PackedByteArray, colours: PackedColorArray, grass: int, water: int,
-		grass_colour: Color, gravel := -1) -> Array:
+static func repaint(verts: PackedVector3Array, ids: PackedByteArray, colours: PackedColorArray, materials: Array,
+		palette: Dictionary) -> Array:
+	var grass := materials.find("grass")
+	var water := materials.find("water")
+	var gravel := materials.find("gravel")
+	var grass_colour := Color.html(str(palette["grass"]))
 	var wall := PackedVector2Array(WALL)
 	var box := Rect2(wall[0], Vector2.ZERO)
 	for p in wall:

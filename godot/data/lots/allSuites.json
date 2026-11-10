@@ -1,0 +1,8 @@
+{
+ "id": "allSuites",
+ "order": 20,
+ "name": "All Suites Study",
+ "about": "The students' residence in place of #184, after Thomas's photos.",
+ "script": "res://scripts/allsuites/allsuites.gd",
+ "node": "allsuites"
+}

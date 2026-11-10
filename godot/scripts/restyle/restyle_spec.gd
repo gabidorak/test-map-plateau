@@ -29,6 +29,7 @@ extends RefCounted
 
 const Kit = preload("res://scripts/build_kit.gd")
 const DIR := "res://data/restyle/"
+const Lots = preload("res://scripts/builder/lots.gd")
 const LIBRARY := "res://data/restyle/_library.json"
 
 static var _specs: Array = []
@@ -46,15 +47,15 @@ static func library() -> Dictionary:
 	return _lib
 
 
+## The specs the lots name (builder/lots.gd).
 static func specs() -> Array:
-	if _specs.is_empty() and DirAccess.dir_exists_absolute(DIR):
-		for f in DirAccess.get_files_at(DIR):
-			if f.ends_with(".json") and not f.begins_with("_"):
-				var s: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + f))
-				if s is Dictionary:
-					s["slug"] = f.get_basename()
-					s["style"] = style_of(s.get("style", {}))
-					_specs.append(s)
+	if _specs.is_empty():
+		for slug: String in Lots.restyle_slugs():
+			var s: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + slug + ".json"))
+			if s is Dictionary:
+				s["slug"] = slug
+				s["style"] = style_of(s.get("style", {}))
+				_specs.append(s)
 	return _specs
 
 

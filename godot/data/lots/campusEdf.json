@@ -1,0 +1,17 @@
+{
+ "id": "campusEdf",
+ "order": 50,
+ "name": "Campus EDF",
+ "about": "EDF Lab Paris-Saclay (OPALE, AZUR, IROISE, EMERAUDE) and the training campus (#6810) restyled; their garden read off Google's aerial view, its ground terraformed.",
+ "terraform": [
+  "edf_site"
+ ],
+ "restyle": [
+  "edf_campus",
+  "edf_opale",
+  "edf_azur",
+  "edf_iroise",
+  "edf_emeraude",
+  "edf_site"
+ ]
+}

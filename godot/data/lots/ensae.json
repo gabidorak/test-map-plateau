@@ -1,0 +1,9 @@
+{
+ "id": "ensae",
+ "order": 40,
+ "name": "ENSAE",
+ "about": "#996 restyled: an exoskeleton with brise-soleil, a gallery, its paths and raised walks.",
+ "restyle": [
+  "ensae"
+ ]
+}

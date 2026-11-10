@@ -1,0 +1,8 @@
+{
+ "id": "losplatos",
+ "order": 10,
+ "name": "Losplatos Custom",
+ "about": "The repair and paint shop in place of #758 (the LadHyX).",
+ "script": "res://scripts/losplatos/losplatos.gd",
+ "node": "losplatos"
+}

@@ -9,6 +9,7 @@ extends RefCounted
 ## in the game (ground_map.gd height()). No preloads (ground_map.gd uses it).
 
 const DIR := "res://data/terraform/"
+const Lots = preload("res://scripts/builder/lots.gd")
 
 static var _zones: Array = []                # [{"box", "o", "c", "x0", "y0", "cell", "w", "h", "wt"}]
 static var _loaded := false
@@ -24,10 +25,8 @@ static func zones() -> Array:
 	if not _loaded:
 		_loaded = true
 		if DirAccess.dir_exists_absolute(DIR):
-			for f in DirAccess.get_files_at(DIR):
-				if not f.ends_with(".json") or f.begins_with("_"):
-					continue
-				var s: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + f))
+			for name: String in Lots.terraform_files():          # (the lots' zones: builder/lots.gd)
+				var s: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + name + ".json"))
 				if not (s is Dictionary):
 					continue
 				for zn: Dictionary in s.get("zones", []):

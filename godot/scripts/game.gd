@@ -115,6 +115,7 @@ const Losplatos = preload("res://scripts/losplatos/losplatos.gd")
 const AllSuites = preload("res://scripts/allsuites/allsuites.gd")
 const VillaEnPierreCoteaux = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux.gd")
 const Restyle = preload("res://scripts/restyle/restyle.gd")
+const Lots = preload("res://scripts/builder/lots.gd")
 const Races = preload("res://scripts/races.gd")
 const Economy = preload("res://scripts/economy.gd")
 const Accounts = preload("res://scripts/accounts.gd")
@@ -244,16 +245,7 @@ func _ready() -> void:
 	traffic.name = "Traffic"
 	traffic.game = self
 	add_child(traffic)
-	losplatos = Losplatos.new()
-	losplatos.game = self
-	add_child(losplatos)
-	allsuites = AllSuites.new()
-	add_child(allsuites)
-	villaEnPierreCoteaux = VillaEnPierreCoteaux.new()
-	villaEnPierreCoteaux.game = self
-	add_child(villaEnPierreCoteaux)
-	restyle = Restyle.new()
-	add_child(restyle)
+	Lots.spawn(self)                        # the lots' builds (builder/lots.gd: Losplatos, All Suites, the villa...)
 	if staged:
 		await get_tree().process_frame      # (the loader's screen moves on: the trains have read the whole line)
 	net.message.connect(_show_toast)

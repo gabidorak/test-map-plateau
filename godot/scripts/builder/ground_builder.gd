@@ -8,8 +8,7 @@ extends RefCounted
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
-const VillaEnPierreCoteaux = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_data.gd")
-const Restyle = preload("res://scripts/restyle/restyle.gd")
+const Lots = preload("res://scripts/builder/lots.gd")
 const Terraform = preload("res://scripts/builder/terraform.gd")
 const SHADER := "res://shaders/toy_ground.gdshader"
 ## Must match the material ids hard-coded in toy_ground.gdshader. "ballast" (the railway's trackbed) is appended by
@@ -77,12 +76,8 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 				water.add_surface(c["name"], verts, index, is_water, mesh_dir)
 			arrays[Mesh.ARRAY_VERTEX] = verts
 			arrays[Mesh.ARRAY_NORMAL] = normals
-			# Villa de charme's grounds: lawn inside its wall (scripts/villaEnPierreCoteaux/villaEnPierreCoteaux.gd)
-			var rp: Array = VillaEnPierreCoteaux.repaint(verts, parts[3], parts[2].to_color_array(), MATERIALS.find("grass"), water_id,
-					Color.html(world["palette"]["ground"]["grass"]), MATERIALS.find("gravel"))
-			parts[3] = rp[0]
-			# the restyled buildings' grounds: lawn round their paths, drawn crisp (scripts/restyle/restyle.gd)
-			rp = Restyle.repaint(verts, parts[3], rp[1], MATERIALS, world["palette"]["ground"])
+			# the lots' ground in their grounds (builder/lots.gd: the villa's lawn, the restyled gardens')
+			var rp: Array = Lots.repaint(verts, parts[3], parts[2].to_color_array(), MATERIALS, world["palette"]["ground"])
 			parts[3] = rp[0]
 			arrays[Mesh.ARRAY_COLOR] = rp[1]
 			arrays[Mesh.ARRAY_CUSTOM0] = parts[3]
