@@ -9,6 +9,7 @@ extends RefCounted
 const GroundBuilder = preload("res://scripts/builder/ground_builder.gd")
 const BuildingBuilder = preload("res://scripts/builder/building_builder.gd")
 const Losplatos = preload("res://scripts/losplatos/losplatos.gd")
+const AllSuites = preload("res://scripts/allsuites/allsuites.gd")
 const CollisionBuilder = preload("res://scripts/builder/collision_builder.gd")
 const VegetationBuilder = preload("res://scripts/builder/vegetation_builder.gd")
 const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
@@ -70,6 +71,7 @@ func build_and_save() -> Error:
 		root.free()
 		return err
 	Losplatos.drop(world)                           # #758 makes way for Losplatos Custom (drawn at runtime)
+	AllSuites.drop(world)                           # #184 makes way for All Suites Study (drawn at runtime)
 	BuildingBuilder.new().build(root, world, MESH_DIR)
 	InteriorBuilder.new().build(root, world, heights, MESH_DIR)
 	VegetationBuilder.add_rail_greenery(world)      # the bus depot's trees and hedge (rail.json)

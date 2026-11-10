@@ -208,6 +208,8 @@ func describe(info: Dictionary) -> String:
 			lines.append(map.describe(h.x, -h.z) if map else "Ground")
 			lines.append("%s (%s)" % [info["id"], "raised surface" if info["type"] == "ground" else "LiDAR ground"])
 			_describe_track(lines, h, false)
+		"allsuites":
+			lines.append("%s · %s (in place of #184: scripts/allsuites/)" % [info["name"], info["kind"]])
 		"custom_garage":
 			lines.append("%s · %s (in place of #758, the LadHyX: scripts/losplatos/)" % [info["name"], info["kind"]])
 		"interior":
