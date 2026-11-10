@@ -32,6 +32,8 @@ static var keep_out: Array[PackedVector2Array] = []
 static var lawns: Array[PackedVector2Array] = []
 ## Circles (x, y, radius) where the map's gravel grows lawn (the old track by Villa Luxe's gate).
 static var regrass: Array[Vector3] = []
+## Callables (x, y) -> a material id, or -2: the ground's material there decided elsewhere (scripts/restyle/: gardens).
+static var overrides: Array[Callable] = []
 
 var _map: RefCounted
 var _lawn_boxes: Array[Rect2] = []
@@ -152,6 +154,10 @@ func _build_chunk(key: Vector2i) -> Node3D:
 ## One tuft: blades in a ring, each a tapered strip leaning outwards. COLOR.r = height along the blade.
 ## The ground's material at (x, y): grass on the lawns.
 func _material(x: float, y: float) -> int:
+	for f: Callable in overrides:
+		var o: int = f.call(x, y)
+		if o != -2:
+			return o
 	if _lawn_boxes.size() != lawns.size():
 		_lawn_boxes.clear()
 		for poly: PackedVector2Array in lawns:

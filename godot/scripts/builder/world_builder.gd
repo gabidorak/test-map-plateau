@@ -11,6 +11,8 @@ const BuildingBuilder = preload("res://scripts/builder/building_builder.gd")
 const Losplatos = preload("res://scripts/losplatos/losplatos.gd")
 const AllSuites = preload("res://scripts/allsuites/allsuites.gd")
 const Villa = preload("res://scripts/villa/villa.gd")
+const Restyle = preload("res://scripts/restyle/restyle.gd")
+const RestyleGround = preload("res://scripts/restyle/restyle_ground.gd")
 const CollisionBuilder = preload("res://scripts/builder/collision_builder.gd")
 const VegetationBuilder = preload("res://scripts/builder/vegetation_builder.gd")
 const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
@@ -50,6 +52,12 @@ func build_and_save() -> Error:
 	if heights.size() != int(world["terrain"]["w"]) * int(world["terrain"]["h"]):
 		push_error("heightmap size mismatch")
 		return ERR_INVALID_DATA
+	# the restyled grounds smoothed (scripts/restyle/restyle_ground.gd): the heightmap here, the ground's mesh alike
+	if not RestyleGround.zones().is_empty():
+		var t0: Dictionary = world["terrain"]
+		RestyleGround.original = GroundHeights.new(heights, t0["w"], t0["h"], t0["cell"], t0["origin_xy"][0],
+				t0["origin_xy"][1], world["ground_mesh"]["cell"])
+		RestyleGround.patch(heights, t0)
 
 	var root := Node3D.new()
 	root.name = "Neighborhood"
@@ -74,6 +82,7 @@ func build_and_save() -> Error:
 	Losplatos.drop(world)                           # #758 makes way for Losplatos Custom (drawn at runtime)
 	AllSuites.drop(world)                           # #184 makes way for All Suites Study (drawn at runtime)
 	Villa.drop(world)                               # #628, #659, #671, #672 for Villa Luxe's grounds (scripts/villa/)
+	Restyle.drop(world)                             # the restyled buildings (data/restyle/, drawn at runtime)
 	BuildingBuilder.new().build(root, world, MESH_DIR)
 	InteriorBuilder.new().build(root, world, heights, MESH_DIR)
 	VegetationBuilder.add_rail_greenery(world)      # the bus depot's trees and hedge (rail.json)

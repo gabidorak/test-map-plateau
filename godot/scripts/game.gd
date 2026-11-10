@@ -114,6 +114,7 @@ const Night = preload("res://scripts/night.gd")
 const Losplatos = preload("res://scripts/losplatos/losplatos.gd")
 const AllSuites = preload("res://scripts/allsuites/allsuites.gd")
 const Villa = preload("res://scripts/villa/villa.gd")
+const Restyle = preload("res://scripts/restyle/restyle.gd")
 const Races = preload("res://scripts/races.gd")
 const Economy = preload("res://scripts/economy.gd")
 const Accounts = preload("res://scripts/accounts.gd")
@@ -161,6 +162,7 @@ var night: Night
 var losplatos: Losplatos                    # Losplatos Custom, the repair and paint shop (scripts/losplatos/)
 var allsuites: AllSuites                    # All Suites Study, the students' residence in place of #184 (scripts/allsuites/)
 var villa: Villa                            # Villa Luxe, the stone manor for sale (scripts/villa/)
+var restyle: Restyle                        # the restyled buildings, ENSAE... (data/restyle/, scripts/restyle/)
 var races: Races
 var economy: Economy                        # Main/Economy: PTA Online logins (and money, later)
 var online := false                         # client: playing PTA Online on the official server (start_online)
@@ -250,6 +252,8 @@ func _ready() -> void:
 	villa = Villa.new()
 	villa.game = self
 	add_child(villa)
+	restyle = Restyle.new()
+	add_child(restyle)
 	if staged:
 		await get_tree().process_frame      # (the loader's screen moves on: the trains have read the whole line)
 	net.message.connect(_show_toast)

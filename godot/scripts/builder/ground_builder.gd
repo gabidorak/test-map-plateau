@@ -9,6 +9,8 @@ const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
 const Villa = preload("res://scripts/villa/villa_data.gd")
+const Restyle = preload("res://scripts/restyle/restyle.gd")
+const RestyleGround = preload("res://scripts/restyle/restyle_ground.gd")
 const SHADER := "res://shaders/toy_ground.gdshader"
 ## Must match the material ids hard-coded in toy_ground.gdshader. "ballast" (the railway's trackbed) is appended by
 ## tools/rail/patch_world.py, after the pipeline's kerb and paint.
@@ -61,6 +63,7 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 			var arrays := []
 			arrays.resize(Mesh.ARRAY_MAX)
 			var verts: PackedVector3Array = parts[0].to_vector3_array()
+			RestyleGround.move(verts, c["aabb"])         # the restyled grounds smoothed (scripts/restyle/)
 			var normals: PackedVector3Array = parts[1].to_vector3_array()
 			var index: PackedInt32Array = parts[4].to_int32_array()
 			var a: Array = c["aabb"]
@@ -77,6 +80,9 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 			# Villa Luxe's grounds: lawn inside its wall (scripts/villa/villa.gd)
 			var rp: Array = Villa.repaint(verts, parts[3], parts[2].to_color_array(), MATERIALS.find("grass"), water_id,
 					Color.html(world["palette"]["ground"]["grass"]), MATERIALS.find("gravel"))
+			parts[3] = rp[0]
+			# the restyled buildings' grounds: lawn round their paths, drawn crisp (scripts/restyle/restyle.gd)
+			rp = Restyle.repaint(verts, parts[3], rp[1], MATERIALS, world["palette"]["ground"])
 			parts[3] = rp[0]
 			arrays[Mesh.ARRAY_COLOR] = rp[1]
 			arrays[Mesh.ARRAY_CUSTOM0] = parts[3]

@@ -361,7 +361,8 @@ static func mat(name: String) -> Material:
 				s.set_shader_parameter("tint", Color(0.2, 0.72, 0.8))
 			m = s
 		_:
-			m = _plain(Color("#ff00ff"), 1.0)
+			# "#rrggbb": a plain colour (restyled buildings' specs, scripts/restyle/)
+			m = _plain(Color.html(name), 0.6) if name.begins_with("#") else _plain(Color("#ff00ff"), 1.0)
 	_mats[name] = m
 	return m
 
