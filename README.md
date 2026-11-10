@@ -153,6 +153,11 @@ overrides file and the downloaded data) is **not published**, so the map cannot 
 The sections below on the ground, trees, props, buildings, facade colours and landmarks describe how it was made;
 the files they mention under `pipeline/`, `overrides/`, `references/` and `data/` are not included.
 
+Buildings drawn by code share one kit, `godot/scripts/build_kit.gd`: boxes, quads, cylinders and sheets merged per
+material, collision boxes, ramps and faces, and a library of materials with procedural textures. Villa de charme
+(`godot/scripts/villaEnPierreCoteaux/`) and the restyled buildings (`godot/scripts/restyle/`: specs in `godot/data/restyle/`, made by
+`tools/restyle.py`) are built with it.
+
 ### Map data (not in git)
 
 The generated map (~1.9 GB: `godot/world/` heightmaps, ground and `world.json`, `godot/world/base/`,

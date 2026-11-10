@@ -1,6 +1,6 @@
-extends "res://scripts/villa/villa_kit.gd"
-## Villa Luxe's rooms (scripts/villa/villa.gd builds them while the camera is near the house; the walls, floors and
-## stair are the house's, villa_house.gd), after Thomas's photos (ref/proprietes/Villa Luxe/):
+extends "res://scripts/build_kit.gd"
+## Villa de charme's rooms (scripts/villaEnPierreCoteaux/villaEnPierreCoteaux.gd builds them while the camera is near the house; the walls, floors and
+## stair are the house's, villaEnPierreCoteaux_house.gd), after Thomas's photos (ref/proprietes/Villa Luxe/):
 ## - the hall: a crystal chandelier over the stair's void, a marble inlay, consoles with mirrors, two palms;
 ## - the salon: a stone fireplace, a sofa and armchairs round a low table on a large rug, a grand piano, bookshelves;
 ## - the dining room: a long live-edge oak table on black X legs, twelve taupe chairs, an oak sideboard, abstract art,
@@ -15,7 +15,7 @@ extends "res://scripts/villa/villa_kit.gd"
 ## - the utility room, the wine cellar, the garage (its terminal on the wall).
 ## Lights: warm lamps (no shadows), reflection probes giving each part its ambient light.
 
-const House = preload("res://scripts/villa/villa_house.gd")
+const House = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_house.gd")
 const F1 := House.F1
 const CEIL0 := House.CEIL0
 const CEIL1 := House.CEIL1
@@ -25,7 +25,7 @@ var _rng := RandomNumberGenerator.new()
 
 
 func _init() -> void:
-	super("VillaInterior")
+	super("VillaEnPierreCoteauxInterior")
 
 
 func build(meshes := true) -> Node3D:

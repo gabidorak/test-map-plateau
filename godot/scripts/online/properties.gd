@@ -22,8 +22,8 @@ extends Node
 ## - The garage option (garage_price more): a private lift in the flat's hall (a hidden garage of kind "private" whose
 ##   terminal is the lift and whose bays are the residents'): E by it lists the owner's vehicles; the one picked comes
 ##   out on a residents' bay with the player at the wheel.
-## - Villa Luxe (a property whose site is "villa", scripts/villa/): a whole estate. Its "front door" is the plaque by
-##   its gate (the panel there); going in lets the player through the gate (villa.gd `allowed`: its owners and those
+## - Villa de charme (a property whose site is "villa", scripts/villaEnPierreCoteaux/): a whole estate. Its "front door" is the plaque by
+##   its gate (the panel there); going in lets the player through the gate (villaEnPierreCoteaux.gd `allowed`: its owners and those
 ##   let in), its rooms are where they stand; its owners are let in by themselves as they come to the gate, and are
 ##   out once they leave its grounds. Its garage (the terminal by the utility room, a hidden garage of kind "private")
 ##   gets their vehicles out on its three bays. Players not let in are put back outside the gate.
@@ -38,8 +38,8 @@ const Garages = preload("res://scripts/online/garages.gd")
 const Car = preload("res://scripts/car.gd")
 const Economy = preload("res://scripts/economy.gd")
 const Marks = preload("res://scripts/race_marks.gd")
-const Villa = preload("res://scripts/villa/villa_data.gd")
-const VillaHouse = preload("res://scripts/villa/villa_house.gd")
+const VillaEnPierreCoteaux = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_data.gd")
+const VillaEnPierreCoteauxHouse = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_house.gd")
 const DATA := "res://data/properties.json"
 const RAIL := "res://world/rail.json"
 const REACH := 2.6                          # m from a front door for E
@@ -95,7 +95,12 @@ func _load() -> void:
 	if not data is Dictionary or not rail is Dictionary or not (rail as Dictionary).has("logements_x"):
 		return
 	var lx: Dictionary = rail["logements_x"]
+	var ids := {}
 	for e: Dictionary in data["properties"]:
+		if ids.has(e["id"]):                    # (ids are permanent keys of the owners' saves: one each)
+			push_error("properties.json: id %s twice, the second left out" % e["id"])
+			continue
+		ids[e["id"]] = true
 		var b: Dictionary = e["building"]
 		if str(b.get("site", "")) == "villa":
 			_load_villa(e)
@@ -152,7 +157,7 @@ func _load_villa(e: Dictionary) -> void:
 
 
 func _villa() -> Node:
-	return mode.game.get("villa") if mode and mode.game else null
+	return mode.game.get("villaEnPierreCoteaux") if mode and mode.game else null
 
 
 ## The villa's garage: a hidden garage of kind "private" (its owners: their vehicles out on its three bays).
@@ -166,7 +171,7 @@ func _villa_garage() -> void:
 		var bays := []
 		for xf: Transform3D in v.garage_bays():
 			bays.append({"xf": xf, "w": 3.0, "l": 5.6, "margin": 0.1})
-		var t: Vector3 = v.frame * (VillaHouse.GARAGE_TERMINAL + Vector3(0.8, 0.0, 0.0))
+		var t: Vector3 = v.frame * (VillaEnPierreCoteauxHouse.GARAGE_TERMINAL + Vector3(0.8, 0.0, 0.0))
 		_add_garage({"id": garage_id(p["id"]), "name": "Your garage · %s" % p["name"], "kind": "private", "hidden": true,
 				"property": p["id"], "site": "villa", "xy": Vector2(t.x, -t.z), "terminal": t, "facing": Vector3.RIGHT,
 				"bays": bays, "about": "Your vehicles come out on the garage's three bays: pick one, then drive out."})
@@ -220,7 +225,7 @@ static func _gd(v: Vector2) -> Vector3:
 
 ## The villa's entry, {} none.
 func get_villa() -> Dictionary:
-	return get_property(Villa.ID)
+	return get_property(VillaEnPierreCoteaux.ID)
 
 
 ## The property `id` (its list entry), {} none.
@@ -284,7 +289,7 @@ func begin() -> void:
 			_sign(p)
 	var v: Node = _villa()
 	if v and not get_villa().is_empty():
-		v.allowed = func() -> bool: return is_owned(Villa.ID) or inside == Villa.ID
+		v.allowed = func() -> bool: return is_owned(VillaEnPierreCoteaux.ID) or inside == VillaEnPierreCoteaux.ID
 	_panel = PropertyPanel.new()
 	mode.game.hud.add_child(_panel)
 	_panel.buy.connect(buy)
@@ -388,7 +393,7 @@ func interact() -> bool:
 		take_lift()
 		return true
 	if villa_garage_at_hand():
-		mode.open_garage(garage_id(Villa.ID))
+		mode.open_garage(garage_id(VillaEnPierreCoteaux.ID))
 		return true
 	if exit_at_hand():
 		leave()
@@ -402,9 +407,9 @@ func interact() -> bool:
 
 ## Whether the player, in their own villa on foot, stands by its garage's terminal.
 func villa_garage_at_hand() -> bool:
-	if not has_garage(Villa.ID) or mode.game.driving or mode.game.flying:
+	if not has_garage(VillaEnPierreCoteaux.ID) or mode.game.driving or mode.game.flying:
 		return false
-	var g: Dictionary = mode.garages.get_garage(garage_id(Villa.ID)) if mode.garages else {}
+	var g: Dictionary = mode.garages.get_garage(garage_id(VillaEnPierreCoteaux.ID)) if mode.garages else {}
 	if g.is_empty():
 		return false
 	var t: Vector3 = g["terminal"]
@@ -679,14 +684,14 @@ func _villa_process(delta: float) -> void:
 	var me: Node3D = mode.game.driving if mode.game.driving else mode.game.player
 	var at: Vector3 = me.global_position
 	var near_gate := at.distance_to(v.gate_point()) < VILLA_REACH
-	if inside == Villa.ID:
+	if inside == VillaEnPierreCoteaux.ID:
 		if not v.in_grounds(at) and at.distance_to(v.gate_point()) > VILLA_OUT:
 			_drop_interior()
 		return
 	_villa_ask_t -= delta
-	if is_owned(Villa.ID) and inside == "" and _villa_ask_t <= 0.0 and (near_gate or v.in_grounds(at)) and not mode.game.flying:
+	if is_owned(VillaEnPierreCoteaux.ID) and inside == "" and _villa_ask_t <= 0.0 and (near_gate or v.in_grounds(at)) and not mode.game.flying:
 		_villa_ask_t = 2.0
-		mode.to_host(self, "_h_enter", [Villa.ID, my_name()])
+		mode.to_host(self, "_h_enter", [VillaEnPierreCoteaux.ID, my_name()])
 
 
 ## Shows only the players in the same flat as us (or, out of every flat, those out too): net.gd hidden_peers.

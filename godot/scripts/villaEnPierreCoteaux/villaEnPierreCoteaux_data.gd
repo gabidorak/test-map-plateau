@@ -1,10 +1,10 @@
 extends RefCounted
-## Villa Luxe's place on the map (scripts/villa/villa.gd and its builders share it): its name, its frame, the wall
+## Villa de charme's place on the map (scripts/villaEnPierreCoteaux/villaEnPierreCoteaux.gd and its builders share it): its name, its frame, the wall
 ## round its grounds and its gate. The villa's frame: x east, y up from the house's floor, z south; its origin at the
 ## front facade's west end (map ORIGIN).
 
-const NAME := "Villa Luxe"
-const ID := "villa-luxe"
+const NAME := "Villa de charme"
+const ID := "villa-001"                     # (permanent: owners keep it; the name may change)
 const ORIGIN := Vector2(264.0, -424.0)      # map: the house's frame origin
 const W := 40.0                             # the house: m along its front (x)
 const D := 22.0                             # m deep (z), the wings included

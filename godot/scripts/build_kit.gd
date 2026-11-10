@@ -1,11 +1,13 @@
 extends RefCounted
-## Villa Luxe's building kit (scripts/villa/): what its builders share. Meshes are merged per material (one
-## SurfaceTool each, committed as one MeshInstance3D per material), collision boxes and faces go into one
-## StaticBody3D (BUILDINGS), materials and their textures (drawn once a session) are cached. All in the villa's frame:
-## x east, y up from the house's floor, z south (the house's front facade on z = 0, its garden towards +z).
+## The building kit: what the buildings drawn by code share — Villa de charme (scripts/villaEnPierreCoteaux/: its builders extend it), the
+## restyled buildings (scripts/restyle/). Meshes are merged per material (one SurfaceTool each, committed as one
+## MeshInstance3D per material), collision boxes and faces go into one StaticBody3D (BUILDINGS), materials and their
+## procedural textures (drawn once a session) are cached: mat() names them ("#rrggbb" a plain colour; the restyled
+## buildings' library adds its own). Coordinates are its user's frame (the villa's: x east, y up from the house's floor,
+## z south; the restyled buildings': the map's).
 
 const Layers = preload("res://scripts/physics_layers.gd")
-const WATER_SHADER := preload("res://shaders/villa_water.gdshader")
+const WATER_SHADER := preload("res://shaders/kit_water.gdshader")
 
 var root: Node3D
 var body: StaticBody3D

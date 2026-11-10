@@ -1,15 +1,16 @@
-extends "res://scripts/villa/villa_kit.gd"
-## Villa Luxe's house (scripts/villa/villa.gd places it): a two-storey manor of coursed limestone, dressed stone
+extends "res://scripts/build_kit.gd"
+## Villa de charme's house (scripts/villaEnPierreCoteaux/villaEnPierreCoteaux.gd places it): a two-storey manor of coursed limestone, dressed stone
 ## quoins, window surrounds, a band and a cornice, white mullioned windows with light grey louvred shutters, a hipped
 ## roof of flat clay tiles over the main body and its two garden wings, dormers and two brick chimneys; the oak front
-## door under a cornice at the top of the perron; three rising garage doors in the east wing (villa.gd lifts them).
+## door under a cornice at the top of the perron; three rising garage doors in the east wing (villaEnPierreCoteaux.gd lifts them).
 ## Inside, its shell: plaster walls, the floors (marble, oak, travertine), the first floor and its U gallery round the
 ## hall's void (no floor over the hall: 7.2 m to its ceiling), the grand stair (a 4 m flight up to a landing, two
 ## flights from it to the first floor), wrought-iron railings, the indoor pool hall open to the roof's ceiling with a
-## balcony over it. Rooms' furniture: villa_interior.gd.
+## balcony over it. Rooms' furniture: villaEnPierreCoteaux_interior.gd.
 ## Plan (x east 0..40, z south 0..22): the main body z 0..12; the west wing x 0..12 (the indoor pool) and the east
 ## wing x 28..40 (the garage, the utility room and the cellar; the gym above) z 12..22; the patio between them.
 
+const VillaEnPierreCoteaux = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_data.gd")
 const W := 40.0
 const D := 22.0
 const T_STONE := 0.33
@@ -37,7 +38,7 @@ var _gshapes: Array = []
 
 
 func _init() -> void:
-	super("VillaHouse", {"type": "villa", "name": "Villa Luxe", "id": "villa-luxe", "kind": "a stone manor"})
+	super("VillaEnPierreCoteauxHouse", {"type": "villa", "name": VillaEnPierreCoteaux.NAME, "id": VillaEnPierreCoteaux.ID, "kind": "a stone manor"})
 
 
 ## The garage's bays in the villa's frame: each car's front (its +z) towards the doors.

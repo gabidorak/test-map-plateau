@@ -1,12 +1,12 @@
 extends SceneTree
-## Villa Luxe (scripts/villa/, scripts/online/properties.gd) in the PTA Online test (--online-test): the map's
+## Villa de charme (scripts/villaEnPierreCoteaux/, scripts/online/properties.gd) in the PTA Online test (--online-test): the map's
 ## buildings gone from its grounds, its gate shut to a passer-by (put back outside when found in), the plaque for
 ## sale; bought (5 M €, its garage with it); its owner let in at the gate, which opens; walking the grand stair up to
 ## the landing and on to the first floor, the hall's void (no floor over it); a car out in its garage on a bay, the
 ## garage's doors rising; the owner out once they have left the grounds. ~1 min. Exit 1 on failure.
-##   godot --headless --fixed-fps 60 --path . --script res://tools/test_villa.gd -- --online-test
+##   godot --headless --fixed-fps 60 --path . --script res://tools/test_villaEnPierreCoteaux.gd -- --online-test
 
-const House = preload("res://scripts/villa/villa_house.gd")
+const House = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_house.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 
 var _main: Node
@@ -64,7 +64,7 @@ func _run() -> void:
 	await _frames(5)
 	var m: Node = _main.game_mode
 	var props: Node = m.properties
-	var v: Node = _main.villa
+	var v: Node = _main.villaEnPierreCoteaux
 	_check(v != null and v.site != null, "the villa is there")
 	var p: Dictionary = props.get_villa()
 	_check(not p.is_empty() and int(p["price"]) == 5000000, "for sale: %s" % str(p.get("price", "?")))

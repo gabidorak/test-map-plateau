@@ -252,20 +252,20 @@ leather sofa, coffee, a rack of rims in the window).
 - Tests: `tools/test_losplatos.gd` (the roof in place of #758's, the paving, the door, the bay, repair, paint),
   `tools/test_tow.gd` (duty, a breakdown, hooked and towed, delivered and paid, the next one, off duty).
 
-## O11 — Villa Luxe *(Thomas's plan of 2026-11-09)*
+## O11 — Villa de charme *(Thomas's plan of 2026-11-09)*
 
 **Goal:** a luxury property of its own: a stone manor in walled grounds in place of buildings #628, #659, #671, #672
 (and the shed #620), after Thomas's plan (ref/proprietes/Villa Luxe/: planjeu.png his drawing on the map, the
 exterior, gate, fountain, plan and room photos) and the plan he approved (40 × 22 m on two floors, the brown block a
 grotto fountain, an outdoor and an indoor pool, 5 M € with per-owner instances like the flats).
 
-- `scripts/villa/`: drawn at runtime in every mode (`villa.gd`: the gate, the garage doors, the rooms built only near,
-  passers-by put back outside; `villa_site.gd`: the rubble wall along his red line, the pillars and wrought-iron gate,
+- `scripts/villaEnPierreCoteaux/`: drawn at runtime in every mode (`villaEnPierreCoteaux.gd`: the gate, the garage doors, the rooms built only near,
+  passers-by put back outside; `villaEnPierreCoteaux_site.gd`: the rubble wall along his red line, the pillars and wrought-iron gate,
   the white gravel drive, forecourt and lane, the perron, patio and terrace, the raised pool deck, the grotto fountain;
-  `villa_house.gd`: the limestone manor, its windows and shutters, the hipped tile roof with dormers and chimneys, the
+  `villaEnPierreCoteaux_house.gd`: the limestone manor, its windows and shutters, the hipped tile roof with dormers and chimneys, the
   floors, the grand stair (a 4 m flight to a landing, two flights on) and the U gallery round the hall's void (no
-  floor over the hall), the indoor pool, the garage doors; `villa_interior.gd`: the rooms' furniture and lights after
-  his photos; `villa_kit.gd`: meshes, materials and procedural textures; `villa_data.gd`: its place on the map).
+  floor over the hall), the indoor pool, the garage doors; `villaEnPierreCoteaux_interior.gd`: the rooms' furniture and lights after
+  his photos; `scripts/build_kit.gd`, the shared building kit: meshes, materials and procedural textures; `villaEnPierreCoteaux_data.gd`: its place on the map).
   `builder/world_builder.gd` leaves the map's buildings, props and the trees but a belt along the wall out of its
   grounds and plants new ones (cypresses, olives, planes, magnolias); `builder/ground_builder.gd` paints its ground
   lawn; `grass_field.gd` grows lawn tufts there (map rebuilt).
@@ -273,7 +273,7 @@ grotto fountain, an outdoor and an indoor pool, 5 M € with per-owner instances
   (buy, open the gate, open it to visitors, visit), its owners let in as they come to the gate (instances: those in
   another owner's villa unseen), out once they have left the grounds; its garage's terminal by the utility room gets
   their vehicles out on its three bays (a hidden garage of kind `private`).
-- Test: `tools/test_villa.gd` (the grounds cleared, a passer-by kept out, bought, let in and the gate opening, the
+- Test: `tools/test_villaEnPierreCoteaux.gd` (the grounds cleared, a passer-by kept out, bought, let in and the gate opening, the
   grand stair walked up to the first floor, the hall's void, a car out in the garage, out of the grounds).
 
 ## Later
@@ -296,4 +296,4 @@ a real fire station building at #1289.
 | O8 Balance + admin | ⬜ | |
 | O9 Properties | 🟡 | Proposal (branch `proprietesOnline`). Step 1 under way: the studio of the Logements de l'X 19 (3rd floor, north face, ~50 m²) in the offline test: `online/properties.gd`, `studio_builder.gd`, `property_panel.gd`, `data/properties.json`, open window frames in `logements_x_builder.gd`; the residents' car park and the garage option's lift (garage kinds `residence` and `private` in `garages.gd`); instances (players seen only in the same flat) and visits (doors open / locked). test_properties.gd green, test_properties_online.sh green (2 players). Online owners come from PLATEAU_ONLINE_HOMES until step 2. |
 | O10 Losplatos Custom | 🟡 | Branch `losplatosCustom`: the shop in place of #758, its door, repairs and paint, its paved site, the tow truck job. test_losplatos.gd and test_tow.gd green. Needs the map rebuilt (#758 left out). |
-| O11 Villa Luxe | 🟡 | Branch `villaLuxe`: the estate in place of #628, #659, #671, #672 (and #620), its house, rooms, pools, fountain, gate and garage; buying and entering it in PTA Online (offline test; online owners from PLATEAU_ONLINE_HOMES). test_villa.gd green. Needs the map rebuilt. |
+| O11 Villa de charme | 🟡 | Branch `villaLuxe`: the estate in place of #628, #659, #671, #672 (and #620), its house, rooms, pools, fountain, gate and garage; buying and entering it in PTA Online (offline test; online owners from PLATEAU_ONLINE_HOMES). test_villaEnPierreCoteaux.gd green. Needs the map rebuilt. |

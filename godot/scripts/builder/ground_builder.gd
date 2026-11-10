@@ -8,7 +8,7 @@ extends RefCounted
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
-const Villa = preload("res://scripts/villa/villa_data.gd")
+const VillaEnPierreCoteaux = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_data.gd")
 const Restyle = preload("res://scripts/restyle/restyle.gd")
 const RestyleGround = preload("res://scripts/restyle/restyle_ground.gd")
 const SHADER := "res://shaders/toy_ground.gdshader"
@@ -77,8 +77,8 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 				water.add_surface(c["name"], verts, index, is_water, mesh_dir)
 			arrays[Mesh.ARRAY_VERTEX] = verts
 			arrays[Mesh.ARRAY_NORMAL] = normals
-			# Villa Luxe's grounds: lawn inside its wall (scripts/villa/villa.gd)
-			var rp: Array = Villa.repaint(verts, parts[3], parts[2].to_color_array(), MATERIALS.find("grass"), water_id,
+			# Villa de charme's grounds: lawn inside its wall (scripts/villaEnPierreCoteaux/villaEnPierreCoteaux.gd)
+			var rp: Array = VillaEnPierreCoteaux.repaint(verts, parts[3], parts[2].to_color_array(), MATERIALS.find("grass"), water_id,
 					Color.html(world["palette"]["ground"]["grass"]), MATERIALS.find("gravel"))
 			parts[3] = rp[0]
 			# the restyled buildings' grounds: lawn round their paths, drawn crisp (scripts/restyle/restyle.gd)

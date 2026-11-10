@@ -1,9 +1,9 @@
 extends Node3D
-## Villa Luxe: a stone manor in its walled grounds in place of buildings #628, #659, #671, #672 (and the shed #620),
-## after Thomas's plan (ref/proprietes/Villa Luxe/, the plan of 2026-11-09): the house (scripts/villa/
-## villa_house.gd) and its grounds (villa_site.gd: the stone wall, the wrought-iron gate on the road, the white gravel
+## Villa de charme: a stone manor in its walled grounds in place of buildings #628, #659, #671, #672 (and the shed #620),
+## after Thomas's plan (ref/proprietes/Villa Luxe/, the plan of 2026-11-09): the house (scripts/villaEnPierreCoteaux/
+## villaEnPierreCoteaux_house.gd) and its grounds (villaEnPierreCoteaux_site.gd: the stone wall, the wrought-iron gate on the road, the white gravel
 ## drive and forecourt, the terraces, the pool, the grotto fountain) are drawn at start in every game mode; its rooms
-## (villa_interior.gd) only while the camera is near (built the first time it comes, hidden while it is far). The map's buildings, trees and props inside the wall are left
+## (villaEnPierreCoteaux_interior.gd) only while the camera is near (built the first time it comes, hidden while it is far). The map's buildings, trees and props inside the wall are left
 ## out when the world is built (drop, builder/world_builder.gd), its ground painted lawn (repaint,
 ## builder/ground_builder.gd) and new trees planted (cypresses along the drive, olives, planes, magnolias).
 ## The gate swings open when someone allowed comes near it: anyone, unless a game mode says who (`allowed`: PTA
@@ -12,14 +12,14 @@ extends Node3D
 ## Frame: the house's: x east, y up from its ground floor, z south; its origin at the front facade's west end
 ## (map 264, -424): Godot x = 264 + x, z = 424 + z (no rotation).
 
-const Kit = preload("res://scripts/villa/villa_kit.gd")
-const SiteBuilder = preload("res://scripts/villa/villa_site.gd")
-const HouseBuilder = preload("res://scripts/villa/villa_house.gd")
-const InteriorBuilder = preload("res://scripts/villa/villa_interior.gd")
+const Kit = preload("res://scripts/build_kit.gd")
+const SiteBuilder = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_site.gd")
+const HouseBuilder = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_house.gd")
+const InteriorBuilder = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_interior.gd")
 const Marks = preload("res://scripts/race_marks.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
 
-const Data = preload("res://scripts/villa/villa_data.gd")
+const Data = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_data.gd")
 const NAME := Data.NAME
 const ID := Data.ID
 const ORIGIN := Data.ORIGIN
@@ -182,7 +182,7 @@ static func gate_local() -> Array:
 # ---------------------------------------------------------------- in the game
 
 func _ready() -> void:
-	name = "Villa"
+	name = "VillaEnPierreCoteaux"
 	for p: Vector2 in WALL:
 		_wall_local.append(to_local2(p))
 	# the floor over the highest ground under the house

@@ -21,13 +21,13 @@ extends RefCounted
 ##            outer ring, "gap" m out, from storey "from" to over the roof
 ##   band     true: a band at each floor between punched storeys ("band_colour")
 ##   glass, wall, plinth, floor (the gallery's), slab (the floors' edges), mullions, attic: materials
-## Materials: the kit's (scripts/villa/villa_kit.gd mat()), "#rrggbb", or the library's / the spec's "materials":
+## Materials: the kit's (scripts/build_kit.gd mat()), "#rrggbb", or the library's / the spec's "materials":
 ## {"colour", "metal", "rough", "specular", "alpha", "texture" (restyle_textures.gd or the kit's), "scale", "emit"}.
 ## "site": "area" the grounds' outline (map), "paths" the map's paths round it (drawn inside the area), "walks"
 ## raised walks ({"pts", "w", "lift", "colour"}: level with the ground floor by the building, "lift" m over the ground
 ## elsewhere).
 
-const Kit = preload("res://scripts/villa/villa_kit.gd")
+const Kit = preload("res://scripts/build_kit.gd")
 const Textures = preload("res://scripts/restyle/restyle_textures.gd")
 const DIR := "res://data/restyle/"
 const LIBRARY := "res://data/restyle/_library.json"

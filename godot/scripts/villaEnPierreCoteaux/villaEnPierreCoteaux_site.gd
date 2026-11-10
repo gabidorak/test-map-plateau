@@ -1,7 +1,7 @@
-extends "res://scripts/villa/villa_kit.gd"
-## Villa Luxe's grounds (scripts/villa/villa.gd places them): the rubble stone wall along Thomas's line, coped in
+extends "res://scripts/build_kit.gd"
+## Villa de charme's grounds (scripts/villaEnPierreCoteaux/villaEnPierreCoteaux.gd places them): the rubble stone wall along Thomas's line, coped in
 ## dressed stone; the gate on the road between two ashlar pillars with lanterns, its two wrought-iron leaves (arched,
-## barred, medallions, spikes; villa.gd swings them); white gravel for the drive, the forecourt and the lane to the
+## barred, medallions, spikes; villaEnPierreCoteaux.gd swings them); white gravel for the drive, the forecourt and the lane to the
 ## garage (rising to the garage floor); the perron at the front door; the patio between the wings and the terrace
 ## along the garden front, at the floor's level, a balustrade round it and steps down to the path to the pool; the
 ## pool's raised deck (travertine, coping, mosaic basin, loungers, parasols); the grotto fountain by the forecourt (a
@@ -9,9 +9,9 @@ extends "res://scripts/villa/villa_kit.gd"
 ## hedges.
 ## In the villa's frame (x east, y up from the house's floor, z south); `ground` (x, z) -> the map's ground there.
 
-const Villa = preload("res://scripts/villa/villa_data.gd")
+const VillaEnPierreCoteaux = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_data.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
-const KitScript = preload("res://scripts/villa/villa_kit.gd")
+const KitScript = preload("res://scripts/build_kit.gd")
 
 const DRIVE_HALF := 2.6                     # m, half the drive's width
 ## The drive after the gate (the villa's frame x, z): it bends east then south to the forecourt.
@@ -45,7 +45,7 @@ var _path_nodes := {}                       # the garden path's: its node (every
 
 
 func _init() -> void:
-	super("VillaGrounds", {"type": "villa", "name": Villa.NAME, "id": Villa.ID, "kind": "a villa for sale"})
+	super("VillaEnPierreCoteauxGrounds", {"type": "villa", "name": VillaEnPierreCoteaux.NAME, "id": VillaEnPierreCoteaux.ID, "kind": "a villa for sale"})
 
 
 ## The grounds. Meta: "leaves" ([pivot, opening sign, shut angle] each), "gate_shape", "plaque" (Label3D),
@@ -126,7 +126,7 @@ func g_top(x: float, z: float) -> float:
 ## How far a point (the villa's frame x, z) is from what is built in the grounds (the trees keep off it).
 static func clearance(p: Vector2) -> float:
 	var d := INF
-	var gate: Array = Villa.gate_local()
+	var gate: Array = VillaEnPierreCoteaux.gate_local()
 	var drive := [gate[0], (gate[0] as Vector2) + (gate[2] as Vector2) * 6.0] + DRIVE
 	for i in drive.size() - 1:
 		d = minf(d, p.distance_to(Geometry2D.get_closest_point_to_segment(p, drive[i], drive[i + 1])) - DRIVE_HALF)
@@ -151,12 +151,12 @@ func _poly_rect(r: Rect2, grow := 0.3) -> PackedVector2Array:
 
 ## The wall from one side of the gate round to the other: a rubble stone wall on the ground, coped.
 func _wall() -> void:
-	var gl: Array = Villa.gate_local()
+	var gl: Array = VillaEnPierreCoteaux.gate_local()
 	var gm: Vector2 = gl[0]
 	var along: Vector2 = gl[1]
 	var pts := PackedVector2Array()
-	for p: Vector2 in Villa.WALL:
-		pts.append(Villa.to_local2(p))
+	for p: Vector2 in VillaEnPierreCoteaux.WALL:
+		pts.append(VillaEnPierreCoteaux.to_local2(p))
 	# the segment the gate is on, the loop from the gate's far side round to its near side
 	var best := INF
 	var k := 0
@@ -168,10 +168,10 @@ func _wall() -> void:
 	var a := pts[k]
 	var b := pts[(k + 1) % pts.size()]
 	var dir := (b - a).normalized()
-	var line := [gm + dir * Villa.GATE_HALF]
+	var line := [gm + dir * VillaEnPierreCoteaux.GATE_HALF]
 	for i in range(1, pts.size() + 1):
 		line.append(pts[(k + i) % pts.size()])
-	line.append(gm - dir * Villa.GATE_HALF)
+	line.append(gm - dir * VillaEnPierreCoteaux.GATE_HALF)
 	# resampled every 2 m at most
 	var s: Array = [line[0]]
 	for i in range(1, line.size()):
@@ -226,7 +226,7 @@ func _wall() -> void:
 # ---------------------------------------------------------------- the gate
 
 func _gate(meshes: bool) -> void:
-	var gl: Array = Villa.gate_local()
+	var gl: Array = VillaEnPierreCoteaux.gate_local()
 	var gm: Vector2 = gl[0]
 	var along: Vector2 = gl[1]
 	var inward: Vector2 = gl[2]
@@ -275,7 +275,7 @@ func _gate(meshes: bool) -> void:
 	# the leaves: each its own node on a hinge at a pillar's inner face, closed in the wall's line
 	var leaves := []
 	for side: float in [1.0, -1.0]:
-		var hinge := gm + along * (Villa.LEAF) * side
+		var hinge := gm + along * (VillaEnPierreCoteaux.LEAF) * side
 		var pivot := Node3D.new()
 		pivot.name = "GateLeaf%s" % ("A" if side > 0 else "B")
 		pivot.position = Vector3(hinge.x, gy, hinge.y)
@@ -289,7 +289,7 @@ func _gate(meshes: bool) -> void:
 			pivot.add_child(leaf)
 		leaves.append([pivot, open_sign, shut])
 	root.set_meta("leaves", leaves)
-	var shape := col_xf(Transform3D(basis, Vector3(gm.x, gy + 1.3, gm.y)), Vector3(Villa.LEAF * 2.0, 2.6, 0.25))
+	var shape := col_xf(Transform3D(basis, Vector3(gm.x, gy + 1.3, gm.y)), Vector3(VillaEnPierreCoteaux.LEAF * 2.0, 2.6, 0.25))
 	root.set_meta("gate_shape", shape)
 	# the paving outside, from the road to the gate
 	_apron(gm, along, inward)
@@ -337,7 +337,7 @@ static func _on_road(x: float, z: float) -> bool:
 	var gm: RefCounted = GroundMap.get_map()
 	if gm == null:
 		return false
-	var m := Villa.to_map(Vector2(x, z))
+	var m := VillaEnPierreCoteaux.to_map(Vector2(x, z))
 	var id: int = gm.material_at(m.x, m.y)
 	return id >= 0 and str(gm.materials[id]) in ["asphalt", "kerb", "paint"]
 
@@ -357,7 +357,7 @@ static func _to_road(from: Vector2, dir: Vector2) -> float:
 ## up to the middle, bars with spikes, two rails, two medallions.
 func _leaf(side: float) -> Node3D:
 	var k = KitScript.new("Leaf")
-	var w := Villa.LEAF - 0.04
+	var w := VillaEnPierreCoteaux.LEAF - 0.04
 	var h0 := 2.15
 	var h1 := 2.6
 	var top := func(x: float) -> float: return h0 + (h1 - h0) * sin(clampf(x / w, 0.0, 1.0) * PI * 0.5)
@@ -426,7 +426,7 @@ static func _in_fore(x: float, z: float) -> bool:
 
 
 static func _in_drive(x: float, z: float) -> bool:
-	var gl: Array = Villa.gate_local()
+	var gl: Array = VillaEnPierreCoteaux.gate_local()
 	var p := Vector2(x, z)
 	if (p - (gl[0] as Vector2)).dot(gl[2]) < -0.05:
 		return false
@@ -511,7 +511,7 @@ func _gravel() -> void:
 			Vector2(FORECOURT.position.x, FORECOURT.end.y)]:
 		fore.append(p)
 	_paved.append(Geometry2D.offset_polygon(fore, 0.3)[0])
-	var gl: Array = Villa.gate_local()
+	var gl: Array = VillaEnPierreCoteaux.gate_local()
 	var line := PackedVector2Array([gl[0], (gl[0] as Vector2) + (gl[2] as Vector2) * 6.0] + DRIVE)
 	for poly in Geometry2D.offset_polyline(line, DRIVE_HALF + 0.3):
 		_paved.append(poly)
@@ -521,7 +521,7 @@ func _gravel() -> void:
 ## A border of setts along the gravel's edges (the drive's sides, the forecourt's round its open sides), over the
 ## grid's steps: segments 0.7 m wide, left out where they would cross another gravel area.
 func _edging(height: Callable) -> void:
-	var gl: Array = Villa.gate_local()
+	var gl: Array = VillaEnPierreCoteaux.gate_local()
 	var line := [gl[0], (gl[0] as Vector2) + (gl[2] as Vector2) * 6.0] + DRIVE
 	var paths := []
 	for side: float in [-1.0, 1.0]:

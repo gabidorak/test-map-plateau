@@ -1,5 +1,5 @@
 shader_type spatial;
-// Villa Luxe's water (scripts/villa/villa_kit.gd): mode 0 a pool or basin's surface (clear, tinted, rippling),
+// The building kit's water (scripts/build_kit.gd; Villa Luxe's pools and fountain): mode 0 a pool or basin's surface (clear, tinted, rippling),
 // 1 a falling sheet (the fountain's cascade: white streaks running down), 2 foam (where it falls in).
 render_mode blend_mix, cull_disabled, depth_draw_opaque, specular_schlick_ggx;
 

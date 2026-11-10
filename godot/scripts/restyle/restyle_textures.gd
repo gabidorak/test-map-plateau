@@ -1,7 +1,7 @@
 extends RefCounted
 ## Procedural textures for the restyled buildings' materials (a material's "texture" in data/restyle/_library.json or
 ## in a spec): a new one is a case in make() and its painter. Tiling squares, tinted by the material's colour; the
-## kit's textures (scripts/villa/villa_kit.gd texture(): stone, ashlar, panels, slats...) work too.
+## kit's textures (scripts/build_kit.gd texture(): stone, ashlar, panels, slats...) work too.
 
 
 static func make(name: String) -> Image:

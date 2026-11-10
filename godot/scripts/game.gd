@@ -113,7 +113,7 @@ const Traffic = preload("res://scripts/traffic.gd")
 const Night = preload("res://scripts/night.gd")
 const Losplatos = preload("res://scripts/losplatos/losplatos.gd")
 const AllSuites = preload("res://scripts/allsuites/allsuites.gd")
-const Villa = preload("res://scripts/villa/villa.gd")
+const VillaEnPierreCoteaux = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux.gd")
 const Restyle = preload("res://scripts/restyle/restyle.gd")
 const Races = preload("res://scripts/races.gd")
 const Economy = preload("res://scripts/economy.gd")
@@ -161,7 +161,7 @@ var traffic: Traffic
 var night: Night
 var losplatos: Losplatos                    # Losplatos Custom, the repair and paint shop (scripts/losplatos/)
 var allsuites: AllSuites                    # All Suites Study, the students' residence in place of #184 (scripts/allsuites/)
-var villa: Villa                            # Villa Luxe, the stone manor for sale (scripts/villa/)
+var villaEnPierreCoteaux: VillaEnPierreCoteaux                            # Villa de charme, the stone manor for sale (scripts/villaEnPierreCoteaux/)
 var restyle: Restyle                        # the restyled buildings, ENSAE... (data/restyle/, scripts/restyle/)
 var races: Races
 var economy: Economy                        # Main/Economy: PTA Online logins (and money, later)
@@ -249,9 +249,9 @@ func _ready() -> void:
 	add_child(losplatos)
 	allsuites = AllSuites.new()
 	add_child(allsuites)
-	villa = Villa.new()
-	villa.game = self
-	add_child(villa)
+	villaEnPierreCoteaux = VillaEnPierreCoteaux.new()
+	villaEnPierreCoteaux.game = self
+	add_child(villaEnPierreCoteaux)
 	restyle = Restyle.new()
 	add_child(restyle)
 	if staged:
@@ -1550,8 +1550,8 @@ func set_waypoint(xy: Variant) -> void:
 ## the showrooms (Prestige Motors), Losplatos Custom, and the game mode's (PTA Online's garages).
 func map_places() -> Array:
 	var out := [[Losplatos.NAME, "custom", losplatos.map_xy()]] if losplatos else []
-	if villa:
-		out.append([Villa.NAME, "villa", villa.map_xy()])
+	if villaEnPierreCoteaux:
+		out.append([VillaEnPierreCoteaux.NAME, "villa", villaEnPierreCoteaux.map_xy()])
 	for s in get_tree().get_nodes_in_group("showroom"):
 		if s.dealer != "" and not s.outline.is_empty():
 			var mid := Vector2.ZERO

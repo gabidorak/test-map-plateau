@@ -3,7 +3,7 @@ extends RefCounted
 ## each edge of its footprint (the fills: _fill_<type>), its roof, its paths and walks. build() gives the node.
 
 const Spec = preload("res://scripts/restyle/restyle_spec.gd")
-const Kit = preload("res://scripts/villa/villa_kit.gd")
+const Kit = preload("res://scripts/build_kit.gd")
 const Marks = preload("res://scripts/race_marks.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
 const PATH_LOOK := {"concrete": "#d6d3cc", "paving": "pavers", "sett": "sett", "gravel": "gravel", "dirt": "#9c8466",

@@ -28,9 +28,9 @@ const KINDS := {
 ## Map polygons (x east, y north) kept free of tufts: what runtime builds pave over the ground (Losplatos Custom's
 ## apron, scripts/losplatos/losplatos.gd). Set before the chunks round them are built.
 static var keep_out: Array[PackedVector2Array] = []
-## Map polygons whose ground grows lawn whatever the ground pieces say (Villa Luxe's grounds, scripts/villa/villa.gd).
+## Map polygons whose ground grows lawn whatever the ground pieces say (Villa de charme's grounds, scripts/villaEnPierreCoteaux/villaEnPierreCoteaux.gd).
 static var lawns: Array[PackedVector2Array] = []
-## Circles (x, y, radius) where the map's gravel grows lawn (the old track by Villa Luxe's gate).
+## Circles (x, y, radius) where the map's gravel grows lawn (the old track by Villa de charme's gate).
 static var regrass: Array[Vector3] = []
 ## Callables (x, y) -> a material id, or -2: the ground's material there decided elsewhere (scripts/restyle/: gardens).
 static var overrides: Array[Callable] = []
