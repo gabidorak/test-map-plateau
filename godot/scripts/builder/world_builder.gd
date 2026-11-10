@@ -9,6 +9,7 @@ extends RefCounted
 const GroundBuilder = preload("res://scripts/builder/ground_builder.gd")
 const BuildingBuilder = preload("res://scripts/builder/building_builder.gd")
 const Losplatos = preload("res://scripts/losplatos/losplatos.gd")
+const Villa = preload("res://scripts/villa/villa.gd")
 const CollisionBuilder = preload("res://scripts/builder/collision_builder.gd")
 const VegetationBuilder = preload("res://scripts/builder/vegetation_builder.gd")
 const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
@@ -70,6 +71,7 @@ func build_and_save() -> Error:
 		root.free()
 		return err
 	Losplatos.drop(world)                           # #758 makes way for Losplatos Custom (drawn at runtime)
+	Villa.drop(world)                               # #628, #659, #671, #672 for Villa Luxe's grounds (scripts/villa/)
 	BuildingBuilder.new().build(root, world, MESH_DIR)
 	InteriorBuilder.new().build(root, world, heights, MESH_DIR)
 	VegetationBuilder.add_rail_greenery(world)      # the bus depot's trees and hedge (rail.json)

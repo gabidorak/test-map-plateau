@@ -62,8 +62,8 @@ func _run() -> void:
 	await _frames(5)
 	var m: Node = _main.game_mode
 	var props: Node = m.properties
-	_check(props.list.size() == 1, "one property (%d)" % props.list.size())
-	var p: Dictionary = props.list[0]
+	_check(props.list.size() == 2, "two properties: the studio, the villa (%d)" % props.list.size())
+	var p: Dictionary = props.get_property("logx-19-studio")
 	_check(p["id"] == "logx-19-studio" and p["price"] == 50000 and p["garage_price"] == 10000,
 			"the studio of the Logements de l'X 19, 50 000 €, its garage 10 000 €")
 

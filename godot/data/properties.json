@@ -1,5 +1,5 @@
 {
-  "about": "PTA Online's properties (ONLINE_MILESTONES.md O9; scripts/online/properties.gd). Each is a flat behind real windows of a building: `building` says where (logements_x: the plot's number, the face of its upper body 0-3, the floor 1-5 above the ground floor, the window slot of that face's layout, scripts/builder/logements_x_builder.gd), `interior` which interior is built there (scripts/online/studio_builder.gd), `price` in euros, `garage_price` the garage option's (a private lift from the flat down to the residence's car park: leaving by car). An address may be bought by any number of players: each owner has their own flat behind the same door.",
+  "about": "PTA Online's properties (ONLINE_MILESTONES.md O9; scripts/online/properties.gd). Each is a flat behind real windows of a building: `building` says where (logements_x: the plot's number, the face of its upper body 0-3, the floor 1-5 above the ground floor, the window slot of that face's layout, scripts/builder/logements_x_builder.gd), `interior` which interior is built there (scripts/online/studio_builder.gd), `price` in euros, `garage_price` the garage option's (a private lift from the flat down to the residence's car park: leaving by car). A `villa` site is a whole estate (scripts/villa/): its gate and garage are its own, its rooms are where they stand (no teleport). An address may be bought by any number of players: each owner has their own flat behind the same door.",
   "properties": [
     {
       "id": "logx-19-studio",
@@ -11,6 +11,17 @@
       "about": "50 m² facing the garden: a double bed behind a partition, a sofa and a TV, a fitted kitchen with an oven, a hob and a tall fridge, a hall and a shower room. Two tall windows on the gardens of the residence. Owners park at the residents' car park; with the garage option, a private lift takes them from the hall straight to their car.",
       "building": {"site": "logements_x", "plot": "19", "face": 1, "floor": 3, "slot": 1},
       "interior": "studio"
+    },
+    {
+      "id": "villa-luxe",
+      "name": "Villa Luxe",
+      "short": "Villa",
+      "tier": "luxury",
+      "price": 5000000,
+      "garage_price": 0,
+      "about": "A stone manor in 1.5 ha of walled grounds: a wrought-iron gate that opens for you, a cypress drive, a white gravel forecourt with a grotto fountain, a terrace and an 18 m pool in the garden. Inside, a hall with a grand stair under a chandelier, a salon with a fireplace, a dining room for twelve, a marble kitchen, an indoor pool; upstairs, the master suite with its blue marble bathroom and dressing room, two guest rooms and a gym. A garage for three cars comes with it.",
+      "building": {"site": "villa"},
+      "interior": "villa"
     }
   ]
 }

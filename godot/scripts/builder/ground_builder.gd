@@ -8,6 +8,7 @@ extends RefCounted
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
+const Villa = preload("res://scripts/villa/villa_data.gd")
 const SHADER := "res://shaders/toy_ground.gdshader"
 ## Must match the material ids hard-coded in toy_ground.gdshader. "ballast" (the railway's trackbed) is appended by
 ## tools/rail/patch_world.py, after the pipeline's kerb and paint.
@@ -73,7 +74,11 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 				water.add_surface(c["name"], verts, index, is_water, mesh_dir)
 			arrays[Mesh.ARRAY_VERTEX] = verts
 			arrays[Mesh.ARRAY_NORMAL] = normals
-			arrays[Mesh.ARRAY_COLOR] = parts[2].to_color_array()
+			# Villa Luxe's grounds: lawn inside its wall (scripts/villa/villa.gd)
+			var rp: Array = Villa.repaint(verts, parts[3], parts[2].to_color_array(), MATERIALS.find("grass"), water_id,
+					Color.html(world["palette"]["ground"]["grass"]), MATERIALS.find("gravel"))
+			parts[3] = rp[0]
+			arrays[Mesh.ARRAY_COLOR] = rp[1]
 			arrays[Mesh.ARRAY_CUSTOM0] = parts[3]
 			arrays[Mesh.ARRAY_INDEX] = index
 			var mesh := ArrayMesh.new()

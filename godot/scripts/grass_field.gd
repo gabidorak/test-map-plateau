@@ -28,8 +28,13 @@ const KINDS := {
 ## Map polygons (x east, y north) kept free of tufts: what runtime builds pave over the ground (Losplatos Custom's
 ## apron, scripts/losplatos/losplatos.gd). Set before the chunks round them are built.
 static var keep_out: Array[PackedVector2Array] = []
+## Map polygons whose ground grows lawn whatever the ground pieces say (Villa Luxe's grounds, scripts/villa/villa.gd).
+static var lawns: Array[PackedVector2Array] = []
+## Circles (x, y, radius) where the map's gravel grows lawn (the old track by Villa Luxe's gate).
+static var regrass: Array[Vector3] = []
 
 var _map: RefCounted
+var _lawn_boxes: Array[Rect2] = []
 var _kinds: Array = []              # [material id, settings, mesh, material, colour]
 var _chunks := {}                   # Vector2i -> Node3D
 var _last := Vector2(INF, INF)
@@ -113,9 +118,9 @@ func _build_chunk(key: Vector2i) -> Node3D:
 				var phase := rng.randf()
 				if x >= origin.x + CHUNK or y >= origin.y + CHUNK:
 					continue
-				if _map.material_at(x, y) != id or _map.material_at(x + EDGE, y) != id \
-						or _map.material_at(x - EDGE, y) != id or _map.material_at(x, y + EDGE) != id \
-						or _map.material_at(x, y - EDGE) != id or _map.in_cliff(x, y) or _kept_out(x, y):
+				if _material(x, y) != id or _material(x + EDGE, y) != id \
+						or _material(x - EDGE, y) != id or _material(x, y + EDGE) != id \
+						or _material(x, y - EDGE) != id or _map.in_cliff(x, y) or _kept_out(x, y):
 					continue
 				var b := Basis(Vector3.UP, yaw).scaled(Vector3(s, s, s))
 				var z: float = _map.height(x, y) - 0.02
@@ -145,6 +150,26 @@ func _build_chunk(key: Vector2i) -> Node3D:
 
 
 ## One tuft: blades in a ring, each a tapered strip leaning outwards. COLOR.r = height along the blade.
+## The ground's material at (x, y): grass on the lawns.
+func _material(x: float, y: float) -> int:
+	if _lawn_boxes.size() != lawns.size():
+		_lawn_boxes.clear()
+		for poly: PackedVector2Array in lawns:
+			var r := Rect2(poly[0], Vector2.ZERO)
+			for p in poly:
+				r = r.expand(p)
+			_lawn_boxes.append(r)
+	for k in lawns.size():
+		if _lawn_boxes[k].has_point(Vector2(x, y)) and Geometry2D.is_point_in_polygon(Vector2(x, y), lawns[k]):
+			return _map.materials.find("grass")
+	var id: int = _map.material_at(x, y)
+	if id == _map.materials.find("gravel"):
+		for c: Vector3 in regrass:
+			if Vector2(x, y).distance_to(Vector2(c.x, c.y)) < c.z:
+				return _map.materials.find("grass")
+	return id
+
+
 static func _kept_out(x: float, y: float) -> bool:
 	for poly: PackedVector2Array in keep_out:
 		if Geometry2D.is_point_in_polygon(Vector2(x, y), poly):
