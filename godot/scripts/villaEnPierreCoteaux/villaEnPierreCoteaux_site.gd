@@ -398,9 +398,14 @@ static func _in_fountain(x: float, z: float, grow := 0.0) -> bool:
 	return dx * dx + dz * dz < 1.0
 
 
-## The lane to the garage, and its height: rising from the ground to the garage floor (0) at its doors (x = 40).
-static func _lane_ramp(x: float, z: float) -> float:
-	return -0.11 * (x - 40.0) - 0.11 * maxf(0.0, 11.5 - z)
+## The garage's bateau: a paved ramp before its three doors (x = 40), from their sill (the floor, 0) down to the
+## car court (terraformed: data/terraform/), its height at x.
+const BATEAU := Rect2(40.0, 12.4, 7.0, 9.2)
+const BATEAU_SLOPE := 0.115
+
+
+static func _bateau_y(x: float) -> float:
+	return -BATEAU_SLOPE * (x - BATEAU.position.x)
 
 
 func _gravel() -> void:
@@ -415,29 +420,14 @@ func _gravel() -> void:
 			return false                        # (the house)
 		if x > STAIRS_W.x - 0.7 and x < STAIRS_W.y + 0.7 and z > perron_z + 0.1:
 			return false                        # (the perron and its cheeks)
+		if BATEAU.grow(0.05).has_point(Vector2(x, z)):
+			return false                        # (the garage's bateau)
 		return _in_fore(x, z) or _in_drive(x, z) or Geometry2D.is_point_in_polygon(Vector2(x, z), lane)
 	var height := func(x: float, z: float) -> float:
-		var y := g_top(x, z) + 0.05                 # (the forecourt is terraformed: data/terraform/)
-		if x > 39.0 and z > -0.5:
-			y = maxf(y, _lane_ramp(x, z))
-		return y
+		return g_top(x, z) + 0.05                  # (on the terraformed ground: data/terraform/)
 	_sheet_over(Rect2(-30.0, -62.0, 86.0, 88.0), "gravel", keep, 0.04, height)
 	_edging(height)
-	# the lane's raised edge: a low stone wall where it stands over the ground
-	for e: Array in [[Vector2(54.0, 10.0), Vector2(54.0, 25.0)], [Vector2(54.0, 25.0), Vector2(40.4, 25.0)]]:
-		var a: Vector2 = e[0]
-		var b: Vector2 = e[1]
-		var n := ceili(a.distance_to(b) / 1.0)
-		for i in n:
-			var p := a.lerp(b, (i + 0.5) / n)
-			var top := maxf(float(height.call(p.x, p.y)), g(p.x, p.y)) + 0.3
-			var half := a.distance_to(b) / n * 0.5
-			var t := (b - a).normalized()
-			var c := p
-			box("ashlar", c.x - (half if t.x != 0.0 else 0.2), c.x + (half if t.x != 0.0 else 0.2), g(p.x, p.y) - 0.3, top,
-					c.y - (half if t.y != 0.0 else 0.2), c.y + (half if t.y != 0.0 else 0.2))
-			col(c.x - (half if t.x != 0.0 else 0.2), c.x + (half if t.x != 0.0 else 0.2), g(p.x, p.y) - 0.3, top,
-					c.y - (half if t.y != 0.0 else 0.2), c.y + (half if t.y != 0.0 else 0.2))
+	_bateau()
 	# the centre lawn's stone kerb
 	var lc := Vector2(CENTRE_LAWN.x, CENTRE_LAWN.y)
 	var segs := 40
@@ -472,7 +462,8 @@ func _gravel() -> void:
 	_paved.append(Geometry2D.offset_polygon(lane, 0.3)[0])
 
 
-## A border of setts along the gravel's edges (the drive's sides, the forecourt's round its open sides), over the
+## A border of setts along the gravel's edges (the drive's sides, the forecourt's and the car court's round their open
+## sides), over the
 ## grid's steps: segments 0.7 m wide, left out where they would cross another gravel area.
 func _edging(height: Callable) -> void:
 	var gl: Array = VillaEnPierreCoteaux.gate_local()
@@ -498,6 +489,8 @@ func _edging(height: Callable) -> void:
 			var a: float = starts[k] + PI * 0.5 * i / 6.0
 			fo.append((c[k] as Vector2) + Vector2(cos(a), sin(a)) * FORE_ROUND)
 	paths.append([fo, "fore"])
+	paths.append([[Vector2(49.0, 0.4), Vector2(49.0, 8.0), Vector2(54.0, 10.0), Vector2(54.0, 25.0), Vector2(40.4, 25.0)],
+			"lane"])
 	var lane := PackedVector2Array(LANE)
 	for p: Array in paths:
 		var pts: Array = p[0]
@@ -982,3 +975,24 @@ func _grotto(c: Vector2, water: float) -> void:
 	ball("coping", Vector3(top_c.x, ty + 0.55, top_c.y), Vector3(0.42, 0.42, 0.42), 12)
 	cyl("coping", Vector3(top_c.x, ty + 0.85, top_c.y), 0.42, 0.12, 12, 0.48)
 	ball("leaves", Vector3(top_c.x, ty + 1.15, top_c.y), Vector3(0.5, 0.35, 0.5), 10)
+
+
+## The garage's bateau (BATEAU): setts from the doors' sill down to the car court, its sides down to the ground, a ramp
+## to drive up.
+func _bateau() -> void:
+	var r := BATEAU
+	var top := func(x: float, z: float) -> float: return maxf(_bateau_y(x), g_top(x, z) + 0.05)
+	var keep := func(x: float, z: float) -> bool: return r.has_point(Vector2(x, z))
+	_sheet_over(r.grow(0.3), "sett", keep, 0.0, top, 0.5)
+	for z: float in [r.position.y, r.end.y]:
+		var x := r.position.x
+		while x < r.end.x - 0.01:
+			var x1 := minf(x + 0.5, r.end.x)
+			var y0: float = top.call(x, z)
+			var y1: float = top.call(x1, z)
+			quad("sett", Vector3(x, g(x, z) - 0.1, z), Vector3(x1, g(x1, z) - 0.1, z), Vector3(x1, y1, z),
+					Vector3(x, y0, z), Vector3(0, 0, -1.0 if z == r.position.y else 1.0))
+			x = x1
+	var mid := r.position.y + r.size.y * 0.5
+	col_ramp(Vector3(r.end.x, g(r.end.x, mid) + 0.05, mid), Vector3(r.position.x, 0.0, mid), r.size.y)
+	_paved.append(_poly_rect(r.grow(0.2), 0.0))

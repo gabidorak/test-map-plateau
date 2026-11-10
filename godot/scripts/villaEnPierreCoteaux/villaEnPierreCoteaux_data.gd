@@ -3,6 +3,7 @@ extends RefCounted
 ## round its grounds and its gate. The villa's frame: x east, y up from the house's floor, z south; its origin at the
 ## front facade's west end (map ORIGIN).
 
+const SITE := "res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_site.gd"
 const NAME := "Villa de charme"
 const ID := "villa-001"                     # (permanent: owners keep it; the name may change)
 const ORIGIN := Vector2(264.0, -424.0)      # map: the house's frame origin
@@ -36,6 +37,8 @@ static func repaint(verts: PackedVector3Array, ids: PackedByteArray, colours: Pa
 	var water := materials.find("water")
 	var gravel := materials.find("gravel")
 	var grass_colour := Color.html(str(palette["grass"]))
+	var gravel_colour := Color.html(str(palette.get("gravel", palette["grass"])))
+	var site: GDScript = load(SITE)                 # (its paved areas; loaded, not preloaded: the site preloads this)
 	var wall := PackedVector2Array(WALL)
 	var box := Rect2(wall[0], Vector2.ZERO)
 	for p in wall:
@@ -44,8 +47,11 @@ static func repaint(verts: PackedVector3Array, ids: PackedByteArray, colours: Pa
 		var v := verts[k]
 		var p := Vector2(v.x, -v.z)
 		if box.has_point(p) and ids[k * 4] != water and Geometry2D.is_point_in_polygon(p, wall):
-			ids[k * 4] = grass
-			colours[k] = grass_colour
+			var l := to_local2(p)
+			var paved: bool = site._in_fore(l.x, l.y) or site._in_drive(l.x, l.y) \
+					or Geometry2D.is_point_in_polygon(l, PackedVector2Array(site.LANE)) or site.BATEAU.has_point(l)
+			ids[k * 4] = gravel if paved else grass
+			colours[k] = gravel_colour if paved else grass_colour
 		elif gravel >= 0 and ids[k * 4] == gravel and p.distance_to(GATE) < OLD_TRACK:
 			ids[k * 4] = grass
 			colours[k] = grass_colour
