@@ -2,8 +2,9 @@
  "id": "villaEnPierreCoteaux",
  "order": 30,
  "name": "Villa de charme",
- "about": "A stone villa for sale (property villa-001) in place of #628, #659, #671, #672: its forecourt and garden path terraformed, the four houses and the trees in its wall out, the villa built in the game.",
+ "about": "A stone villa for sale (property villa-001) in place of #628, #659, #671, #672: its court (one shape: the main court, the drive, the bateau, the garage court at the doors' sill) and its garden path terraformed, the four houses and the trees in its wall out, the villa built in the game.",
  "terraform": [
+  "res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_data.gd",
   "villaEnPierreCoteaux"
  ],
  "script": "res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux.gd",

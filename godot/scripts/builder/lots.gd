@@ -1,7 +1,8 @@
 extends RefCounted
 ## Lots: each change made to the map (a building replaced, a garden redone, a villa built) is one lot,
 ## data/lots/<id>.json, that ties its three phases together:
-##   "terraform"  its zones (data/terraform/<name>.json, tools/terraform.py), applied first: builder/terraform.gd
+##   "terraform"  its zones, applied first (builder/terraform.gd): files of data/terraform/ (tools/terraform.py), or a
+##                script whose static terraform_zones() makes them from its design (the villa's court)
 ##   "script"     its own code: drop(world) takes out of the map what it replaces (when the map is built,
 ##                builder/world_builder.gd); its node is made in the game (game.gd), held by game's member "node"
 ##   "paint"      a script whose repaint() paints the ground in its grounds (builder/ground_builder.gd)

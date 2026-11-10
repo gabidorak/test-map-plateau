@@ -181,13 +181,7 @@ func _ready() -> void:
 	name = "VillaEnPierreCoteaux"
 	for p: Vector2 in WALL:
 		_wall_local.append(to_local2(p))
-	# the floor over the highest ground under the house
-	var top := -INF
-	for i in int(W / 2.0) + 1:
-		for j in int(D / 2.0) + 1:
-			var m := to_map(Vector2(i * 2.0, j * 2.0))
-			top = maxf(top, Marks.ground(m.x, m.y))
-	floor_y = top + PLINTH
+	floor_y = Data.FLOOR_Y                  # (the design's: the court and the garage court are terraformed to it)
 	frame = Transform3D(Basis.IDENTITY, Vector3(ORIGIN.x, floor_y, -ORIGIN.y))
 	var fy := floor_y
 	var ground := func(x: float, z: float) -> float:
@@ -217,6 +211,9 @@ func _ready() -> void:
 			mp.append(to_map(p))
 		GrassField.keep_out.append(mp)
 	set_plaque(Data.NAME.to_upper())
+	if DisplayServer.get_name() != "headless":
+		build_interior()                    # (at start: no hitch on the way in; shown only near the house)
+		interior.visible = false
 
 
 ## The text on the gate's plaque (properties.gd: for sale, or whose it is).
@@ -330,15 +327,13 @@ func _pose_garage() -> void:
 
 ## The rooms built while the camera is near the house, dropped when it is far.
 func _interior_check() -> void:
-	if DisplayServer.get_name() == "headless" and interior == null:
+	if interior == null:
 		return
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
 	if cam == null:
 		return
 	var d := cam.global_position.distance_to(frame * Vector3(W * 0.5, 2.0, D * 0.5))
-	if interior == null and d < INTERIOR_NEAR:
-		build_interior()
-	elif interior != null:
+	if interior != null:
 		# built once (it takes a moment), then only shown while near: nothing to draw from afar
 		if interior.visible and d > INTERIOR_FAR:
 			interior.visible = false

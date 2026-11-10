@@ -1,7 +1,8 @@
 extends RefCounted
-## Terraforming (data/terraform/*.json, made by tools/terraform.py: a restyled garden's ground, the villa's forecourt
-## and garden path...): in each zone the map's heights eased onto a surface (a quadratic or a plane fitted to the LiDAR
-## ground, or a level) by the zone's weight grid (0 at its outline, full `blend` m in). The first step after the map
+## Terraforming, the zones the lots name (builder/lots.gd): files of data/terraform/ (made by tools/terraform.py: a
+## surface fitted to the LiDAR ground, a quadratic or a plane, or a level: a restyled garden, the villa's garden path)
+## or a lot's code (its terraform_zones(): a surface given cell by cell, the villa's court). In each zone the map's
+## heights are eased onto the surface by the zone's weight grid (0 at its outline, full `blend` m in). The first step after the map
 ## is read (builder/world_builder.gd), so everything is built on the ground as it ends up. Applied alike everywhere
 ## heights are made: the
 ## heightmap when the map is built (its collision, water, trees, props: builder/world_builder.gd; patch() keeps each
@@ -26,6 +27,9 @@ static func zones() -> Array:
 		_loaded = true
 		if DirAccess.dir_exists_absolute(DIR):
 			for name: String in Lots.terraform_files():          # (the lots' zones: builder/lots.gd)
+				if name.ends_with(".gd"):                       # (a lot's code makes its zones: terraform_zones())
+					_zones.append_array(load(name).terraform_zones())
+					continue
 				var s: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + name + ".json"))
 				if not (s is Dictionary):
 					continue
@@ -62,6 +66,9 @@ static func delta(x: float, y: float, h: float) -> float:
 		var weight := lerpf(a, b, v) / 255.0
 		if weight <= 0.0:
 			return 0.0
+		if z.has("s"):                                   # (a surface given cell by cell)
+			var sf: PackedFloat32Array = z["s"]
+			return weight * (lerpf(lerpf(sf[k], sf[k + 1], u), lerpf(sf[k + w], sf[k + w + 1], u), v) - h)
 		var c: PackedFloat32Array = z["c"]
 		var o: Vector2 = z["o"]
 		var uu := (x - o.x) / 100.0

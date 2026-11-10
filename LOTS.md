@@ -5,7 +5,7 @@ Every change made to the map (a building replaced, a garden redone, a villa buil
 
 | Phase | When | A lot's key | Where |
 |---|---|---|---|
-| 1. Terraforming | right after the map is read, when it is built | `terraform`: files of `godot/data/terraform/` | `scripts/builder/terraform.gd` (zones made by `tools/terraform.py`) |
+| 1. Terraforming | right after the map is read, when it is built | `terraform`: files of `godot/data/terraform/`, or a script whose `terraform_zones()` makes them from its design | `scripts/builder/terraform.gd` (file zones made by `tools/terraform.py`; the villa's court from `villaEnPierreCoteaux_data.gd`) |
 | 2. Removal | when the map is built | `script`: its `drop(world)` | the lot's script (`scripts/builder/world_edits.gd` helps) |
 | 2b. Ground paint | when the map is built | `paint`: a script's `repaint()` | the lot's data script |
 | 3. Building | in the game | `node` (game.gd's member), `restyle` (specs of `godot/data/restyle/`) | the lot's script, `scripts/restyle/` |
