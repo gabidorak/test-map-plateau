@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless checks for the Volvo FH16 with its semi-trailer (Car.SPECS "volvo-fh16-trailer", converted by
 ## blender/vehicles/import_truck.py; the tractor alone is in tools/test_real_cars.gd): the vehicle menu parks it as two
 ## sections, the semi-trailer (car_trailer.gd, from the cab file's "trailer") on its six twin wheels behind the tractor's
@@ -33,15 +33,6 @@ func _check(ok: bool, what: String) -> void:
 func _frames(n: int) -> void:
 	for i in n:
 		await physics_frame
-
-
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 func _tap(code: Key) -> void:

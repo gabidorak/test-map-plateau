@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Screenshots of a site, to check a restyled building (data/restyle/, scripts/restyle/): one from above and four
 ## oblique views from its corners, plus one at eye level from the south. Windowed (it renders):
 ##   CAP_X=585 CAP_Y=-262 CAP_R=80 CAP_OUT=C:/tmp/shots/ensae_ godot --path . --script res://tools/capture_site.gd -- --online-test
@@ -12,15 +12,6 @@ var _main: Node
 
 func _initialize() -> void:
 	_run.call_deferred()
-
-
-func _until(cond: Callable, timeout: float) -> bool:
-	var t0 := Time.get_ticks_msec()
-	while not cond.call():
-		if Time.get_ticks_msec() - t0 > timeout * 1000.0:
-			return false
-		await process_frame
-	return true
 
 
 func _run() -> void:

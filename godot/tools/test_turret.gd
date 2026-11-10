@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless checks for the two-seat biplane with a gunner (scripts/plane.gd "biplane-gunner"): the vehicle menu parks it
 ## with a belly turret and no wing guns; E from its right side sits the player in the gunner's seat (help, dash); the
 ## turret never points more than TURRET_CONE off the nose nor above TURRET_UP (clamp_aim, the mouse in the turret view);
@@ -36,22 +36,9 @@ func _frames(n: int) -> void:
 		await physics_frame
 
 
-func _trigger(pressed: bool) -> void:
-	var e := InputEventMouseButton.new()
-	e.button_index = MOUSE_BUTTON_LEFT
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
-
-
-func _key(code: Key) -> void:
-	for pressed: bool in [true, false]:
-		var e := InputEventKey.new()
-		e.physical_keycode = code
-		e.keycode = code
-		e.pressed = pressed
-		Input.parse_input_event(e)
-		Input.flush_buffered_events()
+func _tap(code: Key) -> void:
+	_key(code, true)
+	_key(code, false)
 
 
 func _shot(file: String) -> void:
@@ -107,7 +94,7 @@ func _run() -> void:
 	# E from the right side: the gunner's seat
 	player.teleport(plane.to_global(Vector3(-plane.half_extents.x - 1.0, 0.3, 0.0)))
 	await _frames(5)
-	_key(KEY_E)
+	_tap(KEY_E)
 	await _frames(2)
 	await process_frame
 	_check(_main.riding == plane and _main.driving == null and plane.riding and plane.turret_guns.live
@@ -121,7 +108,7 @@ func _run() -> void:
 	await _frames(2)
 	var want := Vector3(0.35, -0.5, 1.0).normalized()
 	_put(target, plane.to_global(Biplane.TURRET + want * 110.0), plane.global_basis.orthonormalized())
-	_key(KEY_V)
+	_tap(KEY_V)
 	await process_frame
 	_check(root.get_camera_3d() == plane._turret_camera and plane.cab_view, "V: the turret view")
 	plane.look_turret(Vector2(-5.0, 0.0))
@@ -154,7 +141,7 @@ func _run() -> void:
 	_check(plane.turret_guns.rounds_fired == fired, "releasing the button stops the turret")
 
 	# V: chase camera; a car behind is out of reach
-	_key(KEY_V)
+	_tap(KEY_V)
 	await process_frame
 	_check(root.get_camera_3d() == plane.camera and plane._passenger.visible, "V again: the chase camera, the gunner seated")
 	_put(target, plane.to_global(Vector3(0.0, -40.0, -60.0)), plane.global_basis.orthonormalized())
@@ -209,7 +196,7 @@ func _run() -> void:
 
 	# E: the controls
 	plane.freeze = false
-	_key(KEY_E)
+	_tap(KEY_E)
 	await _frames(2)
 	_check(_main.driving == plane and _main.riding == null and not plane.riding and not plane.turret_guns.live
 			and "gunner boards" in _main._help.text, "E in the gunner's seat takes the controls")

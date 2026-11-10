@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless checks for the realistic cars (Car.SPECS "compact-hatchback", "family-suv" and the police car
 ## "police-hatchback", built by blender/vehicles/build_car.py; its siren and lights: tools/test_police_car.gd; and
 ## "renault-zoe", converted by blender/vehicles/import_car.py): the vehicle menu parks each with its four wheels at its real size and mass, it rests
@@ -58,15 +58,6 @@ func _check(ok: bool, what: String) -> void:
 func _frames(n: int) -> void:
 	for i in n:
 		await physics_frame
-
-
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 func _tap(code: Key) -> void:

@@ -28,15 +28,11 @@ const KINDS := {
 ## Map polygons (x east, y north) kept free of tufts: what runtime builds pave over the ground (Losplatos Custom's
 ## apron, scripts/losplatos/losplatos.gd). Set before the chunks round them are built.
 static var keep_out: Array[PackedVector2Array] = []
-## Map polygons whose ground grows lawn whatever the ground pieces say (Villa de charme's grounds, scripts/villaEnPierreCoteaux/villaEnPierreCoteaux.gd).
-static var lawns: Array[PackedVector2Array] = []
-## Circles (x, y, radius) where the map's gravel grows lawn (the old track by Villa de charme's gate).
-static var regrass: Array[Vector3] = []
-## Callables (x, y) -> a material id, or -2: the ground's material there decided elsewhere (scripts/restyle/: gardens).
+## Callables (x, y) -> a material id, or -2: the ground's material there decided by a runtime build (the villa's
+## lawn, scripts/villaEnPierreCoteaux/; the restyled gardens, scripts/restyle/).
 static var overrides: Array[Callable] = []
 
 var _map: RefCounted
-var _lawn_boxes: Array[Rect2] = []
 var _kinds: Array = []              # [material id, settings, mesh, material, colour]
 var _chunks := {}                   # Vector2i -> Node3D
 var _last := Vector2(INF, INF)
@@ -158,22 +154,7 @@ func _material(x: float, y: float) -> int:
 		var o: int = f.call(x, y)
 		if o != -2:
 			return o
-	if _lawn_boxes.size() != lawns.size():
-		_lawn_boxes.clear()
-		for poly: PackedVector2Array in lawns:
-			var r := Rect2(poly[0], Vector2.ZERO)
-			for p in poly:
-				r = r.expand(p)
-			_lawn_boxes.append(r)
-	for k in lawns.size():
-		if _lawn_boxes[k].has_point(Vector2(x, y)) and Geometry2D.is_point_in_polygon(Vector2(x, y), lawns[k]):
-			return _map.materials.find("grass")
-	var id: int = _map.material_at(x, y)
-	if id == _map.materials.find("gravel"):
-		for c: Vector3 in regrass:
-			if Vector2(x, y).distance_to(Vector2(c.x, c.y)) < c.z:
-				return _map.materials.find("grass")
-	return id
+	return _map.material_at(x, y)
 
 
 static func _kept_out(x: float, y: float) -> bool:

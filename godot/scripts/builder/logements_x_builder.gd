@@ -178,16 +178,6 @@ func _emit(name: String, m: RailBuilder.Mesher, mat: Material, range_end: float,
 	_node.add_child(mi)
 
 
-func _shape_box(xf: Transform3D, size: Vector3, info: Dictionary) -> void:
-	var b := BoxShape3D.new()
-	b.size = size
-	var cs := CollisionShape3D.new()
-	cs.shape = b
-	cs.transform = xf
-	cs.set_meta("plateau", info)
-	_body.add_child(cs)
-
-
 ## The frame of a face from map point o along `along` (unit), `out` its outward normal: a box from u0 to u1 along it,
 ## d0 to d1 out of it, z0 to z1.
 static func _face_xf(o: Vector2, along: Vector2, out: Vector2, u0: float, u1: float, d0: float, d1: float, z0: float,
@@ -202,7 +192,7 @@ func _fbox(m: RailBuilder.Mesher, o: Vector2, along: Vector2, out: Vector2, u0: 
 	var b := _face_xf(o, along, out, u0, u1, d0, d1, z0, z1)
 	m.box(b[0], b[1], col)
 	if not info.is_empty():
-		_shape_box(b[0], b[1], info)
+		MeshUtils.shape_box(_body, b[0], b[1], info)
 
 
 ## A vertical quad facing `out`, d out of the face, from u0 to u1 and z0 to z1.
@@ -421,10 +411,10 @@ func _ground_floor(pl: Dictionary, R: Array[Vector2], zp: float, info: Dictionar
 	for u in [0.22, cage_u]:
 		var xf: Transform3D = col_xf.call(u, 0.22)
 		m.box(xf, Vector3(0.4, top - zp + 0.1, 0.4), _white)
-		_shape_box(xf, Vector3(0.4, top - zp + 0.1, 0.4), info)
+		MeshUtils.shape_box(_body, xf, Vector3(0.4, top - zp + 0.1, 0.4), info)
 	var slab_xf := Transform3D(Basis(_gd(ea), Vector3.UP, _gd(-eb)), _gp(P + ea * cage_u * 0.5 + eb * rv * 0.5, zp + 0.05))
 	m.box(slab_xf, Vector3(cage_u, 0.4, rv), SLAB)
-	_shape_box(slab_xf, Vector3(cage_u, 0.4, rv), info)
+	MeshUtils.shape_box(_body, slab_xf, Vector3(cage_u, 0.4, rv), info)
 	_fbox(m, P, ea, -eb, 0.0, cage_u, 0.0, 0.02, zp - 0.12, zp + 0.25, PLINTH)
 	_fbox(m, P, eb, -ea, 0.0, rv, -0.02, 0.0, zp - 0.12, zp + 0.25, PLINTH)
 	var gl := _mesher("Plots_Glass", 500.0)
@@ -442,7 +432,7 @@ func _ground_floor(pl: Dictionary, R: Array[Vector2], zp: float, info: Dictionar
 		_fbox(m, o, dir, nrm, 0.0, len, -0.025, 0.025, top - 0.06, top, STEEL)
 		_fbox(m, o, dir, nrm, 0.0, len, -0.025, 0.025, mz0, mz0 + 0.06, STEEL)
 		var b := _face_xf(o, dir, nrm, 0.0, len, -0.04, 0.04, mz0, top)
-		_shape_box(b[0], b[1], info)
+		MeshUtils.shape_box(_body, b[0], b[1], info)
 	for k in 6:
 		var u := 0.6 + k * 0.78
 		var v1 := rv - 0.3
@@ -495,7 +485,7 @@ func _roof(R: Array[Vector2], zp: float, deck: float, info: Dictionary) -> void:
 	var bs := Basis(_gd(e1), Vector3.UP, _gd(-e2))
 	var up := Transform3D(bs, _gp(c, deck + 0.2))
 	m.box(up, Vector3(4.6, 0.4, 4.6), _white)
-	_shape_box(up, Vector3(4.6, 0.4, 4.6), info)
+	MeshUtils.shape_box(_body, up, Vector3(4.6, 0.4, 4.6), info)
 	var g0 := deck + 0.4
 	var g1 := deck + 0.9
 	var corners: Array[Vector2] = [c + e1 * 2.1 + e2 * 2.1, c - e1 * 2.1 + e2 * 2.1, c - e1 * 2.1 - e2 * 2.1,
@@ -513,7 +503,7 @@ func _roof(R: Array[Vector2], zp: float, deck: float, info: Dictionary) -> void:
 		var size := Vector3(spec[2], spec[4], spec[3])
 		var xf := Transform3D(bs, _gp(p, deck + float(spec[4]) * 0.5))
 		m.box(xf, size, PLANT)
-		_shape_box(xf, size, info)
+		MeshUtils.shape_box(_body, xf, size, info)
 		if float(spec[2]) > 2.0:
 			m.box(Transform3D(bs, _gp(p, deck + float(spec[4]) + 0.01)), Vector3(size.x - 0.3, 0.02, size.z - 0.3), PLINTH)
 
@@ -576,7 +566,7 @@ func _bollards() -> void:
 		_prism(m, p, 0.1, z - 0.05, z + 0.8, BOLLARD)
 		_prism(g, p, 0.101, z + 0.8, z + 0.9, GLOW)
 		_prism(m, p, 0.105, z + 0.9, z + 0.98, BOLLARD)
-		_shape_box(Transform3D(Basis.IDENTITY, _gp(p, z + 0.5)), Vector3(0.2, 1.0, 0.2), info)
+		MeshUtils.shape_box(_body, Transform3D(Basis.IDENTITY, _gp(p, z + 0.5)), Vector3(0.2, 1.0, 0.2), info)
 
 
 ## An octagonal prism (radius r) from z0 to z1 with its top.
@@ -619,7 +609,7 @@ func _rocks() -> void:
 			var col := ROCK.darkened(0.06 * (k % 3))
 			m.quad(low[k], low[j], top[j], top[k], (side + Vector3.UP * 0.4).normalized(), col)
 			m.tri(top[k], top[j], apex, Vector3.UP, ROCK.lightened(0.05))
-		_shape_box(Transform3D(Basis(Vector3.UP, yaw), _gp(p, z + sz * 0.45)), Vector3(sx * 0.9, sz * 0.9, sy * 0.9), info)
+		MeshUtils.shape_box(_body, Transform3D(Basis(Vector3.UP, yaw), _gp(p, z + sz * 0.45)), Vector3(sx * 0.9, sz * 0.9, sy * 0.9), info)
 
 
 ## Mulch rings under the young trees (photos): a low cone of wood chips.

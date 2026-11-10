@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless checks for the vehicle cameras (car.gd _update_camera, plane.gd _update_camera): the look back (Z, W on
 ## AZERTY) and camera mode (right click) bindings; the auto camera keeps a look offset at a standstill, keeps it
 ## LOOK_HOLD s at speed then eases back behind, never turns round when reversing; the look back key turns the view half
@@ -39,15 +39,6 @@ func _frames(n: int) -> void:
 func _settle() -> void:
 	await process_frame
 	await process_frame
-
-
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 func _tap(code: Key) -> void:

@@ -145,10 +145,6 @@ func set_banner(text: String, warn := "") -> void:
 	_banner_warn.visible = warn != ""
 
 
-func banner_text() -> String:
-	return _banner_label.text if _banner.visible else ""
-
-
 ## The big text in the middle ("3", "GO!"), for `seconds` (0: until the next one).
 func count(text: String, seconds := 0.0, color := GOLD) -> void:
 	_count.text = text

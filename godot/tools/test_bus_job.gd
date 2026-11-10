@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## PTA Online's bus job (ONLINE_MILESTONES.md O5, scripts/online/bus_job.gd). The role is the first argument after `--`:
 ## - `--check`: played solo (PLATEAU_MODE=online, an empty garage): the depot's lines (its terminal and bays under the
 ##   bus depot's roof by the Atlantis bus station, rail.json massy bus_station depot), going on duty (a lent 18 m bus
@@ -63,15 +63,6 @@ func _check(ok: bool, what: String) -> void:
 		_failures.append(what)
 
 
-func _until(cond: Callable, timeout: float) -> bool:
-	var t0 := Time.get_ticks_msec()
-	while not cond.call():
-		if Time.get_ticks_msec() - t0 > timeout * 1000.0:
-			return false
-		await process_frame
-	return true
-
-
 func _frames(n: int) -> void:
 	for i in n:
 		await physics_frame
@@ -102,17 +93,6 @@ func _run() -> void:
 	quit(1 if _failures.size() > 0 else 0)
 
 
-func _press(action: String) -> void:
-	var e := InputEventAction.new()
-	e.action = action
-	e.pressed = true
-	Input.parse_input_event(e)
-	var up := InputEventAction.new()
-	up.action = action
-	up.pressed = false
-	Input.parse_input_event(up)
-
-
 func _start(online: bool) -> void:
 	_main = load("res://scenes/main.tscn").instantiate()
 	_main.debug_cars = false
@@ -141,7 +121,7 @@ func _stand_at(gid: String) -> void:
 ## Opens garage `gid`'s panel with E and waits for its list.
 func _open_garage(gid: String) -> bool:
 	await _stand_at(gid)
-	_press("interact")
+	_press_action("interact")
 	return await _until(func() -> bool: return _mode.ui_open() and _mode._panel.kind == "garage" \
 			and _mode._panel.rows.get_child_count() > 0, 10.0)
 

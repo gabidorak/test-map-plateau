@@ -2,15 +2,14 @@ extends RefCounted
 ## The ground of restyled grounds smoothed (a spec's site.garden.flatten, from tools/restyle.py garden): heights eased
 ## onto a smooth surface (a quadratic fitted to the LiDAR ground, or its median: flat) by the garden's weight grid
 ## (site.garden.grid: 0 at the grounds' outline, full `blend` m in). Applied alike everywhere heights are made: the
-## heightmap when the map is built (its collision, water, trees, props: builder/world_builder.gd), the ground's mesh
-## (builder/ground_builder.gd), the heights read in the game (ground_map.gd height()). No preloads (ground_map.gd uses
-## it).
+## heightmap when the map is built (its collision, water, trees, props: builder/world_builder.gd; patch() keeps each
+## zone's heights before, for the ground's mesh: move()), the ground's mesh (builder/ground_builder.gd), the heights read
+## in the game (ground_map.gd height()). No preloads (ground_map.gd uses it).
 
 const DIR := "res://data/restyle/"
 
 static var _zones: Array = []                # [{"box", "o", "c", "x0", "y0", "cell", "w", "h", "wt"}]
 static var _loaded := false
-static var original: RefCounted              # (the map being built: its heights before, for the ground's mesh)
 
 
 ## A garden's grid layer (base64 of deflated bytes, w x h).
@@ -85,25 +84,33 @@ static func patch(heights: PackedFloat32Array, t: Dictionary) -> void:
 		var i1 := clampi(ceili((box.end.x - ox) / cell), 0, w - 1)
 		var j0 := clampi(floori((oy - box.end.y) / cell), 0, hh - 1)
 		var j1 := clampi(ceili((oy - box.position.y) / cell), 0, hh - 1)
+		var before := PackedFloat32Array()
+		before.resize((i1 - i0 + 1) * (j1 - j0 + 1))
 		for j in range(j0, j1 + 1):
 			var y := oy - j * cell
 			for i in range(i0, i1 + 1):
 				var k := j * w + i
+				before[(j - j0) * (i1 - i0 + 1) + i - i0] = heights[k]
 				heights[k] += delta(ox + i * cell, y, heights[k])
+		z["before"] = {"h": before, "i0": i0, "j0": j0, "w": i1 - i0 + 1, "n": j1 - j0 + 1, "cell": cell, "ox": ox,
+				"oy": oy}
 
 
-## A ground chunk's vertices (Godot x, y, z; its box `aabb` [x, y, z, sx, sy, sz]) moved alike.
+## A ground chunk's vertices (Godot x, y, z; its box `aabb` [x, y, z, sx, sy, sz]) moved alike (after patch(): the
+## heights before, on the heightmap's samples the mesh's nodes sit on).
 static func move(verts: PackedVector3Array, aabb: Array) -> void:
-	if original == null or zones().is_empty():
-		return
 	var r := Rect2(float(aabb[0]), -float(aabb[2]) - float(aabb[5]), float(aabb[3]), float(aabb[5]))
-	var near := false
-	for z: Dictionary in _zones:
-		near = near or (z["box"] as Rect2).intersects(r)
-	if not near:
-		return
-	for k in verts.size():
-		var v := verts[k]
-		var d := delta(v.x, -v.z, original.at(v.x, -v.z))
-		if d != 0.0:
-			verts[k] = Vector3(v.x, v.y + d, v.z)
+	for z: Dictionary in zones():
+		if not z.has("before") or not (z["box"] as Rect2).intersects(r):
+			continue
+		var b: Dictionary = z["before"]
+		var h: PackedFloat32Array = b["h"]
+		for k in verts.size():
+			var v := verts[k]
+			var i := roundi((v.x - float(b["ox"])) / float(b["cell"])) - int(b["i0"])
+			var j := roundi((float(b["oy"]) + v.z) / float(b["cell"])) - int(b["j0"])
+			if i < 0 or j < 0 or i >= int(b["w"]) or j >= int(b["n"]):
+				continue
+			var d := delta(v.x, -v.z, h[j * int(b["w"]) + i])
+			if d != 0.0:
+				verts[k] = Vector3(v.x, v.y + d, v.z)

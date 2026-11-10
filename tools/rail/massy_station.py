@@ -850,13 +850,6 @@ def bus_islands(osm: dict, Hf, world: dict, tracks) -> list:
     return out
 
 
-def bus_island_zones(isl: list) -> list:
-    """The islands as zones for patch_world.py: raised quays (kind bus_island: concrete platform pieces, their top
-    along the axis), taking the pipeline's raised bits and kerbs inside them into their own surface."""
-    return [{"kind": "bus_island", "side": None, "source": "osm:" + i["osm"][0], "polygons": [[i["ring"]]],
-             "axis": i["axis"], "axis_z": i["axis_z"], "portals": []} for i in isl]
-
-
 def rer_fences(osm: dict, Hf, world: dict, tracks, area, busways, gaps) -> list:
     """The fence between the bus station and the tracks beside it (RATP welded mesh, FENCE_HEIGHT m): the outline
     FENCE_OFFSET m off the nearest track centre, where it faces the bus station's lanes and runs within FENCE_REACH m

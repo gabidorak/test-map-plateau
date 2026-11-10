@@ -7,13 +7,13 @@ extends Node3D
 ## collision goes. In the workshop, the service bay (in_bay) is where PTA Online repairs and paints a player's car
 ## (scripts/online/custom_shop.gd).
 
+const WorldEdits = preload("res://scripts/builder/world_edits.gd")
 const Builder = preload("res://scripts/losplatos/losplatos_builder.gd")
 const Marks = preload("res://scripts/race_marks.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const NAME := "Losplatos Custom"
 const BUILDING_ID := "osm:w71348311"        # #758, Laboratoire d'Hydrodynamique de l'École polytechnique
-const BUILDING_OSM := "w71348311"
 ## #758's footprint (map x east, y north): the kit modules on it go with it.
 const FOOTPRINT := [Vector2(405.613, -171.427), Vector2(407.37, -135.709), Vector2(391.176, -134.924),
 		Vector2(388.76, -139.491), Vector2(389.426, -170.63)]
@@ -38,14 +38,7 @@ var _door_shape: CollisionShape3D
 ## The world without #758 (builder/world_builder.gd, before the buildings are made): its building record, its name
 ## sign, the kit modules on its roof.
 static func drop(world: Dictionary) -> void:
-	world["buildings"] = world["buildings"].filter(func(b: Dictionary) -> bool:
-		return str(b["id"]).split("_rest")[0] != BUILDING_ID)
-	world["building_signs"] = world["building_signs"].filter(func(s: Dictionary) -> bool:
-		return str(s.get("building", "")) != BUILDING_OSM)
-	var fp := Geometry2D.offset_polygon(PackedVector2Array(FOOTPRINT), 1.0)
-	var area: PackedVector2Array = fp[0] if not fp.is_empty() else PackedVector2Array(FOOTPRINT)
-	world["building_modules"] = world["building_modules"].filter(func(m: Dictionary) -> bool:
-		return not Geometry2D.is_point_in_polygon(Vector2(m["x"], m["y"]), area))
+	WorldEdits.drop_buildings(world, [BUILDING_ID], WorldEdits.grown(PackedVector2Array(FOOTPRINT), 1.0))
 
 
 ## The shop's frame: x north along the west facade, y up, z east into it; its origin on the floor at the facade's
@@ -168,10 +161,3 @@ func _pose_door() -> void:
 	if _door_shape:
 		_door_shape.disabled = opening > 0.55
 
-
-## Opens (or shuts) it at once (the tools).
-func set_open(on: bool) -> void:
-	_want = on
-	opening = 1.0 if on else 0.0
-	_check_t = 1.0
-	_pose_door()

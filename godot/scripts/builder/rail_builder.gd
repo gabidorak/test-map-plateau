@@ -274,16 +274,6 @@ func _emit_cells(parent: Node3D, name: String, cells: Dictionary, mat: Material,
 		_emit(parent, "%s_%d_%d" % [name, cell.x, cell.y], cells[cell], mat, info, range_end)
 
 
-func _shape_box(xf: Transform3D, size: Vector3, info: Dictionary) -> void:
-	var b := BoxShape3D.new()
-	b.size = size
-	var cs := CollisionShape3D.new()
-	cs.shape = b
-	cs.transform = xf
-	cs.set_meta("plateau", info)
-	_body.add_child(cs)
-
-
 func _shape_faces(name: String, faces: PackedVector3Array, info: Dictionary) -> void:
 	if faces.is_empty():
 		return
@@ -453,7 +443,7 @@ func _footbridge(parent: Node3D, fb: Dictionary) -> void:
 		m.box(bm[0], bm[1], STEEL)
 		var top := _beam(a - d * 0.6, z + 0.01, b + d * 0.6, z + 0.01, w, 0.02, 0.0)
 		m.box(top[0], top[1], DECK)
-		_shape_box(bm[0], bm[1], info)
+		MeshUtils.shape_box(_body, bm[0], bm[1], info)
 		var n := Vector2(-d.y, d.x)
 		for side: float in [1.0, -1.0]:
 			var off := n * side * (w * 0.5 + 0.05)
@@ -466,7 +456,7 @@ func _footbridge(parent: Node3D, fb: Dictionary) -> void:
 				if z - depth - g > 0.5:
 					var col := Transform3D(Basis.IDENTITY, _g(q.x, q.y, (g + z - depth) * 0.5))
 					m.box(col, Vector3(0.35, z - depth - g, 0.35), STEEL)
-					_shape_box(col, Vector3(0.35, z - depth - g, 0.35), info)
+					MeshUtils.shape_box(_body, col, Vector3(0.35, z - depth - g, 0.35), info)
 	for f: Dictionary in fb["flights"]:
 		_flight(m, f, info, true)
 	_emit(parent, "Footbridge_%s" % String(fb["id"]).get_slice(":", 1), m, _mat_toy, info)
@@ -521,7 +511,7 @@ func _flight(m: Mesher, f: Dictionary, info: Dictionary, open: bool) -> void:
 				m.box(st[0], st[1], STEEL)
 			_railing(m, a + off, za, b + off, zb, RAILING_HEIGHT, false, info)
 		var ramp := _beam(a, za, b, zb, w, 0.3, 0.0)
-		_shape_box(ramp[0], ramp[1], info)
+		MeshUtils.shape_box(_body, ramp[0], ramp[1], info)
 
 
 ## Handrail from map point a (height za) to b (zb): posts, a top rail and a mid rail (`bars`: a bottom rail and
@@ -552,7 +542,7 @@ func _railing(m: Mesher, a: Vector2, za: float, b: Vector2, zb: float, h: float,
 		var mid := _beam(a, za + h * 0.5, b, zb + h * 0.5, 0.04, 0.02, 0.02)
 		m.box(mid[0], mid[1], STEEL)
 	var wall := _beam(a, za, b, zb, 0.08, 0.0, h)
-	_shape_box(wall[0], wall[1], info)
+	MeshUtils.shape_box(_body, wall[0], wall[1], info)
 
 
 # ---------------------------------------------------------------- pedestrian underpasses
@@ -1463,7 +1453,7 @@ func _lamp(m: Mesher, glow: Mesher, xf: Transform3D, info: Dictionary) -> void:
 	for e: float in [-0.75, 0.75]:
 		m.box(xf * Transform3D(Basis.IDENTITY, Vector3(e, LAMP_HEIGHT - 0.12, 0.0)), Vector3(0.5, 0.1, 0.22), ANTHRACITE)
 		glow.box(xf * Transform3D(Basis.IDENTITY, Vector3(e, LAMP_HEIGHT - 0.18, 0.0)), Vector3(0.42, 0.02, 0.16), GLOW)
-	_shape_box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, LAMP_HEIGHT * 0.5, 0.0)), Vector3(0.14, LAMP_HEIGHT, 0.14), info)
+	MeshUtils.shape_box(_body, xf * Transform3D(Basis.IDENTITY, Vector3(0.0, LAMP_HEIGHT * 0.5, 0.0)), Vector3(0.14, LAMP_HEIGHT, 0.14), info)
 
 
 ## A row of `seats` blue shell seats on a beam, facing the track (photos).
@@ -1476,7 +1466,7 @@ func _bench(m: Mesher, xf: Transform3D, seats: int, info: Dictionary) -> void:
 		var x := -w * 0.5 + (k + 0.5) * SEAT_WIDTH
 		m.box(xf * Transform3D(Basis.IDENTITY, Vector3(x, 0.44, 0.0)), Vector3(SEAT_WIDTH - 0.06, 0.05, 0.42), SEAT_BLUE)
 		m.box(xf * Transform3D(Basis(Vector3.RIGHT, -0.2), Vector3(x, 0.7, -0.2)), Vector3(SEAT_WIDTH - 0.06, 0.45, 0.05), SEAT_BLUE)
-	_shape_box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.45, 0.0)), Vector3(w, 0.9, 0.5), info)
+	MeshUtils.shape_box(_body, xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.45, 0.0)), Vector3(w, 0.9, 0.5), info)
 
 
 ## A Vigipirate bin: a ring on a post with its clear bag.
@@ -1484,7 +1474,7 @@ func _bin(m: Mesher, xf: Transform3D, info: Dictionary) -> void:
 	m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.5, -0.18)), Vector3(0.06, 1.0, 0.06), BIN_GREEN)
 	m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.92, 0.0)), Vector3(0.36, 0.05, 0.36), BIN_GREEN)
 	m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.62, 0.0)), Vector3(0.3, 0.55, 0.3), Color("#d9dfe2"))
-	_shape_box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.5, 0.0)), Vector3(0.38, 1.0, 0.38), info)
+	MeshUtils.shape_box(_body, xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.5, 0.0)), Vector3(0.38, 1.0, 0.38), info)
 
 
 ## The station name board (RATP: white lettering on dark blue, the station's name and its subtitle), on two posts,
@@ -1494,7 +1484,7 @@ func _board(parent: Node3D, m: Mesher, xf: Transform3D, text: String, subtitle: 
 	var h := BOARD_SIZE.y
 	for e: float in [-w * 0.4, w * 0.4]:
 		m.box(xf * Transform3D(Basis.IDENTITY, Vector3(e, BOARD_HEIGHT * 0.5, 0.0)), Vector3(0.08, BOARD_HEIGHT, 0.08), ANTHRACITE)
-		_shape_box(xf * Transform3D(Basis.IDENTITY, Vector3(e, BOARD_HEIGHT * 0.5, 0.0)), Vector3(0.1, BOARD_HEIGHT, 0.1), info)
+		MeshUtils.shape_box(_body, xf * Transform3D(Basis.IDENTITY, Vector3(e, BOARD_HEIGHT * 0.5, 0.0)), Vector3(0.1, BOARD_HEIGHT, 0.1), info)
 	var centre := Vector3(0.0, BOARD_HEIGHT + h * 0.5, 0.0)
 	m.box(xf * Transform3D(Basis.IDENTITY, centre), Vector3(w, h, 0.06), RATP_BLUE)
 	for face: float in [1.0, -1.0]:
@@ -1512,7 +1502,7 @@ func _board(parent: Node3D, m: Mesher, xf: Transform3D, text: String, subtitle: 
 func _track_board(parent: Node3D, m: Mesher, xf: Transform3D, text: String, info: Dictionary) -> void:
 	m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 1.4, 0.0)), Vector3(0.07, 2.8, 0.07), ANTHRACITE)
 	m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 2.95, 0.0)), Vector3(0.5, 0.5, 0.05), RATP_BLUE)
-	_shape_box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 1.4, 0.0)), Vector3(0.09, 2.8, 0.09), info)
+	MeshUtils.shape_box(_body, xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 1.4, 0.0)), Vector3(0.09, 2.8, 0.09), info)
 	for face: float in [1.0, -1.0]:
 		var holder := Node3D.new()
 		holder.transform = xf * Transform3D(Basis(Vector3.UP, 0.0 if face > 0.0 else PI), Vector3.ZERO)
@@ -1525,7 +1515,7 @@ func _track_board(parent: Node3D, m: Mesher, xf: Transform3D, text: String, info
 func _screen(parent: Node3D, m: Mesher, glow: Mesher, xf: Transform3D, f: Dictionary, k: int, info: Dictionary,
 		station_name := "Lozère") -> void:
 	m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 1.3, 0.0)), Vector3(0.1, 2.6, 0.1), ANTHRACITE)
-	_shape_box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 1.3, 0.0)), Vector3(0.12, 2.6, 0.12), info)
+	MeshUtils.shape_box(_body, xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 1.3, 0.0)), Vector3(0.12, 2.6, 0.12), info)
 	var across := Basis(Vector3.UP, PI * 0.5)        # its faces along the platform
 	var centre := Vector3(0.0, 2.9, 0.0)
 	m.box(xf * Transform3D(across, centre), Vector3(1.1, 0.6, 0.12), Color("#202226"))
@@ -1562,7 +1552,7 @@ func _validators(m: Mesher, f: Dictionary, count: int, info: Dictionary) -> void
 		for face: float in [1.0, -1.0]:
 			m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 1.05, 0.115 * face)), Vector3(0.16, 0.16, 0.01), NAVIGO_PURPLE)
 			m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 1.35, 0.115 * face)), Vector3(0.24, 0.3, 0.01), Color("#e8a64a"))
-		_shape_box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.8, 0.0)), Vector3(0.3, 1.6, 0.22), info)
+		MeshUtils.shape_box(_body, xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.8, 0.0)), Vector3(0.3, 1.6, 0.22), info)
 
 
 ## A platform canopy `length` long along the station building backing the platform (build_rail.py puts its back line
@@ -1575,7 +1565,7 @@ func _canopy(m: Mesher, xf: Transform3D, length: float, depth: float, info: Dict
 		var x := -length * 0.5 + length * k / (n - 1)
 		m.box(xf * Transform3D(Basis.IDENTITY, Vector3(x, CANOPY_HEIGHT * 0.5, 0.1)), Vector3(0.12, CANOPY_HEIGHT, 0.12), STEEL)
 		m.box(xf * Transform3D(tilt, Vector3(x, CANOPY_HEIGHT + 0.08, depth * 0.5)), Vector3(0.1, 0.12, depth), STEEL)
-		_shape_box(xf * Transform3D(Basis.IDENTITY, Vector3(x, CANOPY_HEIGHT * 0.5, 0.1)), Vector3(0.14, CANOPY_HEIGHT, 0.14), info)
+		MeshUtils.shape_box(_body, xf * Transform3D(Basis.IDENTITY, Vector3(x, CANOPY_HEIGHT * 0.5, 0.1)), Vector3(0.14, CANOPY_HEIGHT, 0.14), info)
 	m.box(xf * Transform3D(tilt, Vector3(0.0, CANOPY_HEIGHT + 0.2, depth * 0.5)), Vector3(length + 0.3, 0.08, depth + 0.2),
 			ANTHRACITE)
 
@@ -1654,7 +1644,7 @@ func _signals(node: Node3D) -> void:
 			var top := rail_z + 2.2 - g
 			m.box(Transform3D(basis, base) * Transform3D(Basis.IDENTITY, Vector3(0.0, top * 0.5, 0.0)), Vector3(0.08, top, 0.08), ANTHRACITE)
 			m.box(Transform3D(basis, base) * Transform3D(Basis.IDENTITY, Vector3(0.0, top + 0.3, 0.0)), Vector3(0.6, 0.6, 0.04), WHITE)
-			_shape_box(Transform3D(basis, base) * Transform3D(Basis.IDENTITY, Vector3(0.0, top * 0.5, 0.0)), Vector3(0.1, top, 0.1), info)
+			MeshUtils.shape_box(_body, Transform3D(basis, base) * Transform3D(Basis.IDENTITY, Vector3(0.0, top * 0.5, 0.0)), Vector3(0.1, top, 0.1), info)
 			if sg.get("speed") != null:
 				_label(node3, str(int(sg["speed"])), Vector3(0.0, top + 0.3, 0.025), 120, Color.BLACK, 0.55)
 			continue
@@ -1673,7 +1663,7 @@ func _signals(node: Node3D) -> void:
 		m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, mast * 0.5, -0.12)), Vector3(0.14, mast, 0.14), STEEL)
 		m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, mast + head_h * 0.5, 0.0)), Vector3(head_w + 0.06, head_h + 0.06, 0.05), WHITE)
 		m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, mast + head_h * 0.5, 0.012)), Vector3(head_w, head_h, 0.05), Color("#141517"))
-		_shape_box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, mast * 0.5, -0.12)), Vector3(0.16, mast, 0.16), info)
+		MeshUtils.shape_box(_body, xf * Transform3D(Basis.IDENTITY, Vector3(0.0, mast * 0.5, -0.12)), Vector3(0.16, mast, 0.16), info)
 		var lamps := {}
 		for r in rows.size():
 			var y := mast + head_h - 0.15 - r * LENS_PITCH
@@ -1736,7 +1726,7 @@ func _posts(node: Node3D) -> void:
 		var xf := Transform3D(basis, _g(p.x, p.y, g))
 		var info := {"type": "rail_pk", "id": post["id"], "osm": post.get("osm", ""), "km": post["km"], "s": s}
 		_cell_mesher(cells, p).box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.6, 0.0)), Vector3(0.3, 1.2, 0.12), WHITE)
-		_shape_box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.6, 0.0)), Vector3(0.3, 1.2, 0.12), info)
+		MeshUtils.shape_box(_body, xf * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.6, 0.0)), Vector3(0.3, 1.2, 0.12), info)
 		var l := Node3D.new()
 		l.transform = xf
 		l.set_meta("plateau", info)
@@ -1795,7 +1785,7 @@ func _catenary(node: Node3D) -> void:
 			var h: float = beam + 0.35 - float(mast[2])
 			m.box(Transform3D(Basis.IDENTITY, base + Vector3(0.0, h * 0.5, 0.0)), Vector3(MAST, h, MAST), PORTAL)
 			m.box(Transform3D(Basis.IDENTITY, base + Vector3(0.0, 0.15, 0.0)), Vector3(MAST + 0.25, 0.3, MAST + 0.25), CONCRETE)
-			_shape_box(Transform3D(Basis.IDENTITY, base + Vector3(0.0, h * 0.5, 0.0)), Vector3(MAST, h, MAST), info)
+			MeshUtils.shape_box(_body, Transform3D(Basis.IDENTITY, base + Vector3(0.0, h * 0.5, 0.0)), Vector3(MAST, h, MAST), info)
 		var bm := _beam(mp, beam, mq, beam, 0.22, 0.2, 0.2)
 		m.box(bm[0], bm[1], PORTAL)
 		for ref: String in sp["wires"]:

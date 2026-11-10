@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless checks for the GAZ Tiger's roof gun (Car.SPECS "gaz-tiger", scripts/armored_car.gd; its driver's cab view,
 ## steering wheel, lamps and drive: tools/test_real_cars.gd): the vehicle menu parks it with its gun; E from its right
 ## side stands the player in the roof hatch as the gunner (help, dash); the gun's reach is all round, PITCH_DOWN below
@@ -38,22 +38,9 @@ func _frames(n: int) -> void:
 		await physics_frame
 
 
-func _trigger(pressed: bool) -> void:
-	var e := InputEventMouseButton.new()
-	e.button_index = MOUSE_BUTTON_LEFT
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
-
-
-func _key(code: Key) -> void:
-	for pressed: bool in [true, false]:
-		var e := InputEventKey.new()
-		e.physical_keycode = code
-		e.keycode = code
-		e.pressed = pressed
-		Input.parse_input_event(e)
-		Input.flush_buffered_events()
+func _tap(code: Key) -> void:
+	_key(code, true)
+	_key(code, false)
 
 
 func _shot(file: String) -> void:
@@ -150,7 +137,7 @@ func _run() -> void:
 	# E from the right side: the gunner, standing in the hatch
 	player.teleport(tiger.to_global(Vector3(-tiger.half_extents.x - 1.0, 0.3, 0.0)))
 	await _frames(5)
-	_key(KEY_E)
+	_tap(KEY_E)
 	await _frames(2)
 	await process_frame
 	_check(_main.riding == tiger and _main.driving == null and tiger.riding and tiger.turret_guns.live
@@ -159,7 +146,7 @@ func _run() -> void:
 	if _main.riding != tiger:
 		return _finish()
 	if tiger.cab_view:
-		_key(KEY_V)
+		_tap(KEY_V)
 		await process_frame
 	var head: Vector3 = tiger._passenger.global_position + Vector3.UP * (tiger._passenger.mesh as CapsuleMesh).height * 0.5
 	var body := tiger.find_child("body", true, false) as MeshInstance3D
@@ -181,7 +168,7 @@ func _run() -> void:
 		return _finish()
 	_put(target, spot + Vector3.UP * 0.8, tiger.global_basis.orthonormalized())
 	await _frames(2)
-	_key(KEY_V)
+	_tap(KEY_V)
 	await process_frame
 	var eye: Vector3 = tiger.to_local(tiger._turret_camera.global_position)
 	_check(root.get_camera_3d() == tiger._turret_camera and tiger.cab_view and not tiger._passenger.visible
@@ -242,7 +229,7 @@ func _run() -> void:
 
 	# the ground right beside it: out of reach
 	tiger.gun_look = Vector2(PI * 0.5, -1.2)
-	_key(KEY_V)
+	_tap(KEY_V)
 	await process_frame
 	_check(root.get_camera_3d() == tiger.camera and tiger._passenger.visible, "V again: the chase camera, the gunner shows")
 	tiger._look_yaw = PI * 0.5
@@ -287,7 +274,7 @@ func _run() -> void:
 
 	# E: the wheel
 	tiger.freeze = false
-	_key(KEY_E)
+	_tap(KEY_E)
 	await _frames(2)
 	await process_frame
 	_check(_main.driving == tiger and _main.riding == null and not tiger.riding and not tiger.turret_guns.live

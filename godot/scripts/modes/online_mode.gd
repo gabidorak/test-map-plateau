@@ -61,7 +61,6 @@ const WORK := {"depot": ["bus-idfm", "bus-idfm-artic"], "fire": ["fire-truck"], 
 const KEEP := 30.0                          # s a player's vehicle waits for them after they leave (PLATEAU_ONLINE_KEEP)
 const REACH := 2.5                          # m from a terminal for E
 const SERVER_REACH := 8.0                   # m the server allows (the player's position reaches it a little late)
-const PROMPT_REACH := 3.0                   # m from a vehicle for its owner's prompt
 const PLACE_KINDS := {"public": "garage", "depot": "depot", "fire": "fire", "residence": "residence", "tow": "tow"}   # (the shop's:
 											# Prestige Motors already; a flat's private lift: none)
 const TOW := 15.0                           # s a broken player vehicle stays before it is towed back (PLATEAU_ONLINE_TOW)

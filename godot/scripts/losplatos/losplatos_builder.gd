@@ -525,17 +525,6 @@ func _yard(ground: Callable) -> void:
 	_col(2.2, 4.4, y, y + 1.3, 18.9, 20.3)
 
 
-func _window_out(x0: float, x1: float, y0: float, y1: float) -> void:
-	_box("dark_steel", x0 - 0.06, x1 + 0.06, y0 - 0.06, y1 + 0.06, -0.03, 0.0)
-	_box("glass_dark", x0, x1, y0, y1, -0.035, -0.03)
-	var n := int((x1 - x0) / 0.14)
-	for k in range(1, n):
-		var bx := x0 + (x1 - x0) * k / n
-		_box("dark_steel", bx - 0.012, bx + 0.012, y0, y1, -0.09, -0.065)
-	_box("dark_steel", x0, x1, (y0 + y1) * 0.5 - 0.015, (y0 + y1) * 0.5 + 0.015, -0.09, -0.065)
-	_box("sill_out", x0 - 0.1, x1 + 0.1, y0 - 0.1, y0 - 0.04, -0.12, 0.0)
-
-
 ## The shop's logo board (its own design): a navy board in a yellow frame, LOSPLATOS in big cream letters over a red
 ## ribbon with CUSTOM; `xf` its middle (its text towards +z of `xf`), `w` x `h` m.
 func _logo(xf: Transform3D, w: float, h: float) -> void:

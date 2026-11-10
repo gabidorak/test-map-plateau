@@ -39,7 +39,6 @@ const PUSH_ASIDE := 2.8                     # m from the track centre a player o
 const SIGNAL_EVERY := 0.25                  # s between signal updates
 const SCREEN_EVERY := 1.0                   # s between departure screen updates
 const NEAR := 900.0                         # m: things farther from a train's front are not looked at
-const DOORWAY_PLAYERS := 6.0                # m: players this close to a train may hold its doors
 const POSE_NEAR := 600.0                    # m: a train farther than this from every player is posed every POSE_FAR_TICKS
 const POSE_FAR_TICKS := 3
 const POSE_FAR := 1200.0                    # m: ...and farther than this every POSE_FARTHEST_TICKS

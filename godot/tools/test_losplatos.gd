@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Losplatos Custom (scripts/losplatos/, scripts/online/custom_shop.gd), played in the PTA Online test (--online-test):
 ## building #758 makes way for it (its roof, not the LadHyX's, over its footprint), its roll-up door stays shut with no
 ## one about and opens for a car coming up (its collision gone), our own car stopped in the service bay gets the
@@ -23,15 +23,6 @@ func _check(ok: bool, what: String) -> void:
 	print(("ok   " if ok else "FAIL ") + what)
 	if not ok:
 		_failures.append(what)
-
-
-func _until(cond: Callable, timeout: float) -> bool:
-	var t0 := Time.get_ticks_msec()
-	while not cond.call():
-		if Time.get_ticks_msec() - t0 > timeout * 1000.0:
-			return false
-		await process_frame
-	return true
 
 
 func _frames(n: int) -> void:

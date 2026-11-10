@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## All Suites Study (scripts/allsuites/), in place of building #184: no z-fighting anywhere in its meshes (no two
 ## triangles facing the same way overlap in one plane, within 4 mm: drawn the same, the depth test flickers between
 ## them), every material known; in the game (the PTA Online test) its roofs over the old footprint, its walls stopping
@@ -25,15 +25,6 @@ func _check(ok: bool, what: String) -> void:
 	print(("ok   " if ok else "FAIL ") + what)
 	if not ok:
 		_failures.append(what)
-
-
-func _until(cond: Callable, timeout: float) -> bool:
-	var t0 := Time.get_ticks_msec()
-	while not cond.call():
-		if Time.get_ticks_msec() - t0 > timeout * 1000.0:
-			return false
-		await process_frame
-	return true
 
 
 func _frames(n: int) -> void:

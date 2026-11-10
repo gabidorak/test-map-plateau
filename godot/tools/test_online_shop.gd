@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## PTA Online's shop, repairs and colours (ONLINE_MILESTONES.md O4, scripts/online/shop.gd). The role is the first
 ## argument after `--`:
 ## - `--check`: played solo (PLATEAU_MODE=online, an empty garage, PLATEAU_ONLINE_MONEY): the price list, the online
@@ -48,15 +48,6 @@ func _check(ok: bool, what: String) -> void:
 		_failures.append(what)
 
 
-func _until(cond: Callable, timeout: float) -> bool:
-	var t0 := Time.get_ticks_msec()
-	while not cond.call():
-		if Time.get_ticks_msec() - t0 > timeout * 1000.0:
-			return false
-		await process_frame
-	return true
-
-
 func _wait(seconds: float) -> void:
 	await create_timer(seconds).timeout
 
@@ -87,17 +78,6 @@ func _run() -> void:
 			await _forger()
 	print("%d failure(s)" % _failures.size())
 	quit(1 if _failures.size() > 0 else 0)
-
-
-func _press(action: String) -> void:
-	var e := InputEventAction.new()
-	e.action = action
-	e.pressed = true
-	Input.parse_input_event(e)
-	var up := InputEventAction.new()
-	up.action = action
-	up.pressed = false
-	Input.parse_input_event(up)
 
 
 func _start(online: bool) -> void:
@@ -181,7 +161,7 @@ func _stand_at_shop() -> void:
 ## Opens garage `gid`'s panel with E and waits for its list.
 func _open_garage(gid: String) -> bool:
 	await _stand_at(gid)
-	_press("interact")
+	_press_action("interact")
 	return await _until(func() -> bool: return _mode.ui_open() and _mode._panel.kind == "garage" \
 			and _mode._panel.rows.get_child_count() > 0, 10.0)
 
@@ -257,7 +237,7 @@ func _solo() -> void:
 	await _stand_at_shop()
 	_check(s.is_inside(_main.player.global_position) and m.shop.catalogue_at_hand(), "E by a price stand: the catalogue")
 	_check(m.prompt_text().contains("catalogue"), "the prompt says so: %s" % m.prompt_text())
-	_press("interact")
+	_press_action("interact")
 	var shown := await _until(func() -> bool: return m.ui_open() and m._panel.kind == "catalogue" \
 			and m._panel.rows.get_child_count() > 0, 5.0)
 	_check(shown and m._panel.rows.has_node("Buy_kaykit-hatchback") and m._panel.rows.has_node("Buy_audi-r8") \
@@ -413,7 +393,7 @@ func _buyer() -> void:
 
 	# the catalogue, the cheapest car
 	_check(m.shop.catalogue_at_hand(), "E by a price stand: the catalogue")
-	_press("interact")
+	_press_action("interact")
 	var shown := await _until(func() -> bool: return m.ui_open() and m._panel.kind == "catalogue" \
 			and m._panel.rows.get_child_count() > 0, 10.0)
 	_check(shown and m._panel.rows.has_node("Buy_kaykit-hatchback"), "the catalogue came: %s" % _rows())

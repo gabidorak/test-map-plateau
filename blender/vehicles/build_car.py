@@ -555,11 +555,6 @@ def prism(group, profile, x0, x1, m, bevel=0.0, seg=2) -> None:
     put(group, bm, m, bevel, seg)
 
 
-def mirrored_prism(group, profile, x0, x1, m, bevel=0.0, seg=2) -> None:
-    prism(group, profile, x0, x1, m, bevel, seg)
-    prism(group, profile, -x1, -x0, m, bevel, seg)
-
-
 def join(target, objs: list) -> None:
     bpy.context.view_layer.update()
     with bpy.context.temp_override(active_object=target, object=target, selected_objects=objs,
@@ -990,10 +985,6 @@ def flares(c: dict, sh: Shell) -> None:
 
 
 # ---------------------------------------------------------------- outside fittings
-
-def surface_point(sh: Shell, y, z, out=0.0, s=1):
-    return Vector((s * (sh.side_x(y, z) + out), y, z))
-
 
 def mirrors(c: dict, sh: Shell) -> None:
     """Door mirrors on the mirror sails: a black foot, an arm, a rounded housing with the glass on its back and the

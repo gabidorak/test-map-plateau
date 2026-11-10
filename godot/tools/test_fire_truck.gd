@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless checks for the fire truck (scripts/fire_truck.gd, scripts/water_cannon.gd): the vehicle menu parks it with its
 ## six wheels and its cannon; E gets in, it drives and turns; the turret turns and the barrel rises to drop the jet on
 ## the point the driver looks at, and the jet reaches tens of metres; the left mouse button sprays (RATE packets a
@@ -41,23 +41,6 @@ func _check(ok: bool, what: String) -> void:
 func _frames(n: int) -> void:
 	for i in n:
 		await physics_frame
-
-
-func _trigger(pressed: bool) -> void:
-	var e := InputEventMouseButton.new()
-	e.button_index = MOUSE_BUTTON_LEFT
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
-
-
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 func _tap(code: Key) -> void:

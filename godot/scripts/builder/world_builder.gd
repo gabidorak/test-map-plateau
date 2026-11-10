@@ -53,11 +53,7 @@ func build_and_save() -> Error:
 		push_error("heightmap size mismatch")
 		return ERR_INVALID_DATA
 	# the restyled grounds smoothed (scripts/restyle/restyle_ground.gd): the heightmap here, the ground's mesh alike
-	if not RestyleGround.zones().is_empty():
-		var t0: Dictionary = world["terrain"]
-		RestyleGround.original = GroundHeights.new(heights, t0["w"], t0["h"], t0["cell"], t0["origin_xy"][0],
-				t0["origin_xy"][1], world["ground_mesh"]["cell"])
-		RestyleGround.patch(heights, t0)
+	RestyleGround.patch(heights, world["terrain"])
 
 	var root := Node3D.new()
 	root.name = "Neighborhood"

@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless check of the bot buses in a LAN game (scripts/traffic.gd, scripts/bus_bot.gd, scripts/net.gd): run it twice
 ## at once, as the host (which drives the bots) and as a client, with tools/test_lan_buses.sh (port 7791).
 ## The client gets the host's bot buses as remote vehicles that say a bot drives them (driver shown), cannot take the
@@ -41,15 +41,6 @@ func _until(cond: Callable, timeout: float) -> bool:
 			return false
 		await physics_frame
 	return true
-
-
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 func _run() -> void:

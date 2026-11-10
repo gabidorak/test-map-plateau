@@ -208,13 +208,6 @@ func drop_from(peer: int, pos: Vector3) -> void:
 		set_state(i, SET_DOWN, 0, pos, "")
 
 
-## Host: the survivors in vehicle `key` set down beside it (it is gone).
-func unload_all(key: String, pos: Vector3) -> void:
-	for i in list.size():
-		if list[i]["state"] == IN_CAR and list[i]["car"] == key:
-			set_state(i, SET_DOWN, 0, pos + Vector3(randf_range(-2.0, 2.0), 0.0, randf_range(-2.0, 2.0)), "")
-
-
 ## Host: those carried into, or brought in a vehicle into, the circle of `radius` m round `centre`: rescued. Returns
 ## their indices.
 func rescue_in(centre: Vector3, radius: float) -> Array:

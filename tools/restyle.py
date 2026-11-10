@@ -15,7 +15,7 @@ in godot/data/restyle/<slug>.json. The method, for any large building (a school,
      trees: from the aerial image, the map's plus the missing ones, or the map's? hedges and paths: from the image?
   2. edit the spec's "style" from photos (the fill of each storey, the bay, the frame, louvres, fins, ledges, a skin...)
      and its "site" (the grounds' outline, raised walks). New materials and styles: godot/data/restyle/_library.json
-     ("materials", "styles" presets), new textures: godot/scripts/restyle/restyle_textures.gd, new kinds of storey: a
+     ("materials", "styles" presets), new textures: texture() in godot/scripts/build_kit.gd, new kinds of storey: a
      method _fill_<type> in restyle.gd
   3. rebuild the map (godot --headless --path godot --script res://tools/build_world.gd): the map's building leaves it
   4. look: CAP_X/CAP_Y/CAP_R/CAP_OUT ... godot --path godot --script res://tools/capture_site.gd -- --online-test
@@ -49,14 +49,22 @@ def inside(p, poly):
 
 
 def paths_in(w, area):
-    """The map's paths (ground pieces) with a point in the area."""
+    """The map's paths (ground pieces) in the area, clipped to it: their outline and triangles."""
+    from shapely import Polygon, MultiPolygon
+    from restyle_garden import tris_of
+    zone = Polygon(area)
     out = []
     for piece in w["ground"]:
         if piece["kind"] not in PATH_KINDS or piece["material"] == "asphalt" or not piece["rings"]:
             continue
         ring = piece["rings"][0]
-        if any(inside(p, area) for p in ring):
-            out.append({"material": piece["material"], "kind": piece["kind"], "pts": [r2(p) for p in ring]})
+        if not any(inside(p, area) for p in ring):
+            continue
+        cut = Polygon(ring).buffer(0).intersection(zone)
+        for g in (cut.geoms if isinstance(cut, MultiPolygon) else [cut]):
+            if isinstance(g, Polygon) and g.area > 0.5:
+                out.append({"material": piece["material"], "kind": piece["kind"],
+                            "pts": [r2(p) for p in list(g.exterior.coords)[:-1]], "tris": tris_of(g)})
     return out
 
 

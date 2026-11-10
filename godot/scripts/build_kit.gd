@@ -249,6 +249,39 @@ func light(p: Vector3, colour: Color, energy: float, reach: float, shadow := fal
 
 # ---------------------------------------------------------------- materials
 
+## Material `m` under `name` for mat() (a user's library: the restyled buildings'); a name already there stays.
+static func add_material(name: String, m: Material) -> void:
+	if not _mats.has(name):
+		_mats[name] = m
+
+
+## A material from a description: {"colour", "metal", "rough", "specular", "alpha", "texture" (texture()'s names),
+## "scale" (tiles a metre), "emit", "energy"}.
+static func material_from(d: Dictionary) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	var c := Color.html(str(d.get("colour", "#ffffff")))
+	m.roughness = float(d.get("rough", 0.6))
+	m.metallic = float(d.get("metal", 0.0))
+	m.metallic_specular = float(d.get("specular", 0.5))
+	if d.has("alpha"):
+		c.a = float(d["alpha"])
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.albedo_color = c
+	if d.has("texture"):
+		var sc := float(d.get("scale", 1.0))
+		m.albedo_texture = texture(str(d["texture"]))
+		m.uv1_triplanar = true
+		m.uv1_scale = Vector3(sc, sc, sc)
+		m.uv1_triplanar_sharpness = 8.0
+		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	if d.has("emit"):
+		m.emission_enabled = true
+		m.emission = Color.html(str(d["emit"]))
+		m.emission_energy_multiplier = float(d.get("energy", 1.0))
+	return m
+
+
 static func mat(name: String) -> Material:
 	if _mats.has(name):
 		return _mats[name]
@@ -418,6 +451,10 @@ static func texture(name: String) -> Texture2D:
 			"setts": img = _flags(256, Color("#b9ae9a"), Color("#857a68"), 45)
 			"leaves": img = _leafy(Color("#3d6a34"), 39)
 			"vine": img = _leafy(Color("#5c8a45"), 40)
+			"solar": img = _solar()
+			"cladding": img = _cladding()
+			"brick": img = _brick_bond()
+			"boards": img = _boards()
 			_: img = Image.create(4, 4, false, Image.FORMAT_RGB8)
 		img.generate_mipmaps()
 		_textures[name] = ImageTexture.create_from_image(img)
@@ -728,3 +765,63 @@ static func _panels() -> Image:
 				c = c.darkened(0.2)
 			img.set_pixel(x, y, c)
 	return img
+
+
+static func _paint(n: int, f: Callable) -> Image:
+	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
+	for y in n:
+		for x in n:
+			img.set_pixel(x, y, f.call(x, y))
+	return img
+
+
+## Photovoltaic panels: dark blue cells in a lighter grid, an aluminium frame round each panel (128 x 64 px).
+static func _solar() -> Image:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 71
+	return _paint(256, func(x: int, y: int) -> Color:
+		var px := x % 128
+		var py := y % 64
+		if px < 3 or px > 124 or py < 3 or py > 60:
+			return Color("#b9bec4")
+		if (px - 3) % 15 == 0 or (py - 3) % 15 == 0:
+			return Color("#4f648a")
+		return Color("#1c2a47").lightened(rng.randf() * 0.05))
+
+
+## Metal cladding: panels 64 x 128 px, thin dark joints, each panel a shade of its own.
+static func _cladding() -> Image:
+	return _paint(256, func(x: int, y: int) -> Color:
+		if x % 64 < 2 or y % 128 < 2:
+			return Color(0.55, 0.56, 0.58)
+		var k := (x / 64) * 7 + (y / 128) * 13
+		return Color(0.93, 0.93, 0.94).darkened(float(k % 5) * 0.012))
+
+
+## Brick in running bond: 64 x 21 px bricks, 3 px mortar.
+static func _brick_bond() -> Image:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 72
+	var shades := []
+	for k in 64:
+		shades.append(Color("#a4573e").lightened(rng.randf_range(-0.12, 0.12)))
+	return _paint(256, func(x: int, y: int) -> Color:
+		var row := y / 21
+		var bx := x + (32 if row % 2 == 1 else 0)
+		if y % 21 < 3 or bx % 64 < 3:
+			return Color("#cfc6b8")
+		return shades[(row * 5 + bx / 64) % 64])
+
+
+## Wooden boards, vertical: 32 px wide, grain along them.
+static func _boards() -> Image:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 73
+	var tone := []
+	for k in 8:
+		tone.append(Color("#b38a5c").lightened(rng.randf_range(-0.1, 0.1)))
+	return _paint(256, func(x: int, y: int) -> Color:
+		if x % 32 < 2:
+			return Color("#5e4630")
+		var c: Color = tone[x / 32]
+		return c.darkened(0.06 * (0.5 + 0.5 * sin(float(y) * 0.11 + float(x % 32) * 0.7))))

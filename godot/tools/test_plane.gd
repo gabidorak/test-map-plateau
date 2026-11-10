@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless checks for the biplane (scripts/plane.gd): parked from the vehicle code, it rests on its three wheels nose
 ## up; E gets in. Put in the air at cruise speed it holds its height with the keys released, S pulls the nose up, D
 ## rolls it right, R levels the wings; both upper wing tips leave trails at speed and none once it stops. Shift opens
@@ -30,15 +30,6 @@ func _check(ok: bool, what: String) -> void:
 func _frames(n: int) -> void:
 	for i in n:
 		await physics_frame
-
-
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 func _shot(file: String) -> void:

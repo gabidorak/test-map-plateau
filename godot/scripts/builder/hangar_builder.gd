@@ -14,6 +14,7 @@ extends RefCounted
 ##   facing the avenue, the green welded-mesh fence round it; collision for the roof, columns, stairs, fence.
 ## The lamps' lights are night.gd's (the MassyPalaiseau node's "lamp_lights" meta).
 
+const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
 const LabelFit = preload("res://scripts/label_fit.gd")
 
@@ -87,7 +88,7 @@ func _box_st(m: RailBuilder.Mesher, s: float, t: float, z: float, size: Vector3,
 	var xf := Transform3D(Basis(bx, Vector3.UP, bz), _q(s, t, z))
 	m.box(xf, size, col)
 	if shape:
-		host._shape_box(xf, size, info)
+		MeshUtils.shape_box(host._body, xf, size, info)
 
 
 # ---------------------------------------------------------------- the bus station
@@ -200,7 +201,7 @@ func _walls() -> void:
 			var lo := minf(fa, fb)
 			var hi := maxf(ta, tb) + 0.08
 			var bm: Array = host._beam(a + nn * 0.14, lo, b + nn * 0.14, lo, 0.32, 0.0, hi - lo)
-			host._shape_box(bm[0], bm[1], info)
+			MeshUtils.shape_box(host._body, bm[0], bm[1], info)
 		for k: int in [0, pts.size() - 1]:          # the ends
 			var p := Vector2(pts[k][0], pts[k][1])
 			var q := Vector2(pts[maxi(k - 1, 0) if k > 0 else 1][0], pts[maxi(k - 1, 0) if k > 0 else 1][1])
@@ -221,7 +222,7 @@ func _lamps() -> void:
 		m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, LAMP_HEIGHT * 0.5, 0.0)), Vector3(0.14, LAMP_HEIGHT, 0.14), STEEL)
 		m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, LAMP_HEIGHT + 0.05, 0.0)), Vector3(0.9, 0.14, 0.42), STEEL)
 		glow.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, LAMP_HEIGHT - 0.03, 0.0)), Vector3(0.78, 0.02, 0.32), GLOW)
-		host._shape_box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, LAMP_HEIGHT * 0.5, 0.0)), Vector3(0.16, LAMP_HEIGHT, 0.16),
+		MeshUtils.shape_box(host._body, xf * Transform3D(Basis.IDENTITY, Vector3(0.0, LAMP_HEIGHT * 0.5, 0.0)), Vector3(0.16, LAMP_HEIGHT, 0.16),
 				info)
 		host._lamp_lights.append(base + Vector3(0.0, LAMP_HEIGHT - 0.25, 0.0))
 
@@ -273,7 +274,7 @@ func _depot(Dd: Dictionary) -> void:
 				(out + Vector3.DOWN * 2.0).normalized(), ROOF_UNDER)
 		m.quad(_qu(a[0], a[1], ze), _qu(b[0], b[1], ze), _qu(b[0], b[1], zt), _qu(a[0], a[1], zt), out, ROOF_EDGE_COL)
 	var c := _qu((u0 + u1) * 0.5, (v0 + v1) * 0.5, (zu + zt) * 0.5)
-	host._shape_box(Transform3D(Basis(_dir(1, 0), Vector3.UP, _dir(0, -1)), c), Vector3(u1 - u0, zt - zu, v1 - v0), info)
+	MeshUtils.shape_box(host._body, Transform3D(Basis(_dir(1, 0), Vector3.UP, _dir(0, -1)), c), Vector3(u1 - u0, zt - zu, v1 - v0), info)
 	# the columns: V pairs, leaning apart along the roof, from one footing to the underside
 	for cu: float in Dd["columns_u"]:
 		for cv: float in Dd["columns_v"]:
@@ -283,7 +284,7 @@ func _depot(Dd: Dictionary) -> void:
 				var top_u := clampf(cu + side * 1.4, u0 + 0.3, u1 - 0.3)
 				var bm: Array = host._beam(foot, zf, _pu(top_u, cv), zu + 0.05, 0.2, 0.1, 0.1)
 				m.box(bm[0], bm[1], COLUMN)
-				host._shape_box(bm[0], bm[1], info)
+				MeshUtils.shape_box(host._body, bm[0], bm[1], info)
 	# round downlights under the roof (glowing; lit at night: night.gd), over the passage lane and the lanes
 	var vs: Array = [(float(Dd["passage"][0]) + float(Dd["passage"][1])) * 0.5]
 	for ln: Array in Dd["lanes"]:
@@ -379,7 +380,7 @@ func _fences(runs: Array) -> void:
 				m.box(wire[0], wire[1], FENCE_GREEN)
 				hz += 0.5
 			var bm: Array = host._beam(a, za, b, zb, 0.08, 0.0, FENCE_H)
-			host._shape_box(bm[0], bm[1], info)
+			MeshUtils.shape_box(host._body, bm[0], bm[1], info)
 		var last := Vector2(pts[-1][0], pts[-1][1])
 		m.box(Transform3D(Basis.IDENTITY, Vector3(last.x, float(zs[-1]) + FENCE_H * 0.5, -last.y)), Vector3(0.06, FENCE_H, 0.06),
 				FENCE_GREEN)

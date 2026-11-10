@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless checks for the armed biplane (scripts/plane.gd "biplane-armed", scripts/plane_guns.gd) and vehicle damage
 ## (car.gd health, scripts/wreck_smoke.gd): the vehicle menu parks it with its two guns; held in the air with a car
 ## held AIM_DISTANCE ahead on its gunsight, the left mouse button fires both guns in turn at RATE, the rounds hit the car, which smokes grey
@@ -34,23 +34,6 @@ func _check(ok: bool, what: String) -> void:
 func _frames(n: int) -> void:
 	for i in n:
 		await physics_frame
-
-
-func _trigger(pressed: bool) -> void:
-	var e := InputEventMouseButton.new()
-	e.button_index = MOUSE_BUTTON_LEFT
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
-
-
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 func _shot(file: String) -> void:

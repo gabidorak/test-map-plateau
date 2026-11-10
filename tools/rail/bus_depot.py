@@ -914,10 +914,6 @@ class Depot:
 
     # ---------------------------------------------------------------- on the map
 
-    def map_parts(self) -> dict:
-        return {"floor": to_map(self.floor), "exit": to_map(self.exit), "entry": to_map(self.entry),
-                "park": to_map(self.park), "stairs": to_map(self.stairs), "walk": to_map(self.walk),
-                "green_se": to_map(self.green_se), "talus": to_map(self.talus), "bed": to_map(self.bed)}
 
 
 # ---------------------------------------------------------------- dev plot

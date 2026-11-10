@@ -463,7 +463,7 @@ func _gravel() -> void:
 		return _in_fore(x, z) or _in_drive(x, z) or Geometry2D.is_point_in_polygon(Vector2(x, z), lane)
 	var height := func(x: float, z: float) -> float:
 		var w := clampf(1.0 - _rect_dist(FORECOURT, Vector2(x, z)) / 6.0, 0.0, 1.0)
-		var y := maxf(lerpf(g_top(x, z) + 0.05, smooth_h(x, z), w), g_top(x, z) + 0.03)
+		var y := lerpf(g_top(x, z) + 0.05, smooth_h(x, z), w)        # (smooth_h is over g_top: never under it)
 		if x > 39.0 and z > -0.5:
 			y = maxf(y, _lane_ramp(x, z))
 		return y

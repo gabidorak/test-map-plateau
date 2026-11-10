@@ -166,6 +166,15 @@ def grid(area, meadows, paths, grass, blend, cell=1.0):
             "weight": _b64(weight)}
 
 
+def tris_of(p):
+    """A polygon (holes kept) as a flat list of triangles' points (constrained Delaunay)."""
+    out = []
+    for t in constrained_delaunay_triangles(p).geoms:
+        if p.contains(t.representative_point()):
+            out.extend([[round(c[0], 2), round(c[1], 2)] for c in list(t.exterior.coords)[:3]])
+    return out
+
+
 def read(spec, world, image, pairs, meadow_px=None, flatten="smooth", grass="mowed", dark=0.43, debug=None):
     M, Mi, res, mpp = fit(pairs)
     img = np.asarray(Image.open(image).convert("RGB"), dtype=np.float32) / 255.0
@@ -247,10 +256,7 @@ def read(spec, world, image, pairs, meadow_px=None, flatten="smooth", grass="mow
     # paths: polygons with their holes, and their triangles
     paths = []
     for p in mask_polys(path, M, mpp, 20.0, 0.5):
-        tris = []
-        for t in constrained_delaunay_triangles(p).geoms:
-            if p.contains(t.representative_point()):
-                tris.extend([[round(c[0], 2), round(c[1], 2)] for c in list(t.exterior.coords)[:3]])
+        tris = tris_of(p)
         paths.append({"material": "concrete", "kind": "garden",
                       "pts": [[round(c[0], 2), round(c[1], 2)] for c in list(p.exterior.coords)[:-1]],
                       "holes": [[[round(c[0], 2), round(c[1], 2)] for c in list(h.coords)[:-1]] for h in p.interiors],

@@ -6,6 +6,7 @@ extends Node3D
 ## follows (grass_field.gd overrides); the ground is smoothed by restyle_ground.gd.
 
 const Spec = preload("res://scripts/restyle/restyle_spec.gd")
+const WorldEdits = preload("res://scripts/builder/world_edits.gd")
 const Building = preload("res://scripts/restyle/restyle_building.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
@@ -24,18 +25,9 @@ var built := {}                              # slug -> {"node": Node3D, "floor":
 ## their name signs, the kit modules on them, the trees on them and on their walks.
 static func drop(world: Dictionary) -> void:
 	for s: Dictionary in Spec.specs():
-		var ids: Array = s.get("replace", [])
-		var osm: Array = ids.map(func(i: Variant) -> String: return str(i).trim_prefix("osm:"))
 		var rings := Spec.rings_of(s)
-		world["buildings"] = world["buildings"].filter(func(b: Dictionary) -> bool:
-			return not (str(b["id"]).split("_rest")[0] in ids))
-		world["building_signs"] = world["building_signs"].filter(func(x: Dictionary) -> bool:
-			return not (str(x.get("building", "")) in osm))
-		if not rings.is_empty():
-			var grown := Geometry2D.offset_polygon(rings[0], 1.0)
-			var near: PackedVector2Array = grown[0] if not grown.is_empty() else rings[0]
-			world["building_modules"] = world["building_modules"].filter(func(m: Dictionary) -> bool:
-				return not Geometry2D.is_point_in_polygon(Vector2(m["x"], m["y"]), near))
+		WorldEdits.drop_buildings(world, s.get("replace", []),
+				WorldEdits.grown(rings[0], 1.0) if not rings.is_empty() else PackedVector2Array())
 		var garden: Dictionary = s.get("site", {}).get("garden", {})
 		if not garden.is_empty():
 			_plant(s, garden, world)

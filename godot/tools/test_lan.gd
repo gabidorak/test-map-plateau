@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless check of LAN games (scripts/net.gd): run it twice at once, as the host and as a client on this machine:
 ##   godot --headless --path godot --script res://tools/test_lan.gd -- --host --name=Host
 ##   godot --headless --path godot --script res://tools/test_lan.gd -- --join=127.0.0.1 --name=Guest
@@ -95,15 +95,6 @@ func _said(chat: Node, who: String, text: String) -> bool:
 func _mouse(pressed: bool) -> void:
 	var e := InputEventMouseButton.new()
 	e.button_index = MOUSE_BUTTON_LEFT
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
-
-
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
 	e.pressed = pressed
 	Input.parse_input_event(e)
 	Input.flush_buffered_events()

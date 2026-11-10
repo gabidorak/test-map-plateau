@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless check of Escape from Plateau in a LAN game (scripts/escape/escape_mode.gd): run as a host and a client at
 ## once (tools/test_lan_escape.sh, port 7795):
 ## - the client joining plays the host's mode and gets its mission: the same survivors at the same hideouts, the
@@ -50,26 +50,9 @@ func _until(cond: Callable, timeout: float) -> bool:
 	return true
 
 
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
-
-
 func _press(code: Key) -> void:
 	_key(code, true)
 	_key(code, false)
-
-
-func _trigger(pressed: bool) -> void:
-	var e := InputEventMouseButton.new()
-	e.button_index = MOUSE_BUTTON_LEFT
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 func _aim_at(target: Vector3) -> void:

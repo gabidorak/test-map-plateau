@@ -5,11 +5,11 @@ extends Node3D
 ## (ref/proprietes/AllSuitesStudy/). Its ground floor is level with the highest ground along its street facades, so
 ## the sidewalk never covers its threshold.
 
+const WorldEdits = preload("res://scripts/builder/world_edits.gd")
 const Builder = preload("res://scripts/allsuites/allsuites_builder.gd")
 const Marks = preload("res://scripts/race_marks.gd")
 const NAME := Builder.NAME
 const BUILDING_ID := "osm:w626590677"       # #184
-const BUILDING_OSM := "w626590677"
 ## #184's footprint (map x east, y north): the kit modules on it go with it.
 const FOOTPRINT := [Vector2(-121.051, 0.689), Vector2(-120.145, 5.895), Vector2(-132.77, 8.169),
 		Vector2(-141.511, -40.342), Vector2(-75.111, -52.546), Vector2(-66.309, -3.714), Vector2(-78.546, -1.599),
@@ -30,14 +30,7 @@ var residence: Node3D                       # what the builder made
 ## The world without #184 (builder/world_builder.gd, before the buildings are made): its building record, its name
 ## sign, the kit modules on it.
 static func drop(world: Dictionary) -> void:
-	world["buildings"] = world["buildings"].filter(func(b: Dictionary) -> bool:
-		return str(b["id"]).split("_rest")[0] != BUILDING_ID)
-	world["building_signs"] = world["building_signs"].filter(func(s: Dictionary) -> bool:
-		return str(s.get("building", "")) != BUILDING_OSM)
-	var fp := Geometry2D.offset_polygon(PackedVector2Array(FOOTPRINT), 1.0)
-	var area: PackedVector2Array = fp[0] if not fp.is_empty() else PackedVector2Array(FOOTPRINT)
-	world["building_modules"] = world["building_modules"].filter(func(m: Dictionary) -> bool:
-		return not Geometry2D.is_point_in_polygon(Vector2(m["x"], m["y"]), area))
+	WorldEdits.drop_buildings(world, [BUILDING_ID], WorldEdits.grown(PackedVector2Array(FOOTPRINT), 1.0))
 
 
 ## The residence's frame: x east along the south facade, y up, z south (the plan's v north is -z); its origin on the

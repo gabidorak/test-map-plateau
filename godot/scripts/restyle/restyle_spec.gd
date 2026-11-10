@@ -22,13 +22,12 @@ extends RefCounted
 ##   band     true: a band at each floor between punched storeys ("band_colour")
 ##   glass, wall, plinth, floor (the gallery's), slab (the floors' edges), mullions, attic: materials
 ## Materials: the kit's (scripts/build_kit.gd mat()), "#rrggbb", or the library's / the spec's "materials":
-## {"colour", "metal", "rough", "specular", "alpha", "texture" (restyle_textures.gd or the kit's), "scale", "emit"}.
+## {"colour", "metal", "rough", "specular", "alpha", "texture" (the kit's texture() names), "scale", "emit"}.
 ## "site": "area" the grounds' outline (map), "paths" the map's paths round it (drawn inside the area), "walks"
 ## raised walks ({"pts", "w", "lift", "colour"}: level with the ground floor by the building, "lift" m over the ground
 ## elsewhere).
 
 const Kit = preload("res://scripts/build_kit.gd")
-const Textures = preload("res://scripts/restyle/restyle_textures.gd")
 const DIR := "res://data/restyle/"
 const LIBRARY := "res://data/restyle/_library.json"
 
@@ -81,34 +80,7 @@ static func register_materials(s: Dictionary) -> void:
 	var defs: Dictionary = (library()["materials"] as Dictionary).duplicate()
 	defs.merge(s.get("materials", {}), true)
 	for name: String in defs:
-		if not Kit._mats.has(name):
-			Kit._mats[name] = material(defs[name])
-
-
-static func material(d: Dictionary) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	var c := Color.html(str(d.get("colour", "#ffffff")))
-	m.roughness = float(d.get("rough", 0.6))
-	m.metallic = float(d.get("metal", 0.0))
-	m.metallic_specular = float(d.get("specular", 0.5))
-	if d.has("alpha"):
-		c.a = float(d["alpha"])
-		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	m.albedo_color = c
-	if d.has("texture"):
-		var img := Textures.make(str(d["texture"]))
-		m.albedo_texture = ImageTexture.create_from_image(img) if img else Kit.texture(str(d["texture"]))
-		var sc := float(d.get("scale", 1.0))
-		m.uv1_triplanar = true
-		m.uv1_scale = Vector3(sc, sc, sc)
-		m.uv1_triplanar_sharpness = 8.0
-		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	if d.has("emit"):
-		m.emission_enabled = true
-		m.emission = Color.html(str(d["emit"]))
-		m.emission_energy_multiplier = float(d.get("energy", 1.0))
-	return m
+		Kit.add_material(name, Kit.material_from(defs[name]))
 
 
 static func poly(a: Array) -> PackedVector2Array:

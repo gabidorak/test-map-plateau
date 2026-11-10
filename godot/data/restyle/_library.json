@@ -1,5 +1,5 @@
 {
- "_doc": "Shared by the restyled buildings (scripts/restyle/restyle.gd): materials any style key may name, style presets a spec's style builds on ({\"preset\": name, its own keys over the preset's}). Textures: scripts/restyle/restyle_textures.gd or the kit's; scale: tiles a metre (1 / the tile's size in m).",
+ "_doc": "Shared by the restyled buildings (scripts/restyle/restyle.gd): materials any style key may name, style presets a spec's style builds on ({\"preset\": name, its own keys over the preset's}). Textures: scripts/build_kit.gd texture(); scale: tiles a metre (1 / the tile's size in m).",
  "materials": {
   "alu_white": {"colour": "#eef0f2", "metal": 0.35, "rough": 0.35},
   "alu_dark": {"colour": "#26292d", "metal": 0.6, "rough": 0.4},

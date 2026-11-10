@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless checks for the horse (scripts/horse.gd): parked from the vehicle code, it stands on its hooves at leg height;
 ## E gets on. On a flat open strip W canters, Shift gallops, letting go stops it, A turns it on the spot, Space hops.
 ## Test fences like the map's (prop_placer.gd: 0.12 m boxes on the PROPS layer): one it runs into without jumping
@@ -33,15 +33,6 @@ func _check(ok: bool, what: String) -> void:
 func _frames(n: int) -> void:
 	for i in n:
 		await physics_frame
-
-
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 func _tap(code: Key) -> void:
@@ -211,7 +202,6 @@ func _ride_at(horse: VehicleBody3D, strip: Transform3D, gallop: bool, jump: bool
 	var got: float = (horse.global_position - strip.origin).dot(strip.basis.z)
 	await _frames(60)
 	return [got, got > FENCE_AT + 1.0 and horse.on_ground, clear if clear < INF else NAN]
-
 
 
 ## A fence like the map's across the strip, FENCE_AT ahead: `h` tall, 8 m wide, 0.12 m thick, on the PROPS layer.

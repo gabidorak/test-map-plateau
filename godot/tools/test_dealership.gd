@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless checks for the car dealership in the Institut d'Optique (world/interiors.json, builder/interior_builder.gd,
 ## scripts/dealership.gd, scripts/salesman.gd): its display cars stand still and upright on their podiums; the showroom
 ## floor, glass walls and ceiling collide; the player walks in up the main door's ramp; the salesman greets them, walks
@@ -30,15 +30,6 @@ func _check(ok: bool, what: String) -> void:
 func _frames(n: int) -> void:
 	for i in n:
 		await physics_frame
-
-
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 func _ray(from: Vector3, to: Vector3) -> Dictionary:

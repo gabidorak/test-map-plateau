@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## PTA Online's fires and firefighter job (ONLINE_MILESTONES.md O7, scripts/online/fires.gd + fire_job.gd), played solo
 ## (PLATEAU_MODE=online). The role is the first argument after `--`:
 ## - `--check`: the fire spots (world/fires.json, every kind); no fire while nobody is on duty; duty at the fire station
@@ -41,26 +41,9 @@ func _check(ok: bool, what: String) -> void:
 		_failures.append(what)
 
 
-func _until(cond: Callable, timeout: float) -> bool:
-	var t0 := Time.get_ticks_msec()
-	while not cond.call():
-		if Time.get_ticks_msec() - t0 > timeout * 1000.0:
-			return false
-		await process_frame
-	return true
-
-
 func _frames(n: int) -> void:
 	for i in n:
 		await physics_frame
-
-
-func _trigger(pressed: bool) -> void:
-	var e := InputEventMouseButton.new()
-	e.button_index = MOUSE_BUTTON_LEFT
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 func _run() -> void:

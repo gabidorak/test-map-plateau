@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Client side of tools/test_online_login.sh (PTA Online logins on an official server). One check per run, picked by
 ## the first argument after `--`:
 ## - `--rules`: scripts/account_rules.gd judges server/accounts/rule_vectors.json like the service (no server needed);
@@ -41,15 +41,6 @@ func _check(ok: bool, what: String) -> void:
 	print(("ok   " if ok else "FAIL ") + "[%s] " % _what + what)
 	if not ok:
 		_failures.append(what)
-
-
-func _until(cond: Callable, timeout: float) -> bool:
-	var t0 := Time.get_ticks_msec()
-	while not cond.call():
-		if Time.get_ticks_msec() - t0 > timeout * 1000.0:
-			return false
-		await process_frame
-	return true
 
 
 ## The game, as the tools make it: main.tscn instanced (it reads --online / --join from the command line).

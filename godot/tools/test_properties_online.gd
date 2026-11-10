@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## PTA Online's properties with two players (ONLINE_MILESTONES.md O9; scripts/online/properties.gd): the clients of
 ## tools/test_properties_online.sh (an official server whose PLATEAU_ONLINE_HOMES gives Owner_1 the studio of the
 ## Logements de l'X 19 with its garage; `--sync=DIR` holds the files the clients wait on each other with). The role is
@@ -36,15 +36,6 @@ func _check(ok: bool, what: String) -> void:
 	print(("ok   " if ok else "FAIL ") + "[%s] " % _what + what)
 	if not ok:
 		_failures.append(what)
-
-
-func _until(cond: Callable, timeout: float) -> bool:
-	var t0 := Time.get_ticks_msec()
-	while not cond.call():
-		if Time.get_ticks_msec() - t0 > timeout * 1000.0:
-			return false
-		await process_frame
-	return true
 
 
 func _mark(name: String) -> void:

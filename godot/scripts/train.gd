@@ -200,10 +200,6 @@ func route_roll(d: float) -> float:
 	return lerpf(_roll[i], _roll[i + 1], f - i)
 
 
-func route_length() -> float:
-	return (_pts.size() - 1) * _step
-
-
 ## A frame on the route between distances a (behind) and b (ahead): origin midway at rail level, +Z towards b, +X to the
 ## left, tilted by the cant; turned round when `back`.
 func span_frame(a: float, b: float, back := false) -> Transform3D:
@@ -282,14 +278,6 @@ func carrier_at(p: Vector3, margin := 0.0) -> Node3D:
 	return null
 
 
-## Riders standing in it (global positions in `bodies`).
-func carries_any(bodies: Array) -> bool:
-	for p: Vector3 in bodies:
-		if carrier_at(p, 0.2):
-			return true
-	return false
-
-
 func velocity() -> Vector3:
 	return cars[0].global_basis.z * speed if not cars.is_empty() else Vector3.ZERO
 
@@ -309,12 +297,6 @@ func set_stowed(on: bool) -> void:
 		door_t = 0.0
 		for car: TrainCar in cars:
 			car.pose_doors(0.0, 0)
-
-
-## The destination on the end cabs' displays.
-func set_destination(text: String) -> void:
-	cars[0].set_display(text)
-	cars[-1].set_display(text)
 
 
 # ---------------------------------------------------------------- LAN

@@ -913,11 +913,6 @@ func set_flying(on: bool) -> void:
 	_update_help()
 
 
-## Low (true) or high graphics settings (see the header).
-func set_low_quality(on: bool) -> void:
-	set_quality("low" if on else "high")
-
-
 ## "low", "medium" or "high" graphics settings (see the header).
 func set_quality(level: String) -> void:
 	quality = level if level in Settings.QUALITIES else "high"

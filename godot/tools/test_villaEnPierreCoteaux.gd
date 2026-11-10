@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Villa de charme (scripts/villaEnPierreCoteaux/, scripts/online/properties.gd) in the PTA Online test (--online-test): the map's
 ## buildings gone from its grounds, its gate shut to a passer-by (put back outside when found in), the plaque for
 ## sale; bought (5 M €, its garage with it); its owner let in at the gate, which opens; walking the grand stair up to
@@ -21,15 +21,6 @@ func _check(ok: bool, what: String) -> void:
 	print(("ok   " if ok else "FAIL ") + what)
 	if not ok:
 		_failures.append(what)
-
-
-func _until(cond: Callable, timeout: float) -> bool:
-	var t0 := Time.get_ticks_msec()
-	while not cond.call():
-		if Time.get_ticks_msec() - t0 > timeout * 1000.0:
-			return false
-		await process_frame
-	return true
 
 
 func _frames(n: int) -> void:

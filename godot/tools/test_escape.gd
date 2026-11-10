@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless checks of Escape from Plateau (scripts/escape/escape_mode.gd), played solo:
 ## - the mode: night in dread (fog, power cut), no bots, trains, races, salesman or showroom cars, no vehicle menu;
 ## - a mission: survivors spread out at their hideouts, the helicopter's circle, supplies, abandoned vehicles, zombies
@@ -42,26 +42,9 @@ func _frames(n: int) -> void:
 		await physics_frame
 
 
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
-
-
 func _press(code: Key) -> void:
 	_key(code, true)
 	_key(code, false)
-
-
-func _trigger(pressed: bool) -> void:
-	var e := InputEventMouseButton.new()
-	e.button_index = MOUSE_BUTTON_LEFT
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 ## The player's view on `target` (global): facing it, pitched at it.

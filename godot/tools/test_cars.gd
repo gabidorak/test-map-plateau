@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless checks for the debug cars (scripts/car.gd): four cars are parked next to the player at
 ## start and settle on their wheels; E gets into the nearest one; W drives it forward, A turns it, X (with A) drifts;
 ## S stops it; Space gets out next to it, standing on the ground, without jumping. C parks another car; Tab opens
@@ -44,15 +44,6 @@ func _check(ok: bool, what: String) -> void:
 func _frames(n: int) -> void:
 	for i in n:
 		await physics_frame
-
-
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 ## Turns `car` in place towards the heading with the longest free run for a car-sized box (up to 70 m: 3 s at full

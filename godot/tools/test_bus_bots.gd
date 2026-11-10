@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless checks for the bot buses (scripts/traffic.gd, scripts/bus_bot.gd; world/bus_routes.json), the bot cars
 ## off (tools/test_car_bots.gd): they spawn on both directions of each line with a driver, a bus sets off from the
 ## start of each direction every headway, nobody can take their wheel (E), the traffic lights run on the shared clock
@@ -42,15 +42,6 @@ func _check(ok: bool, what: String) -> void:
 func _frames(n: int) -> void:
 	for i in n:
 		await physics_frame
-
-
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 func _bot(ref: String) -> Object:

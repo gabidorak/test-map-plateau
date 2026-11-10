@@ -363,21 +363,12 @@ func _skin(i: int, xf: Transform3D) -> void:
 
 func _site(s: Dictionary, rings: Array) -> void:
 	var site: Dictionary = s.get("site", {})
-	var area := Spec.poly(site.get("area", []))
-	for pa: Dictionary in site.get("paths", []):
+	for pa: Dictionary in site.get("paths", []):                # (their triangles: tools/restyle.py)
 		var look := str(PATH_LOOK.get(str(pa["material"]), "#d6d3cc"))
-		if pa.has("tris"):                                   # (a garden's: its triangles, holes kept)
-			var tp: Array = pa["tris"]
-			for t in range(0, tp.size() - 2, 3):
-				_gtri(look, Vector2(tp[t][0], tp[t][1]), Vector2(tp[t + 1][0], tp[t + 1][1]),
-						Vector2(tp[t + 2][0], tp[t + 2][1]), 0.05)
-			continue
-		var shape := Spec.poly(pa["pts"])
-		var parts: Array = Geometry2D.intersect_polygons(shape, area) if area.size() > 2 else [shape]
-		for q: PackedVector2Array in parts:
-			var idx := Geometry2D.triangulate_polygon(q)
-			for t in range(0, idx.size() - 2, 3):
-				_gtri(look, q[idx[t]], q[idx[t + 1]], q[idx[t + 2]], 0.05)
+		var tp: Array = pa.get("tris", [])
+		for t in range(0, tp.size() - 2, 3):
+			_gtri(look, Vector2(tp[t][0], tp[t][1]), Vector2(tp[t + 1][0], tp[t + 1][1]),
+					Vector2(tp[t + 2][0], tp[t + 2][1]), 0.05)
 	for w: Dictionary in site.get("walks", []):
 		_walk(w, rings)
 	for q in Spec.walk_polys(s):

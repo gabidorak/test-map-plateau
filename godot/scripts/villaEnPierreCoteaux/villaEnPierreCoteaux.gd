@@ -12,11 +12,13 @@ extends Node3D
 ## Frame: the house's: x east, y up from its ground floor, z south; its origin at the front facade's west end
 ## (map 264, -424): Godot x = 264 + x, z = 424 + z (no rotation).
 
+const WorldEdits = preload("res://scripts/builder/world_edits.gd")
 const Kit = preload("res://scripts/build_kit.gd")
 const SiteBuilder = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_site.gd")
 const HouseBuilder = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_house.gd")
 const InteriorBuilder = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_interior.gd")
 const Marks = preload("res://scripts/race_marks.gd")
+const GroundMap = preload("res://scripts/ground_map.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
 
 const Data = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_data.gd")
@@ -89,13 +91,7 @@ var _kick_t := 0.0
 ## and roof modules), the trees but a belt along the wall, the props (an old gate); new trees in.
 static func drop(world: Dictionary) -> void:
 	var wall := PackedVector2Array(WALL)
-	world["buildings"] = world["buildings"].filter(func(b: Dictionary) -> bool:
-		return not (str(b["id"]).split("_rest")[0] in DROP_IDS))
-	var osm := DROP_IDS.map(func(i: String) -> String: return i.trim_prefix("osm:"))
-	world["building_signs"] = world["building_signs"].filter(func(s: Dictionary) -> bool:
-		return not (str(s.get("building", "")) in osm))
-	world["building_modules"] = world["building_modules"].filter(func(m: Dictionary) -> bool:
-		return not Geometry2D.is_point_in_polygon(Vector2(m["x"], m["y"]), wall))
+	WorldEdits.drop_buildings(world, DROP_IDS, wall)
 	world["props"] = world["props"].filter(func(p: Dictionary) -> bool:
 		return not Geometry2D.is_point_in_polygon(Vector2(p["x"], p["y"]), wall))
 	world["trees"] = world["trees"].filter(func(t: Dictionary) -> bool:
@@ -211,14 +207,16 @@ func _ready() -> void:
 	_garage_shapes = house.get_meta("garage_shapes")
 	# the lawn's tufts inside the wall, none on what is built
 	var lawn := PackedVector2Array(WALL)
-	GrassField.lawns.append(lawn)
-	GrassField.regrass.append(Vector3(GATE.x, GATE.y, Data.OLD_TRACK))
+	var box := Rect2(GATE - Vector2.ONE * Data.OLD_TRACK, Vector2.ONE * Data.OLD_TRACK * 2.0)
+	for p in lawn:
+		box = box.expand(p)
+	GrassField.overrides.append(_grass_at.bind(lawn, box))
 	for poly: PackedVector2Array in site.get_meta("paved"):
 		var mp := PackedVector2Array()
 		for p in poly:
 			mp.append(to_map(p))
 		GrassField.keep_out.append(mp)
-	set_plaque("VILLA LUXE")
+	set_plaque(Data.NAME.to_upper())
 
 
 ## The text on the gate's plaque (properties.gd: for sale, or whose it is).
@@ -262,13 +260,6 @@ func garage_bays() -> Array:
 	for xf: Transform3D in HouseBuilder.garage_bays():
 		out.append(frame * xf)
 	return out
-
-
-## Where a player arriving home stands (global) and faces: the forecourt before the steps.
-func spawn_point() -> Array:
-	var p := frame * Vector3(20.0, 0.0, -6.0)
-	var m := Vector2(p.x, -p.z)
-	return [Vector3(p.x, Marks.ground(m.x, m.y) + 0.2, p.z), Vector3(0, 0, 1)]
 
 
 func _physics_process(delta: float) -> void:
@@ -337,14 +328,6 @@ func _pose_garage() -> void:
 		s.disabled = garage_open > 0.5
 
 
-## Opens (or shuts) the gate at once (the tools).
-func set_gate(on: bool) -> void:
-	_gate_want = on
-	gate_open = 1.0 if on else 0.0
-	_check_t = 1.0
-	_pose_gate()
-
-
 ## The rooms built while the camera is near the house, dropped when it is far.
 func _interior_check() -> void:
 	if DisplayServer.get_name() == "headless" and interior == null:
@@ -396,3 +379,17 @@ func _kick_out(dt: float) -> void:
 		game.player.teleport(at, atan2(-face.x, -face.z))
 	if game.has_method("toast"):
 		game.toast("Private property: %s" % NAME)
+
+
+## The grass field's ground (grass_field.gd overrides): lawn inside the wall, and on the old gravel track by the gate;
+## -2 elsewhere (the map's).
+static func _grass_at(x: float, y: float, wall: PackedVector2Array, box: Rect2) -> int:
+	var p := Vector2(x, y)
+	var gm: GroundMap = GroundMap.get_map()
+	if gm == null or not box.has_point(p):
+		return -2
+	if Geometry2D.is_point_in_polygon(p, wall):
+		return gm.materials.find("grass")
+	if p.distance_to(GATE) < Data.OLD_TRACK and gm.material_at(x, y) == gm.materials.find("gravel"):
+		return gm.materials.find("grass")
+	return -2

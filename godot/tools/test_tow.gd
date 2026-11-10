@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## PTA Online's tow truck job (scripts/online/tow_job.gd, scripts/tow_truck.gd), played in the PTA Online test
 ## (--online-test): the tow terminal at Losplatos Custom's yard, on duty a lent tow truck on its bay, a breakdown
 ## (grey smoke, hazards) on the access lane, hooked from the truck's hook (lifted, pinned), towed a few seconds (it
@@ -18,15 +18,6 @@ func _check(ok: bool, what: String) -> void:
 	print(("ok   " if ok else "FAIL ") + what)
 	if not ok:
 		_failures.append(what)
-
-
-func _until(cond: Callable, timeout: float) -> bool:
-	var t0 := Time.get_ticks_msec()
-	while not cond.call():
-		if Time.get_ticks_msec() - t0 > timeout * 1000.0:
-			return false
-		await process_frame
-	return true
 
 
 func _frames(n: int) -> void:

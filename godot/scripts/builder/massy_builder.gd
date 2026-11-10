@@ -210,16 +210,6 @@ func _emit(name: String, m: RailBuilder.Mesher, mat: Material, range_end: float,
 	_node.add_child(mi)
 
 
-func _shape_box(xf: Transform3D, size: Vector3, info: Dictionary) -> void:
-	var b := BoxShape3D.new()
-	b.size = size
-	var cs := CollisionShape3D.new()
-	cs.shape = b
-	cs.transform = xf
-	cs.set_meta("plateau", info)
-	_body.add_child(cs)
-
-
 func _shape_faces(name: String, faces: PackedVector3Array, info: Dictionary) -> void:
 	if faces.is_empty():
 		return
@@ -239,7 +229,7 @@ func _wall_shape(a: Vector2, b: Vector2, z0: float, z1: float, thick: float, inf
 	if a.distance_to(b) < 0.05 or z1 - z0 < 0.05:
 		return
 	var bm := _beam(a, z0, b, z0, thick, 0.0, z1 - z0)
-	_shape_box(bm[0], bm[1], info)
+	MeshUtils.shape_box(_body, bm[0], bm[1], info)
 
 
 ## A vertical quad from a to b, its bottom za0 / zb0 and top za1 / zb1 at either end, facing the left of a -> b
@@ -315,7 +305,7 @@ func _railing(m: RailBuilder.Mesher, a: Vector2, za: float, b: Vector2, zb: floa
 	var mid := _beam(a, za + h * 0.5, b, zb + h * 0.5, 0.035, 0.018, 0.018)
 	m.box(mid[0], mid[1], col)
 	var wall := _beam(a, za, b, zb, 0.08, 0.0, h)
-	_shape_box(wall[0], wall[1], info)
+	MeshUtils.shape_box(_body, wall[0], wall[1], info)
 
 
 ## A glass balustrade from a (za) to b (zb): glass panels, posts and a handrail; its collision.
@@ -333,7 +323,7 @@ func _balustrade(m: RailBuilder.Mesher, g: RailBuilder.Mesher, a: Vector2, za: f
 	var top := _beam(a, za + h, b, zb + h, 0.07, 0.04, 0.03)
 	m.box(top[0], top[1], rail_col)
 	var wall := _beam(a, za, b, zb, 0.08, 0.0, h)
-	_shape_box(wall[0], wall[1], info)
+	MeshUtils.shape_box(_body, wall[0], wall[1], info)
 
 
 # ---------------------------------------------------------------- the concourse deck
@@ -512,7 +502,7 @@ func _canopies() -> void:
 					base = _level
 				var leg := Transform3D(Basis.IDENTITY, _gp(q, (base + top) * 0.5))
 				m.box(leg, Vector3(0.55, top - base, 0.55), WHITE)
-				_shape_box(leg, Vector3(0.55, top - base, 0.55), _info("frame", "massy:canopy-frame"))
+				MeshUtils.shape_box(_body, leg, Vector3(0.55, top - base, 0.55), _info("frame", "massy:canopy-frame"))
 		# the red girders under the walkway's deck
 		for s: float in [-1.0, 1.0]:
 			var off := n * s * maxf(hw - 2.0, 0.5)
@@ -530,7 +520,7 @@ func _piers() -> void:
 			continue
 		var xf := Transform3D(Basis.IDENTITY, _g(p[0], p[1], (gz + top) * 0.5))
 		m.box(xf, Vector3(s, top - gz, s), WHITE)
-		_shape_box(xf, Vector3(s, top - gz, s), _info("pier", "massy:pier"))
+		MeshUtils.shape_box(_body, xf, Vector3(s, top - gz, s), _info("pier", "massy:pier"))
 
 
 # ---------------------------------------------------------------- stairs, escalators, lifts
@@ -561,7 +551,7 @@ func _flight(m: RailBuilder.Mesher, g: RailBuilder.Mesher, f: Dictionary, info: 
 		if absf(zb - za) < 0.02:
 			var pl := _beam(a, za, b, zb, w + 0.2, 0.3, 0.0)
 			m.box(pl[0], pl[1], STEP_METAL if esc else STONE)
-			_shape_box(pl[0], pl[1], info)
+			MeshUtils.shape_box(_body, pl[0], pl[1], info)
 		else:
 			var k := maxi(1, roundi(nsteps * absf(zb - za) / total))
 			for j in k:
@@ -574,7 +564,7 @@ func _flight(m: RailBuilder.Mesher, g: RailBuilder.Mesher, f: Dictionary, info: 
 				var tr := _beam(a, za - 0.15, b, zb - 0.15, w + 0.25, 1.0, 0.0)
 				m.box(tr[0], tr[1], TRUSS)
 			var ramp := _beam(a, za, b, zb, w, 0.3, 0.0)
-			_shape_box(ramp[0], ramp[1], info)
+			MeshUtils.shape_box(_body, ramp[0], ramp[1], info)
 		for side: float in [1.0, -1.0]:
 			var off := nn * side * (w * 0.5 + 0.06)
 			if esc:
@@ -623,7 +613,7 @@ func _lifts() -> void:
 		var basis := Basis(_gd(e0.normalized()), Vector3.UP, _gd(e0.normalized()).cross(Vector3.UP).normalized())
 		var xf := Transform3D(basis, _gp(c, (z0 + z1) * 0.5))
 		m.box(Transform3D(basis, _gp(c, z1 - 0.1)), Vector3(e0.length() + 0.2, 0.25, e1.length() + 0.2), STEEL)
-		_shape_box(xf, Vector3(e0.length(), z1 - z0, e1.length()), info)
+		MeshUtils.shape_box(_body, xf, Vector3(e0.length(), z1 - z0, e1.length()), info)
 
 
 # ---------------------------------------------------------------- Massy TGV
@@ -742,7 +732,7 @@ func _tgv() -> void:
 		var corner := fa if s < 0.0 else fb
 		var base := corner - back * 2.5 + right * s * 1.5
 		m.box(Transform3D(Basis.IDENTITY, _gp(base, (g0 + mast) * 0.5)), Vector3(0.5, mast - g0, 0.5), WHITE)
-		_shape_box(Transform3D(Basis.IDENTITY, _gp(base, (g0 + mast) * 0.5)), Vector3(0.5, mast - g0, 0.5), info)
+		MeshUtils.shape_box(_body, Transform3D(Basis.IDENTITY, _gp(base, (g0 + mast) * 0.5)), Vector3(0.5, mast - g0, 0.5), info)
 		for to: Array in [[fm_r, R], [corner - back * ov + right * s * ov, E - drop], [corner + back * 12.0, E]]:
 			var st := _beam(base, mast - 0.3, to[0], to[1], 0.05, 0.025, 0.025)
 			m.box(st[0], st[1], DARK)
@@ -762,7 +752,7 @@ func _tgv() -> void:
 		for p: Vector2 in [o0.lerp(o1, 0.15), o0.lerp(o1, 0.85)]:
 			var post := Transform3D(Basis.IDENTITY, _gp(p + back * 0.4, (g0 + cz) * 0.5))
 			m.box(post, Vector3(0.3, cz - g0, 0.3), WHITE)
-			_shape_box(post, Vector3(0.3, cz - g0, 0.3), info)
+			MeshUtils.shape_box(_body, post, Vector3(0.3, cz - g0, 0.3), info)
 	# its walls' collision (the front's is above, open at the doors), the hall inside, the ways down to the platforms
 	for e: Array in [[fb, bb], [bb, ba], [ba, fa]]:
 		_wall_shape(e[0], e[1], minf(low, g0) - 1.0, E, 0.4, info)
@@ -849,7 +839,7 @@ func _tgv_interior(T: Dictionary, fa: Vector2, fb: Vector2, ba: Vector2, right: 
 		var cz: float = Z.call(cx, mz0 + 0.4)
 		var col := Transform3D(Basis.IDENTITY, _gp(P.call(cx, mz0 + 0.4), (cz + z_m) * 0.5))
 		m.box(col, Vector3(0.4, z_m - cz, 0.4), WHITE)
-		_shape_box(col, Vector3(0.4, z_m - cz, 0.4), info)
+		MeshUtils.shape_box(_body, col, Vector3(0.4, z_m - cz, 0.4), info)
 	for i in lift_xy.size():
 		var c: Vector2 = lift_xy[i]
 		var p: Vector2 = P.call(c.x, c.y)
@@ -862,7 +852,7 @@ func _tgv_interior(T: Dictionary, fa: Vector2, fb: Vector2, ba: Vector2, right: 
 				m.box(Transform3D(Basis.IDENTITY, _gp(corner, (z0 + z_m + 3.0) * 0.5)), Vector3(0.1, z_m + 3.0 - z0, 0.1), STEEL)
 		for e: Array in [[-1.0, -1.0, 1.0, -1.0], [1.0, -1.0, 1.0, 1.0], [1.0, 1.0, -1.0, 1.0], [-1.0, 1.0, -1.0, -1.0]]:
 			_vquad(gl, P.call(c.x + e[0], c.y + e[1]), P.call(c.x + e[2], c.y + e[3]), z0, z_m + 2.8, z0, z_m + 2.8, GLASS, false)
-		_shape_box(lb, Vector3(2.0, z_m + 3.0 - z0, 2.0), _info("lift", "massy:tgv-lift", T["lifts"][i]["osm"]))
+		MeshUtils.shape_box(_body, lb, Vector3(2.0, z_m + 3.0 - z0, 2.0), _info("lift", "massy:tgv-lift", T["lifts"][i]["osm"]))
 	# the shops along both side walls: a box, its lit front behind glass, its name on a coloured band
 	var names := [["Paul", Color("#2b2522")], ["Relay", Color("#c8102e")], ["Monop'daily", Color("#d6006e")],
 			["Boutique SNCF", Color("#3c3c46")], ["Salle d'attente", Color("#4a5a6a")],
@@ -898,7 +888,7 @@ func _tgv_interior(T: Dictionary, fa: Vector2, fb: Vector2, ba: Vector2, right: 
 			m.box(Transform3D(hb, _gp(p + back * 0.25, z0 + 0.75)), Vector3(4.0, 0.6, 0.06), Color("#8a8f96"))
 			for s: float in [-1.6, 1.6]:
 				m.box(Transform3D(hb, _gp(p + right * s, z0 + 0.22)), Vector3(0.08, 0.44, 0.45), STEEL)
-			_shape_box(Transform3D(hb, _gp(p, z0 + 0.45)), Vector3(4.0, 0.9, 0.6), info)
+			MeshUtils.shape_box(_body, Transform3D(hb, _gp(p, z0 + 0.45)), Vector3(4.0, 0.9, 0.6), info)
 	# the departure boards, hanging from the arches, facing the doors
 	var boards := "Départs\n14:12  Bordeaux  V3\n14:26  Nantes  V1\n14:41  Lyon  V4\n15:03  Rennes  V2\n" \
 			+ "15:18  Marseille  V3"
@@ -931,7 +921,7 @@ func _tgv_shop(m: RailBuilder.Mesher, gl: RailBuilder.Mesher, lights: RailBuilde
 	var h := 3.7
 	var into := right if side == 0.0 else -right        # from the wall towards the hall's middle
 	m.box(Transform3D(hb, _gp(c, z0 + h * 0.5)), Vector3(depth, h, 7.5), CREAM)
-	_shape_box(Transform3D(hb, _gp(c, z0 + h * 0.5)), Vector3(depth, h, 7.5), info)
+	MeshUtils.shape_box(_body, Transform3D(hb, _gp(c, z0 + h * 0.5)), Vector3(depth, h, 7.5), info)
 	var fr := c + into * (depth * 0.5 + 0.02)
 	var face := _facing(_gd(into))
 	lights.box(Transform3D(face, _gp(fr, z0 + 1.45)), Vector3(length - 1.2, 2.3, 0.02), Color("#ffe2b0"))
@@ -968,7 +958,7 @@ func _tgv_accesses(T: Dictionary) -> void:
 		_balustrade(m, gl, top + n * hw + d * length, g, top - n * hw + d * length, g, 1.1, STEEL, info)
 		var gate := _beam(top + n * hw, g, top - n * hw, g, 0.08, 0.0, 1.0)
 		m.box(gate[0], gate[1], Color("#6a7079"))
-		_shape_box(gate[0], gate[1], info)
+		MeshUtils.shape_box(_body, gate[0], gate[1], info)
 		# the sign on a post beside the gate, facing the way in
 		var post := top + n * (hw + 0.4) - d * 0.3
 		m.box(Transform3D(Basis.IDENTITY, _gp(post, g + 1.3)), Vector3(0.1, 2.6, 0.1), DARK)
@@ -1113,7 +1103,7 @@ func _l18_hall() -> void:
 	for p: Array in H["posts"]:
 		var xf := Transform3D(Basis.IDENTITY, _g(p[0], p[1], float(p[2]) + 1.3))
 		m.box(xf, Vector3(0.22, 2.6, 0.22), CORTEN)
-		_shape_box(xf, Vector3(0.22, 2.6, 0.22), _info("post", "massy:l18-posts"))
+		MeshUtils.shape_box(_body, xf, Vector3(0.22, 2.6, 0.22), _info("post", "massy:l18-posts"))
 
 
 # ---------------------------------------------------------------- line 18: the station box
@@ -1275,7 +1265,7 @@ func _l18_box() -> void:
 	var land1 := minf(s1 - 0.3, land0 + 4.5)
 	var lp := _beam(at.call(land0, 0.0), z_mid, at.call(land1, 0.0), z_mid, sh * 2.0 - 0.4, 0.4, 0.0)
 	m.box(lp[0], lp[1], STONE)
-	_shape_box(lp[0], lp[1], info)
+	MeshUtils.shape_box(_body, lp[0], lp[1], info)
 	_balustrade(m, g, at.call(land0, ca + 1.6), z_mid, at.call(land0, cb - 1.6), z_mid, 1.1, STEEL, info)
 	# the shaft's rim in the hall: glass balustrades, open where flight B comes up
 	var rim := [[at.call(s0, -sh), at.call(s0, cb - 1.7)], [at.call(s0, cb + 1.7), at.call(s0, sh)],

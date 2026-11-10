@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## Headless checks for the water (scripts/water.gd) and the jet-ski (scripts/jet_ski.gd): the scene has its bodies of
 ## water, the Lac de l'X at its level with its bed dug out under the surface; a player dropped in it swims with the head
 ## out and moves at swimming speed. The vehicle code parks the jet-ski on the lake near a player on its shore, where it
@@ -35,15 +35,6 @@ func _check(ok: bool, what: String) -> void:
 func _frames(n: int) -> void:
 	for i in n:
 		await physics_frame
-
-
-func _key(code: Key, pressed: bool) -> void:
-	var e := InputEventKey.new()
-	e.physical_keycode = code
-	e.keycode = code
-	e.pressed = pressed
-	Input.parse_input_event(e)
-	Input.flush_buffered_events()
 
 
 func _tap(code: Key) -> void:

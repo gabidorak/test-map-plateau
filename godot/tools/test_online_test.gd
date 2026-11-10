@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## The PTA Online test (game.gd online_test, online_mode.gd testing): played solo with --online-test, the mode is PTA
 ## Online with its rules, plus TEST_MONEY € and a refill, every unarmed vehicle in the garage, the fly camera and the
 ## in-game menu's trips to the bus depot, the fire station and Prestige Motors. ~1 min. Exit 1 on failure.
@@ -16,15 +16,6 @@ func _check(ok: bool, what: String) -> void:
 	print(("ok   " if ok else "FAIL ") + what)
 	if not ok:
 		_failures.append(what)
-
-
-func _until(cond: Callable, timeout: float) -> bool:
-	var t0 := Time.get_ticks_msec()
-	while not cond.call():
-		if Time.get_ticks_msec() - t0 > timeout * 1000.0:
-			return false
-		await process_frame
-	return true
 
 
 func _action(m: Node, prefix: String) -> Callable:

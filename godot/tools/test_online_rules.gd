@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tools/test_base.gd"
 ## PTA Online's rules and garages (ONLINE_MILESTONES.md O3, scripts/modes/online_mode.gd). The role is the first
 ## argument after `--`:
 ## - `--check`: played solo (PLATEAU_MODE=online, the player's garage PLATEAU_ONLINE_VEHICLES): the mode's rules, every
@@ -47,15 +47,6 @@ func _check(ok: bool, what: String) -> void:
 		_failures.append(what)
 
 
-func _until(cond: Callable, timeout: float) -> bool:
-	var t0 := Time.get_ticks_msec()
-	while not cond.call():
-		if Time.get_ticks_msec() - t0 > timeout * 1000.0:
-			return false
-		await process_frame
-	return true
-
-
 func _wait(seconds: float) -> void:
 	await create_timer(seconds).timeout
 
@@ -86,17 +77,6 @@ func _run() -> void:
 			await _back()
 	print("%d failure(s)" % _failures.size())
 	quit(1 if _failures.size() > 0 else 0)
-
-
-func _press(action: String) -> void:
-	var e := InputEventAction.new()
-	e.action = action
-	e.pressed = true
-	Input.parse_input_event(e)
-	var up := InputEventAction.new()
-	up.action = action
-	up.pressed = false
-	Input.parse_input_event(up)
 
 
 func _start(online: bool) -> void:
@@ -232,17 +212,17 @@ func _solo() -> void:
 	_check(Vector2(near.get("xy", Vector2.INF)).distance_to(start) < 500.0, "...within 500 m of the spawn point")
 
 	# U: no vehicle menu
-	_press("vehicle_menu")
+	_press_action("vehicle_menu")
 	await process_frame
 	await process_frame
 	_check(not _main._menu.visible, "U doesn't open the vehicle menu")
 	_check(m.ui_open() and _main.ui_open() and not _main.player.active, "U opens our vehicle's panel (the player stands still)")
-	_press("vehicle_menu")
+	_press_action("vehicle_menu")
 	await process_frame
 	_check(not m.ui_open() and _main.player.active, "U again closes it")
 
 	# the terminal's list
-	_press("interact")
+	_press_action("interact")
 	await _until(func() -> bool: return m._panel.rows.get_child_count() > 0, 5.0)
 	var shown := {}
 	for row in m._panel.rows.get_children():
@@ -368,7 +348,7 @@ func _owner() -> void:
 	_check(m._wallet.text == "5 000 €", "the wallet shows %s" % m._wallet.text)
 	_check(not m.garages.terminal_near(_main.player.global_position, m.REACH).is_empty(), "we start at a garage terminal")
 	# the terminal's list
-	_press("interact")
+	_press_action("interact")
 	await _until(func() -> bool: return m._panel.rows.get_child_count() > 0, 10.0)
 	for row in m._panel.rows.get_children():
 		var parts: PackedStringArray = str(row.name).split("_", true, 2)
@@ -376,14 +356,14 @@ func _owner() -> void:
 			_ids[parts[2]] = int(parts[1])
 	_check(_ids.has("sedan") and _ids.has("taxi") and _ids.has("gaz-tiger") and _ids.has("bus-idfm"),
 			"the terminal lists our garage: %s" % str(_ids))
-	_press("interact")
+	_press_action("interact")
 	await process_frame
 	_check(not m.ui_open(), "E again closes it")
-	_press("vehicle_menu")
+	_press_action("vehicle_menu")
 	await process_frame
 	await process_frame
 	_check(not _main._menu.visible and m.ui_open(), "U: our vehicle's panel, not the vehicle menu")
-	_press("vehicle_menu")
+	_press_action("vehicle_menu")
 	await process_frame
 	# forged parks: a patched client parking armed vehicles itself, and asking the server for them
 	var state: Array = _main.cars[0].net_state() if not _main.cars.is_empty() else []
@@ -447,13 +427,13 @@ func _other() -> void:
 	for i in 5:
 		await physics_frame
 	_check(m.prompt_text().contains("locked"), "the prompt says so: %s" % m.prompt_text())
-	_press("interact")
+	_press_action("interact")
 	await _wait(2.0)
 	_check(_main.driving == null and _toasted("is locked"), "E: refused, it's locked (%s)" % str(_toasts))
 	_mark("refused")
 	await _await_mark("unlocked")
 	await _until(func() -> bool: return not m.vehicles[id]["locked"], 5.0)
-	_press("interact")
+	_press_action("interact")
 	var drove := await _until(func() -> bool: return _main.driving == taxi, 5.0)
 	_check(drove, "unlocked: we drive it")
 	if drove:

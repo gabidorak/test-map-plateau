@@ -149,10 +149,6 @@ func _bed(c: Vector3, yaw: float, width: float) -> void:
 	col_xf(Transform3D(b, c + Vector3(0, 0.3, 0)), Vector3(width, 0.6, 2.1))
 
 
-func _wall_panel(m: String, x0: float, x1: float, y0: float, y1: float, z0: float, z1: float) -> void:
-	box(m, x0, x1, y0, y1, z0, z1)
-
-
 # ---------------------------------------------------------------- the ground floor
 
 func _hall() -> void:
