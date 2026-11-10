@@ -40,8 +40,6 @@ const TREAD := 0.34
 var _ground: Callable
 var _faces := PackedVector3Array()
 var _paved: Array = []
-var _nodes := {}                            # the gravel's smooth height: Vector2i (a node of a 4 m grid) -> height
-var _path_nodes := {}                       # the garden path's: its node (every 2 m along z) -> height
 
 
 func _init() -> void:
@@ -69,49 +67,6 @@ func build(ground: Callable, meshes := true) -> Node3D:
 
 func g(x: float, z: float) -> float:
 	return float(_ground.call(x, z))
-
-
-## The gravel's height at (x, z): smooth (bilinear between the nodes of a 4 m grid, each over the highest ground
-## within 2 m of it): level over the ground's bumps, never much under it.
-func smooth_h(x: float, z: float) -> float:
-	var fx := x / 4.0
-	var fz := z / 4.0
-	var i := floori(fx)
-	var j := floori(fz)
-	var tx := fx - i
-	var tz := fz - j
-	return lerpf(lerpf(_node(i, j), _node(i + 1, j), tx), lerpf(_node(i, j + 1), _node(i + 1, j + 1), tx), tz)
-
-
-func _node(i: int, j: int) -> float:
-	var k := Vector2i(i, j)
-	if not _nodes.has(k):
-		var h := -INF
-		for di in range(-2, 3):
-			for dj in range(-2, 3):
-				h = maxf(h, g_top(i * 4.0 + di, j * 4.0 + dj))
-		_nodes[k] = h + 0.05
-	return _nodes[k]
-
-
-## The garden path's height at z: level across it, smooth along it (linear between nodes every 2 m, each over the
-## highest ground across the path within a metre of it).
-func path_h(z: float) -> float:
-	var f := z / 2.0
-	var i := floori(f)
-	return lerpf(_path_node(i), _path_node(i + 1), f - i)
-
-
-func _path_node(i: int) -> float:
-	if not _path_nodes.has(i):
-		var h := -INF
-		for dz: float in [-1.0, 0.0, 1.0]:
-			var x := PATH.x - 0.5
-			while x <= PATH.y + 0.5:
-				h = maxf(h, g(x, i * 2.0 + dz))
-				x += 0.5
-		_path_nodes[i] = h + 0.06
-	return _path_nodes[i]
 
 
 ## The ground's highest round (x, z) within a metre (paving lies over it: the drawn ground is a coarser mesh, and
@@ -450,7 +405,7 @@ static func _lane_ramp(x: float, z: float) -> float:
 
 func _gravel() -> void:
 	var lane := PackedVector2Array(LANE)
-	var perron_z := -maxi(1, ceili(-smooth_h(20.0, -3.2) / RISE)) * TREAD
+	var perron_z := -maxi(1, ceili(-(g_top(20.0, -3.2) + 0.05) / RISE)) * TREAD
 	var keep := func(x: float, z: float) -> bool:
 		if _in_fountain(x, z, 0.2):
 			return false
@@ -462,8 +417,7 @@ func _gravel() -> void:
 			return false                        # (the perron and its cheeks)
 		return _in_fore(x, z) or _in_drive(x, z) or Geometry2D.is_point_in_polygon(Vector2(x, z), lane)
 	var height := func(x: float, z: float) -> float:
-		var w := clampf(1.0 - _rect_dist(FORECOURT, Vector2(x, z)) / 6.0, 0.0, 1.0)
-		var y := lerpf(g_top(x, z) + 0.05, smooth_h(x, z), w)        # (smooth_h is over g_top: never under it)
+		var y := g_top(x, z) + 0.05                 # (the forecourt is terraformed: data/terraform/)
 		if x > 39.0 and z > -0.5:
 			y = maxf(y, _lane_ramp(x, z))
 		return y
@@ -496,9 +450,9 @@ func _gravel() -> void:
 		var p1 := lc + Vector2(cos(a1), sin(a1)) * r0
 		var q0 := lc + Vector2(cos(a0), sin(a0)) * r1
 		var q1 := lc + Vector2(cos(a1), sin(a1)) * r1
-		var y0 := smooth_h(p0.x, p0.y) + 0.1
-		var y1 := smooth_h(p1.x, p1.y) + 0.1
-		tri("lawn", Vector3(p0.x, y0 - 0.03, p0.y), Vector3(p1.x, y1 - 0.03, p1.y), Vector3(lc.x, smooth_h(lc.x, lc.y) + 0.07, lc.y),
+		var y0 := (g_top(p0.x, p0.y) + 0.05) + 0.1
+		var y1 := (g_top(p1.x, p1.y) + 0.05) + 0.1
+		tri("lawn", Vector3(p0.x, y0 - 0.03, p0.y), Vector3(p1.x, y1 - 0.03, p1.y), Vector3(lc.x, (g_top(lc.x, lc.y) + 0.05) + 0.07, lc.y),
 				Vector3.UP)
 		quad("coping", Vector3(p0.x, y0, p0.y), Vector3(p1.x, y1, p1.y), Vector3(q1.x, y1, q1.y), Vector3(q0.x, y0, q0.y), Vector3.UP)
 		quad("coping", Vector3(q0.x, y0 - 0.25, q0.y), Vector3(q1.x, y1 - 0.25, q1.y), Vector3(q1.x, y1, q1.y), Vector3(q0.x, y0, q0.y),
@@ -594,7 +548,7 @@ func _steps(x0: float, x1: float, z0: float, y0: float, z1: float, y1: float, m 
 
 
 func _perron() -> void:
-	var gy := smooth_h(20.0, -3.2)
+	var gy := (g_top(20.0, -3.2) + 0.05)
 	var n := maxi(1, ceili(-gy / RISE))
 	var z0 := -n * TREAD
 	_steps(STAIRS_W.x, STAIRS_W.y, z0, gy, 0.0, 0.0)
@@ -622,9 +576,9 @@ func _terrace() -> void:
 			[Vector2(STAIRS_W.y, 27.0), Vector2(40.0, 27.0)], [Vector2(40.0, 27.0), Vector2(40.0, 25.0)]]
 	for e: Array in bal:
 		_balustrade(e[0], e[1], 0.0)
-	var gb := path_h(28.5)
+	var gb := (g_top(20.0, 28.5) + 0.06)
 	var n := maxi(1, ceili(-gb / RISE))
-	gb = path_h(27.0 + n * TREAD)
+	gb = (g_top(20.0, 27.0 + n * TREAD) + 0.06)
 	_steps(STAIRS_W.x, STAIRS_W.y, 27.0 + n * TREAD, gb, 27.0, 0.0)
 	root.set_meta("garden_steps_end", 27.0 + n * TREAD)
 	_paved.append(_poly_rect(Rect2(-2.3, -0.3, 42.6, 27.6 + n * TREAD), 0.0))
@@ -697,15 +651,15 @@ func _garden() -> void:
 	var z0: float = root.get_meta("garden_steps_end")
 	var z1 := DECK.position.y - _deck_steps_len()
 	_sheet_over(Rect2(PATH.x, z0, PATH.y - PATH.x, z1 - z0), "pavers", func(_x: float, _z: float) -> bool: return true, 0.05,
-			func(_x: float, z: float) -> float: return path_h(z))
+			func(_x: float, z: float) -> float: return (g_top(20.0, z) + 0.06))
 	var nz := ceili((z1 - z0) / 0.5)
 	for i in nz:
 		var za := z0 + (z1 - z0) * i / nz
 		var zb := z0 + (z1 - z0) * (i + 1) / nz
 		for e: Array in [[PATH.x, -1.0], [PATH.y, 1.0]]:
 			var x: float = e[0]
-			quad("ashlar", Vector3(x, g(x, za) - 0.1, za), Vector3(x, g(x, zb) - 0.1, zb), Vector3(x, path_h(zb), zb),
-					Vector3(x, path_h(za), za), Vector3(e[1], 0, 0))
+			quad("ashlar", Vector3(x, g(x, za) - 0.1, za), Vector3(x, g(x, zb) - 0.1, zb), Vector3(x, (g_top(20.0, zb) + 0.06), zb),
+					Vector3(x, (g_top(20.0, za) + 0.06), za), Vector3(e[1], 0, 0))
 	_paved.append(_poly_rect(Rect2(PATH.x, z0, PATH.y - PATH.x, z1 - z0)))
 	# box hedges along it, gaps for the lawn's paths, box balls at their ends
 	var z := z0 + 1.0
@@ -732,7 +686,7 @@ func _deck_top() -> float:
 
 func _deck_steps_len() -> float:
 	var top := _deck_top()
-	var gy := path_h(DECK.position.y - 1.5)
+	var gy := (g_top(20.0, DECK.position.y - 1.5) + 0.06)
 	return maxi(1, ceili((top - gy) / RISE)) * TREAD
 
 
@@ -797,9 +751,9 @@ func _pool() -> void:
 		tri("water", Vector3(a.x, water, a.y), Vector3(b.x, water, b.y), Vector3(c.x, water, c.z), Vector3.UP)
 		_faces.append_array(PackedVector3Array([Vector3(a.x, bottom, a.y), Vector3(b.x, bottom, b.y), Vector3(c.x, bottom, c.z)]))
 	# the steps up from the path
-	var gy := path_h(d.position.y - 1.5)
+	var gy := (g_top(20.0, d.position.y - 1.5) + 0.06)
 	var n := maxi(1, ceili((top - gy) / RISE))
-	gy = path_h(d.position.y - n * TREAD)
+	gy = (g_top(20.0, d.position.y - n * TREAD) + 0.06)
 	_steps(PATH.x - 1.0, PATH.y + 1.0, d.position.y - n * TREAD, gy, d.position.y, top)
 	# steps down into the pool on its north side, a ramp up them (one walks out)
 	var ez := POOL.y - POOL.w * 0.5

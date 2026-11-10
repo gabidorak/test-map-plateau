@@ -1,4 +1,4 @@
-extends Node
+extends "res://scripts/online/job.gd"
 ## PTA Online's bus job (ONLINE_MILESTONES.md O5, ONLINE_MODE.md 5): a child of the PTA Online mode (scripts/modes/
 ## online_mode.gd) on every peer, with its own RPCs. The host (the official server) judges everything from the states it
 ## already gets of the player's bus, and pays through the accounts service; the player's game only asks and shows.
@@ -38,7 +38,6 @@ const Economy = preload("res://scripts/economy.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const UiStyle = preload("res://scripts/ui_style.gd")
 
-signal answered(ok: bool, text: String)     # the host's answer to our last duty request
 
 const DATA := "res://data/jobs.json"
 const ROUTES := "res://world/bus_routes.json"
@@ -80,10 +79,8 @@ const POP_TIME := 3.5                       # s a popping line stays
 const NEAR_STOP := 120.0                    # m from the next stop the hint says to pull into its bay
 const SERVED_HINT := 8.0                    # s the hint says to close the doors and drive on after a stop paid
 
-var mode: Node                              # online_mode.gd, which makes this node
 var pay := {}                               # data/jobs.json "bus"
 var cap := 30000                            # € an account may earn from jobs an hour (data/jobs.json "hour_cap")
-var duties := {}                            # host: peer -> Duty
 var time := 0.0                             # host: s of physics since it started (played solo: the cap's clock)
 var info := {}                              # client: our duty as the host sent it, {} off duty
 var _routes := {}                           # host: route id -> Route
@@ -938,29 +935,6 @@ func _h_duty(gid: String, ref: String) -> void:
 	if not r[0]:
 		_log("%s: no duty on line %s (%s)" % [mode.game.net.player_name(peer), ref, r[1]])
 	mode.send_to(peer, self, "_c_answer", r)
-
-
-@rpc("any_peer", "call_remote", "reliable")
-func _h_off() -> void:
-	if not mode.hosting:
-		return
-	var peer: int = mode._sender()
-	if duties.has(peer):
-		end_duty(peer, "you asked")
-		mode.send_to(peer, self, "_c_answer", [true, "Off duty."])
-	else:
-		mode.send_to(peer, self, "_c_answer", [false, "You aren't on duty."])
-
-
-@rpc("authority", "call_remote", "reliable")
-func _c_answer(ok: bool, text: String) -> void:
-	answered.emit(ok, text)
-	if ok and mode.ui_open():
-		mode.close_ui()
-	if ok or not mode.ui_open():
-		mode.game.toast(text)
-	else:
-		mode._panel.set_status(text)
 
 
 @rpc("authority", "call_remote", "reliable")

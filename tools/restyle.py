@@ -171,12 +171,16 @@ def cmd_garden(a, w):
     spec = json.load(open(path, encoding="utf-8"))
     garden, paths, res = restyle_garden.read(spec, w, a.image, a.pairs, a.meadow_px, a.flatten, a.grass, a.dark,
                                              a.debug)
+    tz = garden.pop("terraform", None)
+    if tz:
+        import terraform
+        terraform.save(a.slug, [tz])
     spec["site"]["garden"] = garden
     spec["site"]["paths"] = (spec["site"].get("paths", []) if a.keep_map_paths else []) + paths
     write(a.slug, spec, True)
     print("%s: fit residuals %s m; %d trees, %d hedges, %d paths, %d meadow(s), ground %s (rms %s m)" % (
         a.slug, " ".join("%.2f" % r for r in res), len(garden["trees"]), len(garden["hedges"]), len(paths),
-        len(garden["meadows"]), a.flatten, garden.get("flatten_rms", "-")))
+        len(garden["meadows"]), a.flatten, tz["rms"] if tz else "-"))
 
 
 def cmd_px2map(a):

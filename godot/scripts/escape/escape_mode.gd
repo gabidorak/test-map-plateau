@@ -1465,24 +1465,6 @@ func _key_text(action: String) -> String:
 	return s.key_text(action) if s else action
 
 
-## Calls `method` of `node` (this mode or one of its parts) on every welcomed player but us (host side).
-func send_all(node: Node, method: StringName, args: Array) -> void:
-	if not game.net.active:
-		return
-	for peer: int in game.net.players:
-		if peer != me():
-			node.callv("rpc_id", [peer, method] + args)
-
-
-## Calls `method` of `node` on player `peer` (here when it is us).
-func send_to(peer: int, node: Node, method: StringName, args: Array) -> void:
-	if peer == me() or not game.net.active:
-		if game.mode != "server":
-			node.callv(method, args)
-	elif game.net.players.has(peer):
-		node.callv("rpc_id", [peer, method] + args)
-
-
 ## Calls `method` of `node` on the host (here when we host or play solo).
 func to_host(node: Node, method: StringName, args: Array) -> void:
 	if not game.net.active or multiplayer.is_server():

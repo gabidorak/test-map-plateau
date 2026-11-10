@@ -92,3 +92,25 @@ func map_places() -> Array:
 ## Host: whether player `peer` may not take the wheel of vehicle `net_id` (net.gd _ask_drive); the mode tells them why.
 func refuse_drive(_net_id: String, _peer: int) -> bool:
 	return false
+
+
+## Our peer id (the modes say how they know it).
+func me() -> int:
+	return 1
+
+
+## Calls `method` of `node` on every welcomed player but us.
+func send_all(node: Node, method: StringName, args: Array) -> void:
+	if not game.net.active:
+		return
+	for peer: int in game.net.players:
+		if peer != me():
+			node.callv("rpc_id", [peer, method] + args)
+
+## Calls `method` of `node` on player `peer` (here when it is us).
+func send_to(peer: int, node: Node, method: StringName, args: Array) -> void:
+	if peer == me() or not game.net.active:
+		if game.mode != "server":
+			node.callv(method, args)
+	elif game.net.players.has(peer):
+		node.callv("rpc_id", [peer, method] + args)

@@ -402,6 +402,13 @@ static func mat(name: String) -> Material:
 	return m
 
 
+## A plain material: colour `c`, `rough`, `metal` (the kit's own and anyone's: NPCs, vehicles).
+static func plain(c: Color, rough := 0.6, metal := 0.0) -> StandardMaterial3D:
+	var m := _plain(c, rough)
+	m.metallic = metal
+	return m
+
+
 static func _plain(c: Color, rough: float) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = c

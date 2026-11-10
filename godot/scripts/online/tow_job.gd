@@ -1,4 +1,4 @@
-extends Node
+extends "res://scripts/online/job.gd"
 ## PTA Online's tow truck job (ONLINE_MILESTONES.md O10), a child of the PTA Online mode (scripts/modes/online_mode.gd)
 ## on every peer, with its own RPCs; the host calls the breakdowns, judges the deliveries and pays.
 ## - Duty: at Losplatos Custom's tow terminal (the yard behind the shop: a garage of kind "tow", its bay painted there,
@@ -18,7 +18,6 @@ const Economy = preload("res://scripts/economy.gd")
 const Marks = preload("res://scripts/race_marks.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 
-signal answered(ok: bool, text: String)
 
 const DATA := "res://data/jobs.json"
 const ROUTES := "res://world/car_routes.json"
@@ -30,10 +29,8 @@ const WAY := 1.3                            # the road's way over the straight l
 const YARD := 14.0                          # m from the tow bay's middle: delivered there
 const HOOK_NEAR := 6.0                      # m from the truck's hook, for the host
 
-var mode: Node                              # online_mode.gd
 var pay := {"base": 300, "per_km": 400, "first": 6.0, "gap": 15.0, "min_m": 250.0, "max_m": 1400.0}
 var cap := 30000
-var duties := {}                            # host: peer -> Duty
 var events: Array = []                      # host: [peer, €, text] paid (tests)
 var info := {}                              # client: our duty as the host sent it, {} off duty
 var _routes: Array = []                     # [[Vector2...]] the bot car routes' points (map)
@@ -401,17 +398,6 @@ func _c_hook(net_id: String) -> void:
 func _on_unhooked(car: Node3D) -> void:
 	if mode.game.net.active:
 		mode.to_host(self, "_h_unhooked", [car.net_id])
-
-
-@rpc("authority", "call_remote", "reliable")
-func _c_answer(ok: bool, text: String) -> void:
-	answered.emit(ok, text)
-	if ok and mode.ui_open():
-		mode.close_ui()
-	if ok or not mode.ui_open():
-		mode.game.toast(text)
-	else:
-		mode._panel.set_status(text)
 
 
 @rpc("authority", "call_remote", "reliable")

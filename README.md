@@ -158,6 +158,12 @@ material, collision boxes, ramps and faces, and a library of materials with proc
 (`godot/scripts/villaEnPierreCoteaux/`) and the restyled buildings (`godot/scripts/restyle/`: specs in `godot/data/restyle/`, made by
 `tools/restyle.py`) are built with it.
 
+Building the map (`godot/tools/build_world.gd`, `scripts/builder/world_builder.gd`) goes: read `world.json` and the
+heightmap; **terraform** (`scripts/builder/terraform.gd`: the zones of `godot/data/terraform/`, made by
+`tools/terraform.py`, ease the ground onto a surface: a restyled garden, the villa's forecourt and garden path; the
+game reads heights the same way); water; ground; the runtime builds' drops (`scripts/builder/world_edits.gd`);
+buildings, interiors, vegetation, props, bridges, rail, Massy, Logements X; collision; far ground.
+
 ### Map data (not in git)
 
 The generated map (~1.9 GB: `godot/world/` heightmaps, ground and `world.json`, `godot/world/base/`,

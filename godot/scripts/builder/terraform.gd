@@ -1,18 +1,20 @@
 extends RefCounted
-## The ground of restyled grounds smoothed (a spec's site.garden.flatten, from tools/restyle.py garden): heights eased
-## onto a smooth surface (a quadratic fitted to the LiDAR ground, or its median: flat) by the garden's weight grid
-## (site.garden.grid: 0 at the grounds' outline, full `blend` m in). Applied alike everywhere heights are made: the
+## Terraforming (data/terraform/*.json, made by tools/terraform.py: a restyled garden's ground, the villa's forecourt
+## and garden path...): in each zone the map's heights eased onto a surface (a quadratic or a plane fitted to the LiDAR
+## ground, or a level) by the zone's weight grid (0 at its outline, full `blend` m in). The first step after the map
+## is read (builder/world_builder.gd), so everything is built on the ground as it ends up. Applied alike everywhere
+## heights are made: the
 ## heightmap when the map is built (its collision, water, trees, props: builder/world_builder.gd; patch() keeps each
 ## zone's heights before, for the ground's mesh: move()), the ground's mesh (builder/ground_builder.gd), the heights read
 ## in the game (ground_map.gd height()). No preloads (ground_map.gd uses it).
 
-const DIR := "res://data/restyle/"
+const DIR := "res://data/terraform/"
 
 static var _zones: Array = []                # [{"box", "o", "c", "x0", "y0", "cell", "w", "h", "wt"}]
 static var _loaded := false
 
 
-## A garden's grid layer (base64 of deflated bytes, w x h).
+## A grid's layer (base64 of deflated bytes, w x h: data/terraform's weights, a restyled garden's kind).
 static func layer(grid: Dictionary, key: String) -> PackedByteArray:
 	return Marshalls.base64_to_raw(str(grid[key])).decompress(int(grid["w"]) * int(grid["h"]),
 			FileAccess.COMPRESSION_DEFLATE)
@@ -28,17 +30,15 @@ static func zones() -> Array:
 				var s: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + f))
 				if not (s is Dictionary):
 					continue
-				var garden: Dictionary = s.get("site", {}).get("garden", {})
-				var fl: Dictionary = garden.get("flatten", {})
-				var grid: Dictionary = garden.get("grid", {})
-				if fl.is_empty() or grid.is_empty():
-					continue
-				var cell := float(grid["cell"])
-				var x0 := float(grid["origin"][0])
-				var y0 := float(grid["origin"][1])
-				_zones.append({"box": Rect2(x0, y0 - cell * int(grid["h"]), cell * int(grid["w"]), cell * int(grid["h"])),
-						"o": Vector2(fl["origin"][0], fl["origin"][1]), "c": PackedFloat32Array(fl["coef"]), "x0": x0,
-						"y0": y0, "cell": cell, "w": int(grid["w"]), "h": int(grid["h"]), "wt": layer(grid, "weight")})
+				for zn: Dictionary in s.get("zones", []):
+					var grid: Dictionary = zn["grid"]
+					var cell := float(grid["cell"])
+					var x0 := float(grid["origin"][0])
+					var y0 := float(grid["origin"][1])
+					_zones.append({"box": Rect2(x0, y0 - cell * int(grid["h"]), cell * int(grid["w"]),
+							cell * int(grid["h"])), "o": Vector2(zn["origin"][0], zn["origin"][1]),
+							"c": PackedFloat32Array(zn["coef"]), "x0": x0, "y0": y0, "cell": cell, "w": int(grid["w"]),
+							"h": int(grid["h"]), "wt": layer(grid, "weight")})
 	return _zones
 
 

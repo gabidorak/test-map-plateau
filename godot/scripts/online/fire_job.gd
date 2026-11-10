@@ -1,4 +1,4 @@
-extends Node
+extends "res://scripts/online/job.gd"
 ## PTA Online's firefighter job (ONLINE_MILESTONES.md O7, ONLINE_MODE.md 5): a child of the PTA Online mode (scripts/
 ## modes/online_mode.gd) on every peer, with its own RPCs. The host (the official server) sends the alarms, judges the
 ## water and pays through the accounts service; the player's game only asks and shows. The fires themselves are
@@ -30,7 +30,6 @@ const Car = preload("res://scripts/car.gd")
 const Economy = preload("res://scripts/economy.gd")
 const UiStyle = preload("res://scripts/ui_style.gd")
 
-signal answered(ok: bool, text: String)     # the host's answer to our last duty request
 
 const DATA := "res://data/jobs.json"
 const TRUCKS := ["fire-truck"]
@@ -44,10 +43,8 @@ const VOID := 10.0                          # s their water counts for nothing a
 const SPRAY_NEAR := 75.0                    # m from the fire the hint says to hose it
 const POP_TIME := 3.5
 
-var mode: Node                              # online_mode.gd, which makes this node
 var pay := {}                               # data/jobs.json "fire"
 var cap := 30000
-var duties := {}                            # host: peer -> Duty
 var events: Array = []                      # host: [peer, fire id, €, text] of every share paid (tests)
 var info := {}                              # client: our duty as the host sent it, {} off duty
 var alarm_first := 10.0
@@ -564,29 +561,6 @@ func _h_duty(gid: String) -> void:
 	if not r[0]:
 		_log("%s: no fire duty (%s)" % [mode.game.net.player_name(peer), r[1]])
 	mode.send_to(peer, self, "_c_answer", r)
-
-
-@rpc("any_peer", "call_remote", "reliable")
-func _h_off() -> void:
-	if not mode.hosting:
-		return
-	var peer: int = mode._sender()
-	if duties.has(peer):
-		end_duty(peer, "you asked")
-		mode.send_to(peer, self, "_c_answer", [true, "Off duty."])
-	else:
-		mode.send_to(peer, self, "_c_answer", [false, "You aren't on duty."])
-
-
-@rpc("authority", "call_remote", "reliable")
-func _c_answer(ok: bool, text: String) -> void:
-	answered.emit(ok, text)
-	if ok and mode.ui_open():
-		mode.close_ui()
-	if ok or not mode.ui_open():
-		mode.game.toast(text)
-	else:
-		mode._panel.set_status(text)
 
 
 @rpc("authority", "call_remote", "reliable")

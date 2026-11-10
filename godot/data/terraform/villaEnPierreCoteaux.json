@@ -1,0 +1,97 @@
+{
+ "about": "Terraforming zones (tools/terraform.py, applied by scripts/builder/terraform.gd).",
+ "zones": [
+  {
+   "label": "forecourt",
+   "mode": "plane",
+   "poly": [
+    [
+     243.0,
+     -400.0
+    ],
+    [
+     326.0,
+     -400.0
+    ],
+    [
+     326.0,
+     -424.0
+    ],
+    [
+     243.0,
+     -424.0
+    ]
+   ],
+   "origin": [
+    284.5,
+    -412.0
+   ],
+   "coef": [
+    -5.6356,
+    1.0809,
+    -0.1844,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "blend": 5.0,
+   "rms": 0.41,
+   "grid": {
+    "origin": [
+     243.0,
+     -400.0
+    ],
+    "cell": 1.0,
+    "w": 84,
+    "h": 25,
+    "weight": "eNqTNsre+Oo/dUFU9ozz36ls5tKN599T2cj/T15R25WjYBSMglEwCkbB8AUAAU0mpQ=="
+   }
+  },
+  {
+   "label": "garden path",
+   "mode": "plane",
+   "poly": [
+    [
+     281.5,
+     -446.0
+    ],
+    [
+     286.5,
+     -446.0
+    ],
+    [
+     286.5,
+     -483.0
+    ],
+    [
+     281.5,
+     -483.0
+    ]
+   ],
+   "origin": [
+    284.0,
+    -464.5
+   ],
+   "coef": [
+    -5.1687,
+    -0.2455,
+    -2.9216,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "blend": 1.0,
+   "rms": 0.12,
+   "grid": {
+    "origin": [
+     281.5,
+     -446.0
+    ],
+    "cell": 1.0,
+    "w": 6,
+    "h": 38,
+    "weight": "eNr7/3/4AwCa1eMd"
+   }
+  }
+ ]
+}

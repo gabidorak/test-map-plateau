@@ -6,8 +6,8 @@ points ("px,py=mx,my", 3 or more: buildings' corners or centres); every pixel of
   ignored the map's buildings (their courtyards are read), the red of a drawn outline, roads and shadows (dark grey),
           water (the map's stays)
 Trees: the peaks of the canopy's distance to its edge (a crown each, its radius that distance); hedges: their axis.
-Paths: polygons (with their holes) and their triangles. The ground: a quadratic fitted to the map's LiDAR ground in the
-grounds (bumps and pads ignored), "smooth"; or its median, "flat".
+Paths: polygons (with their holes) and their triangles. The ground: a terraforming zone over the grounds
+(tools/terraform.py: "smooth" a quadratic fitted to the LiDAR ground, bumps and pads ironed out; "flat" its median).
 """
 import base64
 import json
@@ -15,6 +15,7 @@ import os
 import zlib
 
 import numpy as np
+import terraform
 from PIL import Image, ImageDraw
 from scipy import ndimage as ndi
 from shapely import Polygon, MultiPolygon, box as sbox, unary_union, constrained_delaunay_triangles
@@ -87,60 +88,13 @@ def mask_polys(mask, M, mpp, min_m2, simplify_m=0.35):
     return out
 
 
-def heights_grid(box, step=4):
-    """The map's heightmap over a map box, every `step` cells: (xs, ys, z)."""
-    w = json.load(open(os.path.join(WORLD_DIR, "world.json"), encoding="utf-8"))["terrain"]
-    W, H, cell = int(w["w"]), int(w["h"]), float(w["cell"])
-    ox, oy = w["origin_xy"]
-    parts = [np.memmap(os.path.join(WORLD_DIR, f), dtype=np.float32, mode="r") for f in w.get("parts", [w["file"]])]
-    starts = np.cumsum([0] + [len(p) for p in parts])
-    i0, i1 = int((box[0] - ox) / cell), int((box[2] - ox) / cell)
-    j0, j1 = int((oy - box[3]) / cell), int((oy - box[1]) / cell)
-    cols = np.arange(max(0, i0), min(W - 1, i1) + 1, step)
-    rows = np.arange(max(0, j0), min(H - 1, j1) + 1, step)
-    z = np.empty((len(rows), len(cols)), np.float32)
-    for a, j in enumerate(rows):
-        k = j * W + cols
-        part = np.searchsorted(starts, k, side="right") - 1
-        z[a] = [parts[p][kk - starts[p]] for p, kk in zip(part, k)]
-    return ox + cols * cell, oy - rows * cell, z
-
-
-def ground_fit(area_poly, building_polys, mode):
-    """The ground's surface in the grounds: coefficients of c0 + c1 u + c2 v + c3 u2 + c4 uv + c5 v2 (u, v: (x, y) -
-    origin, in hundreds of m), fitted to the LiDAR ground off the buildings (outliers dropped); "flat": its median."""
-    minx, miny, maxx, maxy = area_poly.bounds
-    xs, ys, z = heights_grid((minx, miny, maxx, maxy))
-    X, Y = np.meshgrid(xs, ys)
-    im = Image.new("L", (len(xs), len(ys)), 0)
-    d = ImageDraw.Draw(im)
-    tx = lambda p: ((p[0] - xs[0]) / (xs[1] - xs[0]), (p[1] - ys[0]) / (ys[1] - ys[0]))
-    d.polygon([tx(p) for p in area_poly.exterior.coords], fill=1)
-    for b in building_polys:
-        d.polygon([tx(p) for p in b.exterior.coords], fill=0)
-    keep = np.array(im, dtype=bool)
-    c = area_poly.centroid
-    origin = [round(c.x, 2), round(c.y, 2)]
-    u, v, h = (X[keep] - c.x) / 100.0, (Y[keep] - c.y) / 100.0, z[keep]
-    if mode == "flat":
-        return origin, [float(np.median(h)), 0, 0, 0, 0, 0], 0.0
-    ok = np.ones(len(h), bool)
-    for _ in range(4):
-        A = np.c_[np.ones(ok.sum()), u[ok], v[ok], u[ok] ** 2, u[ok] * v[ok], v[ok] ** 2]
-        coef, *_ = np.linalg.lstsq(A, h[ok], rcond=None)
-        r = h - np.c_[np.ones(len(h)), u, v, u ** 2, u * v, v ** 2] @ coef
-        mad = np.median(np.abs(r[ok])) + 1e-3
-        ok = np.abs(r) < 3.0 * mad + 0.3
-    return origin, [round(float(c), 4) for c in coef], float(np.sqrt(np.mean(r[ok] ** 2)))
-
-
 def _b64(a):
     return base64.b64encode(zlib.compress(np.ascontiguousarray(a, np.uint8).tobytes(), 9)).decode()
 
 
-def grid(area, meadows, paths, grass, blend, cell=1.0):
-    """The game's lookups over the grounds, `cell` m, row 0 north (scripts/restyle/): the ground's kind (0 out, 1 lawn,
-    2 meadow, 3 path) and the smoothing's weight (0..255: 0 at the outline, 255 from `blend` m in)."""
+def grid(area, meadows, paths, grass, cell=1.0):
+    """The game's lookup over the grounds, `cell` m, row 0 north (scripts/restyle/restyle.gd): the ground's kind (0 out,
+    1 lawn, 2 meadow, 3 path)."""
     minx, miny, maxx, maxy = Polygon(area).bounds
     gw, gh = int(np.ceil((maxx - minx) / cell)) + 1, int(np.ceil((maxy - miny) / cell)) + 1
     g = lambda pts: [((p[0] - minx) / cell, (maxy - p[1]) / cell) for p in pts]
@@ -160,10 +114,7 @@ def grid(area, meadows, paths, grass, blend, cell=1.0):
     for pa in paths:
         on_path |= mask([pa["pts"]], pa.get("holes", []))
     kind[on_path & inside] = 3
-    t = np.clip(ndi.distance_transform_edt(inside) * cell / blend, 0.0, 1.0)
-    weight = np.round(t * t * (3.0 - 2.0 * t) * 255.0)
-    return {"origin": [round(minx, 2), round(maxy, 2)], "cell": cell, "w": gw, "h": gh, "kind": _b64(kind),
-            "weight": _b64(weight)}
+    return {"origin": [round(minx, 2), round(maxy, 2)], "cell": cell, "w": gw, "h": gh, "kind": _b64(kind)}
 
 
 def tris_of(p):
@@ -270,11 +221,9 @@ def read(spec, world, image, pairs, meadow_px=None, flatten="smooth", grass="mow
         paths = [p for p in paths if not any(m.contains(Polygon(p["pts"]).representative_point()) for m in mz)]
     garden = {"image": os.path.relpath(image, ROOT).replace("\\", "/"), "pairs": pairs, "grass": grass,
               "trees_mode": "replace", "hedges_mode": "replace", "trees": trees, "hedges": hedges, "meadows": meadows}
-    if flatten != "none":
-        origin, coef, rms = ground_fit(area_poly, [Polygon(r[0]) for r in blds], flatten)
-        garden["flatten"] = {"mode": flatten, "poly": area, "origin": origin, "coef": coef, "blend": 8.0}
-        garden["flatten_rms"] = round(rms, 2)
-    garden["grid"] = grid(area, meadows, paths, grass, 8.0)
+    garden["grid"] = grid(area, meadows, paths, grass)
+    if flatten != "none":                        # (its ground: a terraforming zone, tools/terraform.py)
+        garden["terraform"] = terraform.zone(area, flatten, 8.0, exclude=[r[0] for r in blds], label="garden")
     if debug:
         dbg = (img * 0.35 * 255).astype(np.uint8)
         dbg[path] = [235, 235, 235]

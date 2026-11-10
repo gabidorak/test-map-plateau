@@ -10,6 +10,7 @@ extends "res://scripts/car.gd"
 signal hooked_car(car: Node3D)
 signal unhooked_car(car: Node3D)
 
+const Kit = preload("res://scripts/build_kit.gd")
 const HOOK_REACH := 2.6                     # m from the hook to a vehicle's end
 const HOOK_HEIGHT := 0.75                   # m over the ground
 const ATTACH_HEIGHT := 0.45                 # m over its ground, a towed vehicle's end
@@ -36,10 +37,10 @@ func setup(model: String) -> void:
 
 ## The wrecker's body, boom, cable, hook and light bar (meshes on the truck; its collision is the tractor's box).
 func _build_wrecker(ground: float, rear: float) -> void:
-	var white := _mat(Color("#eeeeea"), 0.4, 0.2)
-	var navy := _mat(Color("#16213e"), 0.45, 0.2)
-	var steel := _mat(Color("#2b2e33"), 0.4, 0.7)
-	var yellow := _mat(Color("#f2c230"), 0.5, 0.1)
+	var white := Kit.plain(Color("#eeeeea"), 0.4, 0.2)
+	var navy := Kit.plain(Color("#16213e"), 0.45, 0.2)
+	var steel := Kit.plain(Color("#2b2e33"), 0.4, 0.7)
+	var yellow := Kit.plain(Color("#f2c230"), 0.5, 0.1)
 	var deck := ground + 1.15
 	var front := extents_center.z + half_extents.z - 2.55          # behind the cab
 	var hw := half_extents.x - 0.08
@@ -68,7 +69,7 @@ func _build_wrecker(ground: float, rear: float) -> void:
 	_part(Vector3(0.12, 0.2, 0.06), _hook_local + Vector3(0, 0.05, 0), steel)
 	_part(Vector3(1.6, 0.12, 0.25), Vector3(0, ground + 0.62, rear + 0.06), steel)      # the rear bar
 	# the light bar on the cab
-	_bar_mat = _mat(Color(1.0, 0.6, 0.1), 0.3, 0.0)
+	_bar_mat = Kit.plain(Color(1.0, 0.6, 0.1), 0.3, 0.0)
 	_bar_mat.emission_enabled = true
 	_bar_mat.emission = Color(1.0, 0.55, 0.05)
 	_bar_mat.emission_energy_multiplier = 0.0
@@ -80,14 +81,6 @@ func _build_wrecker(ground: float, rear: float) -> void:
 	_bar_light.light_energy = 0.0
 	_bar_light.position = Vector3(0, roof + 0.3, extents_center.z + half_extents.z - 0.9)
 	add_child(_bar_light)
-
-
-static func _mat(c: Color, rough: float, metal: float) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = c
-	m.roughness = rough
-	m.metallic = metal
-	return m
 
 
 func _part(size: Vector3, at: Vector3, mat: Material) -> void:

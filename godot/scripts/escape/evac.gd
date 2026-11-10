@@ -4,6 +4,7 @@ extends Node3D
 ## beacon blinking and a column of light over it that shows from afar where it waits. The circle round it (RADIUS m)
 ## is where survivors are rescued and players climb aboard; take_off() flies it away with them.
 
+const Kit = preload("res://scripts/build_kit.gd")
 const Marks = preload("res://scripts/race_marks.gd")
 
 const RADIUS := 13.0                        # m, the landing circle
@@ -104,11 +105,11 @@ func _process(delta: float) -> void:
 func _build() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Helicopter"
-	var red := _mat(RED, 0.35, 0.2)
-	var yellow := _mat(YELLOW, 0.4, 0.1)
-	var dark := _mat(Color(0.12, 0.12, 0.14), 0.6)
-	var blade_mat := _mat(Color(0.42, 0.42, 0.45), 0.5)
-	var glass := _mat(Color(0.12, 0.2, 0.3), 0.08, 0.6)
+	var red := Kit.plain(RED, 0.35, 0.2)
+	var yellow := Kit.plain(YELLOW, 0.4, 0.1)
+	var dark := Kit.plain(Color(0.12, 0.12, 0.14), 0.6)
+	var blade_mat := Kit.plain(Color(0.42, 0.42, 0.45), 0.5)
+	var glass := Kit.plain(Color(0.12, 0.2, 0.3), 0.08, 0.6)
 	var body := Node3D.new()
 	body.position.y = 1.55
 	root.add_child(body)
@@ -237,14 +238,6 @@ func _part(parent: Node3D, mesh: Mesh, mat: Material, pos: Vector3) -> MeshInsta
 	mi.position = pos
 	parent.add_child(mi)
 	return mi
-
-
-static func _mat(c: Color, rough: float, metal := 0.0) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = c
-	m.roughness = rough
-	m.metallic = metal
-	return m
 
 
 static func _capsule(r: float, h: float) -> CapsuleMesh:

@@ -3,7 +3,7 @@ extends RefCounted
 ## which ground piece covers a point (kind, material, OSM source) and the ground height as the
 ## mesh draws it. Coordinates are pipeline x (east), y (north). Shared by the grass scatter and the picker.
 
-const RestyleGround = preload("res://scripts/restyle/restyle_ground.gd")
+const Terraform = preload("res://scripts/builder/terraform.gd")
 const GroundHeights = preload("res://scripts/ground_heights.gd")
 const DEFAULT_INDEX := "res://world/ground_index.json"
 
@@ -86,7 +86,7 @@ func material_at(x: float, y: float) -> int:
 ## Ground height (relative to the world origin) as drawn by the ground mesh.
 func height(x: float, y: float) -> float:
 	var h: float = heights.at(x, y)
-	return h + RestyleGround.delta(x, y, h)        # (the restyled grounds smoothed: scripts/restyle/restyle_ground.gd)
+	return h + Terraform.delta(x, y, h)        # (terraformed: builder/terraform.gd)
 
 
 ## True in a 2 m cell where the drawn ground steps (a wall, a platform edge): height() is not the drawn height there.

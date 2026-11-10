@@ -3,14 +3,14 @@ extends Node3D
 ## (data/restyle/<slug>.json: restyle_spec.gd), made by restyle_building.gd; in every game mode (game.gd). The map's
 ## building leaves the world when it is built (drop, builder/world_builder.gd) and a garden's trees and hedges come
 ## in; the ground's paint in the grounds turns to lawn or meadow (repaint, builder/ground_builder.gd) and the grass field
-## follows (grass_field.gd overrides); the ground is smoothed by restyle_ground.gd.
+## follows (grass_field.gd overrides); the ground is terraformed by builder/terraform.gd.
 
 const Spec = preload("res://scripts/restyle/restyle_spec.gd")
 const WorldEdits = preload("res://scripts/builder/world_edits.gd")
 const Building = preload("res://scripts/restyle/restyle_building.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
-const RestyleGround = preload("res://scripts/restyle/restyle_ground.gd")
+const Terraform = preload("res://scripts/builder/terraform.gd")
 const PATH_MATS := ["concrete", "paving", "sett", "gravel", "dirt", "wood"]
 ## A garden's ground (site.garden): what becomes its lawn or meadow (roads, water, courts, buildings stay).
 const SOFT := ["concrete", "paving", "sett", "gravel", "dirt", "wood", "grass", "tall_grass", "sand", "forest_floor",
@@ -145,7 +145,7 @@ static func _grass_zone(s: Dictionary) -> void:
 	var y0 := float(grid["origin"][1])
 	GrassField.overrides.append(_grass_at.bind({"box": Rect2(x0, y0 - cell * int(grid["h"]), cell * int(grid["w"]),
 			cell * int(grid["h"])), "x0": x0, "y0": y0, "cell": cell, "w": int(grid["w"]), "h": int(grid["h"]),
-			"kind": RestyleGround.layer(grid, "kind")}))
+			"kind": Terraform.layer(grid, "kind")}))
 
 
 func _ready() -> void:

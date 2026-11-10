@@ -10,7 +10,7 @@ const Layers = preload("res://scripts/physics_layers.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
 const VillaEnPierreCoteaux = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_data.gd")
 const Restyle = preload("res://scripts/restyle/restyle.gd")
-const RestyleGround = preload("res://scripts/restyle/restyle_ground.gd")
+const Terraform = preload("res://scripts/builder/terraform.gd")
 const SHADER := "res://shaders/toy_ground.gdshader"
 ## Must match the material ids hard-coded in toy_ground.gdshader. "ballast" (the railway's trackbed) is appended by
 ## tools/rail/patch_world.py, after the pipeline's kerb and paint.
@@ -63,7 +63,7 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 			var arrays := []
 			arrays.resize(Mesh.ARRAY_MAX)
 			var verts: PackedVector3Array = parts[0].to_vector3_array()
-			RestyleGround.move(verts, c["aabb"])         # the restyled grounds smoothed (scripts/restyle/)
+			Terraform.move(verts, c["aabb"])         # terraformed (builder/terraform.gd)
 			var normals: PackedVector3Array = parts[1].to_vector3_array()
 			var index: PackedInt32Array = parts[4].to_int32_array()
 			var a: Array = c["aabb"]

@@ -6,6 +6,7 @@ extends Node3D
 ## off with it. Back to his post once they have left. Nothing collides with him. Built at runtime, local to each peer.
 ## In PTA Online his small talk sends the player to the catalogue (ONLINE_TALK; E by him: scripts/online/shop.gd).
 
+const Kit = preload("res://scripts/build_kit.gd")
 const KEEP := 2.2                           # m he stays from the player on foot
 const KEEP_DRIVING := 5.5                   # m from a car the player drives in the showroom
 const WALK := 1.5                           # m/s
@@ -295,14 +296,6 @@ func _animate(delta: float, target: Vector3) -> void:
 		_arms[1].rotation.z = lerpf(_arms[1].rotation.z, 0.0, minf(10.0 * delta, 1.0))
 
 
-func _mat(c: Color, rough := 0.6, metal := 0.0) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = c
-	m.roughness = rough
-	m.metallic = metal
-	return m
-
-
 func _part(parent: Node3D, mesh: Mesh, mat: Material, pos: Vector3, scale_ := Vector3.ONE) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
@@ -349,12 +342,12 @@ func _box(size: Vector3) -> BoxMesh:
 
 ## Front +Z, his left +X, feet on y = 0, 1.85 m tall.
 func _build_body() -> void:
-	var skin := _mat(SKIN, 0.55)
-	var suit := _mat(SUIT, 0.45)
-	var shirt := _mat(Color(0.97, 0.97, 0.97), 0.5)
-	var gold := _mat(GOLD, 0.2, 1.0)
-	var black := _mat(Color(0.02, 0.02, 0.02), 0.15)
-	var hair := _mat(HAIR, 0.35)
+	var skin := Kit.plain(SKIN, 0.55)
+	var suit := Kit.plain(SUIT, 0.45)
+	var shirt := Kit.plain(Color(0.97, 0.97, 0.97), 0.5)
+	var gold := Kit.plain(GOLD, 0.2, 1.0)
+	var black := Kit.plain(Color(0.02, 0.02, 0.02), 0.15)
+	var hair := Kit.plain(HAIR, 0.35)
 	_body = Node3D.new()
 	add_child(_body)
 	for side: float in [1.0, -1.0]:

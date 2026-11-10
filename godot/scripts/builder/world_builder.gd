@@ -12,7 +12,7 @@ const Losplatos = preload("res://scripts/losplatos/losplatos.gd")
 const AllSuites = preload("res://scripts/allsuites/allsuites.gd")
 const VillaEnPierreCoteaux = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux.gd")
 const Restyle = preload("res://scripts/restyle/restyle.gd")
-const RestyleGround = preload("res://scripts/restyle/restyle_ground.gd")
+const Terraform = preload("res://scripts/builder/terraform.gd")
 const CollisionBuilder = preload("res://scripts/builder/collision_builder.gd")
 const VegetationBuilder = preload("res://scripts/builder/vegetation_builder.gd")
 const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
@@ -52,8 +52,8 @@ func build_and_save() -> Error:
 	if heights.size() != int(world["terrain"]["w"]) * int(world["terrain"]["h"]):
 		push_error("heightmap size mismatch")
 		return ERR_INVALID_DATA
-	# the restyled grounds smoothed (scripts/restyle/restyle_ground.gd): the heightmap here, the ground's mesh alike
-	RestyleGround.patch(heights, world["terrain"])
+	# terraforming first (builder/terraform.gd, data/terraform/): the heightmap here, the ground's mesh alike
+	Terraform.patch(heights, world["terrain"])
 
 	var root := Node3D.new()
 	root.name = "Neighborhood"
