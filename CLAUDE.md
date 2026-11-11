@@ -24,3 +24,17 @@ its building (its node, or its restyled specs in `godot/data/restyle/`), run in 
 `godot/scripts/builder/lots.gd`. Add a lot rather than hooking a new build into `world_builder.gd`, `ground_builder.gd`
 or `game.gd`; ask Thomas the terraforming questions first (is the ground flat? the grass mown? trees, hedges, paths?).
 How it works, and the railway's lots still to migrate: [LOTS.md](LOTS.md).
+
+## PTA Online's dev mode (offline test)
+
+PTA Online played solo, without the server or a login: 10 M € (refill in the in-game menu, Esc), every unarmed vehicle
+in the garage, the fly camera, shortcuts to the bus depot, the fire station and Prestige Motors.
+
+- From PowerShell (in the repository): `& "C:\Tools\Godot\Godot_v4.7.2-stable_win64_console.exe" --path godot -- --online-test`
+- From bash (Git Bash): `GODOT=/c/Tools/Godot/Godot_v4.7.2-stable_win64_console.exe sh godot/tools/online_test.sh`
+  (`GODOT`: the Godot binary, default `godot` on the PATH; extra arguments go to the game, e.g. `--name=Tester`;
+  `PLATEAU_ONLINE_VEHICLES` (models, comma-separated) and `PLATEAU_ONLINE_MONEY` replace the garage and the money).
+- Same thing by hand: `godot --path godot -- --online-test`.
+- From the editor: run the game (F5), PTA Online, "Test offline".
+- Headless tests use it too: `godot --headless --fixed-fps 60 --path godot --script res://tools/<test>.gd -- --online-test`
+  (not every test: `test_fires.gd` runs without it, see its header).
