@@ -94,7 +94,9 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 			node.add_child(mi)
 		if nc > 0:
 			var shape := ConcavePolygonShape3D.new()
-			shape.set_faces(parts[5].to_vector3_array())
+			var faces: PackedVector3Array = parts[5].to_vector3_array()
+			Terraform.move(faces, c["aabb"])
+			shape.set_faces(faces)
 			MeshUtils.save(shape, mesh_dir + "ground_col_%s.res" % c["name"])
 			var cs := CollisionShape3D.new()
 			cs.name = "Raised_" + c["name"]
