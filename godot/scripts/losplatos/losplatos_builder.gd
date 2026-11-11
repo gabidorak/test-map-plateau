@@ -3,8 +3,8 @@ extends RefCounted
 ## losplatos.gd places it and runs its door), after Thomas's references and corrections (ref/LosPalaisosCustom/): an
 ## industrial workshop of grey blocks under anthracite ribbed steel cladding, a sawtooth roof of four teeth glazed to
 ## the north, a roll-up door between two barred windows, the customers' lounge's shop window and glazed door, the two
-## neon signs on poles at the facade's ends; round it paved sidewalks, granite kerbs, new asphalt in front, along the
-## north end and over the yard behind (the tow truck's bay), a concrete ramp up to the door (_site); inside, a workshop of cream blocks over a yellow band, blue steel, fluorescent tubes, benches and
+## neon signs on poles at the facade's ends; round it paved sidewalks (the front one the block's sidewalk along the
+## west road, scripts/ilot/), granite kerbs, new asphalt along the north end and over the yard behind (the tow truck's bay), a concrete ramp up to the door (_site); inside, a workshop of cream blocks over a yellow band, blue steel, fluorescent tubes, benches and
 ## tyres, and the customers' lounge (counter, sofas, coffee). Its own name and logo; the brands on its posters are
 ## made up.
 ## Built in its own frame: x along the west facade (north), y up from the floor, z into the building (east). The shop
@@ -14,6 +14,7 @@ extends RefCounted
 ## door's own shape is the caller's (it opens).
 
 const Layers = preload("res://scripts/physics_layers.gd")
+const BuildKit = preload("res://scripts/build_kit.gd")
 
 const L := 31.0                             # m along the west facade
 const W := 16.0                             # m deep
@@ -36,16 +37,17 @@ const SLATS := 16                           # the door's slats
 const RAMP := 1.6                           # m of lowered kerb either side of the door, then FLARE m back up
 const FLARE := 1.4
 const FRONT_W := 3.0                        # m, the front sidewalk (its kerb parallel to the facade)
-const KERB_UP := 0.17                       # m, the sidewalks over the ground (the kerbs' height over the asphalt)
+const KERB_UP := 0.15                       # m, the sidewalks over the ground (the kerbs' height over the asphalt,
+											# as all round the block: scripts/ilot/urban_kit.gd KERB)
 const TAR_UP := 0.04                        # m, the new asphalt over the ground
 const GRID := 0.5                           # m, the paving's grid
-## The paved rectangles [x0, z0, x1, z1]: the sidewalks (in front, along the north end, behind), the asphalt (between
-## the front kerb and the road, the access lane along the north end, the yard behind), and the kerbs between them
-## [from, to, the asphalt's side].
-const SIDEWALKS := [[-3.5, -3.0, 34.0, 0.0], [31.0, 0.0, 34.0, 18.0], [-0.5, 16.0, 31.0, 18.0]]
-const ASPHALT := [[-3.5, -6.0, 46.0, -3.0], [34.0, -3.0, 46.0, 18.0], [1.5, 18.0, 46.0, 33.5]]
-const KERBS := [[Vector2(-3.5, -3.0), Vector2(34.0, -3.0), Vector2(0, -1)],
-		[Vector2(34.0, -3.0), Vector2(34.0, 18.0), Vector2(1, 0)], [Vector2(34.0, 18.0), Vector2(-0.5, 18.0), Vector2(0, 1)]]
+## The paved rectangles [x0, z0, x1, z1]: the sidewalks (in front: the block's along the west road, its kerb on the
+## road's; along the north end, behind), the asphalt (the access lane along the north end, from the block's sidewalk,
+## lowered across it; the yard behind), and the kerbs between them [from, to, the asphalt's side: the road's in front].
+const SIDEWALKS := [[-0.5, -3.0, 34.0, 0.0], [31.0, 0.0, 34.0, 18.0], [-0.5, 16.0, 31.0, 18.0]]
+const ASPHALT := [[34.0, 0.0, 46.0, 18.0], [1.5, 18.0, 46.0, 33.5]]
+const KERBS := [[Vector2(-0.5, -3.0), Vector2(34.0, -3.0), Vector2(0, -1)],
+		[Vector2(34.0, 0.0), Vector2(34.0, 18.0), Vector2(1, 0)], [Vector2(34.0, 18.0), Vector2(-0.5, 18.0), Vector2(0, 1)]]
 const TOW_BAY := Rect2(7.4, 18.6, 3.8, 9.0) # the tow truck's bay in the yard (x z, size), the truck facing -z
 const NAVY := Color("#16213e")
 const YELLOW := Color("#f2c230")
@@ -234,7 +236,7 @@ func _site(ground: Callable) -> void:
 	for k: Array in KERBS:
 		faces.append_array(_kerb(k[0], k[1], k[2], sw, tar))
 	# the sidewalks' open edges (on the grass, by the corners): their sides down to the ground
-	for e: Array in [[Vector2(-3.5, -3.0), Vector2(-3.5, 0.0)], [Vector2(-3.5, 0.0), Vector2(0.0, 0.0)],
+	for e: Array in [[Vector2(-0.5, 0.0), Vector2(0.0, 0.0)], [Vector2(34.0, -3.0), Vector2(34.0, 0.0)],
 			[Vector2(-0.5, 16.0), Vector2(-0.5, 18.0)], [Vector2(-0.5, 16.0), Vector2(0.0, 16.0)]]:
 		var a: Vector2 = e[0]
 		var b: Vector2 = e[1]
@@ -975,6 +977,10 @@ func _label(text: String, xf: Transform3D, size: int, pixel: float, colour: Colo
 func _mat(name: String) -> Material:
 	if _mats.has(name):
 		return _mats[name]
+	if name in ["pavers", "drive", "asphalt", "kerb_top", "kerb_face", "gutter"]:   # (the streets', as round the block)
+		_mats[name] = BuildKit.mat({"pavers": "street_pavers", "drive": "street_drive", "asphalt": "street_asphalt"}.get(
+				name, name))
+		return _mats[name]
 	var m: StandardMaterial3D
 	match name:
 		"blocks_out": m = _textured("blocks_out", Vector3(1.0 / 1.6, 1.0 / 1.6, 1.0 / 1.6), 0.95)
@@ -993,19 +999,8 @@ func _mat(name: String) -> Material:
 			m.metallic = 0.45
 			m.uv1_triplanar_sharpness = 24.0
 			m.albedo_color = Color(1.2, 1.2, 1.2)
-		"pavers":
-			m = _textured("pavers", Vector3(1.0 / 1.6, 1.0 / 1.6, 1.0 / 1.6), 0.9)
-			m.cull_mode = BaseMaterial3D.CULL_DISABLED
-		"drive":
-			m = _textured("drive", Vector3(1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0), 0.85)
-			m.cull_mode = BaseMaterial3D.CULL_DISABLED
-		"kerb", "kerb_top", "kerb_face", "gutter", "yellow_paint_floor":
-			var c := {"kerb": "#b9b6ae", "kerb_top": "#e3dfd6", "kerb_face": "#c9c3b7", "gutter": "#8f8c86",
-					"yellow_paint_floor": "#e9b934"}
-			m = _plain_mat(Color(c[name]), 0.8)
-			m.cull_mode = BaseMaterial3D.CULL_DISABLED
-		"asphalt":
-			m = _textured("asphalt", Vector3(1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0), 0.9)
+		"kerb", "yellow_paint_floor":
+			m = _plain_mat(Color({"kerb": "#b9b6ae", "yellow_paint_floor": "#e9b934"}[name]), 0.8)
 			m.cull_mode = BaseMaterial3D.CULL_DISABLED
 		"white_paint":
 			m = _plain_mat(Color("#eeeeea"), 0.7)
@@ -1111,47 +1106,17 @@ static func _texture(name: String) -> Texture2D:
 	if not _textures.has(name):
 		var img: Image
 		match name:
-			"blocks_out": img = _blocks(Color("#a9a8a4"), Color("#86847f"), 11)
-			"pavers": img = _blocks(Color("#b4b0a8"), Color("#8b8780"), 14)
-			"drive": img = _noise(Color("#aaa69e"), 0.035, 15)
-			"asphalt": img = _noise(Color("#4a4c50"), 0.05, 17)
+			"blocks_out": img = BuildKit.blocks(Color("#a9a8a4"), Color("#86847f"), 11)
 			"cladding": img = _ribs(false)
 			"roof_ribs": img = _ribs(true)
 			"tiles": img = _tiles()
-			"blocks_in": img = _blocks(Color("#e6e0d0"), Color("#b9b2a2"), 12)
+			"blocks_in": img = BuildKit.blocks(Color("#e6e0d0"), Color("#b9b2a2"), 12)
 			"floor": img = _floor()
-			"concrete": img = _noise(Color("#a19d95"), 0.05, 13)
+			"concrete": img = BuildKit.noise(Color("#a19d95"), 0.05, 13)
 			_: img = _slats()
 		img.generate_mipmaps()
 		_textures[name] = ImageTexture.create_from_image(img)
 	return _textures[name]
-
-
-## Concrete blocks 0.4 x 0.2 m in running bond with their mortar (the texture spans 1.6 m).
-static func _blocks(base: Color, mortar: Color, seed: int) -> Image:
-	var n := 512
-	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed
-	var bw := n / 4                         # 0.4 m
-	var bh := n / 8                         # 0.2 m
-	var shades := []
-	for i in 64:
-		shades.append(rng.randf_range(-0.04, 0.04))
-	for y in n:
-		var row := y / bh
-		var shift := (bw / 2) * (row % 2)
-		for x in n:
-			var col := ((x + shift) % n) / bw
-			var c := base
-			var s: float = shades[(row * 4 + col) % 64]
-			c = Color(c.r + s, c.g + s, c.b + s)
-			var grain := sin(float(x) * 1.7 + float(y) * 2.3) * 0.012 + rng.randf_range(-0.015, 0.015)
-			c = Color(c.r + grain, c.g + grain, c.b + grain)
-			if y % bh < 3 or (x + shift) % bw < 3:
-				c = mortar
-			img.set_pixel(x, y, c)
-	return img
 
 
 ## Workshop concrete: grey, mottled, with oil stains and a few saw cuts (the texture spans 6 m).
@@ -1176,18 +1141,6 @@ static func _floor() -> Image:
 			if x % 512 < 2 or y % 512 < 2:
 				c = c.darkened(0.25)
 			img.set_pixel(x, y, c)
-	return img
-
-
-static func _noise(base: Color, amount: float, seed: int) -> Image:
-	var n := 256
-	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed
-	for y in n:
-		for x in n:
-			var m := rng.randf_range(-amount, amount)
-			img.set_pixel(x, y, Color(base.r + m, base.g + m, base.b + m))
 	return img
 
 

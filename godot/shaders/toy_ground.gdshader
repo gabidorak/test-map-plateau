@@ -86,16 +86,6 @@ vec3 tiled(vec3 c, vec2 p, vec2 size, float gap, float radius, float shift, floa
 	return mix(c * mix(1.0, joint, 0.25), col, k);
 }
 
-vec3 asphalt(vec3 c, vec2 p, float fw, inout vec2 bump) {
-	vec3 col = c * (0.93 + 0.12 * fbm(p * 0.22));
-	col *= 1.0 - 0.07 * smoothstep(0.62, 0.7, fbm(p * 0.06 + 3.0));      // repaired patches
-	vec4 d = dots(p * 9.0, 1.0);
-	float s = (1.0 - smoothstep(0.12, 0.32, d.x)) * detail(0.11, fw);
-	col *= 1.0 + (d.y - 0.5) * 0.3 * s;
-	col *= 1.0 + (vnoise(p * 30.0) - 0.5) * 0.1 * detail(0.033, fw);
-	return col;
-}
-
 vec3 grass(vec3 c, vec2 p, float fw, inout vec2 bump) {
 	vec3 col = grass_tone(p, c);
 	col *= 1.0 + (fbm(p * 2.5) - 0.5) * 0.12 * detail(0.4, fw);
@@ -203,7 +193,7 @@ void fragment() {
 	vec3 col = c;
 
 	if (mat == ASPHALT) {
-		col = asphalt(c, p, fw, bump);
+		col = ground_asphalt(c, p, fw);
 	} else if (mat == CONCRETE) {
 		col = tiled(c, p, vec2(1.6, 1.6), 0.02, 0.01, 0.0, 0.07, 0.78, 0.02, fw, bump, ao);
 		col *= 1.0 + (fbm(p * 1.2) - 0.5) * 0.08;

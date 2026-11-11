@@ -1,0 +1,12 @@
+{
+ "id": "ilotEspacesPublics",
+ "order": 60,
+ "name": "Îlot de la supérette 25/8: espaces publics",
+ "about": "The supermarket's block (ref/superette/, scripts/ilot/ilot_plan.gd, in its streets' frame): the ring of roads round it (one width, one asphalt, granite kerbs, centre and give-way lines, zebras) and the sidewalk all round the block, lowered across its accesses (Losplatos Custom's front its own); the site flat, the ring on a surface fitted to the ground; #785 and #889 out (lawn); the shop's forecourt and the footway to it; street trees, hedges, lamps, benches, bins, bike racks, bollards.",
+ "terraform": [
+  "res://scripts/ilot/ilot_plan.gd"
+ ],
+ "script": "res://scripts/ilot/ilot_public.gd",
+ "node": "ilot_public",
+ "paint": "res://scripts/ilot/ilot_public.gd"
+}

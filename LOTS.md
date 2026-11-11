@@ -11,7 +11,14 @@ Every change made to the map (a building replaced, a garden redone, a villa buil
 | 3. Building | in the game | `node` (game.gd's member), `restyle` (specs of `godot/data/restyle/`) | the lot's script, `scripts/restyle/` |
 
 A terraforming file or a restyled building's spec counts only when a lot names it. Lots today: `losplatos`,
-`allSuites`, `villaEnPierreCoteaux`, `ensae`, `campusEdf`.
+`allSuites`, `villaEnPierreCoteaux`, `ensae`, `campusEdf`, `ilotEspacesPublics` and `superette258`.
+
+A whole block redone (the 25/8 supermarket's): one master plan, `godot/scripts/ilot/ilot_plan.gd`, drawn in the
+block's streets' frame (the map turned so they run straight), that its lots share: `ilotEspacesPublics` (the ground's
+terraforming from the plan's `terraform_zones()`, the ring of roads and sidewalks round the block, its greenery and
+furniture; `scripts/ilot/urban_kit.gd` draws streets: asphalt, granite kerbs, sidewalks lowered at accesses, markings)
+and `superette258` (the shop, its yard, the filling station, the car park: `scripts/superette/`). Losplatos Custom
+stands in the same block, set square to its street, its front sidewalk the block's.
 
 A new building or garden: make its terraforming zones (`tools/terraform.py zone ...`), its spec or script, then a lot
 that names them; rebuild the map (`godot/tools/build_world.gd`).

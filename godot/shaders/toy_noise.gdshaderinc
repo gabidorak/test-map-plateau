@@ -64,6 +64,20 @@ vec3 grass_tone(vec2 p, vec3 base) {
 	return mix(dark, light, t);
 }
 
+// The roads' asphalt (toy_ground.gdshader; the streets drawn by code, street_asphalt.gdshader: they join seamlessly),
+// colour c (sRGB) at world point p (xz), fw a pixel's footprint there.
+vec3 ground_asphalt(vec3 c, vec2 p, float fw) {
+	float fine = 1.0 - smoothstep(0.022, 0.077, fw);          // (the 0.11 m stones resolved)
+	float finest = 1.0 - smoothstep(0.0066, 0.0231, fw);      // (the 0.033 m grain)
+	vec3 col = c * (0.93 + 0.12 * fbm(p * 0.22));
+	col *= 1.0 - 0.07 * smoothstep(0.62, 0.7, fbm(p * 0.06 + 3.0));      // repaired patches
+	vec4 d = dots(p * 9.0, 1.0);
+	float s = (1.0 - smoothstep(0.12, 0.32, d.x)) * fine;
+	col *= 1.0 + (d.y - 0.5) * 0.3 * s;
+	col *= 1.0 + (vnoise(p * 30.0) - 0.5) * 0.1 * finest;
+	return col;
+}
+
 vec3 srgb_to_linear(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
 }

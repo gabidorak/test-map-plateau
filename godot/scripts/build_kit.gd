@@ -8,6 +8,7 @@ extends RefCounted
 
 const Layers = preload("res://scripts/physics_layers.gd")
 const WATER_SHADER := preload("res://shaders/kit_water.gdshader")
+const STREET_ASPHALT := preload("res://shaders/street_asphalt.gdshader")
 
 var root: Node3D
 var body: StaticBody3D
@@ -307,6 +308,22 @@ static func mat(name: String) -> Material:
 			p.cull_mode = BaseMaterial3D.CULL_DISABLED
 			m = p
 		"travertine": m = _textured("travertine", 1.0 / 2.4, 0.6)
+		# the streets' (the supermarket's block, scripts/ilot/; Losplatos Custom's site): concrete blocks, asphalt, a
+		# concrete drive, granite kerbs (their top, their face, the gutter at their foot)
+		"street_asphalt":                       # (the map's roads' own: street_asphalt.gdshader)
+			var sa := ShaderMaterial.new()
+			sa.shader = STREET_ASPHALT
+			m = sa
+		"street_pavers", "street_drive":
+			var t := {"street_pavers": ["street_blocks", 1.0 / 1.6, 0.9], "street_drive": ["street_drive", 0.25, 0.85]}[
+					name] as Array
+			var st := _textured(t[0], t[1], t[2])
+			st.cull_mode = BaseMaterial3D.CULL_DISABLED
+			m = st
+		"kerb_top", "kerb_face", "gutter":
+			var k := _plain(Color({"kerb_top": "#e3dfd6", "kerb_face": "#c9c3b7", "gutter": "#8f8c86"}[name]), 0.8)
+			k.cull_mode = BaseMaterial3D.CULL_DISABLED
+			m = k
 		"oak_floor": m = _textured("parquet", 1.0 / 2.0, 0.55)
 		"herringbone": m = _textured("herringbone", 1.0 / 1.6, 0.6)
 		"marble": m = _textured("marble", 1.0 / 2.4, 0.18)
@@ -462,6 +479,8 @@ static func texture(name: String) -> Texture2D:
 			"cladding": img = _cladding()
 			"brick": img = _brick_bond()
 			"boards": img = _boards()
+			"street_blocks": img = blocks(Color("#b4b0a8"), Color("#8b8780"), 14)
+			"street_drive": img = noise(Color("#aaa69e"), 0.035, 15)
 			_: img = Image.create(4, 4, false, Image.FORMAT_RGB8)
 		img.generate_mipmaps()
 		_textures[name] = ImageTexture.create_from_image(img)
@@ -771,6 +790,46 @@ static func _panels() -> Image:
 			elif k % 17 == 0:
 				c = c.darkened(0.2)
 			img.set_pixel(x, y, c)
+	return img
+
+
+## Concrete blocks 0.4 x 0.2 m in running bond with their mortar (the texture spans 1.6 m).
+static func blocks(base: Color, mortar: Color, seed: int) -> Image:
+	var n := 512
+	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var bw := n / 4                         # 0.4 m
+	var bh := n / 8                         # 0.2 m
+	var shades := []
+	for i in 64:
+		shades.append(rng.randf_range(-0.04, 0.04))
+	for y in n:
+		var row := y / bh
+		var shift := (bw / 2) * (row % 2)
+		for x in n:
+			var col := ((x + shift) % n) / bw
+			var c := base
+			var s: float = shades[(row * 4 + col) % 64]
+			c = Color(c.r + s, c.g + s, c.b + s)
+			var grain := sin(float(x) * 1.7 + float(y) * 2.3) * 0.012 + rng.randf_range(-0.015, 0.015)
+			c = Color(c.r + grain, c.g + grain, c.b + grain)
+			if y % bh < 3 or (x + shift) % bw < 3:
+				c = mortar
+			img.set_pixel(x, y, c)
+	return img
+
+
+## A colour mottled by `amount` (asphalt, concrete).
+static func noise(base: Color, amount: float, seed: int) -> Image:
+	var n := 256
+	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	for y in n:
+		for x in n:
+			var m := rng.randf_range(-amount, amount)
+			img.set_pixel(x, y, Color(base.r + m, base.g + m, base.b + m))
 	return img
 
 

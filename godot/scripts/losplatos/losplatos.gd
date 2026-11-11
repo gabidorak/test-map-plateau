@@ -17,8 +17,10 @@ const BUILDING_ID := "osm:w71348311"        # #758, Laboratoire d'Hydrodynamique
 ## #758's footprint (map x east, y north): the kit modules on it go with it.
 const FOOTPRINT := [Vector2(405.613, -171.427), Vector2(407.37, -135.709), Vector2(391.176, -134.924),
 		Vector2(388.76, -139.491), Vector2(389.426, -170.63)]
-const ORIGIN := Vector2(389.426, -170.63)   # the west facade's south end (the shop's frame)
-const NORTH := Vector2(388.76, -139.491)    # its north end: the facade runs ORIGIN -> NORTH
+## The shop set square to the street (the block's frame, scripts/ilot/ilot_plan.gd: its west facade WALK_W m back
+## from the west road's kerb, its front sidewalk the block's sidewalk there).
+const ORIGIN := Vector2(386.764, -169.478)   # the west facade's south end (the shop's frame)
+const NORTH := Vector2(388.557, -138.379)    # its north end: the facade runs ORIGIN -> NORTH
 const FLOOR_Z := 1.0                        # m, the workshop's floor at least (over the highest ground under it)
 const OPEN_REACH := 10.0                    # m from the door's middle within which it opens
 const OPEN_SPEED := 0.6                     # of the way a second

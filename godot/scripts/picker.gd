@@ -216,6 +216,9 @@ func describe(info: Dictionary) -> String:
 				lines.append("height %.1f m · %d storeys: %s" % [info["height"], info["storeys"], info["fills"]])
 		"allsuites":
 			lines.append("%s · %s (in place of #184: scripts/allsuites/)" % [info["name"], info["kind"]])
+		"lot":
+			lines.append(str(info["name"]))
+			lines.append("lot %s (data/lots/%s.json) · %s" % [info["lot"], info["lot"], info["about"]])
 		"custom_garage":
 			lines.append("%s · %s (in place of #758, the LadHyX: scripts/losplatos/)" % [info["name"], info["kind"]])
 		"interior":
