@@ -46,6 +46,8 @@ const GRID := 0.5                           # m, the paving's grid
 ## lowered across it; the yard behind), and the kerbs between them [from, to, the asphalt's side: the road's in front].
 const SIDEWALKS := [[-0.5, -3.0, 34.0, 0.0], [31.0, 0.0, 34.0, 18.0], [-0.5, 16.0, 31.0, 18.0]]
 const ASPHALT := [[34.0, 0.0, 46.0, 18.0], [1.5, 18.0, 46.0, 33.5]]
+const LANE_PLOT := Rect2(34.0, 0.0, 12.0, 18.0)   # (x, z) the access lane and the yard: flat (losplatos.gd terraform_zones)
+const YARD_PLOT := Rect2(1.5, 18.0, 44.5, 15.5)
 const KERBS := [[Vector2(-0.5, -3.0), Vector2(34.0, -3.0), Vector2(0, -1)],
 		[Vector2(34.0, 0.0), Vector2(34.0, 18.0), Vector2(1, 0)], [Vector2(34.0, 18.0), Vector2(-0.5, 18.0), Vector2(0, 1)]]
 const TOW_BAY := Rect2(7.4, 18.6, 3.8, 9.0) # the tow truck's bay in the yard (x z, size), the truck facing -z

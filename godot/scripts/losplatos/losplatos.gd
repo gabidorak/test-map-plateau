@@ -23,6 +23,8 @@ const ORIGIN := Vector2(386.764, -169.478)   # the west facade's south end (the 
 const NORTH := Vector2(388.557, -138.379)    # its north end: the facade runs ORIGIN -> NORTH
 const FLOOR_Z := 1.0                        # m, the workshop's floor at least (over the highest ground under it)
 const OPEN_REACH := 10.0                    # m from the door's middle within which it opens
+const YARD_LEVEL := 0.6                     # m: the yard and the lane, flat (the map's ground there 0.4 to 1.1, 0.6 on average)
+const BLEND := 3.0                          # m over which they ease back to the map's ground
 const OPEN_SPEED := 0.6                     # of the way a second
 const CHECK_EVERY := 0.15
 
@@ -35,6 +37,41 @@ var _want := false
 var _check_t := 0.0
 var _slats: Array = []
 var _door_shape: CollisionShape3D
+
+
+## Its plot's ground (builder/terraform.gd; a child of the block's lot, ilot-001, which keeps it off the streets): the
+## yard behind and the access lane along the north end flat at YARD_LEVEL (the tow truck's bay level), eased back to
+## the map's ground over BLEND m; 1 m grid on the map.
+static func terraform_zones() -> Array:
+	var f := shop_frame(0.0)
+	var inv := f.affine_inverse()
+	var lo := Vector2(INF, INF)
+	var hi := -lo
+	for c: Vector2 in [Vector2(-BLEND, -BLEND), Vector2(46.0 + BLEND, -BLEND), Vector2(46.0 + BLEND, 33.5 + BLEND),
+			Vector2(-BLEND, 33.5 + BLEND)]:
+		var w := f * Vector3(c.x, 0.0, c.y)
+		lo = lo.min(Vector2(w.x, -w.z))
+		hi = hi.max(Vector2(w.x, -w.z))
+	var x0 := floorf(lo.x)
+	var y0 := ceilf(hi.y)
+	var w := int(ceilf(hi.x - x0)) + 1
+	var h := int(ceilf(y0 - lo.y)) + 1
+	var wt := PackedByteArray()
+	wt.resize(w * h)
+	var sf := PackedFloat32Array()
+	sf.resize(w * h)
+	sf.fill(YARD_LEVEL)
+	for j in h:
+		for i in w:
+			var l := inv * Vector3(x0 + i + 0.5, 0.0, -(y0 - j - 0.5))
+			var d := INF
+			for r: Rect2 in [Builder.YARD_PLOT, Builder.LANE_PLOT]:
+				var dx := maxf(maxf(r.position.x - l.x, l.x - r.end.x), 0.0)
+				var dz := maxf(maxf(r.position.y - l.z, l.z - r.end.y), 0.0)
+				d = minf(d, Vector2(dx, dz).length())
+			var t := clampf(1.0 - d / BLEND, 0.0, 1.0)
+			wt[j * w + i] = roundi(t * t * (3.0 - 2.0 * t) * 255.0)
+	return [{"box": Rect2(x0, y0 - h, w, h), "x0": x0, "y0": y0, "cell": 1.0, "w": w, "h": h, "wt": wt, "s": sf}]
 
 
 ## The world without #758 (builder/world_builder.gd, before the buildings are made): its building record, its name
