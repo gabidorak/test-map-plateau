@@ -46,6 +46,15 @@ func _process(_delta: float) -> void:
 			_set_cell(i, near)
 
 
+## One more cell, from the game (builder/lot_far.gd: a lot's building): its full-detail nodes, its far version (or
+## null), its box.
+func add_cell(near: Array[Node3D], far: Node3D, box: AABB) -> void:
+	boxes.append(box)
+	_near_nodes.append(near)
+	_far_nodes.append(far)
+	_is_near.append(2)
+
+
 ## Full detail everywhere (true) or back to streaming (false).
 func set_enabled(on: bool) -> void:
 	enabled = on

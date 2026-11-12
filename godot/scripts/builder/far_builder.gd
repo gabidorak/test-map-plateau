@@ -2,9 +2,10 @@
 extends RefCounted
 ## Chunk streaming (performance): splits the world into CELL-sized cells and gives each one a cheap far
 ## version, shown by scripts/world_streamer.gd instead of the full-detail nodes once the camera is far away.
-## Far version of a cell: the ground on a coarse grid (same shader, one quad per FAR_STEP), its buildings
-## merged into one simplified mesh (same material, one draw call) and its trees as low-poly crowns in one
-## MultiMesh, plus the railway's light ballast strip (Rail/Far, rail_builder.gd) in place of its track chunks.
+## Far version of a cell: the ground on a coarse grid (same shader, one quad per FAR_STEP), its buildings' far
+## shapes in one mesh (builder/far_proxy.gd: the map's buildings simplified, the structures of its group surveyed:
+## Massy-Palaiseau, the Logements de l'X; one draw call) and its trees as low-poly crowns in one MultiMesh, plus the railway's
+## light ballast strip (Rail/Far, rail_builder.gd) in place of its track chunks.
 ## Far away the cost is the triangle count, not the shaders, so the far meshes are kept light.
 ## Every detailed node belongs to the cell of its centre; the far meshes are built from exactly those nodes,
 ## so swapping a whole cell never leaves a hole or a double. Props, building kit and labels have no far
@@ -13,13 +14,14 @@ extends RefCounted
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const WorldStreamer = preload("res://scripts/world_streamer.gd")
+const FarProxy = preload("res://scripts/builder/far_proxy.gd")
 const CELL := 192.0                     # m; a multiple of the 96 m tree/kit/prop chunks, which then nest exactly
 const FAR_STEP := 8.0                   # m between far ground samples
-const BUILDING_SNAP := 1.5              # m grid of the far buildings' vertex clustering
 const SKIRT := 3.0                      # m the far ground hangs down at chunk edges (hides cracks at cell seams)
 const CROWN_SUBDIV := 0                 # icosphere subdivisions of the far tree crown (20 triangles)
 
-var _cells := {}                        # Vector2i -> {near: Array[Node], ground: [AABB], buildings: [Mesh], box: AABB}
+var _cells := {}                        # Vector2i -> {near: Array[Node], ground: [AABB], buildings: [part],
+										#   structures: [[part]], box: AABB} (parts: far_proxy.gd's)
 
 
 func build(root: Node3D, world: Dictionary, mesh_dir: String) -> Error:
@@ -30,7 +32,16 @@ func build(root: Node3D, world: Dictionary, mesh_dir: String) -> Error:
 		_add(mi, _mesh_box(mi)).ground.append(mi.mesh.get_aabb())
 	for mi: MeshInstance3D in root.get_node("Buildings").get_children().filter(func(n): return n is MeshInstance3D):
 		if mi.mesh != null:
-			_add(mi, _mesh_box(mi)).buildings.append(mi.mesh)
+			_add(mi, _mesh_box(mi)).buildings.append([mi.mesh, mi.transform, null])
+	for node: Node3D in _grouped(root, []):    # (Massy-Palaiseau, the Logements de l'X)
+		var parts := FarProxy.parts_of(node)
+		if parts.is_empty():
+			continue
+		var box := AABB()
+		for part: Array in parts:
+			var b: AABB = (part[1] as Transform3D) * (part[0] as Mesh).get_aabb()
+			box = b if box.size == Vector3.ZERO else box.merge(b)
+		_add(node, box).structures.append(parts)
 	for sign: Node3D in root.get_node("Buildings/Signs").get_children():
 		_add(sign, _point_box(sign.position))
 	for group in ["BuildingKit", "Props", "Vegetation/Trees", "Rail/Track"]:
@@ -46,7 +57,8 @@ func build(root: Node3D, world: Dictionary, mesh_dir: String) -> Error:
 	far.name = "Far"
 	root.add_child(far)
 	var ground_mat: Material = load(mesh_dir + "ground_material.tres")
-	var building_mat: Material = load(mesh_dir + "building_material.tres")
+	MeshUtils.save(FarProxy.material(), mesh_dir + "far_proxy_material.tres")
+	var ground := func(x: float, y: float) -> float: return map.height(x, y)
 	var crown := _crown_mesh(load(mesh_dir + "foliage_material.tres"))
 	MeshUtils.save(crown, mesh_dir + "far_crown.res")
 	var trees := _trees_by_cell(root, world)
@@ -67,8 +79,13 @@ func build(root: Node3D, world: Dictionary, mesh_dir: String) -> Error:
 		var tag := "%d_%d" % [key.x, key.y]
 		if not c.ground.is_empty():
 			cell.add_child(_instance("Ground", MeshUtils.save(_far_ground(c.ground, map, ground_mat, root.get_node_or_null("Water")), mesh_dir + "far_ground_%s.res" % tag)))
-		if not c.buildings.is_empty():
-			cell.add_child(_instance("Buildings", MeshUtils.save(_merge(c.buildings, building_mat), mesh_dir + "far_buildings_%s.res" % tag)))
+		var shapes := FarProxy.Shapes.new()
+		FarProxy.add_shell(shapes, c.buildings)
+		for parts: Array in c.structures:
+			FarProxy.add(shapes, parts, ground)
+		var far_mesh := FarProxy.mesh(shapes)
+		if far_mesh:
+			cell.add_child(_instance("Buildings", MeshUtils.save(far_mesh, mesh_dir + "far_buildings_%s.res" % tag)))
 		var rail_far := root.get_node_or_null("Rail/Far/Cell_%s" % tag)
 		if rail_far:                    # the railway's far ballast strip (rail_builder.gd), cut per cell
 			for child: Node in rail_far.get_children():
@@ -103,7 +120,7 @@ func _add(node: Node3D, box: AABB) -> Dictionary:
 	var centre := box.get_center()
 	var key := Vector2i(floori(centre.x / CELL), floori(-centre.z / CELL))
 	if not _cells.has(key):
-		_cells[key] = {"near": [], "ground": [], "buildings": [], "box": box}
+		_cells[key] = {"near": [], "ground": [], "buildings": [], "structures": [], "box": box}
 	var c: Dictionary = _cells[key]
 	c.near.append(node)
 	c.box = (c.box as AABB).merge(box)
@@ -216,41 +233,14 @@ func _far_ground(boxes: Array, map: RefCounted, mat: Material, water: Variant) -
 	return mesh
 
 
-## The building meshes (one non-indexed surface each, world coordinates, building_builder.gd Buf) as one,
-## simplified by vertex clustering: positions snap to a BUILDING_SNAP grid and triangles that collapse are
-## dropped (rounded corners, bevels and parapets go; walls, roofs and set-backs stay).
-func _merge(meshes: Array, mat: Material) -> ArrayMesh:
-	var out := []
-	out.resize(Mesh.ARRAY_MAX)
-	var fmt := 0
-	for mesh: ArrayMesh in meshes:
-		var arrays := mesh.surface_get_arrays(0)
-		fmt = mesh.surface_get_format(0)
-		for k in Mesh.ARRAY_MAX:
-			if arrays[k] == null:
-				continue
-			if out[k] == null:
-				out[k] = arrays[k]
-			else:
-				out[k].append_array(arrays[k])
-	var keep := PackedInt32Array()
-	var pos: PackedVector3Array = out[Mesh.ARRAY_VERTEX]
-	for k in pos.size():
-		pos[k] = pos[k].snapped(Vector3.ONE * BUILDING_SNAP)
-	for t in range(0, pos.size(), 3):
-		if pos[t] != pos[t + 1] and pos[t + 1] != pos[t + 2] and pos[t] != pos[t + 2] \
-				and (pos[t + 1] - pos[t]).cross(pos[t + 2] - pos[t]).length_squared() > 1e-6:
-			keep.append_array([t, t + 1, t + 2])
-	out[Mesh.ARRAY_VERTEX] = pos
-	out[Mesh.ARRAY_INDEX] = keep
-	var merged := ArrayMesh.new()
-	var flags := 0
-	for k in 4:
-		var shift := Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT + k * Mesh.ARRAY_FORMAT_CUSTOM_BITS
-		flags |= fmt & (Mesh.ARRAY_FORMAT_CUSTOM_MASK << shift)
-	merged.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, out, [], {}, flags)
-	merged.surface_set_material(0, mat)
-	return merged
+## The nodes of far_proxy.gd's group under `n` (not inside one another).
+func _grouped(n: Node, out: Array) -> Array:
+	for c in n.get_children():
+		if c.is_in_group(FarProxy.GROUP):
+			out.append(c)
+		else:
+			_grouped(c, out)
+	return out
 
 
 ## Per cell, MultiMesh buffers (transform + tint/phase) of a unit crown placed over each tree's crown.

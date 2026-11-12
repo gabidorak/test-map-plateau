@@ -1,6 +1,6 @@
 extends Node3D
-## Lot ilotEspacesPublics (data/lots/ilotEspacesPublics.json): the public spaces of the supermarket's block, on its
-## plan (ilot_plan.gd). Its ground terraformed (the plan's terraform_zones()); where it is redone (the ring, the site,
+## Lot ilot-001 (data/lots/ilot-001.json): the supermarket's block's own lot, the parent of its others (Losplatos
+## Custom, the 25/8 supermarket), on the block's plan (ilot_plan.gd). Its ground terraformed (the plan's terraform_zones()); where it is redone (the ring, the site,
 ## where #785 and #889 stood) the map's trees, hedges, props, kerbs and markings out (the long ones cut), its own in:
 ## street trees, hedges, street and path lamps, benches, bins, bike racks, bollards (map props: lit at night by
 ## night.gd, knocked over like the others). Drawn at start: the ring (its roads, one asphalt, kerbed where nothing goes
@@ -21,6 +21,11 @@ const WALKS := ["sidewalk", "footway", "path", "pedestrian", "steps", "cycleway"
 static var _ids := {}                       # the grass field's lookups: material name -> id, "soft" -> ids, "box"
 
 var game: Node
+
+
+## Where the block's children's terraforming may act (builder/lots.gd): the plan's.
+static func child_weight(x: float, y: float) -> float:
+	return Plan.child_weight(x, y)
 
 
 ## Whether local p is redone: the ring (MARGIN round its roads), the site, where the buildings out stood.
@@ -260,13 +265,13 @@ static func _grass_at(x: float, y: float) -> int:
 
 
 func _ready() -> void:
-	name = "IlotEspacesPublics"
+	name = "Ilot001"
 	var gm: RefCounted = GroundMap.get_map()
 	if gm:
 		_ids = {"paving": gm.materials.find("paving"), "grass": gm.materials.find("grass"), "box": _box(),
 				"soft": SOFT.map(func(m: String) -> int: return gm.materials.find(m))}
 	GrassField.overrides.append(_grass_at)
-	var k := UrbanKit.new("IlotEspacesPublics", {"type": "lot", "lot": "ilotEspacesPublics",
+	var k := UrbanKit.new("Ilot001", {"type": "lot", "lot": "ilot-001",
 			"name": "Îlot de la supérette 25/8: espaces publics", "about": "the streets round the block, its greenery"})
 	_ring(k, gm)
 	k.slab(Plan.PLAZA)

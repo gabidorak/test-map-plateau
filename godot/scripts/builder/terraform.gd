@@ -2,7 +2,9 @@ extends RefCounted
 ## Terraforming, the zones the lots name (builder/lots.gd): files of data/terraform/ (made by tools/terraform.py: a
 ## surface fitted to the LiDAR ground, a quadratic or a plane, or a level: a restyled garden, the villa's garden path)
 ## or a lot's code (its terraform_zones(): a surface given cell by cell, the villa's court). In each zone the map's
-## heights are eased onto the surface by the zone's weight grid (0 at its outline, full `blend` m in). The first step after the map
+## heights are eased onto the surface by the zone's weight grid (0 at its outline, full `blend` m in); the zones one on
+## the other in the lots' order (a block's lot, then its children's: builder/lots.gd), a child's weight limited by its
+## parent's child_weight(). The first step after the map
 ## is read (builder/world_builder.gd), so everything is built on the ground as it ends up. Applied alike everywhere
 ## heights are made: the
 ## heightmap when the map is built (its collision, water, trees, props: builder/world_builder.gd), the ground's mesh
@@ -12,7 +14,7 @@ extends RefCounted
 const DIR := "res://data/terraform/"
 const Lots = preload("res://scripts/builder/lots.gd")
 
-static var _zones: Array = []                # [{"box", "x0", "y0", "cell", "w", "h", "wt"; "o", "c" or "s"}]
+static var _zones: Array = []                # [{"box", "x0", "y0", "cell", "w", "h", "wt"; "o", "c" or "s"; "clip"}]
 static var _loaded := false
 
 
@@ -26,29 +28,34 @@ static func zones() -> Array:
 	if not _loaded:
 		_loaded = true
 		if DirAccess.dir_exists_absolute(DIR):
-			for name: String in Lots.terraform_files():          # (the lots' zones: builder/lots.gd)
+			for entry: Array in Lots.terraform_entries():        # (the lots' zones, in order: builder/lots.gd)
+				var name: String = entry[0]
+				var made: Array = []
 				if name.ends_with(".gd"):                       # (a lot's code makes its zones: terraform_zones())
-					_zones.append_array(load(name).terraform_zones())
-					continue
-				var s: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + name + ".json"))
-				if not (s is Dictionary):
-					continue
-				for zn: Dictionary in s.get("zones", []):
-					var grid: Dictionary = zn["grid"]
-					var cell := float(grid["cell"])
-					var x0 := float(grid["origin"][0])
-					var y0 := float(grid["origin"][1])
-					_zones.append({"box": Rect2(x0, y0 - cell * int(grid["h"]), cell * int(grid["w"]),
-							cell * int(grid["h"])), "o": Vector2(zn["origin"][0], zn["origin"][1]),
-							"c": PackedFloat32Array(zn["coef"]), "x0": x0, "y0": y0, "cell": cell, "w": int(grid["w"]),
-							"h": int(grid["h"]), "wt": layer(grid, "weight")})
+					made = load(name).terraform_zones()
+				else:
+					var s: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + name + ".json"))
+					for zn: Dictionary in (s.get("zones", []) if s is Dictionary else []):
+						var grid: Dictionary = zn["grid"]
+						var cell := float(grid["cell"])
+						var x0 := float(grid["origin"][0])
+						var y0 := float(grid["origin"][1])
+						made.append({"box": Rect2(x0, y0 - cell * int(grid["h"]), cell * int(grid["w"]),
+								cell * int(grid["h"])), "o": Vector2(zn["origin"][0], zn["origin"][1]),
+								"c": PackedFloat32Array(zn["coef"]), "x0": x0, "y0": y0, "cell": cell,
+								"w": int(grid["w"]), "h": int(grid["h"]), "wt": layer(grid, "weight")})
+				if (entry[1] as Callable).is_valid():            # (a child lot's: where its parent lets it)
+					for z: Dictionary in made:
+						z["clip"] = entry[1]
+				_zones.append_array(made)
 	return _zones
 
 
-## How much the ground at map (x, y), `h` high on the map, moves.
+## How much the ground at map (x, y), `h` high on the map, moves: the zones one on the other, in order.
 static func delta(x: float, y: float, h: float) -> float:
 	if _loaded and _zones.is_empty():
 		return 0.0
+	var g := h
 	for z: Dictionary in zones():
 		if not (z["box"] as Rect2).has_point(Vector2(x, y)):
 			continue
@@ -64,17 +71,22 @@ static func delta(x: float, y: float, h: float) -> float:
 		var a := lerpf(wt[k], wt[k + 1], u)
 		var b := lerpf(wt[k + w], wt[k + w + 1], u)
 		var weight := lerpf(a, b, v) / 255.0
+		if weight > 0.0 and z.has("clip"):
+			weight *= float((z["clip"] as Callable).call(x, y))
 		if weight <= 0.0:
-			return 0.0
+			continue
+		var surface: float
 		if z.has("s"):                                   # (a surface given cell by cell)
 			var sf: PackedFloat32Array = z["s"]
-			return weight * (lerpf(lerpf(sf[k], sf[k + 1], u), lerpf(sf[k + w], sf[k + w + 1], u), v) - h)
-		var c: PackedFloat32Array = z["c"]
-		var o: Vector2 = z["o"]
-		var uu := (x - o.x) / 100.0
-		var vv := (y - o.y) / 100.0
-		return weight * (c[0] + c[1] * uu + c[2] * vv + c[3] * uu * uu + c[4] * uu * vv + c[5] * vv * vv - h)
-	return 0.0
+			surface = lerpf(lerpf(sf[k], sf[k + 1], u), lerpf(sf[k + w], sf[k + w + 1], u), v)
+		else:
+			var c: PackedFloat32Array = z["c"]
+			var o: Vector2 = z["o"]
+			var uu := (x - o.x) / 100.0
+			var vv := (y - o.y) / 100.0
+			surface = c[0] + c[1] * uu + c[2] * vv + c[3] * uu * uu + c[4] * uu * vv + c[5] * vv * vv
+		g += weight * (surface - g)
+	return g - h
 
 
 ## The heightmap (world.json "terrain": row 0 north, `cell` m apart from origin_xy) smoothed in the zones.
@@ -84,6 +96,7 @@ static func patch(heights: PackedFloat32Array, t: Dictionary) -> void:
 	var cell := float(t["cell"])
 	var ox := float(t["origin_xy"][0])
 	var oy := float(t["origin_xy"][1])
+	var done := {}                                       # (each sample once where zones overlap: delta() takes them all)
 	for z: Dictionary in zones():
 		var box: Rect2 = z["box"]
 		var i0 := clampi(floori((box.position.x - ox) / cell), 0, w - 1)
@@ -94,7 +107,9 @@ static func patch(heights: PackedFloat32Array, t: Dictionary) -> void:
 			var y := oy - j * cell
 			for i in range(i0, i1 + 1):
 				var k := j * w + i
-				heights[k] += delta(ox + i * cell, y, heights[k])
+				if not done.has(k):
+					done[k] = true
+					heights[k] += delta(ox + i * cell, y, heights[k])
 
 
 ## A ground chunk's vertices (Godot x, y, z; its box `aabb` [x, y, z, sx, sy, sz]) moved alike, each from its own

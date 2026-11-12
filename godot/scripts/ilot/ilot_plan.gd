@@ -14,8 +14,9 @@ extends RefCounted
 ##   (lorries in on the west, out on the east, never on the customers' lanes), the customers' one-way flow east to west
 ##   (in from the south road on the east, the car park, the shop's front, the filling station, out on the west), a
 ##   footway from the south sidewalk to the shop's doors;
-## - the public spaces (lot ilotEspacesPublics, scripts/ilot/ilot_public.gd): the ring, the forecourt, the footway,
-##   greenery, lights, furniture.
+## - the block's own lot (ilot-001, scripts/ilot/ilot_public.gd), the parent of its others (losplatos, superette258):
+##   the ground, the ring, the forecourt, the footway, greenery, lights, furniture; its children may terraform inside
+##   the block (child_weight()), not under its streets.
 ## Rect2: its position the south-west corner (u, v).
 
 const ANGLE := -0.0575959                   # rad (-3.3°): the streets' frame turned from the map's
@@ -208,6 +209,14 @@ static func terraform_zones() -> Array:
 					near = minf(near, _rect_dist(k, p))
 			wt[j * w + i] = roundi(_ease(1.0 - out / BLEND) * _ease(near / BLEND) * 255.0)
 	return [{"box": Rect2(x0, y0 - h, w, h), "x0": x0, "y0": y0, "cell": 1.0, "w": w, "h": h, "wt": wt, "s": sf}]
+
+
+## Where the block's children's terraforming may act, at the map's (x, y): fully 1 m inside the sidewalks, nowhere on
+## the ring.
+static func child_weight(x: float, y: float) -> float:
+	var p := to_local(Vector2(x, y))
+	var i := INNER
+	return clampf(minf(minf(p.x - i.position.x, i.end.x - p.x), minf(p.y - i.position.y, i.end.y - p.y)), 0.0, 1.0)
 
 
 ## How far local p is from the ring and the site (BLEND at most).

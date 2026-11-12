@@ -21,6 +21,7 @@ extends RefCounted
 ## nosings, the TGV hall as a closed volume.
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
+const FarProxy = preload("res://scripts/builder/far_proxy.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const GroundHeights = preload("res://scripts/ground_heights.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
@@ -104,6 +105,7 @@ func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_di
 	MeshUtils.save(_glow, mesh_dir + "massy_glow.tres")
 	_node = Node3D.new()
 	_node.name = "MassyPalaiseau"
+	_node.add_to_group(FarProxy.GROUP, true)     # (one building from afar: far_builder.gd)
 	root.add_child(_node)
 	_body = StaticBody3D.new()
 	_body.name = "MassyCollision"

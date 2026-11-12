@@ -1,7 +1,7 @@
 extends Node3D
 ## Lot superette258 (data/lots/superette258.json): the 25/8 supermarket ("open 25 hours a day, 8 days a week"), its
 ## filling station and its car park, in place of the SMAT (#813) and #851 and the sheds round them, on the block's
-## master plan (scripts/ilot/ilot_plan.gd; its ground and public spaces are lot ilotEspacesPublics). Drawn at start
+## master plan (scripts/ilot/ilot_plan.gd; its ground and public spaces are the block's own lot, ilot-001, its parent). Drawn at start
 ## (superette_builder.gd); no interior. The EV chargers, the waste containers and the lorries' barriers are map props.
 
 const Plan = preload("res://scripts/ilot/ilot_plan.gd")

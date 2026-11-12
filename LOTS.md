@@ -11,14 +11,26 @@ Every change made to the map (a building replaced, a garden redone, a villa buil
 | 3. Building | in the game | `node` (game.gd's member), `restyle` (specs of `godot/data/restyle/`) | the lot's script, `scripts/restyle/` |
 
 A terraforming file or a restyled building's spec counts only when a lot names it. Lots today: `losplatos`,
-`allSuites`, `villaEnPierreCoteaux`, `ensae`, `campusEdf`, `ilotEspacesPublics` and `superette258`.
+`allSuites`, `villaEnPierreCoteaux`, `ensae`, `campusEdf`, `ilot-001`, `superette258`.
+
+A lot may be part of another (`"parent"`): a block's own lot (`ilot-NNN`, a generic name and a number) and the lots
+in that block. A child comes after its parent; its terraforming is laid on its parent's (the zones are applied one on
+the other, in the lots' order), only where the parent's script's `child_weight(x, y)` lets it (for a block: inside its
+sidewalks, never under its streets, which are drawn on the block's plan). A child with no terraforming just adds to
+the block. To redo a building of a block with its ground: a lot with `"parent": "ilot-NNN"`, its zones, and the
+building out of the plan's `KEPT`.
 
 A whole block redone (the 25/8 supermarket's): one master plan, `godot/scripts/ilot/ilot_plan.gd`, drawn in the
-block's streets' frame (the map turned so they run straight), that its lots share: `ilotEspacesPublics` (the ground's
+block's streets' frame (the map turned so they run straight), that its lots share: `ilot-001`, the block's own lot and the parent of the others (the ground's
 terraforming from the plan's `terraform_zones()`, the ring of roads and sidewalks round the block, its greenery and
 furniture; `scripts/ilot/urban_kit.gd` draws streets: asphalt, granite kerbs, sidewalks lowered at accesses, markings)
-and `superette258` (the shop, its yard, the filling station, the car park: `scripts/superette/`). Losplatos Custom
-stands in the same block, set square to its street, its front sidewalk the block's.
+then its children `superette258` (the shop, its yard, the filling station, the car park: `scripts/superette/`) and
+`losplatos` (Losplatos Custom, set square to its street, its front sidewalk the block's).
+
+What a lot builds in the game is streamed like the map's buildings (`godot/scripts/builder/lot_far.gd`, called by
+`Lots.spawn`): each of its buildings (its node's children) is a cell of `world_streamer.gd`, in full detail within
+180 m of the camera, beyond that its far shape (`godot/scripts/builder/far_proxy.gd`, as for the map's buildings: its
+form without its details), without shadows. Nothing to do per building; a node whose visibility its lot runs itself (a door's slats) goes in the group `lot_own_visibility`.
 
 A new building or garden: make its terraforming zones (`tools/terraform.py zone ...`), its spec or script, then a lot
 that names them; rebuild the map (`godot/tools/build_world.gd`).

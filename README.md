@@ -293,8 +293,13 @@ on a 4K screen; the first window fills 80 % of the screen.
 - F: identify what is under the crosshair (Sandbox): a building (number, OSM id, name, kind, height and source), a tree, a prop (kind, model, source, OSM id, bus stop lines, sign codes), a fence, the ground (piece kind, material, OSM source), or the RER B: a track (number, direction, kilometre point, speed limit, cant), a platform, a signal (type, ref, aspects), a structure, the catenary. The text is copied to the clipboard. X closes it, H hides the help.
 
 Chunk streaming: `scripts/builder/far_builder.gd` splits the world into 192 m cells and gives each a cheap far version
-(ground on an 8 m grid with the ground shader, its buildings merged and simplified into one mesh, its trees as
-20-triangle crowns in one MultiMesh). At runtime `scripts/world_streamer.gd` (node `Neighborhood/Streamer`) shows the
+(ground on an 8 m grid with the ground shader, its buildings' far shapes in one mesh, its trees as 20-triangle crowns
+in one MultiMesh). Far shapes, one tool for every building (`scripts/builder/far_proxy.gd`, `shaders/far_proxy.gdshader`):
+the form without the details, flat colours by day, lit rooms at night. The map's buildings (plain volumes) are
+simplified by vertex clustering; the buildings with details are surveyed from above (columns and overhanging slabs on
+a 1 m grid set square to the building, merged into large rectangles): the nodes of the group `far_proxy`
+(Massy-Palaiseau, the Logements de l'X) and the lots' buildings, streamed at runtime (`scripts/builder/lot_far.gd`).
+At runtime `scripts/world_streamer.gd` (node `Neighborhood/Streamer`) shows the
 full-detail nodes of the cells within 180 m of the camera and the far version of the others. Hidden nodes stay in the
 tree, so collision, the picker and the tools are unaffected. `PLATEAU_STREAMING=0` shows full detail everywhere.
 

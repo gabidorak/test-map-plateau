@@ -1,5 +1,6 @@
 {
  "id": "losplatos",
+ "parent": "ilot-001",
  "order": 10,
  "name": "Losplatos Custom",
  "about": "The repair and paint shop in place of #758 (the LadHyX).",

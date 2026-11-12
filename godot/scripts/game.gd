@@ -164,7 +164,7 @@ var losplatos: Losplatos                    # Losplatos Custom, the repair and p
 var allsuites: AllSuites                    # All Suites Study, the students' residence in place of #184 (scripts/allsuites/)
 var villaEnPierreCoteaux: VillaEnPierreCoteaux                            # Villa de charme, the stone manor for sale (scripts/villaEnPierreCoteaux/)
 var restyle: Restyle                        # the restyled buildings, ENSAE... (data/restyle/, scripts/restyle/)
-var ilot_public: Node3D                     # the 25/8 supermarket's block: its public spaces (scripts/ilot/)
+var ilot_001: Node3D                        # block 001's own lot: its streets, greenery (scripts/ilot/)
 var superette258: Node3D                    # the 25/8 supermarket, its filling station, its car park (scripts/superette/)
 var races: Races
 var economy: Economy                        # Main/Economy: PTA Online logins (and money, later)

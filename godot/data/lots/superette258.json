@@ -1,5 +1,6 @@
 {
  "id": "superette258",
+ "parent": "ilot-001",
  "order": 61,
  "name": "Supérette 25/8",
  "about": "The 25/8 supermarket (no interior), its delivery yard, its filling station and its car park in place of the SMAT (#813), #851 and the sheds round them, on the block's plan (scripts/ilot/ilot_plan.gd); one-way flow, in on the east, out on the west; the lorries on the north road only.",

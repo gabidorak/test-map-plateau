@@ -17,6 +17,7 @@ extends RefCounted
 ## Collision: the ground floor's columns, the bike shelter's mesh and slab, the roof plant, bollards, boulders.
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
+const FarProxy = preload("res://scripts/builder/far_proxy.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const GroundHeights = preload("res://scripts/ground_heights.gd")
 const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
@@ -105,6 +106,7 @@ func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_di
 	MeshUtils.save(_win, mesh_dir + "logx_window.tres")
 	_node = Node3D.new()
 	_node.name = "LogementsX"
+	_node.add_to_group(FarProxy.GROUP, true)     # (one building from afar: far_builder.gd)
 	root.add_child(_node)
 	_body = StaticBody3D.new()
 	_body.name = "LogementsXCollision"

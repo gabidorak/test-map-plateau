@@ -87,6 +87,8 @@ func _ready() -> void:
 			poly.append(Vector2(g.x, -g.z))
 		GrassField.keep_out.append(poly)
 	_slats = shop.get_meta("slats")
+	for s: Node in _slats:                   # (shown and hidden by the door: not streamed, builder/lot_far.gd)
+		s.add_to_group("lot_own_visibility")
 	_door_shape = shop.get_meta("door_shape")
 
 
