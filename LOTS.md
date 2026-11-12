@@ -11,7 +11,8 @@ Every change made to the map (a building replaced, a garden redone, a villa buil
 | 3. Building | in the game | `node` (game.gd's member), `restyle` (specs of `godot/data/restyle/`) | the lot's script, `scripts/restyle/` |
 
 A terraforming file or a restyled building's spec counts only when a lot names it. Lots today: `losplatos`,
-`allSuites`, `villaEnPierreCoteaux`, `ensae`, `campusEdf`, `ilot-001`, `superette258`.
+`allSuites`, `villaEnPierreCoteaux`, `ensae`, `campusEdf`, `ilot-001`, `superette258`, `baseNautique` (the boat hire
+on the Lac de l'X: its counter is PTA Online's terminal, `godot/scripts/online/boat_hire.gd`).
 
 A lot may be part of another (`"parent"`): a block's own lot (`ilot-NNN`, a generic name and a number) and the lots
 in that block. A child comes after its parent; its terraforming is laid on its parent's (the zones are applied one on

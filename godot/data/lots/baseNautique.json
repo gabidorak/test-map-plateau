@@ -1,0 +1,8 @@
+{
+ "id": "baseNautique",
+ "order": 70,
+ "name": "Base nautique du lac",
+ "about": "The boat hire on the Lac de l'X (ref/VendeurJetSki/): a kiosk on the Cour des cérémonies' gravel, its counter PTA Online's terminal (buy a jet-ski, hire one for 10 minutes), a floating pontoon with its slips, two jet-skis moored for show.",
+ "script": "res://scripts/baseNautique/base_nautique.gd",
+ "node": "baseNautique"
+}

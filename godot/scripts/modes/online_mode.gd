@@ -51,6 +51,7 @@ const Fires = preload("res://scripts/online/fires.gd")
 const FireJob = preload("res://scripts/online/fire_job.gd")
 const Properties = preload("res://scripts/online/properties.gd")
 const CustomShop = preload("res://scripts/online/custom_shop.gd")
+const BoatHire = preload("res://scripts/online/boat_hire.gd")
 const TowJob = preload("res://scripts/online/tow_job.gd")
 
 signal answered(ok: bool, text: String)     # the host's answer to our last request at a garage terminal
@@ -58,10 +59,13 @@ signal answered(ok: bool, text: String)     # the host's answer to our last requ
 const ARMED := ["biplane-armed", "biplane-gunner", "gaz-tiger"]
 const WORK := {"depot": ["bus-idfm", "bus-idfm-artic"], "fire": ["fire-truck"], "tow": ["tow-truck"]}   # lent there,
 											# and only out there
+const OUT_AT := {"lake": ["jet-ski"]}       # the players' own vehicles a garage kind gets out (besides WORK's)
+const HIRE_WARN := 60.0                     # s before a hire ends that its hirer is told
 const KEEP := 30.0                          # s a player's vehicle waits for them after they leave (PLATEAU_ONLINE_KEEP)
 const REACH := 2.5                          # m from a terminal for E
 const SERVER_REACH := 8.0                   # m the server allows (the player's position reaches it a little late)
-const PLACE_KINDS := {"public": "garage", "depot": "depot", "fire": "fire", "residence": "residence", "tow": "tow"}   # (the shop's:
+const PLACE_KINDS := {"public": "garage", "depot": "depot", "fire": "fire", "residence": "residence", "tow": "tow",
+		"lake": "boat"}   # (the shop's:
 											# Prestige Motors already; a flat's private lift: none)
 const TOW := 15.0                           # s a broken player vehicle stays before it is towed back (PLATEAU_ONLINE_TOW)
 const TEST_MONEY := 10_000_000              # € in the PTA Online test's wallet, at start and at each refill
@@ -84,6 +88,7 @@ var fires: Fires
 var fire_job: FireJob
 var properties: Properties
 var custom: CustomShop                      # Losplatos Custom's repairs and paint
+var boat_hire: BoatHire                     # the boat hire on the Lac de l'X (its garage)
 var tow_job: TowJob                         # Losplatos Custom's tow trucks
 var _leaving := {}                         # host: account -> [net id, s left]
 var _panel: GaragePanel
@@ -149,6 +154,10 @@ func _ready() -> void:
 	custom.name = "CustomShop"
 	custom.mode = self
 	add_child(custom)
+	boat_hire = BoatHire.new()
+	boat_hire.name = "BoatHire"
+	boat_hire.mode = self
+	add_child(boat_hire)
 	tow_job = TowJob.new()
 	tow_job.name = "TowJob"
 	tow_job.mode = self
@@ -350,6 +359,7 @@ func open_garage(id: String) -> void:
 			"Firefighters earn money here: go on duty below, a fire truck comes with it.",
 			"residence": "Residents' vehicles (not the work ones): they come out on the purple bays.",
 			"tow": "Tow truck drivers earn money here: go on duty below, a tow truck comes with it.",
+			"lake": "Jet-skis: hire one for a ride, or buy one. They come out on a slip by the pontoon.",
 			"private": "The lift takes you down to the residents' car park: pick a vehicle and drive off."}
 	_open_panel()
 	_panel.open_garage(id, "%s · %s" % [look["title"], g["name"]] if g["kind"] in Garages.PUBLIC or g["kind"] == "residence"
@@ -412,6 +422,9 @@ func _build_hud() -> void:
 	_panel.buy.connect(func(model: String) -> void:
 		_panel.set_status("Buying…")
 		shop.buy(_panel.garage_id if _panel.kind == "garage" else Shop.PRESTIGE, model))
+	_panel.rent.connect(func(model: String) -> void:
+		_panel.set_status("Hiring…")
+		shop.rent(_panel.garage_id, model))
 	_panel.repair.connect(func(vehicle: int) -> void: shop.repair(_panel.garage_id, vehicle))
 	_panel.repaint.connect(func(vehicle: int, colour: String) -> void: shop.repaint(_panel.garage_id, vehicle, colour))
 	_panel.send_back.connect(func() -> void:
@@ -556,7 +569,7 @@ func account(peer: int) -> Dictionary:
 ## What garage `g` offers player account `acc`: [{"vehicle" (garage id, 0 lent), "model", "label", "note"}]; a note
 ## says why it can't come out here. The player's own also have "colour" (paint id), "repair" (€ when wrecked, else 0)
 ## and "repaint" (€ a coat, 0 when it can't be painted); the work vehicles on sale at the depot and the fire station come
-## last, with "buy" (€; "vehicle" -1).
+## last, with "buy" (€; "vehicle" -1); what it hires out before them, with "rent" (€) and "minutes" ("vehicle" -2).
 func offer(g: Dictionary, acc: Dictionary) -> Array:
 	var kind: String = g["kind"]
 	var public: bool = kind in Garages.PUBLIC or kind in ["residence", "private"]
@@ -574,7 +587,7 @@ func offer(g: Dictionary, acc: Dictionary) -> Array:
 			continue
 		var note := ""
 		var wrecked: bool = v.get("wrecked", false)
-		if not public and m not in WORK[kind]:
+		if not public and m not in WORK.get(kind, []) + OUT_AT.get(kind, []):
 			continue                        # the depot and the fire station only show their own kind
 		if refused != "":
 			note = refused
@@ -589,13 +602,16 @@ func offer(g: Dictionary, acc: Dictionary) -> Array:
 		elif wrecked:
 			note = "Wrecked: repair it first" if not out_now.has(int(v["id"])) else "Wrecked: being towed back"
 		elif m == "jet-ski" and _water_spot(g) == null:
-			note = "No lake near this garage"
+			note = "Every slip is taken: wait for one to clear" if g.has("slips") else "No lake near this garage"
 		elif m != "jet-ski" and not Garages.any_fits(g, m):
 			note = "Too big for this garage"
 		out.append({"vehicle": int(v["id"]), "model": m, "label": Car.display_name(m), "note": note,
 				"colour": str(v.get("colour", "")), "repair": Prices.repair(m) if wrecked and m not in ARMED else 0,
 				"repaint": Prices.repaint(m) if Paint.can_paint(m) else 0})
 	if not public:
+		for h: Dictionary in Prices.rentals(kind):
+			out.append({"vehicle": -2, "model": h["model"], "label": Car.display_name(h["model"]), "note": refused,
+					"rent": int(h["price"]), "minutes": int(h["minutes"])})
 		for m: String in Prices.catalogue(kind):
 			out.append({"vehicle": -1, "model": m, "label": Car.display_name(m), "note": "", "buy": Prices.price(m)})
 	return out
@@ -603,7 +619,7 @@ func offer(g: Dictionary, acc: Dictionary) -> Array:
 
 ## Host: why player `peer` can't get vehicle (`vehicle`, `model`) out at garage `gid`, or "" when they can (`near`: they
 ## must stand by its terminal; a vehicle just bought is delivered to the shop's bays wherever they are).
-func spawn_problem(peer: int, gid: String, vehicle: int, model: String, near := true) -> String:
+func spawn_problem(peer: int, gid: String, vehicle: int, model: String, near := true, hire := false) -> String:
 	var acc := account(peer)
 	if acc.is_empty():
 		return "Not logged in."
@@ -614,6 +630,8 @@ func spawn_problem(peer: int, gid: String, vehicle: int, model: String, near := 
 		return "Armed vehicles aren't allowed in PTA Online."
 	if near and not _near(peer, g):
 		return "Walk up to the garage's terminal."
+	if hire:                                # (a hire: shop.gd rent_for has checked the garage hires it out)
+		return "Every slip is taken: wait for one to clear." if model == "jet-ski" and _water_spot(g) == null else ""
 	for e: Dictionary in offer(g, acc):
 		if int(e["vehicle"]) == vehicle and e["model"] == model:
 			return str(e["note"])
@@ -645,9 +663,9 @@ func _position_of(peer: int) -> Variant:
 
 
 ## Host: gets vehicle (`vehicle`, `model`) out at garage `gid` for player `peer`, sending their vehicle out before
-## back first. "" when done, else why not.
-func spawn_for(peer: int, gid: String, vehicle: int, model: String, near := true) -> String:
-	var problem := spawn_problem(peer, gid, vehicle, model, near)
+## back first (`hire`: s it is hired for, then taken back; "vehicle" 0). "" when done, else why not.
+func spawn_for(peer: int, gid: String, vehicle: int, model: String, near := true, hire := 0.0) -> String:
+	var problem := spawn_problem(peer, gid, vehicle, model, near, hire > 0.0)
 	if problem != "":
 		return problem
 	var acc := account(peer)
@@ -670,6 +688,8 @@ func spawn_for(peer: int, gid: String, vehicle: int, model: String, near := true
 		car.net_id = "solo:%d" % _next_solo
 	vehicles[car.net_id] = {"owner": str(acc["username"]), "model": model, "locked": true, "colour": colour,
 			"account": int(acc["account"]), "peer": peer, "vehicle": vehicle}
+	if hire > 0.0:
+		vehicles[car.net_id]["hire"] = hire
 	_share(car.net_id)
 	send_to(peer, self, "_c_mine", [car.net_id, false])
 	if game.net.dedicated:
@@ -677,9 +697,14 @@ func spawn_for(peer: int, gid: String, vehicle: int, model: String, near := true
 	return ""
 
 
-## Where a jet-ski comes out for garage `g`: on the nearest lake within the game's jet-ski reach of its terminal, or
-## null.
+## Where a jet-ski comes out for garage `g`: on its first free slip when it has some (the boat hire's), else on the
+## nearest lake within the game's jet-ski reach of its terminal; or null.
 func _water_spot(g: Dictionary) -> Variant:
+	if g.has("slips"):
+		for xf: Transform3D in g["slips"]:
+			if not game.cars.any(func(c: Car) -> bool: return c.global_position.distance_to(xf.origin) < 2.5):
+				return xf
+		return null
 	if Water.current == null:
 		return null
 	return Water.current.spot_near(g["terminal"], game.JET_SKI_REACH, game.JET_SKI_ROOM, game.JET_SKI_LAKE)
@@ -801,9 +826,20 @@ func _on_left(peer: int) -> void:
 
 
 func _host_tick(delta: float) -> void:
-	for id: String in vehicles.keys():      # wrecks: towed back TOW s after they broke
+	for id: String in vehicles.keys():      # wrecks: towed back TOW s after they broke; hires: taken back at their end
 		var v: Dictionary = vehicles[id]
 		var car := car_of(id)
+		if v.has("hire"):
+			var left: float = v["hire"]
+			v["hire"] = left - delta
+			if left > HIRE_WARN and v["hire"] <= HIRE_WARN and v["peer"] != 0:
+				send_to(v["peer"], self, "_c_notice", ["Your hired %s goes back in a minute." % Car.common_name(v["model"])])
+			if v["hire"] <= 0.0:
+				if v["peer"] != 0:
+					send_to(v["peer"], self, "_c_notice", ["Your hire is over: the %s went back to the boat hire." %
+							Car.common_name(v["model"])])
+				_send_back(id)
+				continue
 		if v.has("tow"):
 			v["tow"] -= delta
 			if v["tow"] <= 0.0:

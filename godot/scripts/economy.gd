@@ -117,6 +117,20 @@ func pay(account_id: int, amount: int, reason: String, job: String, cap: int, on
 	return r
 
 
+## Server: charges account `account_id` `amount` € for `reason` (a hire: scripts/online/shop.gd rent_for), refused when
+## the wallet is short (server/accounts db.charge). The answer as accounts.gd's, "data": {"balance"}; a logged-in player
+## of that account sees their wallet follow.
+func charge(account_id: int, amount: int, reason: String, job: String) -> Dictionary:
+	var r: Dictionary = await accounts.server_post("/v1/server/charge",
+			{"account": account_id, "amount": amount, "reason": reason, "job": job}, secret)
+	if r["ok"]:
+		for id: int in _logged:
+			if _logged[id]["account"] == account_id:
+				_logged[id]["balance"] = int(r["data"]["balance"])
+				_wallet.rpc_id(id, _logged[id]["balance"])
+	return r
+
+
 func _on_registered(id: int) -> void:
 	if official:
 		_waiting[id] = 0.0

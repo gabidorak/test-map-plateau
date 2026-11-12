@@ -24,6 +24,7 @@ const PLACES := {
 	"home": {"colour": Color("#7a4fc4"), "glyph": "house"},    # PTA Online's properties (scripts/online/properties.gd)
 	"residence": {"colour": Color("#7a4fc4"), "glyph": "P"},   # ...and their residents' car parks
 	"custom": {"colour": Color("#d8343a"), "glyph": "wrench"}, # Losplatos Custom (scripts/losplatos/)
+	"boat": {"colour": Color("#2bb3c0"), "glyph": "J"},        # the boat hire on the Lac de l'X (scripts/baseNautique/)
 	"villa": {"colour": Color("#b8862e"), "glyph": "house"},   # Villa de charme (scripts/villaEnPierreCoteaux/)
 	"tow": {"colour": Color("#e07b1a"), "glyph": "D"},         # its tow truck terminal (scripts/online/tow_job.gd)
 	"breakdown": {"colour": Color("#e07b1a"), "glyph": "!"},   # a breakdown for a tow truck driver on duty

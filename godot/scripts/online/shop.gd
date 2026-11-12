@@ -5,12 +5,15 @@ extends Node
 ## the vehicle and the money change in one go) and only then answers; prices are data/prices.json's
 ## (scripts/online/prices.gd), the same in every build, but only the server's count.
 ## - Prestige Motors (the showroom of scripts/dealership.gd): E by Jean-Claude or at a podium's price stand opens the
-##   catalogue (the cars, the biplane, the horse, the jet-ski, the truck: by tier). A vehicle bought goes in the
+##   catalogue (the cars, the biplane, the horse, the truck: by tier). A vehicle bought goes in the
 ##   player's garage and comes out on the shop's bays by the door (garage DELIVERY), sending their vehicle out back;
-##   when it can't (the bays taken, the jet-ski: no lake there), it waits in the garage. The stands and Jean-Claude
+##   when it can't (the bays taken), it waits in the garage. The stands and Jean-Claude
 ##   quote the online prices.
 ## - The bus depot and the fire station sell their work vehicles at their terminal (the garage panel's "Buy" rows),
 ##   out on their own bays.
+## - The boat hire on the Lac de l'X (scripts/online/boat_hire.gd: a garage of kind "lake") sells the jet-ski and hires
+##   it out (Prices.rentals: so many minutes for so much, charged through the accounts service: economy.gd charge); a
+##   hire comes out on a slip by the pontoon, "vehicle" 0, and the mode takes it back at its end (online_mode.gd).
 ## - At any garage terminal: repair a wrecked vehicle (Prices.repair), paint one (Prices.repaint a coat, a colour of
 ##   scripts/paint.gd); a vehicle out shows its new colour on every peer at once.
 ## - Wrecks (online_mode.gd: a player's vehicle broken on the map): an owned one is marked wrecked in the garage.
@@ -87,6 +90,11 @@ func buy(where: String, model: String) -> void:
 	mode.to_host(self, "_h_buy", [where, model])
 
 
+## Hires `model` at garage `gid`'s terminal (what it hires out: Prices.rentals).
+func rent(gid: String, model: String) -> void:
+	mode.to_host(self, "_h_rent", [gid, model])
+
+
 ## Repairs our wrecked garage vehicle `vehicle`, at garage `gid`'s terminal.
 func repair(gid: String, vehicle: int) -> void:
 	mode.to_host(self, "_h_repair", [gid, vehicle])
@@ -149,12 +157,39 @@ func buy_for(peer: int, where: String, model: String) -> Array:
 	var problem: String = mode.spawn_for(peer, DELIVERY if where == PRESTIGE else where, int(r["data"]["vehicle"]), model,
 			false)
 	if problem == "":
-		return [true, "Félicitations, %s! Out on a bay: %s to get in." % [paid, Settings.key_text("interact")]]
+		return [true, "Félicitations, %s! %s: %s to get in." % [paid, "On the water by the pontoon" if g.has("slips")
+				else "Out on a bay", Settings.key_text("interact")]]
 	if model == "jet-ski":
 		problem = "it goes on a lake: get it out at %s" % _lake_garage()
 	else:
 		problem = problem.trim_suffix(".").to_lower() + ": get it out at a garage terminal"
 	return [true, "Félicitations, %s! It waits in your garage (%s)." % [paid, problem]]
+
+
+## Host: player `peer` hires `model` at garage `gid`: [ok, text]. Charged first, then out on a slip (checked before).
+func rent_for(peer: int, gid: String, model: String) -> Array:
+	var acc: Dictionary = mode.account(peer)
+	if acc.is_empty():
+		return [false, "Not logged in."]
+	var g: Dictionary = mode.garages.get_garage(gid)
+	var hire := Prices.rental(str(g.get("kind", "")), model)
+	if hire.is_empty():
+		return [false, "That isn't hired out here."]
+	var problem: String = mode.spawn_problem(peer, gid, 0, model, true, true)
+	if problem != "":
+		return [false, problem]
+	var price := int(hire["price"])
+	var minutes := int(hire["minutes"])
+	var r := await _spend(peer, acc, price, "%s hired for %d min" % [Car.common_name(model), minutes])
+	if not r["ok"]:
+		return [false, _too_poor(model, price, int(r["data"].get("balance", 0))) if r["error"] == "too_poor"
+				else str(r["message"])]
+	_log("%s hired a %s for %d min, %d €" % [acc["username"], model, minutes, price])
+	problem = mode.spawn_for(peer, gid, 0, model, true, minutes * 60.0)
+	if problem != "":
+		return [false, problem]
+	return [true, "The %s is yours for %d minutes (−%s): at the pontoon, %s to get on." % [Car.common_name(model),
+			minutes, Economy.money(price), Settings.key_text("interact")]]
 
 
 ## Host: player `peer` repairs their wrecked vehicle `vehicle` at garage `gid`: [ok, text].
@@ -252,6 +287,25 @@ func _lake_garage() -> String:
 	return "a garage by a lake"
 
 
+## Host: player `peer` pays `price` € for `reason` (a hire: no change to their garage; one request at a time).
+func _spend(peer: int, acc: Dictionary, price: int, reason: String) -> Dictionary:
+	if _busy.has(peer):
+		return {"ok": false, "error": "busy", "message": "One thing at a time.", "data": {}}
+	_busy[peer] = true
+	var r: Dictionary
+	if mode.game.economy.official:
+		r = await mode.game.economy.charge(int(acc["account"]), price, reason, "hire")
+	elif price > mode.test_money:
+		r = {"ok": false, "error": "too_poor", "message": "Not enough money.", "data": {"balance": mode.test_money}}
+	else:
+		mode.test_money -= price
+		mode.game.economy.balance = mode.test_money
+		mode.game.economy.wallet_changed.emit()
+		r = {"ok": true, "error": "", "message": "", "data": {"balance": mode.test_money}}
+	_busy.erase(peer)
+	return r
+
+
 ## Host: a change of player `peer`'s garage (one request at a time per player).
 func _change(peer: int, acc: Dictionary, change: Dictionary) -> Dictionary:
 	if _busy.has(peer):
@@ -327,6 +381,15 @@ func _h_buy(where: String, model: String) -> void:
 		var p: Variant = mode.position_of(peer)
 		_log("%s: no %s bought at %s (%s) seen at %s" % [mode.game.net.player_name(peer), model, where, r[1],
 				"(%.0f, %.1f, %.0f)" % [p.x, p.y, p.z] if p != null else "nowhere"])
+	mode.send_to(peer, self, "_c_done", [r[0], r[1], r[0]])
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _h_rent(gid: String, model: String) -> void:
+	if not mode.hosting:
+		return
+	var peer: int = mode._sender()
+	var r: Array = await rent_for(peer, gid, model)
 	mode.send_to(peer, self, "_c_done", [r[0], r[1], r[0]])
 
 

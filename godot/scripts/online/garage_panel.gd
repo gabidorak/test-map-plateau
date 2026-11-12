@@ -19,6 +19,7 @@ const Car = preload("res://scripts/car.gd")
 
 signal spawn(vehicle: int, model: String)   # garage: the vehicle picked (vehicle 0: one the garage lends)
 signal buy(model: String)                   # garage (work vehicles) or catalogue: buy one
+signal rent(model: String)                  # garage (the boat hire): hire one
 signal repair(vehicle: int)                 # garage: repair this wrecked vehicle
 signal repaint(vehicle: int, colour: String)    # garage, palette view: paint it ("" its own colour)
 signal lock(on: bool)                       # vehicle: lock or unlock it
@@ -133,11 +134,13 @@ func show_entries(list: Array, message: String) -> void:
 	_title.text = _title.text.trim_prefix("Paint · ")
 	_parts(["rows"])
 	_clear_rows()
-	var sections := list.any(func(e: Dictionary) -> bool: return e.has("duty") or int(e.get("buy", 0)) > 0)
+	var sections := list.any(func(e: Dictionary) -> bool:
+		return e.has("duty") or int(e.get("buy", 0)) + int(e.get("rent", 0)) > 0)
 	var section := ""
 	for e: Dictionary in list:
 		if sections:
-			var now := "duty" if e.has("duty") else ("buy" if int(e.get("buy", 0)) > 0 else "out")
+			var now := "duty" if e.has("duty") else ("buy" if int(e.get("buy", 0)) > 0 else
+					("rent" if int(e.get("rent", 0)) > 0 else "out"))
 			if now != section:
 				section = now
 				_heading(now, list)
@@ -148,6 +151,10 @@ func show_entries(list: Array, message: String) -> void:
 			rows.add_child(row)
 			continue
 		var buying := int(e.get("buy", 0)) > 0
+		if int(e.get("rent", 0)) > 0:
+			_rent_row(row, e)
+			rows.add_child(row)
+			continue
 		row.name = "Buy_%s" % e["model"] if buying else "Vehicle_%d_%s" % [int(e["vehicle"]), str(e["model"])]
 		var b := UiStyle.button("%s · %s" % [e["label"], Economy.money(int(e["buy"]))] if buying else str(e["label"]),
 				_looks, Vector2(250, 40), 17)
@@ -196,7 +203,8 @@ func _heading(part: String, list: Array) -> void:
 	var head: String = {"duty": "FIREFIGHTER JOB · go on duty: a fire truck comes with it" if fire
 			else "BUS JOB · pick a line: you are on duty, and a bus comes with it",
 			"out": "Or just take a %s out (no job, no pay)" % vehicle if job else "Take one out",
-			"buy": "For sale (your own pays ×1.5 on the job)" if job else "For sale"}[part]
+			"buy": "For sale (your own pays ×1.5 on the job)" if job else "For sale",
+			"rent": "To hire (it goes back at the end)"}[part]
 	var l := UiStyle.label(head, 17, Color(1.0, 0.86, 0.5), HORIZONTAL_ALIGNMENT_LEFT)
 	l.name = "Heading_" + part
 	rows.add_child(l)
@@ -212,6 +220,21 @@ func _heading(part: String, list: Array) -> void:
 		how.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		how.custom_minimum_size.x = 560
 		rows.add_child(how)
+
+
+## A hire's row (the boat hire): {"model", "label", "note", "rent" (€), "minutes"}.
+func _rent_row(row: HBoxContainer, e: Dictionary) -> void:
+	row.name = "Rent_%s" % e["model"]
+	var b := UiStyle.button("%s · %d min · %s" % [e["label"], int(e["minutes"]), Economy.money(int(e["rent"]))], _looks,
+			Vector2(250, 40), 17)
+	b.name = "Rent"
+	b.disabled = str(e["note"]) != ""
+	b.pressed.connect(func() -> void: rent.emit(str(e["model"])))
+	row.add_child(b)
+	var note := UiStyle.label(str(e["note"]), 15, UiStyle.TEXT_DIM, HORIZONTAL_ALIGNMENT_LEFT)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(note)
 
 
 ## A bus line's row at the depot: {"duty": its ref ("" off duty), "label", "note", "on" (our duty now)}.

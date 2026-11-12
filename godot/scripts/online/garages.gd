@@ -8,7 +8,8 @@ extends Node3D
 ## Polytechnique: fire trucks only), "shop" (Prestige Motors' delivery bays by its door: a vehicle bought there comes
 ## out on them; otherwise a public garage), "residence" (a residence's car park: its residents' vehicles, PTA Online's
 ## properties: scripts/online/properties.gd), "private" (a flat's lift down to the residents' bays: "hidden", no kiosk,
-## its terminal the lift in the flat). The properties add theirs to `list` before `build`.
+## its terminal the lift in the flat). The properties add theirs to `list` before `build`. A garage with
+## "own_terminal" has no kiosk: the build it belongs to draws its terminal (the boat hire's till on its counter).
 ## Positions in the file are map coordinates (x east, y north; Godot = (x, height, -y)) and yaws in degrees (0 north,
 ## clockwise); heights come from the ground (scripts/ground_map.gd), so the server has them too. The dedicated server
 ## makes no meshes, only the kiosks' collision.
@@ -28,6 +29,7 @@ const KINDS := {
 	"private": {"title": "Your garage", "colour": Color("#7a4fc4"), "sign": "P", "paint": Color(0.8, 0.7, 1.0)},
 	"custom": {"title": "Losplatos Custom", "colour": Color("#d8343a"), "sign": "C", "paint": Color(1.0, 0.8, 0.3)},
 	"tow": {"title": "Tow trucks", "colour": Color("#e07b1a"), "sign": "D", "paint": Color(1.0, 0.8, 0.3)},
+	"lake": {"title": "Boat hire", "colour": Color("#2bb3c0"), "sign": "J", "paint": Color(0.17, 0.7, 0.75)},
 }
 const PUBLIC := ["public", "shop"]          # kinds any of a player's vehicles but the work ones come out at
 const LINE := 0.12                          # m, painted bay lines
@@ -67,7 +69,8 @@ func build(meshes: bool) -> void:
 		var node := Node3D.new()
 		node.name = "Garage_" + str(g["id"]).replace("-", "_")
 		add_child(node)
-		_kiosk(node, g, meshes)
+		if not g.get("own_terminal", false):
+			_kiosk(node, g, meshes)
 		if meshes and not g.get("no_paint", false):
 			_paint_bays(node, g)
 

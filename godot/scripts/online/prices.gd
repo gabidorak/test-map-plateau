@@ -1,10 +1,12 @@
 extends RefCounted
-## PTA Online's prices (data/prices.json, ONLINE_MODE.md 4.1): what each vehicle costs and where it is sold, what a
+## PTA Online's prices (data/prices.json, ONLINE_MODE.md 4.1): what each vehicle costs and where it is sold, what is
+## hired out where (rentals), what a
 ## repair and a repaint cost. The official server charges them (scripts/online/shop.gd); the players' games show them
 ## (the same file is in every build). A model not in the file is not sold.
 
 const DATA := "res://data/prices.json"
-const PLACES := {"prestige": "Prestige Motors", "depot": "the bus depot", "fire": "the fire station"}
+const PLACES := {"prestige": "Prestige Motors", "depot": "the bus depot", "fire": "the fire station",
+		"lake": "the boat hire on the Lac de l'X"}
 
 static var _data := {}
 static var _models := {}                    # model -> {"price", "tier", "at"}
@@ -49,6 +51,20 @@ static func catalogue(place: String) -> Array:
 		if _models[m]["at"] == place:
 			out.append(m)
 	return out
+
+
+## What `place` hires out: [{"model", "minutes", "price"}].
+static func rentals(place: String) -> Array:
+	_load()
+	return _data.get("rentals", []).filter(func(r: Dictionary) -> bool: return r["at"] == place)
+
+
+## The hire of `model` at `place` ({"model", "minutes", "price"}), {} if none.
+static func rental(place: String, model: String) -> Dictionary:
+	for r: Dictionary in rentals(place):
+		if r["model"] == model:
+			return r
+	return {}
 
 
 ## € to repair `model` once wrecked (0 when it has no price: nothing to repair, e.g. the admin gave it).

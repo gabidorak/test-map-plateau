@@ -166,6 +166,7 @@ var villaEnPierreCoteaux: VillaEnPierreCoteaux                            # Vill
 var restyle: Restyle                        # the restyled buildings, ENSAE... (data/restyle/, scripts/restyle/)
 var ilot_001: Node3D                        # block 001's own lot: its streets, greenery (scripts/ilot/)
 var superette258: Node3D                    # the 25/8 supermarket, its filling station, its car park (scripts/superette/)
+var baseNautique: Node3D                    # the boat hire on the Lac de l'X (scripts/baseNautique/)
 var races: Races
 var economy: Economy                        # Main/Economy: PTA Online logins (and money, later)
 var online := false                         # client: playing PTA Online on the official server (start_online)

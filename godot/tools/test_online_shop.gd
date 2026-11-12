@@ -5,7 +5,8 @@ extends "res://tools/test_base.gd"
 ##   prices on Prestige Motors' stands, E by a stand (the catalogue), buying the cheapest car with the starting money
 ##   (out on the shop's bays) and not the next one, crash damage (none from plain driving), a wreck towed back and
 ##   marked, its repair, paint (the vehicle out repainted, the palette's materials), buying a bus at the depot, forged
-##   purchases (from afar, a model not sold there, an armed one);
+##   purchases (from afar, a model not sold there, an armed one), the boat hire on the Lac de l'X (a jet-ski hired: out
+##   on a slip, paid, warned, taken back at its end; one bought: out on a slip);
 ## and the clients of tools/test_online_shop.sh (an official server, two accounts; `--sync=DIR` holds the files they
 ## wait on each other with):
 ## - `--buyer=TOKEN`: buys the cheapest car with the 5 000 € a new account starts with, is refused the next one, forges
@@ -343,6 +344,31 @@ func _solo() -> void:
 			and _in_bay(bus, m.garages.get_garage("bus-depot")), "bought a bus for 40 000 €, out at the depot: %s" % r[1])
 	await process_frame
 	_check(not is_instance_valid(car), "our car went back")
+	# the boat hire on the Lac de l'X: a jet-ski hired (out on a slip, paid, taken back at its end), one bought
+	m.test_money = 50000
+	var gid: String = m.boat_hire.GID
+	_check(Prices.sold_at("jet-ski") == "lake" and m.garages.get_garage(gid).has("slips"), "the boat hire sells the jet-ski")
+	_check(await _open_garage(gid) and m._panel.rows.has_node("Rent_jet-ski") and m._panel.rows.has_node("Buy_jet-ski"),
+			"its counter hires and sells jet-skis (rows: %s)" % _rows())
+	r = await _click("Rent_jet-ski", "Rent")
+	var ski: Node = m.car_of(m.mine)
+	var slips: Array = m.garages.get_garage(gid)["slips"]
+	_check(r[0] and m.test_money == 49500 and ski != null and ski.model_name == "jet-ski"
+			and ski.global_position.distance_to((slips[0] as Transform3D).origin) < 3.0,
+			"a jet-ski hired for 500 €, out on the first slip: %s" % r[1])
+	if ski:
+		m.vehicles[m.mine]["hire"] = 60.5
+		await _wait(1.0)
+		_check(_toasted("goes back in a minute"), "a minute's warning")
+		m.vehicles[m.mine]["hire"] = 0.3
+		await _wait(1.0)
+		_check(not is_instance_valid(ski) and _toasted("hire is over"), "the hire taken back at its end")
+	_check(await _open_garage(gid), "the boat hire's counter again")
+	r = await _click("Buy_jet-ski", "Buy")
+	ski = m.car_of(m.mine)
+	_check(r[0] and m.test_money == 19500 and not _owned("jet-ski").is_empty() and ski != null
+			and ski.global_position.distance_to((slips[0] as Transform3D).origin) < 3.0,
+			"a jet-ski bought for 30 000 €, out on a slip: %s" % r[1])
 
 
 func _in_bay(car: Node3D, g: Dictionary) -> bool:
