@@ -167,7 +167,7 @@ buildings, interiors, vegetation, props, bridges, rail, Massy, Logements X; coll
 ### Map data (not in git)
 
 The generated map (~1.9 GB: `godot/world/` heightmaps, ground and `world.json`, `godot/world/base/`,
-`godot/scenes/generated/neighborhood.tscn` and `meshes/`) changes at every map rebuild, so it lives on the
+`godot/scenes/generated/neighborhood.tscn`, `meshes/` and the ground the game reads, `ground.json` and its two files) changes at every map rebuild, so it lives on the
 [`map-data`](https://github.com/gabidorak/test-map-plateau/releases/tag/map-data) prerelease instead of the git
 history, and git ignores it. `map_data.lock` pins the version each commit uses. Python 3.8+, nothing to install:
 
@@ -211,7 +211,7 @@ blender -b --factory-startup -P blender/vehicles/build_train.py -- --preview=$PW
 
 cd godot
 godot --headless --path . --import
-godot --headless --path . --script res://tools/build_world.gd     # godot/world/ -> scenes/generated/neighborhood.tscn
+godot --headless --path . --script res://tools/build_world.gd     # godot/world/ -> scenes/generated/ (the scene, the ground)
 godot --headless --path . --script res://tools/check_world.gd   # no satellite image, no hole in the ground mesh
 godot --headless --path . --script res://tools/test_loading.gd  # the loading screen, its map, the pacer; the loader puts the game in the tree by slices and back to the menu
 godot --headless --fixed-fps 60 --path . --script res://tools/test_play.gd  # picker, walking, walls, boundary, kerbs

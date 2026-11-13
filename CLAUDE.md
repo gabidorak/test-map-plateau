@@ -3,7 +3,7 @@
 ## Map data is not in git
 
 The generated map (`godot/world/` heightmaps, ground and `world.json`, `godot/world/base/`,
-`godot/scenes/generated/neighborhood.tscn` and `meshes/`) is git-ignored. It lives on the `map-data` GitHub prerelease,
+`godot/scenes/generated/neighborhood.tscn`, `meshes/` and `ground*`) is git-ignored. It lives on the `map-data` GitHub prerelease,
 and `map_data.lock` pins the version each commit uses. Details: "Map data (not in git)" in [README.md](README.md).
 
 - **After rebuilding the map** (pipeline, `patch_world`, `build_world`): run `python3 tools/map_data.py publish` (it

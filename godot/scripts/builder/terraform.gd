@@ -8,8 +8,8 @@ extends RefCounted
 ## is read (builder/world_builder.gd), so everything is built on the ground as it ends up. Applied alike everywhere
 ## heights are made: the
 ## heightmap when the map is built (its collision, water, trees, props: builder/world_builder.gd), the ground's mesh
-## and its raised sidewalks' collision (builder/ground_builder.gd), the heights read in the game (ground_map.gd
-## height()). No preloads (ground_map.gd uses it).
+## and its raised sidewalks' collision (builder/ground_builder.gd); the game reads the heights so made, baked
+## (builder/ground_bake.gd, ground_map.gd): nothing of it runs in the game.
 
 const DIR := "res://data/terraform/"
 const Lots = preload("res://scripts/builder/lots.gd")

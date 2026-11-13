@@ -3,12 +3,15 @@ extends RefCounted
 ## Builds res://scenes/generated/neighborhood.tscn from the pipeline output in res://world/ (and the railway,
 ## world/rail.json: builder/rail_builder.gd, Massy-Palaiseau's station: builder/massy_builder.gd, the École
 ## polytechnique's new housing: builder/logements_x_builder.gd; the building
-## interiors, world/interiors.json: builder/interior_builder.gd).
+## interiors, world/interiors.json: builder/interior_builder.gd), and the ground the game reads,
+## res://scenes/generated/ground.json (builder/ground_bake.gd: the map's with the lots' terraforming and surfaces).
 ## Run from the editor (Project > Tools > Rebuild Plateau world) or headless via tools/build_world.gd.
 
 const GroundBuilder = preload("res://scripts/builder/ground_builder.gd")
 const BuildingBuilder = preload("res://scripts/builder/building_builder.gd")
 const Terraform = preload("res://scripts/builder/terraform.gd")
+const GroundBake = preload("res://scripts/builder/ground_bake.gd")
+const GroundMap = preload("res://scripts/ground_map.gd")
 const Lots = preload("res://scripts/builder/lots.gd")
 const CollisionBuilder = preload("res://scripts/builder/collision_builder.gd")
 const VegetationBuilder = preload("res://scripts/builder/vegetation_builder.gd")
@@ -51,6 +54,11 @@ func build_and_save() -> Error:
 		return ERR_INVALID_DATA
 	# terraforming first (builder/terraform.gd, data/terraform/): the heightmap here, the ground's mesh alike
 	Terraform.patch(heights, world["terrain"])
+	# the ground the game reads, baked (builder/ground_bake.gd): the map's with the lots' surfaces, on these heights;
+	# every builder below reads it (GroundMap.get_map())
+	var ground: RefCounted = GroundBake.make(world, WORLD_PATH.get_base_dir(), heights)
+	if ground == null:
+		return ERR_CANT_OPEN
 
 	var root := Node3D.new()
 	root.name = "Neighborhood"
@@ -105,6 +113,8 @@ func build_and_save() -> Error:
 	err = packed.pack(root)
 	if err == OK:
 		err = ResourceSaver.save(packed, SCENE_PATH)
+	if err == OK:
+		err = ground.save(GroundMap.DEFAULT_INDEX, GroundBake.ABOUT)
 	root.free()
 	print("built %s: %d buildings, %d ground chunks, %d trees, %d hedges, %d props, %d fences, %d bodies of water (%s)" % [
 			SCENE_PATH, world["buildings"].size(), world["ground_mesh"]["chunks"].size(), world["trees"].size(),

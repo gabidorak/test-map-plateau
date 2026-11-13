@@ -6,6 +6,8 @@ extends RefCounted
 ##   "script"     its own code: drop(world) takes out of the map what it replaces (when the map is built,
 ##                builder/world_builder.gd); its node is made in the game (game.gd), held by game's member "node"
 ##   "paint"      a script whose repaint() paints the ground in its grounds (builder/ground_builder.gd)
+##                (its script's surface_boxes() and surface_at(): its surfaces in the map's ground the game reads, its
+##                roads, paving, lawns, baked when the map is built: builder/ground_bake.gd)
 ##   "restyle"    restyled buildings' specs (data/restyle/<slug>.json, scripts/restyle/): their drop, paint and node
 ##   "parent"     the lot it is part of (a block's own lot, whose plan the block's lots share): it comes after its
 ##                parent, its terraforming on the parent's, where the parent's script's child_weight(x, y) lets it

@@ -7,16 +7,13 @@ extends Node3D
 ## residence's north-east facade, the lawns'), lamps (street lamps along the roads, path lamps along the alley),
 ## benches, bins and bike racks (map props: lit at night by night.gd, knocked over like the others). Drawn at start
 ## (residence_haignere_builder.gd): the sidewalks, cycle track and kerbs along the roads, the alley, paths and terrace.
-## The ground painted lawn (mown) under it all.
+## The ground painted lawn (mown) under it all; its surfaces in the map's ground (surface_at(): builder/ground_bake.gd).
 
 const Plan = preload("res://scripts/residenceHaignere/haignere_plan.gd")
 const Builder = preload("res://scripts/residenceHaignere/residence_haignere_builder.gd")
-const GrassField = preload("res://scripts/grass_field.gd")
-const GroundMap = preload("res://scripts/ground_map.gd")
 const KEPT_PROPS := ["pedestrian_light", "traffic_light"]
 const KEPT_MARKS := ["zebra", "stop_line", "cycle_crossing", "centre_line"]   # (the roads': at their kerb)
 
-static var _ids := {}                       # the grass field's lookups: material name -> id, "box"
 
 var game: Node                              # game.gd (null in the tools)
 
@@ -169,21 +166,21 @@ static func repaint(verts: PackedVector3Array, ids: PackedByteArray, colours: Pa
 	return [ids, colours]
 
 
-## The grass field in the lot: none on what is paved nor on the road made, the lawn's on the rest.
-static func _grass_at(x: float, y: float) -> int:
-	if _ids.is_empty() or not (_ids["box"] as Rect2).has_point(Vector2(x, y)):
-		return -2
-	if Plan.in_fill(Vector2(x, y)):
-		return _ids["paving"]
-	if not Plan.in_lot(Vector2(x, y)):
-		return -2
-	return _ids["paving"] if Plan.paved(Vector2(x, y)) else _ids["grass"]
+## The lot's surfaces in the map's ground (builder/ground_bake.gd): asphalt on the road made at the corner, paving on
+## what is paved, lawn on the rest of the lot.
+static func surface_boxes() -> Array:
+	return [Plan.bounds(Plan.lot())]
+
+
+static func surface_at(x: float, y: float, _current: String) -> String:
+	var m := Vector2(x, y)
+	if Plan.in_fill(m):
+		return "asphalt"
+	if not Plan.in_lot(m):
+		return ""
+	return "paving" if Plan.paved(m) else "grass"
 
 
 func _ready() -> void:
 	name = "ResidenceHaignere"
-	var gm: RefCounted = GroundMap.get_map()
-	if gm:
-		_ids = {"paving": gm.materials.find("paving"), "grass": gm.materials.find("grass"), "box": Plan.bounds(Plan.lot())}
-	GrassField.overrides.append(_grass_at)
 	add_child(Builder.new().build(DisplayServer.get_name() != "headless"))

@@ -18,8 +18,6 @@ const SiteBuilder = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCot
 const HouseBuilder = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_house.gd")
 const InteriorBuilder = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_interior.gd")
 const Marks = preload("res://scripts/race_marks.gd")
-const GroundMap = preload("res://scripts/ground_map.gd")
-const GrassField = preload("res://scripts/grass_field.gd")
 
 const Data = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_data.gd")
 const NAME := Data.NAME
@@ -199,17 +197,6 @@ func _ready() -> void:
 	_plaque = site.get_meta("plaque")
 	_garage_doors = house.get_meta("garage_doors")
 	_garage_shapes = house.get_meta("garage_shapes")
-	# the lawn's tufts inside the wall, none on what is built
-	var lawn := PackedVector2Array(WALL)
-	var box := Rect2(GATE - Vector2.ONE * Data.OLD_TRACK, Vector2.ONE * Data.OLD_TRACK * 2.0)
-	for p in lawn:
-		box = box.expand(p)
-	GrassField.overrides.append(_grass_at.bind(lawn, box))
-	for poly: PackedVector2Array in site.get_meta("paved"):
-		var mp := PackedVector2Array()
-		for p in poly:
-			mp.append(to_map(p))
-		GrassField.keep_out.append(mp)
 	set_plaque(Data.NAME.to_upper())
 	if DisplayServer.get_name() != "headless":
 		build_interior()                    # (at start: no hitch on the way in; shown only near the house)
@@ -376,15 +363,48 @@ func _kick_out(dt: float) -> void:
 		game.toast("Private property: %s" % NAME)
 
 
-## The grass field's ground (grass_field.gd overrides): lawn inside the wall, and on the old gravel track by the gate;
-## -2 elsewhere (the map's).
-static func _grass_at(x: float, y: float, wall: PackedVector2Array, box: Rect2) -> int:
+## The grounds' surfaces in the map's ground (builder/ground_bake.gd): paving on what the site paves (its "paved":
+## the court, the terrace, the steps, the paths, the basin's rim), lawn inside the wall and on the old gravel track
+## by the gate.
+static func surface_boxes() -> Array:
+	var box := Rect2(GATE - Vector2.ONE * Data.OLD_TRACK, Vector2.ONE * Data.OLD_TRACK * 2.0)
+	for p: Vector2 in WALL:
+		box = box.expand(p)
+	for q: Array in _paved():
+		box = box.merge(q[1])
+	return [box]
+
+
+static func surface_at(x: float, y: float, current: String) -> String:
 	var p := Vector2(x, y)
-	var gm: GroundMap = GroundMap.get_map()
-	if gm == null or not box.has_point(p):
-		return -2
-	if Geometry2D.is_point_in_polygon(p, wall):
-		return gm.materials.find("grass")
-	if p.distance_to(GATE) < Data.OLD_TRACK and gm.material_at(x, y) == gm.materials.find("gravel"):
-		return gm.materials.find("grass")
-	return -2
+	for q: Array in _paved():
+		if (q[1] as Rect2).has_point(p) and Geometry2D.is_point_in_polygon(p, q[0]):
+			return "paving"
+	if Geometry2D.is_point_in_polygon(p, PackedVector2Array(WALL)):
+		return "grass"
+	if p.distance_to(GATE) < Data.OLD_TRACK and current == "gravel":
+		return "grass"
+	return ""
+
+
+static var _paved_map: Array = []            # [polygon (map), its box]: the site's "paved", once
+
+
+## What the site paves, on the map: the site built (without meshes) on the map's ground, as in the game.
+static func _paved() -> Array:
+	if _paved_map.is_empty():
+		var fy := Data.FLOOR_Y
+		var ground := func(x: float, z: float) -> float:
+			var m := to_map(Vector2(x, z))
+			return Marks.ground(m.x, m.y) - fy
+		var site: Node3D = SiteBuilder.new().build(ground, false)
+		for poly: PackedVector2Array in site.get_meta("paved"):
+			var mp := PackedVector2Array()
+			for p in poly:
+				mp.append(to_map(p))
+			var r := Rect2(mp[0], Vector2.ZERO)
+			for q in mp:
+				r = r.expand(q)
+			_paved_map.append([mp, r])
+		site.free()
+	return _paved_map

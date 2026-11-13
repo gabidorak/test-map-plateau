@@ -5,12 +5,12 @@ extends Node3D
 ## footprint, its roll-up door in the west facade facing the road. The door rolls up when a vehicle or a player comes
 ## within OPEN_REACH m of it (each peer for itself: the ones it sees), and down once no one is near; open, its
 ## collision goes. In the workshop, the service bay (in_bay) is where PTA Online repairs and paints a player's car
-## (scripts/online/custom_shop.gd).
+## (scripts/online/custom_shop.gd). Its sidewalks and asphalt are its surfaces in the map's ground (surface_at():
+## builder/ground_bake.gd).
 
 const WorldEdits = preload("res://scripts/builder/world_edits.gd")
 const Builder = preload("res://scripts/losplatos/losplatos_builder.gd")
 const Marks = preload("res://scripts/race_marks.gd")
-const GrassField = preload("res://scripts/grass_field.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const NAME := "Losplatos Custom"
 const BUILDING_ID := "osm:w71348311"        # #758, Laboratoire d'Hydrodynamique de l'École polytechnique
@@ -115,14 +115,6 @@ func _ready() -> void:
 	shop = Builder.new().build(ground, on_road, DisplayServer.get_name() != "headless")   # (headless: collision only)
 	shop.transform = frame
 	add_child(shop)
-	# no grass through the paving
-	for r: Array in shop.get_meta("paved"):
-		var poly := PackedVector2Array()
-		for c: Vector2 in [Vector2(r[0] - 0.3, r[1] - 0.3), Vector2(r[2] + 0.3, r[1] - 0.3), Vector2(r[2] + 0.3, r[3] + 0.3),
-				Vector2(r[0] - 0.3, r[3] + 0.3)]:
-			var g := frame * Vector3(c.x, 0.0, c.y)
-			poly.append(Vector2(g.x, -g.z))
-		GrassField.keep_out.append(poly)
 	_slats = shop.get_meta("slats")
 	for s: Node in _slats:                   # (shown and hidden by the door: not streamed, builder/lot_far.gd)
 		s.add_to_group("lot_own_visibility")
@@ -140,6 +132,27 @@ func bay_point() -> Vector3:
 
 
 ## Where the maps mark it (map x, y): in front of the door.
+## The shop's surfaces in the map's ground (builder/ground_bake.gd): its sidewalks paving, its asphalt asphalt (the
+## builder's rectangles, 0.3 m over their edges: their kerbs).
+static func surface_boxes() -> Array:
+	var f := shop_frame()
+	var box := Rect2(Vector2(f.origin.x, -f.origin.z), Vector2.ZERO)
+	for r: Array in Builder.SIDEWALKS + Builder.ASPHALT:
+		for c: Vector2 in [Vector2(r[0], r[1]), Vector2(r[2], r[1]), Vector2(r[2], r[3]), Vector2(r[0], r[3])]:
+			var g := f * Vector3(c.x, 0.0, c.y)
+			box = box.expand(Vector2(g.x, -g.z))
+	return [box.grow(0.5)]
+
+
+static func surface_at(x: float, y: float, _current: String) -> String:
+	var l := shop_frame().affine_inverse() * Vector3(x, 0.0, -y)
+	for e: Array in [[Builder.SIDEWALKS, "paving"], [Builder.ASPHALT, "asphalt"]]:
+		for r: Array in e[0]:
+			if l.x >= r[0] - 0.3 and l.x <= r[2] + 0.3 and l.z >= r[1] - 0.3 and l.z <= r[3] + 0.3:
+				return e[1]
+	return ""
+
+
 func map_xy() -> Vector2:
 	var p := frame * ((shop.get_meta("door") as Vector3) + Vector3(0, 0, -2.0))
 	return Vector2(p.x, -p.z)

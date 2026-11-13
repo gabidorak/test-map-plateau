@@ -104,8 +104,7 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 			cs.set_meta("plateau", {"type": "ground", "id": "ground:raised_" + c["name"]})
 			body.add_child(cs)
 
-	var grass := GrassField.new()
+	var grass := GrassField.new()                   # (on the ground the game reads: ground_map.gd, baked)
 	grass.name = "Grass"
-	grass.index_path = world_dir.path_join(gm["index"])
 	root.add_child(grass)
 	return OK

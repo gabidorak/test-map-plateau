@@ -25,7 +25,7 @@ var _cells := {}                        # Vector2i -> {near: Array[Node], ground
 
 
 func build(root: Node3D, world: Dictionary, mesh_dir: String) -> Error:
-	var map: RefCounted = GroundMap.get_map("res://world/" + String(world["ground_mesh"]["index"]))
+	var map: RefCounted = GroundMap.get_map()   # (the ground being baked: builder/ground_bake.gd)
 	if map == null:
 		return ERR_FILE_NOT_FOUND
 	for mi: MeshInstance3D in root.get_node("Ground").get_children():

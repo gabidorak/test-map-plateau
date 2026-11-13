@@ -8,6 +8,7 @@ Every change made to the map (a building replaced, a garden redone, a villa buil
 | 1. Terraforming | right after the map is read, when it is built | `terraform`: files of `godot/data/terraform/`, or a script whose `terraform_zones()` makes them from its design | `scripts/builder/terraform.gd` (file zones made by `tools/terraform.py`; the villa's court from `villaEnPierreCoteaux_data.gd`) |
 | 2. Removal | when the map is built | `script`: its `drop(world)` | the lot's script (`scripts/builder/world_edits.gd` helps) |
 | 2b. Ground paint | when the map is built | `paint`: a script's `repaint()` | the lot's data script |
+| 2c. Ground surfaces | when the map is built | its script's `surface_boxes()`, `surface_at()` | `scripts/builder/ground_bake.gd` |
 | 3. Building | in the game | `node` (game.gd's member), `restyle` (specs of `godot/data/restyle/`) | the lot's script, `scripts/restyle/` |
 
 A terraforming file or a restyled building's spec counts only when a lot names it. Lots today: `losplatos`,
@@ -16,6 +17,13 @@ on the Lac de l'X: its counter is PTA Online's terminal, `godot/scripts/online/b
 (the grounds round the Haigneré residence, #536 kept: `godot/scripts/residenceHaignere/`, its plan made of a few
 lines with Godot's polygon tools: the bands along the roads offset from their kerb, the alley off the facade),
 `ligne18` and its children `ligne18-viaduc`, `ligne18-polytechnique`, `ligne18-universite` (line 18, below).
+
+The ground the game reads (`scripts/ground_map.gd`: the grass, the bots, the picker, every height in the game) is
+baked when the map is built (`scripts/builder/ground_bake.gd`, into `godot/scenes/generated/ground.json` and its two
+files): the map's own ground with the lots' terraforming in its heights and their surfaces among its pieces. A lot
+gives its surfaces with `surface_boxes()` (where) and `surface_at(x, y, current)` (the material there, "" for the
+map's): its roads asphalt, its sidewalks and forecourts paving, its lawns grass. Nothing of a lot's ground runs in the
+game; like its terraforming, a change to it needs the map rebuilt.
 
 A lot may be part of another (`"parent"`): a block's own lot (`ilot-NNN`, a generic name and a number) and the lots
 in that block. A child comes after its parent; its terraforming is laid on its parent's (the zones are applied one on

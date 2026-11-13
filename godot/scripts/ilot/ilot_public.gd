@@ -6,19 +6,18 @@ extends Node3D
 ## night.gd, knocked over like the others). Drawn at start: the ring (its roads, one asphalt, kerbed where nothing goes
 ## on, their centre lines, the give-way lines and zebras; the sidewalk all round the block, lowered across its
 ## accesses), the shop's forecourt and the footway to it, the site's zebras. The ground painted paving under what is
-## paved, lawn where the block is redone.
+## paved, lawn where the block is redone; its surfaces in the map's ground (surface_at(): builder/ground_bake.gd).
 
 const Plan = preload("res://scripts/ilot/ilot_plan.gd")
 const UrbanKit = preload("res://scripts/street_kit.gd")
 const WorldEdits = preload("res://scripts/builder/world_edits.gd")
-const GrassField = preload("res://scripts/grass_field.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const SOFT := ["asphalt", "concrete", "paving", "sett", "gravel", "dirt", "sand", "grass", "tall_grass", "forest_floor",
 		"construction", "clay", "building"]
 const MARGIN := 1.5                         # m round the ring's roads where the map's things go too
 const WALKS := ["sidewalk", "footway", "path", "pedestrian", "steps", "cycleway"]
 
-static var _ids := {}                       # the grass field's lookups: material name -> id, "soft" -> ids, "box"
+static var _box_cache := Rect2()             # (_box(), once)
 
 var game: Node
 
@@ -42,12 +41,11 @@ static func _cleared(p: Vector2) -> bool:
 
 static func _redone_map(q: Variant) -> bool:
 	var m := Vector2(q[0], q[1])
-	return _ids["box"].has_point(m) and _redone(Plan.to_local(m))
+	return _box().has_point(m) and _redone(Plan.to_local(m))
 
 
 ## The world without the map's things where the block is redone (#785, #889 out); with its own.
 static func drop(world: Dictionary) -> void:
-	_ids["box"] = _box()
 	for i in Plan.DROPPED.size():
 		var r: Rect2 = Plan.DROPPED_AT[i].grow(1.0)
 		var area := PackedVector2Array()
@@ -71,7 +69,7 @@ static func drop(world: Dictionary) -> void:
 	for m: Dictionary in world["markings"]:
 		var v: Array = m["verts"]
 		var t: Array = m["tris"]
-		if not v.any(func(q: Array) -> bool: return (_ids["box"] as Rect2).has_point(Vector2(q[0], q[1]))):
+		if not v.any(func(q: Array) -> bool: return _box().has_point(Vector2(q[0], q[1]))):
 			marks.append(m)
 			continue
 		var tris := []
@@ -245,32 +243,36 @@ static func _paved(p: Vector2) -> bool:
 
 ## The block's box on the map (a quick test before its own).
 static func _box() -> Rect2:
+	if _box_cache.has_area():
+		return _box_cache
 	var r := Rect2(Plan.to_map(Plan.KERB_LINE.position), Vector2.ZERO)
 	for c: Vector2 in [Vector2(Plan.KERB_LINE.end.x, Plan.KERB_LINE.position.y), Plan.KERB_LINE.end,
 			Vector2(Plan.KERB_LINE.position.x, Plan.KERB_LINE.end.y)]:
 		r = r.expand(Plan.to_map(c))
-	return r.grow(Plan.ROAD_W + MARGIN + 1.0)
+	_box_cache = r.grow(Plan.ROAD_W + MARGIN + 1.0)
+	return _box_cache
 
 
-## The grass field in the block: none on what is paved nor on the ring's roads, lawn where it is redone inside.
-static func _grass_at(x: float, y: float) -> int:
-	if _ids.is_empty() or not (_ids["box"] as Rect2).has_point(Vector2(x, y)):
-		return -2
+## The block's surfaces in the map's ground (builder/ground_bake.gd): paving on what is paved, asphalt on the ring's
+## roads and the service road, lawn where it is redone inside (on what was soft ground).
+static func surface_boxes() -> Array:
+	return [_box()]
+
+
+static func surface_at(x: float, y: float, current: String) -> String:
 	var p := Plan.to_local(Vector2(x, y))
-	if _paved(p) or Plan.on_ring(p) or Plan.SERVICE_ROAD.has_point(p):
-		return _ids["paving"]
-	if (Plan.in_site(p) or _cleared(p)) and GroundMap.get_map().material_at(x, y) in _ids["soft"]:
-		return _ids["grass"]
-	return -2
+	if _paved(p):
+		return "paving"
+	if Plan.on_ring(p) or Plan.SERVICE_ROAD.has_point(p):
+		return "asphalt"
+	if (Plan.in_site(p) or _cleared(p)) and current in SOFT:
+		return "grass"
+	return ""
 
 
 func _ready() -> void:
 	name = "Ilot001"
 	var gm: RefCounted = GroundMap.get_map()
-	if gm:
-		_ids = {"paving": gm.materials.find("paving"), "grass": gm.materials.find("grass"), "box": _box(),
-				"soft": SOFT.map(func(m: String) -> int: return gm.materials.find(m))}
-	GrassField.overrides.append(_grass_at)
 	var k := UrbanKit.new("Ilot001", {"type": "lot", "lot": "ilot-001",
 			"name": "Îlot de la supérette 25/8: espaces publics", "about": "the streets round the block, its greenery"})
 	_ring(k, gm)

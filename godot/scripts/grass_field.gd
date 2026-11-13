@@ -1,6 +1,7 @@
 extends Node3D
 ## Grass tufts (milestone M4): MultiMesh clumps scattered at runtime around the camera on the grass,
-## tall-grass and forest-floor ground pieces (world/ground_index.json), so the scene stays small.
+## tall-grass and forest-floor ground pieces (the ground the game reads: ground_map.gd, the lots' lawns and paving in
+## it), so the scene stays small.
 ## Scatter is deterministic per 16 m chunk; chunks are built as the camera moves and dropped behind
 ## it. Density, size and fade distance depend on the ground class. None where the ground steps (GroundMap.in_cliff:
 ## the height there is not the drawn one).
@@ -23,15 +24,6 @@ const KINDS := {
 			"radius": 0.13, "width": 0.08, "lean": 0.7, "tone_scale": 1.0, "two_tone": false},
 }
 
-@export var index_path := GroundMap.DEFAULT_INDEX
-
-## Map polygons (x east, y north) kept free of tufts: what runtime builds pave over the ground (Losplatos Custom's
-## apron, scripts/losplatos/losplatos.gd). Set before the chunks round them are built.
-static var keep_out: Array[PackedVector2Array] = []
-## Callables (x, y) -> a material id, or -2: the ground's material there decided by a runtime build (the villa's
-## lawn, scripts/villaEnPierreCoteaux/; the restyled gardens, scripts/restyle/).
-static var overrides: Array[Callable] = []
-
 var _map: RefCounted
 var _kinds: Array = []              # [material id, settings, mesh, material, colour]
 var _chunks := {}                   # Vector2i -> Node3D
@@ -40,7 +32,7 @@ var _radius := 0.0
 
 
 func _ready() -> void:
-	_map = GroundMap.get_map(index_path)
+	_map = GroundMap.get_map()
 	if _map == null:
 		set_process(false)
 		return
@@ -116,9 +108,9 @@ func _build_chunk(key: Vector2i) -> Node3D:
 				var phase := rng.randf()
 				if x >= origin.x + CHUNK or y >= origin.y + CHUNK:
 					continue
-				if _material(x, y) != id or _material(x + EDGE, y) != id \
-						or _material(x - EDGE, y) != id or _material(x, y + EDGE) != id \
-						or _material(x, y - EDGE) != id or _map.in_cliff(x, y) or _kept_out(x, y):
+				if _map.material_at(x, y) != id or _map.material_at(x + EDGE, y) != id \
+						or _map.material_at(x - EDGE, y) != id or _map.material_at(x, y + EDGE) != id \
+						or _map.material_at(x, y - EDGE) != id or _map.in_cliff(x, y):
 					continue
 				var b := Basis(Vector3.UP, yaw).scaled(Vector3(s, s, s))
 				var z: float = _map.height(x, y) - 0.02
@@ -148,22 +140,6 @@ func _build_chunk(key: Vector2i) -> Node3D:
 
 
 ## One tuft: blades in a ring, each a tapered strip leaning outwards. COLOR.r = height along the blade.
-## The ground's material at (x, y): grass on the lawns.
-func _material(x: float, y: float) -> int:
-	for f: Callable in overrides:
-		var o: int = f.call(x, y)
-		if o != -2:
-			return o
-	return _map.material_at(x, y)
-
-
-static func _kept_out(x: float, y: float) -> bool:
-	for poly: PackedVector2Array in keep_out:
-		if Geometry2D.is_point_in_polygon(Vector2(x, y), poly):
-			return true
-	return false
-
-
 func _tuft_mesh(k: Dictionary, rng: RandomNumberGenerator, mat: Material) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)

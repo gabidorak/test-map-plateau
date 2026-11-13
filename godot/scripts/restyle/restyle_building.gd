@@ -5,7 +5,6 @@ extends RefCounted
 const Spec = preload("res://scripts/restyle/restyle_spec.gd")
 const Kit = preload("res://scripts/build_kit.gd")
 const Marks = preload("res://scripts/race_marks.gd")
-const GrassField = preload("res://scripts/grass_field.gd")
 const PATH_LOOK := {"concrete": "#d6d3cc", "paving": "pavers", "sett": "sett", "gravel": "gravel", "dirt": "#9c8466",
 		"wood": "oak"}
 const SLAB := 0.3                            # m, the floors' edges
@@ -371,8 +370,6 @@ func _site(s: Dictionary, rings: Array) -> void:
 					Vector2(tp[t + 2][0], tp[t + 2][1]), 0.05)
 	for w: Dictionary in site.get("walks", []):
 		_walk(w, rings)
-	for q in Spec.walk_polys(s):
-		GrassField.keep_out.append(q)
 
 
 ## A triangle of path on the ground (map points), cut until it follows it.

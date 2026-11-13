@@ -2,7 +2,8 @@ extends RefCounted
 ## Ground height as the ground mesh draws it (pipeline/plateau/ground_mesh.py Heights): heightmap
 ## samples every `mesh_cell` metres, planar inside the two triangles of each cell (diagonal
 ## south-west -> north-east). Used for the terrain collision (so feet sit on the drawn ground), the
-## grass scatter and the picker. Pipeline coordinates: x east, y north.
+## grass scatter and the picker. Pipeline coordinates: x east, y north. Made from a heightmap when the map is built;
+## in the game, from the nodes the build saved (builder/ground_bake.gd: the ground as built, terraformed).
 
 var _nodes := PackedFloat32Array()      # node (j, i) at x = ox + (i - 1) * mesh_cell, y = oy - (j - 1) * mesh_cell
 var _nw := 0
@@ -21,8 +22,10 @@ static func read_heightmap(dir: String, t: Dictionary) -> PackedFloat32Array:
 	return bytes.to_float32_array()
 
 
-## heights: the heightmap (row 0 north), w x h samples `cell` apart, sample (0, 0) at (ox, oy).
-func _init(heights: PackedFloat32Array, w: int, h: int, cell: float, ox: float, oy: float, mesh_cell: float) -> void:
+## heights: the heightmap (row 0 north), w x h samples `cell` apart, sample (0, 0) at (ox, oy); none: from_nodes().
+func _init(heights := PackedFloat32Array(), w := 0, h := 0, cell := 0.5, ox := 0.0, oy := 0.0, mesh_cell := 2.0) -> void:
+	if heights.is_empty():
+		return
 	_ox = ox
 	_oy = oy
 	_mesh_cell = mesh_cell
@@ -34,6 +37,27 @@ func _init(heights: PackedFloat32Array, w: int, h: int, cell: float, ox: float, 
 		var r := clampi((j - 1) * step, 0, h - 1)
 		for i in _nw:
 			_nodes[j * _nw + i] = heights[r * w + clampi((i - 1) * step, 0, w - 1)]
+
+
+## The nodes as saved (grid(): their layout).
+static func from_nodes(nodes: PackedFloat32Array, grid: Dictionary) -> RefCounted:
+	var g: RefCounted = load("res://scripts/ground_heights.gd").new()
+	g.set("_nodes", nodes)
+	g.set("_nw", int(grid["nw"]))
+	g.set("_nh", int(grid["nh"]))
+	g.set("_ox", float(grid["origin_xy"][0]))
+	g.set("_oy", float(grid["origin_xy"][1]))
+	g.set("_mesh_cell", float(grid["mesh_cell"]))
+	return g if nodes.size() == int(grid["nw"]) * int(grid["nh"]) else null
+
+
+## The nodes (for saving) and their layout.
+func nodes() -> PackedFloat32Array:
+	return _nodes
+
+
+func grid() -> Dictionary:
+	return {"nw": _nw, "nh": _nh, "origin_xy": [_ox, _oy], "mesh_cell": _mesh_cell}
 
 
 func at(x: float, y: float) -> float:

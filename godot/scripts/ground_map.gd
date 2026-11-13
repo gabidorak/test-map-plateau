@@ -1,11 +1,15 @@
 extends RefCounted
-## Runtime ground lookups from world/ground_index.json (written by pipeline/plateau/ground_mesh.py):
-## which ground piece covers a point (kind, material, OSM source) and the ground height as the
-## mesh draws it. Coordinates are pipeline x (east), y (north). Shared by the grass scatter and the picker.
+## The ground as the game reads it: which ground piece covers a point (kind, material, its source), the ground's
+## height as its mesh draws it, where it steps. Baked when the map is built (builder/ground_bake.gd) into
+## res://scenes/generated/ground.json: the map's own ground (world/ground_index.json, written by
+## pipeline/plateau/ground_mesh.py and tools/rail/patch_world.py) with the lots in it, their terraforming in its
+## heights and their surfaces (roads, paving, lawns) among its pieces. Shared by the grass scatter, the picker, the
+## bots, the races... Coordinates are the map's x (east), y (north).
 
-const Terraform = preload("res://scripts/builder/terraform.gd")
 const GroundHeights = preload("res://scripts/ground_heights.gd")
-const DEFAULT_INDEX := "res://world/ground_index.json"
+const DEFAULT_INDEX := "res://scenes/generated/ground.json"
+const IDS_FILE := "ground_ids.bin"
+const HEIGHTS_FILE := "ground_heights.bin"
 
 static var _cache := {}
 
@@ -22,6 +26,7 @@ var _oy := 0.0
 var heights: RefCounted              # GroundHeights: ground height as drawn
 var cliffs := {}                     # Vector2i 2 m cells where the drawn ground steps (the railway's walls, edges):
 									 # there the height is not the drawn one (index "cliffs", tools/rail/patch_world.py)
+var _cliffs_index := {}              # (as read: saved again)
 var _mesh_cell := 2.0
 var _hox := 0.0
 var _hoy := 0.0
@@ -37,12 +42,45 @@ static func get_map(path := DEFAULT_INDEX) -> RefCounted:
 	return _cache[path]
 
 
-func _load(path: String) -> bool:
+## While the map is built: the ground being baked is the one every reader gets (builder/ground_bake.gd).
+static func install(map: RefCounted, path := DEFAULT_INDEX) -> void:
+	_cache[path] = map
+
+
+## The map's own ground (world/ground_index.json, as the pipeline and the railway's patch wrote it) on `h`, its
+## heights as built (GroundHeights of the terraformed heightmap): what builder/ground_bake.gd bakes.
+static func from_map_index(path: String, h: RefCounted) -> RefCounted:
 	var index = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not index is Dictionary:
 		push_error("cannot read %s" % path)
+		return null
+	var m = load("res://scripts/ground_map.gd").new()
+	m._read(index)
+	var ids: Dictionary = index["ids"]
+	m._ids = FileAccess.get_file_as_bytes(path.get_base_dir().path_join(ids["file"])).decompress(ids["raw"],
+			FileAccess.COMPRESSION_DEFLATE)
+	m.heights = h
+	return m
+
+
+func _load(path: String) -> bool:
+	var index = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not index is Dictionary:
+		push_error("cannot read %s: build the map (tools/build_world.gd)" % path)
 		return false
 	var dir := path.get_base_dir()
+	_read(index)
+	var ids: Dictionary = index["ids"]
+	_ids = FileAccess.get_file_as_bytes(dir.path_join(ids["file"])).decompress(ids["raw"], FileAccess.COMPRESSION_DEFLATE)
+	var hm: Dictionary = index["heights"]
+	var nodes := FileAccess.get_file_as_bytes(dir.path_join(hm["file"])).decompress(int(hm["raw"]),
+			FileAccess.COMPRESSION_DEFLATE).to_float32_array()
+	heights = GroundHeights.from_nodes(nodes, hm)
+	return heights != null and _ids.size() == _w * _h * 2
+
+
+## The index's pieces, materials, ids' grid, heights' grid and cliffs.
+func _read(index: Dictionary) -> void:
 	pieces = index["pieces"]
 	materials = index["materials"]
 	palette = index["palette"]
@@ -50,22 +88,18 @@ func _load(path: String) -> bool:
 	for k in pieces.size():
 		piece_material[k] = materials.find(pieces[k][1])
 	var ids: Dictionary = index["ids"]
-	_ids = FileAccess.get_file_as_bytes(dir.path_join(ids["file"])).decompress(ids["raw"], FileAccess.COMPRESSION_DEFLATE)
 	_w = ids["w"]
 	_h = ids["h"]
 	_cell = ids["cell"]
 	_ox = ids["origin_xy"][0]
 	_oy = ids["origin_xy"][1]
-
 	var hm: Dictionary = index["heights"]
-	var data := GroundHeights.read_heightmap(dir, hm)
-	heights = GroundHeights.new(data, hm["w"], hm["h"], hm["cell"], hm["origin_xy"][0], hm["origin_xy"][1], hm["mesh_cell"])
 	_mesh_cell = hm["mesh_cell"]
 	_hox = hm["origin_xy"][0]
 	_hoy = hm["origin_xy"][1]
-	for c: Array in index.get("cliffs", {}).get("cells", []):
+	_cliffs_index = index.get("cliffs", {})
+	for c: Array in _cliffs_index.get("cells", []):
 		cliffs[Vector2i(int(c[0]), int(c[1]))] = true
-	return _ids.size() == _w * _h * 2
 
 
 ## Index into `pieces` of the ground piece at pipeline (x, y), or -1 outside the map.
@@ -85,8 +119,7 @@ func material_at(x: float, y: float) -> int:
 
 ## Ground height (relative to the world origin) as drawn by the ground mesh.
 func height(x: float, y: float) -> float:
-	var h: float = heights.at(x, y)
-	return h + Terraform.delta(x, y, h)        # (terraformed: builder/terraform.gd)
+	return heights.at(x, y)
 
 
 ## True in a 2 m cell where the drawn ground steps (a wall, a platform edge): height() is not the drawn height there.
@@ -104,3 +137,52 @@ func describe(x: float, y: float) -> String:
 	var p: Array = pieces[k]
 	var src := "" if p[2] == "" else " · %s%s" % [p[2], (" +%d" % (int(p[3]) - 1)) if int(p[3]) > 1 else ""]
 	return "Ground #%d: %s · %s%s" % [k, p[0], p[1], src]
+
+
+# ---------------------------------------------------------------- baking (builder/ground_bake.gd)
+
+## The ids' grid: sample (c, r) at x = origin.x + c * cell, y = origin.y - r * cell.
+func ids_grid() -> Dictionary:
+	return {"w": _w, "h": _h, "cell": _cell, "origin": Vector2(_ox, _oy)}
+
+
+## The piece at sample (c, r) (-1: none), and setting it.
+func piece_at_sample(c: int, r: int) -> int:
+	return _ids.decode_u16((r * _w + c) * 2) - 1
+
+
+func set_piece_at_sample(c: int, r: int, k: int) -> void:
+	_ids.encode_u16((r * _w + c) * 2, k + 1)
+
+
+## A new ground piece: its index.
+func add_piece(kind: String, material: String, src: String) -> int:
+	pieces.append([kind, material, src, 1])
+	piece_material.append(materials.find(material))
+	return pieces.size() - 1
+
+
+## Saved as `path` (the index) and its two files beside it.
+func save(path: String, about: String) -> Error:
+	var dir := path.get_base_dir()
+	var nf: PackedFloat32Array = heights.nodes()
+	var nodes := nf.to_byte_array()
+	var hm: Dictionary = heights.grid()
+	hm["file"] = HEIGHTS_FILE
+	hm["raw"] = nodes.size()
+	var index := {"about": about, "materials": materials, "palette": palette, "pieces": pieces,
+			"ids": {"file": IDS_FILE, "w": _w, "h": _h, "cell": _cell, "origin_xy": [_ox, _oy], "raw": _ids.size()},
+			"heights": hm, "cliffs": _cliffs_index}
+	for f: Array in [[IDS_FILE, _ids.compress(FileAccess.COMPRESSION_DEFLATE)],
+			[HEIGHTS_FILE, nodes.compress(FileAccess.COMPRESSION_DEFLATE)]]:
+		var out := FileAccess.open(dir.path_join(f[0]), FileAccess.WRITE)
+		if out == null:
+			return FileAccess.get_open_error()
+		out.store_buffer(f[1])
+		out.close()
+	var js := FileAccess.open(path, FileAccess.WRITE)
+	if js == null:
+		return FileAccess.get_open_error()
+	js.store_string(JSON.stringify(index))
+	js.close()
+	return OK

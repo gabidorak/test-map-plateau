@@ -13,13 +13,8 @@ const Plan = preload("res://scripts/ligne18/polytechnique/polytechnique_plan.gd"
 const StationBuilder = preload("res://scripts/ligne18/polytechnique/station_builder.gd")
 const GroundsBuilder = preload("res://scripts/ligne18/polytechnique/grounds_builder.gd")
 const WorldEdits = preload("res://scripts/builder/world_edits.gd")
-const GrassField = preload("res://scripts/grass_field.gd")
-const GrassLookup = preload("res://scripts/ligne18/grass_lookup.gd")
-const GroundMap = preload("res://scripts/ground_map.gd")
 const KEPT_MARKS := ["zebra", "stop_line", "centre_line", "cycle_lane_line", "bike_symbol"]   # (the TCSP's, outside)
 
-static var _ids := {}                       # the grass field's lookups: material name -> id, "box"
-static var _lookup: RefCounted               # _grass_at made fast (grass_lookup.gd)
 
 var game: Node                              # game.gd (null in the tools)
 
@@ -130,33 +125,25 @@ static func repaint(verts: PackedVector3Array, ids: PackedByteArray, colours: Pa
 	return [ids, colours]
 
 
-## The grass field in the perimeter: none on what is paved, the road, the station; the lawn's on the rest.
-static func _grass_at(x: float, y: float) -> int:
-	if _ids.is_empty() or not (_ids["box"] as Rect2).has_point(Vector2(x, y)):
-		return -2
+## The grounds' surfaces in the map's ground (builder/ground_bake.gd): in the perimeter asphalt on the west street,
+## concrete under the station, paving on what is paved, lawn on the rest.
+static func surface_boxes() -> Array:
+	return [Plan.bounds(Plan.perimeter_map())]
+
+
+static func surface_at(x: float, y: float, _current: String) -> String:
 	var p := Plan.to_local(Vector2(x, y))
 	if not Plan.in_perimeter(p):
-		return -2
-	return _ids["paving"] if Plan.in_road(p) or Plan.in_station(p) or Plan.paved(p) else _ids["grass"]
+		return ""
+	if Plan.in_road(p):
+		return "asphalt"
+	if Plan.in_station(p):
+		return "concrete"
+	return "paving" if Plan.paved(p) else "grass"
 
 
 func _ready() -> void:
 	name = "Ligne18Polytechnique"
-	var gm: RefCounted = GroundMap.get_map()
-	if gm:
-		_ids = {"paving": gm.materials.find("paving"), "grass": gm.materials.find("grass"),
-				"box": Plan.bounds(Plan.perimeter_map())}
-	if _lookup == null and not _ids.is_empty():
-		var polys := [Plan.perimeter(), Plan.road(), Plan.outline()]
-		for e: Array in Plan.surfaces():
-			polys.append(e[0])
-		var on_map := polys.map(func(poly: PackedVector2Array) -> PackedVector2Array:
-			var out := PackedVector2Array()
-			for q in poly:
-				out.append(Plan.to_map(q))
-			return out)
-		_lookup = GrassLookup.new(_grass_at, _ids["box"], on_map)
-		GrassField.overrides.append(_lookup.at)
 	var meshes := DisplayServer.get_name() != "headless"
 	add_child(StationBuilder.new("Deck").deck(meshes))
 	add_child(StationBuilder.new("Hall").hall(meshes))

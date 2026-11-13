@@ -2,14 +2,13 @@ extends Node3D
 ## Restyled buildings: some of the map's large buildings redrawn with real facades, each after its spec
 ## (data/restyle/<slug>.json: restyle_spec.gd), made by restyle_building.gd; in every game mode (game.gd). The map's
 ## building leaves the world when it is built (drop, builder/world_builder.gd) and a garden's trees and hedges come
-## in; the ground's paint in the grounds turns to lawn or meadow (repaint, builder/ground_builder.gd) and the grass field
-## follows (grass_field.gd overrides); the ground is terraformed by builder/terraform.gd.
+## in; the ground's paint in the grounds turns to lawn or meadow (repaint, builder/ground_builder.gd), so do their
+## surfaces in the map's ground (surface_at(): builder/ground_bake.gd); the ground is terraformed by
+## builder/terraform.gd.
 
 const Spec = preload("res://scripts/restyle/restyle_spec.gd")
 const WorldEdits = preload("res://scripts/builder/world_edits.gd")
 const Building = preload("res://scripts/restyle/restyle_building.gd")
-const GrassField = preload("res://scripts/grass_field.gd")
-const GroundMap = preload("res://scripts/ground_map.gd")
 const Terraform = preload("res://scripts/builder/terraform.gd")
 const PATH_MATS := ["concrete", "paving", "sett", "gravel", "dirt", "wood"]
 ## A garden's ground (site.garden): what becomes its lawn or meadow (roads, water, courts, buildings stay).
@@ -113,39 +112,70 @@ static func repaint(verts: PackedVector3Array, ids: PackedByteArray, colours: Pa
 	return [ids, colours]
 
 
-## A garden's ground for the grass field (grass_field.gd overrides), by its grid (site.garden.grid: 1 lawn, 2 meadow,
-## 3 path): none on its paths, tall in its meadows, mown on the rest of its soft ground; -2 out of it (the map's).
-static func _grass_at(x: float, y: float, z: Dictionary) -> int:
-	if not (z["box"] as Rect2).has_point(Vector2(x, y)):
-		return -2
-	var w: int = z["w"]
-	var i := clampi(floori((x - float(z["x0"])) / float(z["cell"])), 0, w - 1)
-	var j := clampi(floori((float(z["y0"]) - y) / float(z["cell"])), 0, int(z["h"]) - 1)
-	var kind: int = (z["kind"] as PackedByteArray)[j * w + i]
-	if kind == 0:
-		return -2
-	var gm: GroundMap = GroundMap.get_map()
-	if gm == null:
-		return -2
-	if kind == 3:
-		return gm.materials.find("concrete")
-	var id: int = gm.material_at(x, y)
-	if id < 0 or not (str(gm.materials[id]) in SOFT):
-		return -2
-	return gm.materials.find("tall_grass" if kind == 2 else "grass")
+## The restyled grounds' surfaces in the map's ground (builder/ground_bake.gd): the walks (site.walks) paving, over
+## all; a garden's (site.garden.grid: 1 lawn, 2 meadow, 3 path) paths concrete, its meadows tall grass and its lawns
+## mown where the ground was soft.
+static func surface_boxes() -> Array:
+	var out := []
+	for z: Dictionary in _gardens():
+		out.append(z["box"])
+	for w: Array in _walks():
+		out.append(w[1])
+	return out
 
 
-## Spec s's garden for the grass field.
-static func _grass_zone(s: Dictionary) -> void:
-	var grid: Dictionary = s.get("site", {}).get("garden", {}).get("grid", {})
-	if grid.is_empty():
-		return
-	var cell := float(grid["cell"])
-	var x0 := float(grid["origin"][0])
-	var y0 := float(grid["origin"][1])
-	GrassField.overrides.append(_grass_at.bind({"box": Rect2(x0, y0 - cell * int(grid["h"]), cell * int(grid["w"]),
-			cell * int(grid["h"])), "x0": x0, "y0": y0, "cell": cell, "w": int(grid["w"]), "h": int(grid["h"]),
-			"kind": Terraform.layer(grid, "kind")}))
+static func surface_at(x: float, y: float, current: String) -> String:
+	var p := Vector2(x, y)
+	for w: Array in _walks():
+		if (w[1] as Rect2).has_point(p) and Geometry2D.is_point_in_polygon(p, w[0]):
+			return "paving"
+	for z: Dictionary in _gardens():
+		if not (z["box"] as Rect2).has_point(p):
+			continue
+		var w: int = z["w"]
+		var i := clampi(floori((x - float(z["x0"])) / float(z["cell"])), 0, w - 1)
+		var j := clampi(floori((float(z["y0"]) - y) / float(z["cell"])), 0, int(z["h"]) - 1)
+		var kind: int = (z["kind"] as PackedByteArray)[j * w + i]
+		if kind == 3:
+			return "concrete"
+		if kind != 0:
+			return ("tall_grass" if kind == 2 else "grass") if current in SOFT else ""
+	return ""
+
+
+static var _cache := {}
+
+
+## The specs' gardens' grids: {"box", "x0", "y0", "cell", "w", "h", "kind"}.
+static func _gardens() -> Array:
+	if not _cache.has("gardens"):
+		var out := []
+		for s: Dictionary in Spec.specs():
+			var grid: Dictionary = s.get("site", {}).get("garden", {}).get("grid", {})
+			if grid.is_empty():
+				continue
+			var cell := float(grid["cell"])
+			var x0 := float(grid["origin"][0])
+			var y0 := float(grid["origin"][1])
+			out.append({"box": Rect2(x0, y0 - cell * int(grid["h"]), cell * int(grid["w"]), cell * int(grid["h"])),
+					"x0": x0, "y0": y0, "cell": cell, "w": int(grid["w"]), "h": int(grid["h"]),
+					"kind": Terraform.layer(grid, "kind")})
+		_cache["gardens"] = out
+	return _cache["gardens"]
+
+
+## The specs' walks: [polygon (map), its box].
+static func _walks() -> Array:
+	if not _cache.has("walks"):
+		var out := []
+		for s: Dictionary in Spec.specs():
+			for q: PackedVector2Array in Spec.walk_polys(s):
+				var r := Rect2(q[0], Vector2.ZERO)
+				for v in q:
+					r = r.expand(v)
+				out.append([q, r])
+		_cache["walks"] = out
+	return _cache["walks"]
 
 
 func _ready() -> void:
@@ -153,7 +183,6 @@ func _ready() -> void:
 	var meshes := DisplayServer.get_name() != "headless"
 	for s: Dictionary in Spec.specs():
 		var t0 := Time.get_ticks_msec()
-		_grass_zone(s)
 		var b := Building.new()
 		var node := b.build(s, meshes)
 		add_child(node)

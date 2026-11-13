@@ -222,8 +222,7 @@ jobs:
 
       # Packed build (scripts/boot.gd): the game's pack is exported on its own and compressed into zstd chunks, and
       # the "<preset> Packed" executable carries only these chunks, unpacked at the first start of each build.
-      # prepare_packed.gd first stores the generated meshes plain (zstd does better on the whole pack) and drops the
-      # heightmap samples the game never reads.
+      # prepare_packed.gd first stores the generated meshes plain (zstd does better on the whole pack).
       - name: Prepare game data
         working-directory: godot
         run: godot --headless --path . --script res://tools/prepare_packed.gd -- --in-place

@@ -90,7 +90,7 @@ func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_di
 	var t: Dictionary = world["terrain"]
 	_ground = GroundHeights.new(heights, t["w"], t["h"], t["cell"], t["origin_xy"][0], t["origin_xy"][1],
 			world["ground_mesh"]["cell"])
-	_map = GroundMap.get_map("res://world/" + String(world["ground_mesh"]["index"]))
+	_map = GroundMap.get_map()   # (the ground being baked: builder/ground_bake.gd)
 	_mat = ShaderMaterial.new()
 	_mat.shader = load(PROP_SHADER)
 	_mat.set_shader_parameter("mode", 0)
