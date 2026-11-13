@@ -14,10 +14,12 @@ const StationBuilder = preload("res://scripts/ligne18/polytechnique/station_buil
 const GroundsBuilder = preload("res://scripts/ligne18/polytechnique/grounds_builder.gd")
 const WorldEdits = preload("res://scripts/builder/world_edits.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
+const GrassLookup = preload("res://scripts/ligne18/grass_lookup.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const KEPT_MARKS := ["zebra", "stop_line", "centre_line", "cycle_lane_line", "bike_symbol"]   # (the TCSP's, outside)
 
 static var _ids := {}                       # the grass field's lookups: material name -> id, "box"
+static var _lookup: RefCounted               # _grass_at made fast (grass_lookup.gd)
 
 var game: Node                              # game.gd (null in the tools)
 
@@ -144,7 +146,17 @@ func _ready() -> void:
 	if gm:
 		_ids = {"paving": gm.materials.find("paving"), "grass": gm.materials.find("grass"),
 				"box": Plan.bounds(Plan.perimeter_map())}
-	GrassField.overrides.append(_grass_at)
+	if _lookup == null and not _ids.is_empty():
+		var polys := [Plan.perimeter(), Plan.road(), Plan.outline()]
+		for e: Array in Plan.surfaces():
+			polys.append(e[0])
+		var on_map := polys.map(func(poly: PackedVector2Array) -> PackedVector2Array:
+			var out := PackedVector2Array()
+			for q in poly:
+				out.append(Plan.to_map(q))
+			return out)
+		_lookup = GrassLookup.new(_grass_at, _ids["box"], on_map)
+		GrassField.overrides.append(_lookup.at)
 	var meshes := DisplayServer.get_name() != "headless"
 	add_child(StationBuilder.new("Deck").deck(meshes))
 	add_child(StationBuilder.new("Hall").hall(meshes))
