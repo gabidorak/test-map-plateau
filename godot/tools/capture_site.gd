@@ -3,7 +3,8 @@ extends "res://tools/test_base.gd"
 ## oblique views from its corners, plus one at eye level from the south. Windowed (it renders):
 ##   CAP_X=585 CAP_Y=-262 CAP_R=80 CAP_OUT=C:/tmp/shots/ensae_ godot --path . --script res://tools/capture_site.gd -- --online-test
 ## CAP_X, CAP_Y: the site's middle (map x east, y north); CAP_R: its half size (m); CAP_OUT: the files' prefix;
-## CAP_SHOTS: which ones (top,sw,se,ne,nw,eye; all by default).
+## CAP_SHOTS: which ones (top,sw,se,ne,nw,eye; all by default). CAP_VIEWS: views of your own, always shot,
+## "name:x,y,h,tx,ty,th;..." (the camera at map x, y, h m over the ground, looking at tx, ty, th m over it).
 
 const Marks = preload("res://scripts/race_marks.gd")
 
@@ -18,7 +19,7 @@ func _run() -> void:
 	var c := Vector2(float(OS.get_environment("CAP_X")), float(OS.get_environment("CAP_Y")))
 	var r := float(OS.get_environment("CAP_R")) if OS.get_environment("CAP_R") != "" else 60.0
 	var out := OS.get_environment("CAP_OUT")
-	var only: Array = OS.get_environment("CAP_SHOTS").split(",", false)
+	var only: Array = Array(OS.get_environment("CAP_SHOTS").split(",", false))
 	root.size = Vector2i(1600, 900)
 	_main = load("res://scenes/main.tscn").instantiate()
 	_main.debug_cars = false
@@ -41,6 +42,12 @@ func _run() -> void:
 		"ne": [mid + Vector3(r, r * 0.55, -r), mid], "nw": [mid + Vector3(-r, r * 0.55, -r), mid],
 		"eye": [mid + Vector3(0, 1.7, r * 0.9), mid + Vector3(0, 6.0, 0)],
 	}
+	for spec: String in OS.get_environment("CAP_VIEWS").split(";", false):
+		var v := spec.get_slice(":", 1).split_floats(",")
+		views[spec.get_slice(":", 0)] = [Vector3(v[0], Marks.ground(v[0], v[1]) + v[2], -v[1]),
+				Vector3(v[3], Marks.ground(v[3], v[4]) + v[5], -v[4])]
+		if not only.is_empty():                           # (with CAP_SHOTS: those and these)
+			only.append(spec.get_slice(":", 0))
 	for k: String in views:
 		if only.is_empty() or k in only:
 			cam.global_transform = Transform3D(Basis.IDENTITY, views[k][0]).looking_at(views[k][1], Vector3.UP)

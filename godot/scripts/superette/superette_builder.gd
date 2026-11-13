@@ -1,10 +1,11 @@
-extends "res://scripts/ilot/urban_kit.gd"
+extends "res://scripts/street_kit.gd"
 ## The 25/8 supermarket's lot drawn (superette.gd), on the block's plan (scripts/ilot/ilot_plan.gd): its asphalt and
 ## kerbs, its markings (the car park's bays, PMR in blue, the EV chargers' in green, the one-way arrows, the yard's
 ## yellow lines), the shop (glazed south front under a green fascia with its red fillet, the 25/8 cartouche; the
 ## loading dock and its roller doors at the back, the waste room), the filling station (canopy, islands, pumps) and
 ## its price totem. The identity: green, red, white. Map coordinates, heights over the block's level.
 
+const Plan = preload("res://scripts/ilot/ilot_plan.gd")   # (the street kit's plan: the block's, its default)
 const GREEN := "#0f7a3d"
 const RED := "#d7262e"
 const WHITE := "#f4f4f0"

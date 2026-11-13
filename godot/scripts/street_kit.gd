@@ -1,11 +1,13 @@
 extends "res://scripts/build_kit.gd"
-## Street works in the supermarket's block (scripts/ilot/ilot_plan.gd), drawn in its streets' frame (local u, v: the
-## node turned onto the map when committed) on its designed ground (heights over it): asphalt, paving slabs, granite
-## kerbs as at Losplatos Custom's (their top, their face, the gutter at their foot), sidewalks along a kerb line and
-## round corners, lowered where an access crosses them, and road markings (lines, dashes, zebras, arrows, the bays'
-## pictograms). Collision: boxes on the flat site, the sidewalks' faces on the ring (its ground slopes).
+## The street kit: street works on a lot's plan (`plan`: a script with static height(Vector2) -> float, frame() ->
+## Transform3D, WALK_W, CORNER: the supermarket's block's, scripts/ilot/ilot_plan.gd, by default; the Haigneré
+## residence's...), drawn in the plan's frame (local u, v: the node turned onto the map when committed) on its designed
+## ground (heights over it): asphalt, paving slabs, granite kerbs as at Losplatos Custom's (their top, their face, the
+## gutter at their foot), sidewalks along a kerb line and round corners, lowered where an access crosses them, bands
+## along a line, and road markings (lines, dashes, zebras, arrows, the bays' and cycle tracks' pictograms). Collision:
+## boxes on flat ground, the sidewalks' faces where the ground slopes.
 
-const Plan = preload("res://scripts/ilot/ilot_plan.gd")
+const DEFAULT_PLAN := preload("res://scripts/ilot/ilot_plan.gd")
 const KERB := 0.15                          # m: sidewalks over the asphalt (Losplatos Custom's KERB_UP)
 const ASPHALT_UP := 0.04                    # m: asphalt over the ground (its TAR_UP)
 const FILL := 0.05                          # m: painted fills (the bays') over the ground
@@ -21,12 +23,18 @@ const SOUTH := Vector2(0.0, -1.0)
 const EAST := Vector2(1.0, 0.0)
 const WEST := Vector2(-1.0, 0.0)
 
-var faces := PackedVector3Array()           # collision faces (the ring's sidewalks), committed with the meshes
+var faces := PackedVector3Array()           # collision faces (the sidewalks), committed with the meshes
+var plan: Script                            # the lot's plan (its frame, its ground)
+
+
+func _init(name: String, info := {}, plan_script: Script = DEFAULT_PLAN) -> void:
+	super(name, info)
+	plan = plan_script
 
 
 ## Local point (u, v), h over the designed ground, in the node's frame.
-static func p3(u: float, v: float, h: float) -> Vector3:
-	return Vector3(u, Plan.height(Vector2(u, v)) + h, -v)
+func p3(u: float, v: float, h: float) -> Vector3:
+	return Vector3(u, plan.height(Vector2(u, v)) + h, -v)
 
 
 ## A local direction as a normal in the node's frame.
@@ -39,7 +47,7 @@ func commit(meshes := true, range_end := 0.0) -> Node3D:
 	col_faces(faces)
 	faces = PackedVector3Array()
 	var n := super(meshes, range_end)
-	n.transform = Plan.frame()
+	n.transform = plan.frame()
 	return n
 
 
@@ -58,13 +66,13 @@ func flat(r: Rect2, h: float, m: String) -> void:
 
 ## A box over rectangle r from h0 to h1 over the ground at its middle (on the flat site).
 func block(r: Rect2, h0: float, h1: float, m: String) -> void:
-	var g := Plan.height(r.get_center())
+	var g: float = plan.height(r.get_center())
 	box(m, r.position.x, r.end.x, g + h0, g + h1, -r.end.y, -r.position.y)
 
 
 ## Its collision.
 func block_col(r: Rect2, h0: float, h1: float) -> void:
-	var g := Plan.height(r.get_center())
+	var g: float = plan.height(r.get_center())
 	col(r.position.x, r.end.x, g + h0, g + h1, -r.end.y, -r.position.y)
 
 
@@ -136,7 +144,7 @@ func sidewalk(a: Vector2, b: Vector2, inward: Vector2, gaps: Array, skips := [])
 			if c > 0.0 and c < length:
 				cuts.append(c)
 	cuts.sort()
-	var w := Plan.WALK_W
+	var w: float = plan.WALK_W
 	for i in cuts.size() - 1:
 		var d0: float = cuts[i]
 		var d1: float = cuts[i + 1]
@@ -185,10 +193,10 @@ static func _lift(d: float, gaps: Array, skips: Array) -> float:
 	return h
 
 
-## A sidewalk round a corner: centre c, from angle a0 to a1 (radians), its kerb Plan.CORNER m out, WALK_W m wide.
+## A sidewalk round a corner: centre c, from angle a0 to a1 (radians), its kerb the plan's CORNER m out, WALK_W m wide.
 func sidewalk_arc(c: Vector2, a0: float, a1: float) -> void:
-	var r := Plan.CORNER
-	var ri := r - Plan.WALK_W
+	var r: float = plan.CORNER
+	var ri: float = r - plan.WALK_W
 	var n := 9
 	for i in n:
 		var d0 := Vector2.from_angle(lerpf(a0, a1, float(i) / n))
@@ -207,13 +215,13 @@ func sidewalk_arc(c: Vector2, a0: float, a1: float) -> void:
 		quad("kerb_face", body[3], body[2], _at(c, d1, ri, -0.25), _at(c, d0, ri, -0.25), -out)
 
 
-static func _at(c: Vector2, d: Vector2, r: float, h: float) -> Vector3:
+func _at(c: Vector2, d: Vector2, r: float, h: float) -> Vector3:
 	return p3(c.x + d.x * r, c.y + d.y * r, h)
 
 
 ## Asphalt between a corner's kerb (centre c, radius CORNER, from a0 to a1) and its square's far corner.
 func asphalt_fillet(c: Vector2, a0: float, a1: float, m := "street_asphalt") -> void:
-	var r := Plan.CORNER
+	var r: float = plan.CORNER
 	var far := c + (Vector2.from_angle(a0) + Vector2.from_angle(a1)) * r
 	var n := 9
 	for i in n:
@@ -330,17 +338,16 @@ func paint_poly(pts: PackedVector2Array, m: String, h := PAINT) -> void:
 		tri(m, p3(a.x, a.y, h), p3(b.x, b.y, h), p3(c.x, c.y, h), Vector3.UP)
 
 
-## A painted disc (or a ring from r0 out to r1).
-func disc(c: Vector2, r1: float, m := "#eeeeea", r0 := 0.0, seg := 20) -> void:
+## A painted disc (or a ring from r0 out to r1), h over the ground.
+func disc(c: Vector2, r1: float, m := "#eeeeea", r0 := 0.0, seg := 20, h := PAINT) -> void:
 	for i in seg:
 		var a := Vector2.from_angle(TAU * i / seg)
 		var b := Vector2.from_angle(TAU * (i + 1) / seg)
 		if r0 <= 0.0:
-			tri(m, p3(c.x, c.y, PAINT), p3(c.x + a.x * r1, c.y + a.y * r1, PAINT), p3(c.x + b.x * r1, c.y + b.y * r1, PAINT),
-					Vector3.UP)
+			tri(m, p3(c.x, c.y, h), p3(c.x + a.x * r1, c.y + a.y * r1, h), p3(c.x + b.x * r1, c.y + b.y * r1, h), Vector3.UP)
 		else:
-			quad(m, p3(c.x + a.x * r0, c.y + a.y * r0, PAINT), p3(c.x + a.x * r1, c.y + a.y * r1, PAINT),
-					p3(c.x + b.x * r1, c.y + b.y * r1, PAINT), p3(c.x + b.x * r0, c.y + b.y * r0, PAINT), Vector3.UP)
+			quad(m, p3(c.x + a.x * r0, c.y + a.y * r0, h), p3(c.x + a.x * r1, c.y + a.y * r1, h),
+					p3(c.x + b.x * r1, c.y + b.y * r1, h), p3(c.x + b.x * r0, c.y + b.y * r0, h), Vector3.UP)
 
 
 ## Diagonal hatching over r: lines w wide every `step` m.
@@ -369,6 +376,23 @@ func wheelchair(c: Vector2, up: Vector2) -> void:
 	line(at.call(-0.15, -0.15), at.call(0.6, -0.15), 0.2)
 	line(at.call(0.6, -0.15), at.call(0.8, -0.8), 0.18)
 	line(at.call(-0.15, 0.45), at.call(0.35, 0.25), 0.15)
+
+
+## The bicycle of a cycle track at c, h over the ground, read from a rider coming along `up` (its wheels across the
+## track), about 1.1 m wide.
+func bike(c: Vector2, up: Vector2, h := PAINT) -> void:
+	var right := Vector2(up.y, -up.x)
+	var at := func(a: float, b: float) -> Vector2: return c + right * a + up * b
+	for x: float in [-0.36, 0.36]:
+		disc(at.call(x, 0.0), 0.24, "#eeeeea", 0.18, 16, h)
+	var rear: Vector2 = at.call(-0.36, 0.0)
+	var front: Vector2 = at.call(0.36, 0.0)
+	var foot: Vector2 = at.call(-0.04, 0.0)
+	var seat: Vector2 = at.call(-0.13, 0.36)
+	var head: Vector2 = at.call(0.25, 0.36)
+	for s: Array in [[rear, foot], [foot, seat], [seat, rear], [foot, head], [seat, head], [head, front],
+			[at.call(-0.22, 0.42), at.call(-0.04, 0.42)], [head, at.call(0.2, 0.5)], [at.call(0.14, 0.5), at.call(0.3, 0.5)]]:
+		line(s[0], s[1], 0.05, "#eeeeea", h)
 
 
 ## The lightning bolt of an EV charger's bay at c, upright towards `up`, about 2 m tall.

@@ -308,15 +308,15 @@ static func mat(name: String) -> Material:
 			p.cull_mode = BaseMaterial3D.CULL_DISABLED
 			m = p
 		"travertine": m = _textured("travertine", 1.0 / 2.4, 0.6)
-		# the streets' (the supermarket's block, scripts/ilot/; Losplatos Custom's site): concrete blocks, asphalt, a
-		# concrete drive, granite kerbs (their top, their face, the gutter at their foot)
+		# the streets' (the supermarket's block, scripts/ilot/; Losplatos Custom's site; the Haigneré residence's):
+		# concrete blocks, setts, asphalt, a concrete drive, granite kerbs (their top, their face, the gutter at their foot)
 		"street_asphalt":                       # (the map's roads' own: street_asphalt.gdshader)
 			var sa := ShaderMaterial.new()
 			sa.shader = STREET_ASPHALT
 			m = sa
-		"street_pavers", "street_drive":
-			var t := {"street_pavers": ["street_blocks", 1.0 / 1.6, 0.9], "street_drive": ["street_drive", 0.25, 0.85]}[
-					name] as Array
+		"street_pavers", "street_drive", "street_setts":
+			var t := {"street_pavers": ["street_blocks", 1.0 / 1.6, 0.9], "street_drive": ["street_drive", 0.25, 0.85],
+					"street_setts": ["street_setts", 1.0, 0.9]}[name] as Array
 			var st := _textured(t[0], t[1], t[2])
 			st.cull_mode = BaseMaterial3D.CULL_DISABLED
 			m = st
@@ -481,6 +481,7 @@ static func texture(name: String) -> Texture2D:
 			"boards": img = _boards()
 			"street_blocks": img = blocks(Color("#b4b0a8"), Color("#8b8780"), 14)
 			"street_drive": img = noise(Color("#aaa69e"), 0.035, 15)
+			"street_setts": img = blocks(Color("#b49c80"), Color("#7a6550"), 16)   # (0.25 x 0.125 m at its scale)
 			_: img = Image.create(4, 4, false, Image.FORMAT_RGB8)
 		img.generate_mipmaps()
 		_textures[name] = ImageTexture.create_from_image(img)

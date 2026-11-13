@@ -9,7 +9,7 @@ extends Node3D
 ## paved, lawn where the block is redone.
 
 const Plan = preload("res://scripts/ilot/ilot_plan.gd")
-const UrbanKit = preload("res://scripts/ilot/urban_kit.gd")
+const UrbanKit = preload("res://scripts/street_kit.gd")
 const WorldEdits = preload("res://scripts/builder/world_edits.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")

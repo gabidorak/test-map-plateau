@@ -12,7 +12,9 @@ Every change made to the map (a building replaced, a garden redone, a villa buil
 
 A terraforming file or a restyled building's spec counts only when a lot names it. Lots today: `losplatos`,
 `allSuites`, `villaEnPierreCoteaux`, `ensae`, `campusEdf`, `ilot-001`, `superette258`, `baseNautique` (the boat hire
-on the Lac de l'X: its counter is PTA Online's terminal, `godot/scripts/online/boat_hire.gd`).
+on the Lac de l'X: its counter is PTA Online's terminal, `godot/scripts/online/boat_hire.gd`), `residenceHaignere`
+(the grounds round the Haigneré residence, #536 kept: `godot/scripts/residenceHaignere/`, its plan made of a few
+lines with Godot's polygon tools: the bands along the roads offset from their kerb, the alley off the facade).
 
 A lot may be part of another (`"parent"`): a block's own lot (`ilot-NNN`, a generic name and a number) and the lots
 in that block. A child comes after its parent; its terraforming is laid on its parent's (the zones are applied one on
@@ -24,7 +26,8 @@ building out of the plan's `KEPT`.
 A whole block redone (the 25/8 supermarket's): one master plan, `godot/scripts/ilot/ilot_plan.gd`, drawn in the
 block's streets' frame (the map turned so they run straight), that its lots share: `ilot-001`, the block's own lot and the parent of the others (the ground's
 terraforming from the plan's `terraform_zones()`, the ring of roads and sidewalks round the block, its greenery and
-furniture; `scripts/ilot/urban_kit.gd` draws streets: asphalt, granite kerbs, sidewalks lowered at accesses, markings)
+furniture; `scripts/street_kit.gd`, the street kit any lot's plan can use, draws streets: asphalt, setts, granite
+kerbs, sidewalks lowered at accesses, markings)
 then its children `superette258` (the shop, its yard, the filling station, the car park: `scripts/superette/`) and
 `losplatos` (Losplatos Custom, set square to its street, its front sidewalk the block's).
 
