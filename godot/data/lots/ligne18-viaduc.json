@@ -1,0 +1,9 @@
+{
+ "id": "ligne18-viaduc",
+ "parent": "ligne18",
+ "order": 1,
+ "name": "Ligne 18 : viaduc",
+ "about": "Line 18's viaduct on the plateau, on the line's master plan (scripts/ligne18/ligne18_plan.gd, frozen; ref/metro18/ §2): the ramp from s 3440 (an embankment between retaining walls, the tracks up at 3 %) to the abutment at s 3645; the deck on every span from there to the heightmap's edge (s 9075, a clean cut), the AVPm's inverted T (the spine and its evacuation walkway with its handrail, the slab, thin edges, the soffit sloping to the spine with its transverse ribs), stopped face to face with each station's zone (the stations build the deck there); its parapets (1.50 m, stainless cables), cable troughs and edge fascias; the piers where the plan puts them (two elliptic shafts, or one with a flared head, a perforated-metal collar round the bearings), standing on the game's ground, a kerbed island round the one on the gravel by bd Gaspard Monge; the two tracks along the whole line, through the stations too (rails at rail_z, on their plinths, the third rail under its cover on each track's inner side). Light concrete. Streamed in cells of about 200 m (its own far shapes). Out of the map: the trees within 8 m of the axis, the props, fences and hedges on the piers' footprints. No terraforming.",
+ "script": "res://scripts/ligne18/viaduc/ligne18_viaduc.gd",
+ "node": "ligne18_viaduc"
+}

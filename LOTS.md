@@ -14,7 +14,8 @@ A terraforming file or a restyled building's spec counts only when a lot names i
 `allSuites`, `villaEnPierreCoteaux`, `ensae`, `campusEdf`, `ilot-001`, `superette258`, `baseNautique` (the boat hire
 on the Lac de l'X: its counter is PTA Online's terminal, `godot/scripts/online/boat_hire.gd`), `residenceHaignere`
 (the grounds round the Haigneré residence, #536 kept: `godot/scripts/residenceHaignere/`, its plan made of a few
-lines with Godot's polygon tools: the bands along the roads offset from their kerb, the alley off the facade).
+lines with Godot's polygon tools: the bands along the roads offset from their kerb, the alley off the facade),
+`ligne18` and its children `ligne18-viaduc`, `ligne18-polytechnique`, `ligne18-universite` (line 18, below).
 
 A lot may be part of another (`"parent"`): a block's own lot (`ilot-NNN`, a generic name and a number) and the lots
 in that block. A child comes after its parent; its terraforming is laid on its parent's (the zones are applied one on
@@ -30,6 +31,20 @@ furniture; `scripts/street_kit.gd`, the street kit any lot's plan can use, draws
 kerbs, sidewalks lowered at accesses, markings)
 then its children `superette258` (the shop, its yard, the filling station, the car park: `scripts/superette/`) and
 `losplatos` (Losplatos Custom, set square to its street, its front sidewalk the block's).
+
+Line 18 of the Grand Paris Express (ref/metro18/, research): one master plan its lots share, frozen,
+`godot/data/ligne18/plan.json` (read by `godot/scripts/ligne18/ligne18_plan.gd`, made by `tools/ligne18/build_plan.py`
+from OSM and the map's ground; a rerun keeps the piers where they are, moving only those in the AI's car and bus
+lanes). It holds the axis, straight through the stations; the rails' profile (stations level, 3 % at most); the
+piers' places, clear of the roads and lanes; and each station's frame and levels. `ligne18` is the line's own lot
+(no node), the parent of:
+- `ligne18-viaduc`: the ramp, the deck and its parapets outside the stations, the piers, and the tracks along the
+  whole line, through the stations too. It is cut into cells of ~200 m with far shapes of its own.
+- `ligne18-polytechnique` and `ligne18-universite`: each station over its zone (u -45..45 along the line: its deck
+  under the tracks, the platforms, the building, the supports the viaduct's first spans rest on), and its grounds up
+  to the roads round it.
+The decks meet face to face at the zones' ends with the plan's `section()`. Tests: `godot/tools/test_ligne18_*.gd`.
+Christ de Saclay and the line east of the ramp (at grade, the tunnel to Massy) wait for the map to be extended.
 
 What a lot builds in the game is streamed like the map's buildings (`godot/scripts/builder/lot_far.gd`, called by
 `Lots.spawn`): each of its buildings (its node's children) is a cell of `world_streamer.gd`, in full detail within

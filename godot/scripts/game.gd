@@ -168,6 +168,9 @@ var ilot_001: Node3D                        # block 001's own lot: its streets, 
 var superette258: Node3D                    # the 25/8 supermarket, its filling station, its car park (scripts/superette/)
 var baseNautique: Node3D                    # the boat hire on the Lac de l'X (scripts/baseNautique/)
 var residenceHaignere: Node3D               # the Haigneré residence's grounds (scripts/residenceHaignere/)
+var ligne18_viaduc: Node3D                  # line 18: its viaduct, piers and tracks (scripts/ligne18/viaduc/)
+var ligne18_polytechnique: Node3D           # line 18: Polytechnique's station and grounds (scripts/ligne18/polytechnique/)
+var ligne18_universite: Node3D              # line 18: Université Paris-Saclay's station and grounds (scripts/ligne18/universite/)
 var races: Races
 var economy: Economy                        # Main/Economy: PTA Online logins (and money, later)
 var online := false                         # client: playing PTA Online on the official server (start_online)

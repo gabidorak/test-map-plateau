@@ -1,0 +1,7 @@
+{
+ "id": "ligne18",
+ "order": 90,
+ "name": "Ligne 18",
+ "about": "Line 18 of the Grand Paris Express on the plateau (ref/metro18/): the line's own lot, the parent of its lots, which share its master plan (scripts/ligne18/ligne18_plan.gd, data/ligne18/plan.json, made by tools/ligne18/build_plan.py, frozen): the axis, straight through the stations, the rails' profile, the piers' places, the stations' frames and levels. Its children: ligne18-viaduc (the ramp, the spans and piers, the tracks along the whole line), ligne18-polytechnique and ligne18-universite (each station over its zone, u -45..45, and its grounds up to the roads round it). Christ de Saclay is outside the map.",
+ "script": "res://scripts/ligne18/ligne18_plan.gd"
+}
