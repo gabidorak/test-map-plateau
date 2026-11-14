@@ -12,13 +12,16 @@ extends RefCounted
 ##   "parent"     the lot it is part of (a block's own lot, whose plan the block's lots share): it comes after its
 ##                parent, its terraforming on the parent's, where the parent's script's child_weight(x, y) lets it
 ##                (inside the block, not under its streets)
+##   "build"      a builder run when the map is built, with the map's own builds (its build(root, world, heights,
+##                mesh_dir)): the railway's lots, their ground designed in world/rail.json and patched into the map's
+##                files by tools/rail/patch_world.py ("ground" says which part)
 ##   "finished"   true: its node's builds and its restyled buildings are built into the map when the map is built
 ##                (builder/lot_bake.gd), and its node in the game takes them back (baked()) and only brings them to
 ##                life (a door, a terminal); unfinished, they are built at start, so a change needs no map rebuilt
 ## The order: parents first, then their children (each level by "order"); every lot's terraforming, one zone on the
 ## other in that order, then their drops, then the map's own builds, then (in the game) their nodes.
-## The railway's lots (the RER B line, Massy-Palaiseau, the bus depot, the Logements de l'X) are not lots yet: their
-## designed ground is patched into the map by tools/rail/patch_world.py (rail.json); see LOTS.md.
+## The railway's lots (rerB, massyPalaiseau with its bus depot, logementsX) have no node: their "build" makes them when
+## the map is built; their designed ground is patched into the map by tools/rail/patch_world.py (rail.json).
 ## No preloads (terraform.gd and the restyled buildings' specs read it): the lots' scripts are loaded by path.
 
 const DIR := "res://data/lots/"
@@ -124,6 +127,17 @@ static func restyle_slugs() -> Array:
 	for lot: Dictionary in all():
 		out.append_array(lot.get("restyle", []))
 	return out
+
+
+## When the map is built: each lot's builder ("build"), in the lots' order; the first error stops them.
+static func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_dir: String) -> Error:
+	for lot: Dictionary in all():
+		if lot.has("build"):
+			var r: Variant = load(str(lot["build"])).new().build(root, world, heights, mesh_dir)
+			if r is int and r != OK:
+				push_error("lot %s: its build failed (%s)" % [lot["id"], error_string(r)])
+				return r
+	return OK
 
 
 ## When the map is built: what each lot replaces out of the world.

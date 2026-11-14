@@ -1,0 +1,10 @@
+{
+ "id": "massyPalaiseau",
+ "order": 2,
+ "finished": true,
+ "name": "Gare de Massy-Palaiseau",
+ "about": "Massy-Palaiseau's station rebuilt (tools/rail/massy_station.py): its footbridges and halls, the line 18 box, the bus station and the bus depot (tools/rail/bus_depot.py: its hangar, talus, bed and avenue's trees), the parked RER B trains; world/rail.json massy, its ground patched by tools/rail/patch_world.py, built by builder/massy_builder.gd and hangar_builder.gd.",
+ "ground": "world/rail.json massy: tools/rail/patch_world.py",
+ "script": "res://scripts/builder/massy_builder.gd",
+ "build": "res://scripts/builder/massy_builder.gd"
+}

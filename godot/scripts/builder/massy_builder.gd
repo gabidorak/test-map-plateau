@@ -28,6 +28,7 @@ const GroundMap = preload("res://scripts/ground_map.gd")
 const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
 const LabelFit = preload("res://scripts/label_fit.gd")
 const HangarBuilder = preload("res://scripts/builder/hangar_builder.gd")
+const VegetationBuilder = preload("res://scripts/builder/vegetation_builder.gd")
 const RAIL_PATH := "res://world/rail.json"
 const PROP_SHADER := "res://shaders/toy_prop.gdshader"
 const GLASS_SHADER := "res://shaders/toy_prop_glass.gdshader"
@@ -75,6 +76,12 @@ var _depth := 0.9
 var _meshers := {}                          # name -> [Mesher, material, visibility range, casts shadows]
 var _box_faces := PackedVector3Array()      # the line 18 box's floors and walls (lambdas cannot append to a local)
 var _lamp_lights := PackedVector3Array()    # night.gd lights the bus station and the hangar from these (node meta)
+
+
+## Lot massyPalaiseau's removals and additions to the world (builder/lots.gd drop, before the buildings and the
+## vegetation are made): the bus depot's trees and hedge (rail.json massy bus_station greenery).
+static func drop(world: Dictionary) -> void:
+	VegetationBuilder.add_rail_greenery(world)
 
 
 func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_dir: String) -> void:

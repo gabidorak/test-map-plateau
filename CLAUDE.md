@@ -23,7 +23,7 @@ ties its terraforming (`godot/data/terraform/`, made by `tools/terraform.py`), i
 its building (its node, or its restyled specs in `godot/data/restyle/`), run in that order by
 `godot/scripts/builder/lots.gd`. Add a lot rather than hooking a new build into `world_builder.gd`, `ground_builder.gd`
 or `game.gd`; ask Thomas the terraforming questions first (is the ground flat? the grass mown? trees, hedges, paths?).
-How it works, and the railway's lots still to migrate: [LOTS.md](LOTS.md).
+How it works, the finished lots built into the map and the railway's lots: [LOTS.md](LOTS.md).
 
 ## PTA Online's dev mode (offline test)
 

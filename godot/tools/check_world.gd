@@ -2,7 +2,8 @@ extends SceneTree
 ## World checks (milestone M4). Exit code 0 when everything passes.
 ##  1. No satellite image in the game: no image file under res://world/ or res://scenes/, none among
 ##     the dependencies of the generated scene, no "ortho" entry in world.json, and no texture in any
-##     node or resource of the generated scene (the toy shaders are procedural).
+##     node or resource of the generated scene (the toy shaders are procedural; but the finished lots' textures,
+##     made in code by their builders from colours, saved by builder/lot_bake.gd as meshes/lot_*).
 ##  2. No holes in the ground mesh: the ground surface triangles of all chunks cover the whole box,
 ##     and every edge is shared by exactly two triangles except along the box boundary (no gaps,
 ##     cracks or T-junctions). Positions are compared exactly, as the pipeline writes shared
@@ -22,6 +23,7 @@ extends SceneTree
 ##     track centre, the platform top 1.15 m above the rail and the ground drops in front of its wall.
 ## godot --headless --path godot --script res://tools/check_world.gd
 
+const LOT_TEXTURES := "res://scenes/generated/meshes/lot_"
 const GroundMap = preload("res://scripts/ground_map.gd")
 const GroundBuilder = preload("res://scripts/builder/ground_builder.gd")
 const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
@@ -146,7 +148,8 @@ func _scan(o: Object, where: String) -> void:
 	if o == null:
 		return
 	if o is Texture or o is Image:
-		_fail("texture in the generated scene: %s (%s %s)" % [where, o.get_class(), (o as Resource).resource_path])
+		if not (o as Resource).resource_path.begins_with(LOT_TEXTURES):   # (a finished lot's: made in code)
+			_fail("texture in the generated scene: %s (%s %s)" % [where, o.get_class(), (o as Resource).resource_path])
 		return
 	if o is Resource:
 		if _seen.has(o):
@@ -285,7 +288,7 @@ func _check_runtime(root: Node) -> void:
 # --- 4. vegetation ------------------------------------------------------------------------------
 
 func _check_vegetation(root: Node, world: Dictionary) -> void:
-	preload("res://scripts/builder/vegetation_builder.gd").add_rail_greenery(world)   # as world_builder.gd
+	preload("res://scripts/builder/vegetation_builder.gd").add_rail_greenery(world)   # as lot massyPalaiseau's drop()
 	var n_trees: int = world["trees"].size()
 	var trees := root.get_node_or_null("Vegetation/Trees")
 	if trees == null:

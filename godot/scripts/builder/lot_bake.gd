@@ -26,8 +26,8 @@ static func bake(root: Node3D, mesh_dir: String) -> int:
 	Lots.baking = true
 	var count := 0
 	for l: Dictionary in Lots.all():
-		if not Lots.finished(l):
-			continue
+		if not Lots.finished(l) or not (l.has("node") or l.has("restyle")):
+			continue                                        # (the railway's lots: built with the map, their "build")
 		var id := str(l["id"])
 		var keep := Node3D.new()
 		if l.has("node"):                                   # its node's builds, made as at start in the game

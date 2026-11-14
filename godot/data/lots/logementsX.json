@@ -1,0 +1,9 @@
+{
+ "id": "logementsX",
+ "order": 3,
+ "finished": true,
+ "name": "Nouveaux logements de l'X",
+ "about": "The École polytechnique's new housing (tools/rail/logements_x.py): six R+5 plots, their gardens, the car park, the road's sidewalk; world/rail.json logements_x, its ground patched by tools/rail/patch_world.py, built by builder/logements_x_builder.gd.",
+ "ground": "world/rail.json logements_x: tools/rail/patch_world.py",
+ "build": "res://scripts/builder/logements_x_builder.gd"
+}

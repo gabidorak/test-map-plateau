@@ -11,7 +11,8 @@ Every change made to the map (a building replaced, a garden redone, a villa buil
 | 2c. Ground surfaces | when the map is built | its script's `surface_boxes()`, `surface_at()` | `scripts/builder/ground_bake.gd` |
 | 3. Building | in the game | `node` (game.gd's member), `restyle` (specs of `godot/data/restyle/`) | the lot's script, `scripts/restyle/` |
 
-A terraforming file or a restyled building's spec counts only when a lot names it. Lots today: `losplatos`,
+A terraforming file or a restyled building's spec counts only when a lot names it. Lots today: `rerB`, `massyPalaiseau`,
+`logementsX` (the railway's, below), `losplatos`,
 `allSuites`, `villaEnPierreCoteaux`, `ensae`, `campusEdf`, `ilot-001`, `superette258`, `baseNautique` (the boat hire
 on the Lac de l'X: its counter is PTA Online's terminal, `godot/scripts/online/boat_hire.gd`), `residenceHaignere`
 (the grounds round the Haigneré residence, #536 kept: `godot/scripts/residenceHaignere/`, its plan made of a few
@@ -30,8 +31,8 @@ so a change to its building needs no map rebuilt (its ground, terraforming and r
 into the map when the map is built (`scripts/builder/lot_bake.gd`): its node's builds and its restyled buildings are
 saved in the generated scene under `Lots/<id>`, streamed with the map's buildings (their far shapes made then), and in
 the game its node takes them back (`Lots.baked()`) and only brings them to life (a door, a terminal). Finished:
-`losplatos`, `baseNautique`, `ensae`, `campusEdf` (the Logements de l'X are built when the map is built already, by
-`builder/logements_x_builder.gd`: a railway lot to come). To work on a finished lot again: drop its `"finished"`.
+`losplatos`, `baseNautique`, `ensae`, `campusEdf`, and the railway's lots (below). To work on a finished lot again:
+drop its `"finished"`.
 
 A lot may be part of another (`"parent"`): a block's own lot (`ilot-NNN`, a generic name and a number) and the lots
 in that block. A child comes after its parent; its terraforming is laid on its parent's (the zones are applied one on
@@ -70,21 +71,14 @@ form without its details), without shadows. Nothing to do per building; a node w
 A new building or garden: make its terraforming zones (`tools/terraform.py zone ...`), its spec or script, then a lot
 that names them; rebuild the map (`godot/tools/build_world.gd`).
 
-## To do: the railway's lots (planned for the week of 2026-11-16)
+## The railway's lots
 
-The RER B line, the Massy-Palaiseau station, the bus depot (the yard) and the Logements de l'X are not lots yet. Their
-ground is designed in `godot/world/rail.json` (made by `tools/rail/build_rail.py`, `massy_station.py`,
-`bus_depot.py`, `logements_x.py`) and patched into the map's files by `tools/rail/patch_world.py`, which also clears
-their trees and props; their buildings are made when the map is built (`rail_builder.gd`, `massy_builder.gd`,
-`hangar_builder.gd`, `logements_x_builder.gd`). That designed ground does what `terraform.gd` cannot (walls,
-platform edges, a ground mesh cut again, collision holes), so the first step is to declare them as lots pointing at
-it, not to rewrite it.
-
-Prompt to give Claude Code (or anyone) then:
-
-> Lis LOTS.md. Déclare le RER B, la gare de Massy-Palaiseau, le dépôt de bus et les Logements de l'X comme des lots
-> (godot/data/lots/), sans réécrire leur terrain dessiné : un lot doit pouvoir renvoyer vers les zones de rail.json
-> appliquées par tools/rail/patch_world.py et vers son constructeur Godot. Sépare rail.json en un fichier par lot si
-> c'est plus clair (la ligne, Massy, le dépôt, les Logements X), en gardant les outils qui le produisent cohérents.
-> Vérifie que la carte reconstruite est identique (mêmes comptes de bâtiments, arbres, objets) et que les tests du
-> rail et de Massy passent. Pose-moi les questions de terraforming habituelles avant de changer un terrain.
+The RER B line (`rerB`), Massy-Palaiseau's station with its bus station and bus depot (`massyPalaiseau`) and the
+Logements de l'X (`logementsX`) are lots with no node: their `"build"` is a builder run when the map is built, with
+the map's own builds (`builder/rail_builder.gd`, `massy_builder.gd` with `hangar_builder.gd`, `logements_x_builder.gd`:
+`Lots.build()`, in the lots' order), so they are always finished. Their ground is designed in `godot/world/rail.json`
+(`tools/rail/build_rail.py`, `massy_station.py`, `bus_depot.py`, `logements_x.py`) and patched into the map's files by
+`tools/rail/patch_world.py` (walls, platform edges, the ground mesh cut again, collision holes: what
+`terraform.gd` cannot do), which also clears their trees and props; each lot's `"ground"` says which part of rail.json
+is its. Massy's `drop()` adds the bus depot's trees and hedge. A change to their ground: the tools, then
+`patch_world.py`, then the map rebuilt.

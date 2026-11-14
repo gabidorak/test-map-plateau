@@ -1,8 +1,7 @@
 @tool
 extends RefCounted
-## Builds res://scenes/generated/neighborhood.tscn from the pipeline output in res://world/ (and the railway,
-## world/rail.json: builder/rail_builder.gd, Massy-Palaiseau's station: builder/massy_builder.gd, the École
-## polytechnique's new housing: builder/logements_x_builder.gd; the building
+## Builds res://scenes/generated/neighborhood.tscn from the pipeline output in res://world/ (and the lots: their
+## ground, removals, builds, builder/lots.gd, the railway's among them, world/rail.json; the building
 ## interiors, world/interiors.json: builder/interior_builder.gd), and the ground the game reads,
 ## res://scenes/generated/ground.json (builder/ground_bake.gd: the map's with the lots' terraforming and surfaces).
 ## Run from the editor (Project > Tools > Rebuild Plateau world) or headless via tools/build_world.gd.
@@ -18,11 +17,8 @@ const CollisionBuilder = preload("res://scripts/builder/collision_builder.gd")
 const VegetationBuilder = preload("res://scripts/builder/vegetation_builder.gd")
 const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
 const FarBuilder = preload("res://scripts/builder/far_builder.gd")
-const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
 const BridgeBuilder = preload("res://scripts/builder/bridge_builder.gd")
-const MassyBuilder = preload("res://scripts/builder/massy_builder.gd")
 const InteriorBuilder = preload("res://scripts/builder/interior_builder.gd")
-const LogementsXBuilder = preload("res://scripts/builder/logements_x_builder.gd")
 const Water = preload("res://scripts/water.gd")
 const GroundHeights = preload("res://scripts/ground_heights.gd")
 ## 3 adds ground[], kerbs[], markings[] (M3); 4 adds ground_mesh, palette, drops the ortho (M4);
@@ -84,7 +80,6 @@ func build_and_save() -> Error:
 	Lots.drop(world)                                # the lots replace what they take over (builder/lots.gd)
 	BuildingBuilder.new().build(root, world, MESH_DIR)
 	InteriorBuilder.new().build(root, world, heights, MESH_DIR)
-	VegetationBuilder.add_rail_greenery(world)      # the bus depot's trees and hedge (rail.json)
 	err = VegetationBuilder.new().build(root, world, heights, MESH_DIR)
 	if err != OK:
 		root.free()
@@ -94,12 +89,10 @@ func build_and_save() -> Error:
 		root.free()
 		return err
 	BridgeBuilder.new().build(root, world, heights, MESH_DIR)
-	err = RailBuilder.new().build(root, world, heights, MESH_DIR)
+	err = Lots.build(root, world, heights, MESH_DIR)  # the lots built with the map: the railway's (builder/lots.gd)
 	if err != OK:
 		root.free()
 		return err
-	MassyBuilder.new().build(root, world, heights, MESH_DIR)     # Massy-Palaiseau's station (rail.json massy)
-	LogementsXBuilder.new().build(root, world, heights, MESH_DIR)  # the École polytechnique's new housing (rail.json logements_x)
 	LotBake.bake(root, MESH_DIR)                    # the finished lots' builds (builder/lot_bake.gd), streamed with the map's
 	var collision := CollisionBuilder.new()
 	collision.terrain(root, world, heights, MESH_DIR)
