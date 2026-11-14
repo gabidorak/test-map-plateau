@@ -13,7 +13,8 @@ const GroundMap = preload("res://scripts/ground_map.gd")
 const GroundHeights = preload("res://scripts/ground_heights.gd")
 const Lots = preload("res://scripts/builder/lots.gd")
 ## A surface's piece kind by its material (the bots drive on "road"s: game.gd _paved(), races.gd); others "pedestrian".
-const KIND := {"asphalt": "road", "grass": "landcover", "tall_grass": "landcover"}
+const KIND := {"asphalt": "road", "grass": "landcover", "tall_grass": "landcover", "gravel": "landcover",
+		"building": "building"}
 const ABOUT := "The ground the game reads, baked by builder/ground_bake.gd when the map was built: the map's own " \
 		+ "(world/ground_index.json) with the lots' terraforming in its heights and their surfaces among its pieces."
 

@@ -3,7 +3,11 @@
  "order": 3,
  "finished": true,
  "name": "Nouveaux logements de l'X",
- "about": "The École polytechnique's new housing (tools/rail/logements_x.py): six R+5 plots, their gardens, the car park, the road's sidewalk; world/rail.json logements_x, its ground patched by tools/rail/patch_world.py, built by builder/logements_x_builder.gd.",
- "ground": "world/rail.json logements_x: tools/rail/patch_world.py",
- "build": "res://scripts/builder/logements_x_builder.gd"
+ "about": "The École polytechnique's new student housing on the Boulevard des Maréchaux (ref/logementsX/; its plan data/logementsX/plan.json, made by tools/logements_x/build_plan.py from the map's own ground): six R+5 plots in khaki ribbed panels over white ground floors, their gardens, the residents' car park, the boulevard's sidewalk; its ground one smooth surface (terraformed), the construction site's fence and the map's placeholder blocks out, its trees and props in, its surfaces drawn in the ground's material (scripts/logementsX/).",
+ "terraform": [
+  "res://scripts/logementsX/logements_x.gd"
+ ],
+ "script": "res://scripts/logementsX/logements_x.gd",
+ "paint": "res://scripts/logementsX/logements_x.gd",
+ "build": "res://scripts/logementsX/logements_x_builder.gd"
 }

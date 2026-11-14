@@ -2,7 +2,7 @@ extends RefCounted
 ## The basic studio of PTA Online's properties (scripts/online/properties.gd, data/properties.json "interior": "studio"),
 ## after Thomas's plan (ref/proprietes/PlanStudioBasique.jpg), built in the flat's own frame and given to the caller to
 ## place behind the building's real windows: the building's walls and window panes are drawn from the outside only,
-## and its window frames are open (scripts/builder/logements_x_builder.gd), so through the studio's windows one sees
+## and its window frames are open (scripts/logementsX/logements_x_builder.gd), so through the studio's windows one sees
 ## the residence as it is.
 ## The frame: x along the facade (to the right looking out), y up from the floor, z into the building from the facade
 ## line. The main room is ROOM_W x (BACK - WALL_IN) m (the plan, seen from its window side, laid out roomy: wide

@@ -1,6 +1,6 @@
 extends SceneTree
-## Headless checks of the École polytechnique's new housing (rail.json logements_x, tools/rail/logements_x.py,
-## scripts/builder/logements_x_builder.gd). Exit code 0 when everything passes.
+## Headless checks of the École polytechnique's new housing (lot logementsX: data/logementsX/plan.json, tools/logements_x/,
+## scripts/logementsX/). Exit code 0 when everything passes.
 ##  1. The six plots: world.json says 19.8 m and 6 levels; rays down land on the roof's collision (the parapet's top:
 ##     building_builder.gd collides the plain prism) inside and at the edge; rays across at mid height hit each face
 ##     (collision); under the overhang the recess is open (a ray into the porch reaches its inner wall ~4.85 m in).
@@ -23,8 +23,7 @@ var _failures: PackedStringArray = []
 
 
 func _initialize() -> void:
-	var rail = JSON.parse_string(FileAccess.get_file_as_string("res://world/rail.json"))
-	_L = rail["logements_x"]
+	_L = load("res://scripts/logementsX/logements_x_plan.gd").data()
 	_main = load("res://scenes/main.tscn").instantiate()
 	_main.debug_cars = false
 	root.add_child(_main)
@@ -127,7 +126,7 @@ func _plots() -> void:
 
 func _car_park() -> void:
 	if not _L.has("car_park"):
-		_fail("rail.json logements_x has no car_park: rebuild with tools/rail/build_rail.py")
+		_fail("the plan has no car_park: tools/logements_x/build_plan.py")
 		return
 	var C: Dictionary = _L["car_park"]
 	var o := _v(C["o"])

@@ -25,6 +25,7 @@ extends SceneTree
 
 const LOT_TEXTURES := "res://scenes/generated/meshes/lot_"
 const GroundMap = preload("res://scripts/ground_map.gd")
+const Lots = preload("res://scripts/builder/lots.gd")
 const GroundBuilder = preload("res://scripts/builder/ground_builder.gd")
 const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
 const InteriorBuilder = preload("res://scripts/builder/interior_builder.gd")
@@ -50,6 +51,7 @@ var _rail_tris := {}                       # Vector2i 2 m cell -> PackedVector3A
 func _initialize() -> void:
 	var t0 := Time.get_ticks_msec()
 	var world = JSON.parse_string(FileAccess.get_file_as_string(WORLD))
+	Lots.drop(world)                         # the world as the map is built: the lots' removals and additions
 	var rail = JSON.parse_string(FileAccess.get_file_as_string(RAIL)) if FileAccess.file_exists(RAIL) else null
 	if rail is Dictionary:
 		_rail_box = _line_box(rail, world)
@@ -288,7 +290,6 @@ func _check_runtime(root: Node) -> void:
 # --- 4. vegetation ------------------------------------------------------------------------------
 
 func _check_vegetation(root: Node, world: Dictionary) -> void:
-	preload("res://scripts/builder/vegetation_builder.gd").add_rail_greenery(world)   # as lot massyPalaiseau's drop()
 	var n_trees: int = world["trees"].size()
 	var trees := root.get_node_or_null("Vegetation/Trees")
 	if trees == null:

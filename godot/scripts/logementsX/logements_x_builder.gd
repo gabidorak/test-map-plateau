@@ -1,7 +1,8 @@
 @tool
 extends RefCounted
-## The École polytechnique's new student housing (world/rail.json `logements_x`, tools/rail/logements_x.py), drawn
-## over the six world.json masses patch_world.py restyled (a white concrete ground floor core, a floating upper body in
+## Lot logementsX's build (data/lots/logementsX.json "build", when the map is built): the École polytechnique's new
+## student housing (its plan: logements_x_plan.gd, tools/logements_x/), drawn over the six world.json masses its lot
+## swapped in (logements_x.gd drop(): a white concrete ground floor core, a floating upper body in
 ## khaki ribbed panels with a green roof) after Thomas's photos (ref/logementsX/):
 ## - the facades: a projecting white slab band at every floor (alternately 0.45 and 0.30 m deep: the "drawers" of the
 ##   photos) and a deep one round the parapet, white surrounds either side of each window, the windows (anthracite
@@ -14,14 +15,20 @@ extends RefCounted
 ## - on the roof: the atrium's skylight, ventilation units, a hatch, white copings;
 ## - round them: the boulevard sidewalk's kerb stones, the car park's flush kerbs and bay lines, the light bollards
 ##   along the paths (dark grey, a glowing head), limestone boulders, mulch rings under the young trees.
-## Collision: the ground floor's columns, the bike shelter's mesh and slab, the roof plant, bollards, boulders.
+## - under them all, the plan's surfaces in the ground's own material: the road fill, the car park, forecourts, paths,
+##   gravel, the boulevard's sidewalk at its kerb's level.
+## Collision: the ground floor's columns, the bike shelter's mesh and slab, the roof plant, bollards, boulders; the
+## sidewalk.
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const FarProxy = preload("res://scripts/builder/far_proxy.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const GroundHeights = preload("res://scripts/ground_heights.gd")
 const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
-const RAIL_PATH := "res://world/rail.json"
+const Plan = preload("res://scripts/logementsX/logements_x_plan.gd")
+const GroundBuilder = preload("res://scripts/builder/ground_builder.gd")
+const SURF_UP := 0.03                       # m: the surfaces over the ground (the ground under them painted alike)
+const SURF_CELL := 2.0                      # m: they are cut so, to follow the ground
 const PROP_SHADER := "res://shaders/toy_prop.gdshader"
 const GLASS_SHADER := "res://shaders/toy_prop_glass.gdshader"
 const WINDOW_SHADER := "res://shaders/toy_window.gdshader"
@@ -72,12 +79,7 @@ var _rng := RandomNumberGenerator.new()
 
 
 func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_dir: String) -> void:
-	if not FileAccess.file_exists(RAIL_PATH):
-		return
-	var rail = JSON.parse_string(FileAccess.get_file_as_string(RAIL_PATH))
-	if not rail is Dictionary or not (rail as Dictionary).has("logements_x"):
-		return
-	_L = rail["logements_x"]
+	_L = Plan.data()
 	_D = _L["dims"]
 	_white = Color(_D["white"])
 	_wall = Color(_D["wall"])
@@ -116,6 +118,7 @@ func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_di
 	root.add_child(_body)
 	for pl: Dictionary in _L["plots"]:
 		_plot(pl)
+	_surfaces(world)
 	_kerb()
 	_borders()
 	_markings()
@@ -128,6 +131,104 @@ func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_di
 		_emit(name, e[0], e[1], e[2], e[3])
 	print("logements X: %d plots, %d bays, %d bollards, %d boulders" % [_L["plots"].size(), int(_L["bays"]),
 			_L["bollards"].size(), _L["rocks"].size()])
+
+
+# ---------------------------------------------------------------- the surfaces
+
+## The plan's surfaces over the ground (its zones), in the toy ground's material, colour and material id (as the
+## railway's ballast: the map's ground's look): the road fill and the car park asphalt, the forecourts and paths
+## concrete, the gravel strips SURF_UP over the ground; the sidewalk at its kerb's level along it (the zone's axis), its
+## sides down into the ground, walked on (collision). The lawns are the ground's own (painted), the plots' under the
+## buildings.
+func _surfaces(world: Dictionary) -> void:
+	var gmat: Material = load(_mesh_dir + "ground_material.tres")
+	var pal: Dictionary = world["palette"]["ground"]
+	var faces := PackedVector3Array()
+	for z: Array in Plan.zones():
+		var mat: String = z[1]
+		if not Plan.drawn(mat):
+			continue
+		var walk: bool = z[0] == "logx:sidewalk"
+		var axis: PackedVector2Array = z[5]
+		var az: PackedFloat32Array = z[6]
+		var top := func(q: Vector2) -> Vector3:
+			return _gp(q, Plan.axis_z(axis, az, q) if walk else _ground.at(q.x, q.y) + SURF_UP)
+		var s := RailBuilder.Strip.new()
+		for pg: Array in z[3]:
+			for piece: PackedVector2Array in _cells(pg):
+				var idx := Geometry2D.triangulate_polygon(piece)
+				for k in range(0, idx.size() - 2, 3):
+					var a: Vector3 = top.call(piece[idx[k]])
+					var b: Vector3 = top.call(piece[idx[k + 1]])
+					var c: Vector3 = top.call(piece[idx[k + 2]])
+					s.quad(a, b, c, c)
+					if walk:
+						faces.append_array([a, b, c])
+			if walk:                                        # its sides, both ways (the kerb's face over the road's)
+				for r: PackedVector2Array in pg:
+					for i in r.size():
+						var p0 := r[i]
+						var p1 := r[(i + 1) % r.size()]
+						var t0: Vector3 = top.call(p0)
+						var t1: Vector3 = top.call(p1)
+						var g0 := _gp(p0, _ground.at(p0.x, p0.y) - 0.1)
+						var g1 := _gp(p1, _ground.at(p1.x, p1.y) - 0.1)
+						s.quad(t0, t1, g1, g0)
+						s.quad(g0, g1, t1, t0)
+						faces.append_array([t0, t1, g1, t0, g1, g0])
+		if s.v.is_empty():
+			continue
+		var mi := MeshInstance3D.new()
+		mi.name = "Surface_" + str(z[0]).trim_prefix("logx:")
+		mi.mesh = MeshUtils.save(s.commit(gmat, Color.html(str(pal.get(mat, pal["concrete"]))),
+				GroundBuilder.MATERIALS.find(mat)), _mesh_dir + "logx_surface_%s.res" % str(z[0]).trim_prefix("logx:"))
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.set_meta("plateau", {"type": "ground", "id": z[0], "name": "Logements élèves de l'X"})
+		_node.add_child(mi)
+	if not faces.is_empty():
+		var ground := StaticBody3D.new()
+		ground.name = "LogementsXSidewalk"
+		ground.collision_layer = Layers.TERRAIN
+		ground.collision_mask = 0
+		var shape := ConcavePolygonShape3D.new()
+		shape.set_faces(faces)
+		shape.backface_collision = true                 # (its triangles either way round)
+		var cs := CollisionShape3D.new()
+		cs.shape = MeshUtils.save(shape, _mesh_dir + "logx_sidewalk_col.res")
+		cs.set_meta("plateau", {"type": "ground", "id": "logx:sidewalk"})
+		ground.add_child(cs)
+		_body.get_parent().add_child(ground)
+
+
+## Polygon pg ([outer, holes...]) cut into SURF_CELL squares, its holes out (the pieces a hole leaves inside one, left
+## out too).
+static func _cells(pg: Array) -> Array:
+	var outer: PackedVector2Array = pg[0]
+	var r := Rect2(outer[0], Vector2.ZERO)
+	for q in outer:
+		r = r.expand(q)
+	var out := []
+	for gx in range(floori(r.position.x / SURF_CELL), ceili(r.end.x / SURF_CELL)):
+		for gy in range(floori(r.position.y / SURF_CELL), ceili(r.end.y / SURF_CELL)):
+			var x0 := gx * SURF_CELL
+			var y0 := gy * SURF_CELL
+			var sq := PackedVector2Array([Vector2(x0, y0), Vector2(x0 + SURF_CELL, y0), Vector2(x0 + SURF_CELL, y0 + SURF_CELL),
+					Vector2(x0, y0 + SURF_CELL)])
+			for piece: PackedVector2Array in Geometry2D.intersect_polygons(outer, sq):
+				var parts: Array = [piece]
+				for k in range(1, pg.size()):
+					var next := []
+					for q: PackedVector2Array in parts:
+						next.append_array(Geometry2D.clip_polygons(q, pg[k]))
+					parts = next
+				for q: PackedVector2Array in parts:             # (a hole inside a piece comes back as a polygon of its own)
+					var c := Vector2.ZERO
+					for v in q:
+						c += v / q.size()
+					if not parts.any(func(o: PackedVector2Array) -> bool:
+							return o != q and Geometry2D.is_point_in_polygon(c, o)):
+						out.append(q)
+	return out
 
 
 # ---------------------------------------------------------------- helpers
@@ -553,8 +654,10 @@ func _markings() -> void:
 	var m := _mesher("Site_Paint", 300.0)
 	var a: Array = _L["markings"]["white"]
 	for k in range(0, a.size() - 8, 9):
-		m.tri(Vector3(a[k], a[k + 2], -a[k + 1]), Vector3(a[k + 3], a[k + 5], -a[k + 4]),
-				Vector3(a[k + 6], a[k + 8], -a[k + 7]), Vector3.UP, PAINT)
+		var c := Vector2(a[k] + a[k + 3] + a[k + 6], a[k + 1] + a[k + 4] + a[k + 7]) / 3.0
+		var up := SURF_UP if Plan.drawn(Plan.material_at(c)) else 0.0      # (on a surface drawn over the ground)
+		m.tri(Vector3(a[k], a[k + 2] + up, -a[k + 1]), Vector3(a[k + 3], a[k + 5] + up, -a[k + 4]),
+				Vector3(a[k + 6], a[k + 8] + up, -a[k + 7]), Vector3.UP, PAINT)
 
 
 ## Light bollards (photos: dark grey cylinders ~1 m, a glowing head).

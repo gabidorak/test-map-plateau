@@ -608,11 +608,12 @@ committed scripts that regenerate everything from data (commands above).
   `world_builder.gd` plants its trees and hedge (`vegetation_builder.gd` add_rail_greenery).
 - The École polytechnique's new student housing (2026-11-08, Thomas's plan and photos in `ref/logementsX/`; lot S3.2
   of the ZAC du quartier de l'École polytechnique: CDC Habitat, Dietrich | Untertrifaller, 6 plots R+5, roof at
-  19.80 m): `tools/rail/logements_x.py` (called by `build_rail.py`, its docstring has the details; `rail.json`
-  `logements_x`) replaces the building site at x 785, y -339: the six plots on OSM's footprints, 19.8 m (a 4 m ground
-  floor, five 3 m floors, a 0.9 m parapet), their world.json masses restyled by `patch_world.py` (a white concrete
+  19.80 m), lot `logementsX` (LOTS.md): `tools/logements_x/build_plan.py` (`logements_x.py`, its docstring has the
+  details) writes its plan, `godot/data/logementsX/plan.json`, which replaces the building site at x 785, y -339: the
+  six plots on OSM's footprints, 19.8 m (a 4 m ground floor, five 3 m floors, a 0.9 m parapet), their world.json
+  masses restyled (the lot's `drop()`: a white concrete
   ground floor core with the entrance corner cut out under the overhang, a floating upper body in khaki ribbed panels,
-  a green roof) and `scripts/builder/logements_x_builder.gd` drawing the projecting white slab bands, white window
+  a green roof) and `scripts/logementsX/logements_x_builder.gd` drawing the projecting white slab bands, white window
   surrounds, windows in pairs or alone (lit at night: `shaders/toy_window.gdshader`), the ground floor's glazing and
   piers, the bike shelter (mesh, red hoops) and porch (glazed door, the plot's number on a black hexagon), skylights
   and roof plant; a car park on the west strip (156 bays in four rows on two aisles, planted islands, a planted
