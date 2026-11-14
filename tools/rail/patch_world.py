@@ -3,7 +3,7 @@
 .venv/Scripts/python tools/rail/patch_world.py      (Linux/macOS: .venv/bin/python; ~2 min)
 
 The map pipeline is not in this repository, so its outputs cannot be regenerated: this step patches them. It always
-starts from the pipeline's files kept in godot/world/base/ (railgeo.ensure_base: a fresh pipeline output there is
+starts from the pipeline's files kept in godot/world/base/ (mapdata.ensure_base: a fresh pipeline output there is
 taken as the new base), never from patched ones, so running it twice gives the same files. world.json gets
 `meta.rail` (the base files' and rail.json's SHA-1, the patch's version). What it changes, all consumers together:
 - heightmap.f32: inside the railway's zones (rail.json zones: the trackbed, platforms, slopes, wall landings, the
@@ -51,7 +51,9 @@ from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import polygonize, unary_union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common"))
 import railgeo as rg  # noqa: E402
+import mapdata as md  # noqa: E402
 
 PATCH_VERSION = 6              # 3: Massy-Palaiseau's ground repairs, line 18 shaft and replaced decks and halls;
                                # 4: the yard's ground lowered under its tracks' ballast beds (railgeo.YardBed);
@@ -317,7 +319,7 @@ class Grid:
     y = oy - (j - 1) * cell; each cell is split by its south-west -> north-east diagonal, the lower triangle (half 0)
     holding node (i, j)."""
 
-    def __init__(self, H: rg.Heights):
+    def __init__(self, H: md.Heights):
         self.ox, self.oy, self.c = H.ox, H.oy, H.mesh_cell
 
     def cell_of(self, x: float, y: float) -> tuple:
@@ -1228,12 +1230,12 @@ def ring_tris(poly: Polygon) -> tuple:
 
 def main() -> None:
     t0 = time.time()
-    rg.ensure_base()
-    rail = rg.load_json(rg.RAIL_JSON)
-    world = rg.load_json(rg.BASE / "world.json")
-    index = rg.load_json(rg.BASE / "ground_index.json")
+    md.ensure_base()
+    rail = md.load_json(rg.RAIL_JSON)
+    world = md.load_json(md.BASE / "world.json")
+    index = md.load_json(md.BASE / "ground_index.json")
     gm = world["ground_mesh"]
-    H_old = rg.Heights(rg.BASE, world["terrain"], gm["cell"])
+    H_old = md.Heights(md.BASE, world["terrain"], gm["cell"])
     A = rg.Alignment(rail["alignment"])
     # the ground the design follows: the base one, repaired at Massy-Palaiseau (massy_station.py: its `regrade` zones
     # take it, so do the yard's strips there)
@@ -1241,7 +1243,7 @@ def main() -> None:
     repairs = rail.get("massy", {}).get("repairs", [])
     if repairs:
         import massy_station as mst
-        H_fix = rg.Heights.__new__(rg.Heights)
+        H_fix = md.Heights.__new__(md.Heights)
         H_fix.__dict__.update({k: v for k, v in H_old.__dict__.items() if not k.startswith("_nodes")})
         H_fix.data = mst.apply_repairs(H_old, repairs)
     design = rg.Design(rail["earthworks"], A, H_fix, [z for z in rail["zones"] if "axis" in z])
@@ -1274,7 +1276,7 @@ def main() -> None:
         zz = zone_heights(design, z, s, u, x, y)
         new[rr[m], cc[m]] = zz
         changed += int(m.sum())
-    H_new = rg.Heights(rg.BASE, world["terrain"], gm["cell"])
+    H_new = md.Heights(md.BASE, world["terrain"], gm["cell"])
     H_new.data = new
     log("heightmap: %d samples in the railway's zones" % changed)
     report += ["## Heightmap", "", "%d samples (0.5 m) set to the designed ground in %d zones." % (changed,
@@ -1320,7 +1322,7 @@ def main() -> None:
     for c in gm["chunks"]:
         f = c.get("file", gm["file"])
         if f not in files:
-            files[f] = (rg.BASE / f).read_bytes()
+            files[f] = (md.BASE / f).read_bytes()
     raw_all = {id(c): files[c.get("file", gm["file"])] for c in gm["chunks"]}
     orig_xy = set()
     ctx = {"grid": grid, "zones": zones, "design": design, "A": A, "H_new": H_new, "H_old": H_old,
@@ -1436,7 +1438,7 @@ def main() -> None:
             comp = raw_all[id(c)][c["offset"]:c["offset"] + c["size"]]
             raw = None
             aabb, nv, ni, nc = c["aabb"], c["nv"], c["ni"], c["nc"]
-        if len(blob) and len(blob) + len(comp) > rg.PART_BYTES:
+        if len(blob) and len(blob) + len(comp) > md.PART_BYTES:
             blobs.append(blob)
             blob = bytearray()
         m = dict(c)
@@ -1454,20 +1456,20 @@ def main() -> None:
         col_total += nc // 3
     blobs.append(blob)
     stem = Path(gm["file"]).stem
-    for old in rg.WORLD.glob(stem + ".*.bin"):
+    for old in md.WORLD.glob(stem + ".*.bin"):
         old.unlink()
     for k, b in enumerate(blobs):
-        (rg.WORLD / (gm["file"] if k == 0 else "%s.%d.bin" % (stem, k))).write_bytes(bytes(b))
+        (md.WORLD / (gm["file"] if k == 0 else "%s.%d.bin" % (stem, k))).write_bytes(bytes(b))
 
     # --- ground ids
     ids_info = index["ids"]
-    ids = np.frombuffer(zlib.decompress((rg.BASE / ids_info["file"]).read_bytes()), dtype="<u2").reshape(
+    ids = np.frombuffer(zlib.decompress((md.BASE / ids_info["file"]).read_bytes()), dtype="<u2").reshape(
         ids_info["h"], ids_info["w"]).copy()
     for k, pi in piece_of_zone.items():
         m = lab == k
         ids[rr[m], cc[m]] = pi + 1
-    (rg.WORLD / ids_info["file"]).write_bytes(zlib.compress(ids.astype("<u2").tobytes(), 9))
-    rg.write_heightmap(rg.WORLD, world["terrain"], new)
+    (md.WORLD / ids_info["file"]).write_bytes(zlib.compress(ids.astype("<u2").tobytes(), 9))
+    md.write_heightmap(md.WORLD, world["terrain"], new)
 
     # --- world.json ground partition
     hard_by_piece = {}
@@ -1548,7 +1550,7 @@ def main() -> None:
             ids[rr[w][m], cc[w][m]] = k_new + 1
     assert all(id_map[pi] == pi for pi in order)
     world["ground"] = final_ground
-    (rg.WORLD / ids_info["file"]).write_bytes(zlib.compress(ids.astype("<u2").tobytes(), 9))
+    (md.WORLD / ids_info["file"]).write_bytes(zlib.compress(ids.astype("<u2").tobytes(), 9))
     report += ["## Ground pieces", "", "%d pieces of the partition cut by the railway's ground (%d split in two or "
                "more), %d new pieces:" % (touched_ground, len(split_parts), len(order)), ""]
     for pi in order:
@@ -1709,7 +1711,7 @@ def main() -> None:
     world["palette"]["ground"] = palette
     # No date in the stamp: the same inputs give the same bytes.
     world["meta"]["rail"] = {"version": PATCH_VERSION, "rail_json": sha1(rg.RAIL_JSON),
-                             "base": {f: sha1(rg.BASE / f) for f in rg.world_files(rg.load_json(rg.BASE / "world.json"))},
+                             "base": {f: sha1(md.BASE / f) for f in md.world_files(md.load_json(md.BASE / "world.json"))},
                              "tool": "tools/rail/patch_world.py"}
     index["pieces"] = final_pieces
     index["materials"] = mats
@@ -1719,9 +1721,9 @@ def main() -> None:
                                 "height there is not the drawn one, so no grass tufts", "cells": sorted([list(c) for c in all_cliffs])}
     for g in world["ground"]:                   # nothing reads the pieces' triangles (the mesh is ground.bin): with the
         g.pop("tris", None)                     # west box they would take world.json past GitHub's 100 MB
-    (rg.WORLD / "world.json").write_text(json.dumps(world, ensure_ascii=False, separators=(",", ":")) + "\n",
+    (md.WORLD / "world.json").write_text(json.dumps(world, ensure_ascii=False, separators=(",", ":")) + "\n",
                                          encoding="utf-8")
-    (rg.WORLD / "ground_index.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")) + "\n",
+    (md.WORLD / "ground_index.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")) + "\n",
                                                 encoding="utf-8")
     report += ["## Ground mesh", "", "- chunks rebuilt: %d; cells cut again: %d, of which cliffs: %d (%d skirts)" % (
         len(touched), totals.get("cells", 0), totals.get("cliff_cells", 0), totals.get("skirts", 0)),
@@ -1751,7 +1753,7 @@ def over_tracks(world: dict, rail: dict) -> tuple:
     trains = [True, True]                       # trains run on it (the alignment's tracks, the yard's mains)
     for t in rail.get("yard", {}).get("tracks", []):
         p = np.asarray(t["pts"])
-        lines.append((LineString(p), rg.cumlen(p), np.asarray(t["z"])))
+        lines.append((LineString(p), md.cumlen(p), np.asarray(t["z"])))
         trains.append(bool(t["main"]))
     tree = shapely.STRtree([ln for ln, _, _ in lines])
     lifted, dropped, keep = [], [], []

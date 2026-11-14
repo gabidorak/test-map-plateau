@@ -54,6 +54,7 @@ from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import nearest_points, unary_union
 
 import railgeo as rg
+import mapdata as md
 from l93 import fwd
 
 OSM_FILE = rg.TOOLS / "osm_massy_station.json"
@@ -157,7 +158,7 @@ def mesh2d(pg: Polygon) -> dict:
 
 # ---------------------------------------------------------------- ground repairs
 
-def grid_box(H: rg.Heights, bounds, pad: float):
+def grid_box(H: md.Heights, bounds, pad: float):
     x0, y0, x1, y1 = bounds
     c0 = max(int((x0 - pad - H.ox) / H.cell), 0)
     c1 = min(int((x1 + pad - H.ox) / H.cell) + 1, H.w - 1)
@@ -169,7 +170,7 @@ def grid_box(H: rg.Heights, bounds, pad: float):
     return r0, r1, c0, c1, X, Y
 
 
-def fit_rim_plane(H: rg.Heights, pg: Polygon) -> list:
+def fit_rim_plane(H: md.Heights, pg: Polygon) -> list:
     """Least-squares plane z = a + b (x - cx) + c (y - cy) through the ground on a ring 1-5 m outside pg, three times
     without the samples more than 0.4 m off it (a kerb, a wall foot)."""
     rim = pg.buffer(5.0).difference(pg.buffer(1.0))
@@ -189,7 +190,7 @@ def fit_rim_plane(H: rg.Heights, pg: Polygon) -> list:
             round(float(coef[2]), 6)]
 
 
-def apply_repairs(H: rg.Heights, repairs: list, data: np.ndarray = None) -> np.ndarray:
+def apply_repairs(H: md.Heights, repairs: list, data: np.ndarray = None) -> np.ndarray:
     """The heightmap samples with the repairs applied (a copy of H.data unless `data` is given: changed in place)."""
     from scipy.ndimage import grey_opening
     if data is None:
@@ -228,7 +229,7 @@ def apply_repairs(H: rg.Heights, repairs: list, data: np.ndarray = None) -> np.n
     return data
 
 
-def repairs(osm: dict, H: rg.Heights) -> list:
+def repairs(osm: dict, H: md.Heights) -> list:
     l18 = wpoly(osm, 1334489725).buffer(10.0, join_style=2)
     hall = Point(4440.0, 1296.0).buffer(24.0, 32)
     out = [{"id": "repair:l18", "method": "plane", "ring": ring(l18), "plane": fit_rim_plane(H, l18),
@@ -238,7 +239,7 @@ def repairs(osm: dict, H: rg.Heights) -> list:
     return out + tgv_repairs(osm, H)
 
 
-def tgv_repairs(osm: dict, H: rg.Heights) -> list:
+def tgv_repairs(osm: dict, H: md.Heights) -> list:
     """Massy TGV's hall and forecourt on the plane of the ground round them: the TGV line runs covered under them (OSM
     tunnel=yes) but the LiDAR saw into its cutting (a pit to -83 m under and north-west of the hall, down to the RER B's
     track 1). Two repairs on the plane fitted round the hall: the hall and 6 m round it levelled on it (its floor all
@@ -875,7 +876,7 @@ def rer_fences(osm: dict, Hf, world: dict, tracks, area, busways, gaps) -> list:
     runs = []
     for p in polys(corridor):
         for r in [p.exterior]:                  # not the holes: wedges between diverging tracks
-            c = rg.resample(np.asarray(r.coords), 0.5)
+            c = md.resample(np.asarray(r.coords), 0.5)
             keep = np.zeros(len(c), dtype=bool)
             for k in range(len(c)):
                 q = c[k]
@@ -902,7 +903,7 @@ def rer_fences(osm: dict, Hf, world: dict, tracks, area, busways, gaps) -> list:
         for part in getattr(rest, "geoms", [rest]):
             if part.is_empty or part.geom_type != "LineString" or part.length < FENCE_MIN:
                 continue
-            q = rg.resample(np.asarray(part.coords), 2.5)
+            q = md.resample(np.asarray(part.coords), 2.5)
             if np.linalg.norm(q[-1] - np.asarray(part.coords)[-1]) > 0.05:
                 q = np.vstack([q, np.asarray(part.coords)[-1]])
             out.append({"id": "fence:massy:%d" % (len(out) + 1), "style": "mesh", "h": FENCE_HEIGHT, "pts": r3(q),
@@ -912,7 +913,7 @@ def rer_fences(osm: dict, Hf, world: dict, tracks, area, busways, gaps) -> list:
 
 # ---------------------------------------------------------------- all of it
 
-def build(world: dict, H: rg.Heights, tracks_xy: list, islands: list) -> tuple:
+def build(world: dict, H: md.Heights, tracks_xy: list, islands: list) -> tuple:
     """(rail.json `massy`, zones to add: the line 18 shaft (stairwell) and the repairs (regrade)). `tracks_xy`: every
     track as (id, points, rail z per point): the alignment's two and the yard's; `islands`: (polygon, top z) of the
     raised platforms."""
@@ -922,7 +923,7 @@ def build(world: dict, H: rg.Heights, tracks_xy: list, islands: list) -> tuple:
     import bus_station as bst
     BP = bst.plan(H, tracks_xy)
     reps = reps + bst.repairs(BP)
-    Hf = rg.Heights.__new__(rg.Heights)
+    Hf = md.Heights.__new__(md.Heights)
     Hf.__dict__.update({k: v for k, v in H.__dict__.items() if not k.startswith("_nodes")})
     Hf.data = apply_repairs(H, reps)
     steps = classify_steps(osm)
@@ -979,7 +980,7 @@ def build(world: dict, H: rg.Heights, tracks_xy: list, islands: list) -> tuple:
     for tid, p, z in tracks_xy:
         if len(p) < 2:
             continue
-        s = rg.cumlen(np.asarray(p))
+        s = md.cumlen(np.asarray(p))
         ln = LineString(p)
         over = ln.intersection(deck)
         for g in getattr(over, "geoms", [over]):

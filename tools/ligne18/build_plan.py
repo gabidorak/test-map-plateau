@@ -27,7 +27,7 @@ from shapely.ops import unary_union
 from shapely.prepared import prep
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools" / "rail"))
+sys.path.insert(0, str(ROOT / "tools" / "common"))
 from l93 import fwd                                 # noqa: E402
 
 OUT = ROOT / "godot" / "data" / "ligne18" / "plan.json"

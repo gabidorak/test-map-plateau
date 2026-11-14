@@ -36,7 +36,7 @@ from shapely import affinity
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import unary_union
 
-import railgeo as rg
+import mapdata as md
 
 ORIGIN = np.array([4355.109, 1150.884])     # the islands' common axis (a fit of OSM's Îlots A, B, C): a point...
 HEADING = math.radians(49.817)              # ...and its heading (x east, y north), to the north-east
@@ -160,7 +160,7 @@ def seams(zs: list) -> list:
 
 # ---------------------------------------------------------------- the ground
 
-def fit_profile(H: rg.Heights) -> tuple:
+def fit_profile(H: md.Heights) -> tuple:
     """The lanes' level along the axis: a piecewise linear fit (knots every PROFILE_STEP m) of the LiDAR along both
     lanes, its grade changes damped, three times without the samples more than 0.25 m off it (a bus, a kerb)."""
     ks = np.arange(ENDS[0] - 8.0, ENDS[1] + 8.0 + 1e-6, PROFILE_STEP)
@@ -189,7 +189,7 @@ def fit_profile(H: rg.Heights) -> tuple:
 class Plan:
     """The layout in (s, t) and on the map."""
 
-    def __init__(self, H: rg.Heights, tracks_xy: list):
+    def __init__(self, H: md.Heights, tracks_xy: list):
         self.ks, self.kz = fit_profile(H)
         lines = [LineString(p) for _, p, _ in tracks_xy if len(p) > 1]
         self.tracks = unary_union(lines) if lines else None
@@ -367,7 +367,7 @@ def zones(P: Plan) -> list:
     return seams(out)
 
 
-def plan(H: rg.Heights, tracks_xy: list) -> Plan:
+def plan(H: md.Heights, tracks_xy: list) -> Plan:
     return Plan(H, tracks_xy)
 
 
@@ -538,7 +538,7 @@ def copings(P: Plan) -> list:
     out = []
     for g in P.m_quays:
         for p in polys(g):
-            c = rg.resample(np.asarray(p.exterior.coords), 1.0)
+            c = md.resample(np.asarray(p.exterior.coords), 1.0)
             c = np.vstack([c, c[:1]])
             z = P.z(st(c)[:, 0]) + BUS_KERB
             out.append({"pts": [[round(float(a), 3), round(float(b), 3), round(float(zz), 3)]
@@ -577,7 +577,7 @@ def walls(P: Plan, Hf) -> list:
     hang = P.m_depot_hard.buffer(1.0)               # the depot draws its own walls (bus_depot.py)
     out = []
     for r in [rr for g in polys(area) for rr in [g.exterior] + list(g.interiors)]:   # the bank inside: a hole
-        c = rg.resample(np.asarray(r.coords), 1.0)
+        c = md.resample(np.asarray(r.coords), 1.0)
         n = len(c)
         if n < 3:
             continue
@@ -804,7 +804,7 @@ def fence(P: Plan, Hf, gaps, world: dict) -> list:
     for part in getattr(rest, "geoms", [rest]):
         if part.is_empty or part.geom_type != "LineString" or part.length < 3.0:
             continue
-        q = rg.resample(np.asarray(part.coords), 2.5)
+        q = md.resample(np.asarray(part.coords), 2.5)
         if np.linalg.norm(q[-1] - np.asarray(part.coords)[-1]) > 0.05:
             q = np.vstack([q, np.asarray(part.coords)[-1]])
         out.append({"id": "fence:massy:bus:%d" % (len(out) + 1), "style": "mesh", "h": 2.0, "pts": r3(q),

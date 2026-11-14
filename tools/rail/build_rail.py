@@ -61,7 +61,9 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common"))
 import railgeo as rg  # noqa: E402
+import mapdata as md  # noqa: E402
 from l93 import fwd  # noqa: E402
 
 RAIL_SCHEMA = 1
@@ -170,12 +172,12 @@ def load_osm() -> dict:
     """osm_rail.json, and under it osm_rail_massy.json (the line on to Massy-Palaiseau) and osm_rail_west.json (the
     line on through Le Guichet) when there: the first file's elements win, so the first stretch is built from exactly
     what it was."""
-    d = rg.load_json(rg.TOOLS / "osm_rail.json")
+    d = md.load_json(rg.TOOLS / "osm_rail.json")
     elements = {(e["type"], e["id"]): e for e in d["elements"]}
     stamps = [d.get("osm3s", {}).get("timestamp_osm_base", "")]
     for extra in ("osm_rail_massy.json", "osm_rail_west.json"):
         if (rg.TOOLS / extra).exists():
-            m = rg.load_json(rg.TOOLS / extra)
+            m = md.load_json(rg.TOOLS / extra)
             for e in m["elements"]:
                 elements.setdefault((e["type"], e["id"]), e)
             stamps.append(m.get("osm3s", {}).get("timestamp_osm_base", ""))
@@ -222,8 +224,8 @@ def chain_track(osm: dict, ref: str) -> tuple:
 
 def crop_x(p: np.ndarray, x0: float, x1: float) -> np.ndarray:
     """The polyline between its first crossings of x = x0 and x = x1 (it runs west -> east there)."""
-    d = rg.cumlen(p)
-    fine = rg.resample(p, 0.25)
+    d = md.cumlen(p)
+    fine = md.resample(p, 0.25)
     keep = (fine[:, 0] >= x0) & (fine[:, 0] <= x1)
     idx = np.nonzero(keep)[0]
     return fine[idx[0]:idx[-1] + 1]
@@ -251,14 +253,14 @@ class Fit:
     WINDOW = 15.0                   # m around a point's first guess searched for its nearest fitted point
 
     def __init__(self, t1: np.ndarray, t2: np.ndarray, centre: np.ndarray):
-        self.length = rg.cumlen(centre)[-1]
+        self.length = md.cumlen(centre)[-1]
         self.centre = centre
         x0, x1 = centre[0, 0] + 3, centre[-1, 0] - 3
         self.obs = []
         for t in (t1, t2):
-            o = rg.resample(t, 2.0)
+            o = md.resample(t, 2.0)
             o = o[(o[:, 0] > x0) & (o[:, 0] < x1)]
-            cs = rg.cumlen(centre)
+            cs = md.cumlen(centre)
             guess = np.array([cs[int(np.argmin(np.einsum("ij,ij->i", centre - q, centre - q)))] for q in o])
             self.obs.append((o, guess))
 
@@ -424,8 +426,8 @@ def fit_west(t1: np.ndarray, t2: np.ndarray, x_from: float, nxt: dict) -> dict:
     spacing = float(nxt["p"][3])
     x_to = float(P[0, 0])
     a1 = crop_x(t1, x_from, x_to)
-    mids = [(p + nearest_on(p[None, :], t2)[0]) / 2 for p in rg.resample(a1, 1.0)]
-    centre = rg.resample(np.array(mids), 1.0)[::-1]           # east -> west
+    mids = [(p + nearest_on(p[None, :], t2)[0]) / 2 for p in md.resample(a1, 1.0)]
+    centre = md.resample(np.array(mids), 1.0)[::-1]           # east -> west
     centre = np.vstack([P[0], centre[np.linalg.norm(centre - P[0], axis=1) > WEST_JOIN_GAP]])
     sp = SplineSection(centre, (P[0], float(th[0]) + math.pi, spacing), pin_weight=WEST_PIN_WEIGHT)
     fit = ReversedSection(sp)
@@ -434,7 +436,7 @@ def fit_west(t1: np.ndarray, t2: np.ndarray, x_from: float, nxt: dict) -> dict:
     from shapely.geometry import LineString, Point
     res = []
     for t, sg in ((t1, -1.0), (t2, 1.0)):
-        o = rg.resample(t, 2.0)
+        o = md.resample(t, 2.0)
         o = o[(o[:, 0] > x_from + 3) & (o[:, 0] < x_to - 3)]
         ln = LineString(P_w + n * sg * spacing / 2)
         r = np.array([ln.distance(Point(q)) for q in o])
@@ -475,7 +477,7 @@ class SplineSection:
         p0, th0 = np.asarray(start[0]), float(start[1])
         lead = p0 + np.c_[np.cos(th0), np.sin(th0)] * np.arange(-self.PIN, 0.0, 1.0)[:, None]
         pts = np.vstack([lead, centre])
-        u = rg.cumlen(pts)
+        u = md.cumlen(pts)
         w = np.ones(len(pts))
         w[:len(lead) + 1] = pin_weight      # the tangent held, the joint exact
         self.u0 = u[len(lead)]
@@ -485,7 +487,7 @@ class SplineSection:
         dense = np.arange(self.u0, u[-1], 0.25)
         q = np.c_[self.sx(dense), self.sy(dense)]
         q[0] = p0
-        self.dense, self.du = dense, rg.cumlen(q)
+        self.dense, self.du = dense, md.cumlen(q)
         self.length = float(self.du[-1])
         self.q = q
 
@@ -534,13 +536,13 @@ def fit_section(t1: np.ndarray, t2: np.ndarray, x_from: float, x_to: float, star
     if start is not None:                   # begin at the previous section's end
         k = int(np.argmin(np.linalg.norm(a1 - start[0], axis=1)))
         a1 = a1[k:]
-    r1 = rg.resample(a1, 1.0)
+    r1 = md.resample(a1, 1.0)
     mids, spacing = [], []
     for p in r1:
         q, dd = nearest_on(p[None, :], t2)
         mids.append((p + q) / 2)
         spacing.append(dd)
-    centre = rg.resample(np.array(mids), 1.0)
+    centre = md.resample(np.array(mids), 1.0)
     if start is not None:                   # a later section: the spline (compound curves), from the previous end
         sp = SplineSection(centre[1:], start)
         p = np.r_[start[0][0], start[0][1], start[1], start[2]]
@@ -548,7 +550,7 @@ def fit_section(t1: np.ndarray, t2: np.ndarray, x_from: float, x_to: float, star
         n = np.c_[-np.sin(th), np.cos(th)]
         res = []
         for t, sg in ((t1, -1.0), (t2, 1.0)):
-            o = rg.resample(t, 2.0)
+            o = md.resample(t, 2.0)
             o = o[(o[:, 0] > x_from + 3) & (o[:, 0] < x_to - 3)]
             T = P + n * sg * start[2] / 2
             from shapely.geometry import LineString, Point
@@ -675,7 +677,7 @@ def alignment_arrays(fa: dict, step=1.0) -> dict:
         base += fit.length
     s, P, th, k = np.concatenate(S), np.concatenate(Ps), np.concatenate(Ths), np.concatenate(Ks)
     # every `step` m of the joined line exactly (each section's last sample falls short of its end)
-    d = rg.cumlen(P)
+    d = md.cumlen(P)
     s = np.arange(0.0, d[-1] + 1e-9, step)
     P = np.c_[np.interp(s, d, P[:, 0]), np.interp(s, d, P[:, 1])]
     th, k = np.interp(s, d, np.unwrap(th)), np.interp(s, d, k)
@@ -738,7 +740,7 @@ def cant_profile(al: dict, curves: list) -> np.ndarray:
 
 # ---------------------------------------------------------------- 4. vertical profile
 
-def lidar_profile(al: dict, H: rg.Heights, avoid: list) -> np.ndarray:
+def lidar_profile(al: dict, H: md.Heights, avoid: list) -> np.ndarray:
     """[s, z, used] every 5 m inside the map: the median LiDAR ground over +-2.6 m across the centreline (both tracks'
     ballast), not where a structure is (`avoid`: [(s0, s1)]), and not where it strays more than 0.25 m from a running
     median of its neighbours (dips, embankment edges)."""
@@ -850,7 +852,7 @@ def profile_z(prof: dict, s: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------- 6. structures
 
 def _way_len(p: np.ndarray) -> float:
-    return float(rg.cumlen(p)[-1])
+    return float(md.cumlen(p)[-1])
 
 
 def section_dims() -> dict:
@@ -868,7 +870,7 @@ def ballast_toe(spacing: float) -> float:
     return spacing / 2 + SLEEPER[0] / 2 + BALLAST_SHOULDER + (sec["sleeper_top"] - sec["formation"]) * BALLAST_SLOPE
 
 
-def osm_structures(osm: dict, A: rg.Alignment, H: rg.Heights) -> list:
+def osm_structures(osm: dict, A: rg.Alignment, H: md.Heights) -> list:
     """The ways crossing the line on a bridge or in a tunnel (OSM bridge=yes / tunnel=yes highways crossing the
     centreline inside the map), grouped with the bridge/tunnel ways and the steps connected to them: footbridges,
     pedestrian underpasses and the road tunnel."""
@@ -1157,7 +1159,7 @@ def smooth_wall_top(raw: np.ndarray, level: np.ndarray) -> np.ndarray:
     return sgn * x
 
 
-def landing_reach(A: rg.Alignment, H: rg.Heights, corridor, s: float, sg: float, edge: float, top: float) -> tuple:
+def landing_reach(A: rg.Alignment, H: md.Heights, corridor, s: float, sg: float, edge: float, top: float) -> tuple:
     """(reach, ground there) of a wall's landing: from the coping (top at the wall) out to where the ground behind is
     closest to the coping's height (preferring near), between LANDING_MIN and LANDING_MAX, never into a building."""
     us = edge + np.arange(LANDING_MIN, LANDING_MAX + 1e-6, 0.25)
@@ -1170,7 +1172,7 @@ def landing_reach(A: rg.Alignment, H: rg.Heights, corridor, s: float, sg: float,
     return float(us[k]), float(T[k])
 
 
-def earthworks(al: dict, A: rg.Alignment, H: rg.Heights, corridor: Corridor, platforms: list, caps: list,
+def earthworks(al: dict, A: rg.Alignment, H: md.Heights, corridor: Corridor, platforms: list, caps: list,
                spacing: float) -> dict:
     """Per metre and side inside the map: the formation edge, then a 3:2 slope to the LiDAR ground (embankment or
     cutting), or a retaining wall at the formation edge where the slope would run into a building, a road or a path,
@@ -1420,7 +1422,7 @@ def A_spacing(A: rg.Alignment) -> float:
     return A.spacing
 
 
-def road_tunnel(g: dict, osm: dict, A: rg.Alignment, design_z, H: rg.Heights) -> dict:
+def road_tunnel(g: dict, osm: dict, A: rg.Alignment, design_z, H: md.Heights) -> dict:
     """The covered road (Place de la Gare de Lozère, OSM tunnel=yes along its whole length, maxheight 3.5): from the
     station square, under the parking strip along Boulevard de Palaiseau, the north platform's east end and both
     tracks, out to the junction with Rue Charles Péguy. Its profile: from the square's level down to where its roof
@@ -1438,8 +1440,8 @@ def road_tunnel(g: dict, osm: dict, A: rg.Alignment, design_z, H: rg.Heights) ->
             link = way_pts(w)
     if link is not None:
         p = np.concatenate([p, link[1:]])
-    p = rg.resample(p, 1.0)
-    t = rg.cumlen(p)
+    p = md.resample(p, 1.0)
+    t = md.cumlen(p)
     su = A.project(p)
     surface = np.array([design_z(a, b, q) for (a, b), q in zip(su, p)])
     z0 = float(H.at(p[0, 0], p[0, 1]))
@@ -1753,7 +1755,7 @@ def track_route(al: dict, A: rg.Alignment, cant: np.ndarray, track: str, spacing
     tu = spacing / 2 if track == "2" else -spacing / 2
     sc = np.arange(0.0, A.length, 0.25)
     P = A.point(sc, np.full(len(sc), tu))
-    d = rg.cumlen(P)
+    d = md.cumlen(P)
     st = np.arange(0.0, d[-1], 1.0)
     s_c = np.interp(st, d, sc)
     pts = A.point(s_c, np.full(len(s_c), tu))
@@ -2184,7 +2186,7 @@ def zones(ew: dict, A: rg.Alignment, platforms: list, structures: dict, design: 
         for f in up["stairwells"]:
             from shapely.geometry import LineString
             p = np.asarray(f["pts"])
-            d = rg.cumlen(p)
+            d = md.cumlen(p)
             az = f["top"] + (f["bottom"] - f["top"]) * d / max(d[-1], 1e-6)
             if len(f["landing"]):
                 lp = np.asarray(f["landing"])[1:]
@@ -2198,7 +2200,7 @@ def zones(ew: dict, A: rg.Alignment, platforms: list, structures: dict, design: 
             # stairs from the passage up through the platform's end: an opening in the platform
             from shapely.geometry import LineString
             p = np.asarray(f["pts"])
-            d = rg.cumlen(p)
+            d = md.cumlen(p)
             az = f["bottom"] + (f["top"] - f["bottom"]) * d / max(d[-1], 1e-6)
             pg = LineString(p).buffer(f["width"] / 2 + 0.25, cap_style=2)
             portal = _portal(p[1], p[0], f["width"] / 2 + 0.25, f["bottom"] + up["headroom"])
@@ -2324,7 +2326,7 @@ def resample_route(parts: list) -> dict:
     pts = np.concatenate([p["pts"] for p in parts])
     vals = {k: np.concatenate([np.asarray(p[k], dtype=np.float64) for p in parts]) for k in keys}
     vals["heading"] = np.unwrap(vals["heading"])
-    d = rg.cumlen(pts)
+    d = md.cumlen(pts)
     keep = np.r_[True, np.diff(d) > 1e-6]
     pts, d = pts[keep], d[keep]
     vals = {k: v[keep] for k, v in vals.items()}
@@ -2339,7 +2341,7 @@ def yard_piece(tr: dict, s_start: float, reverse: bool) -> dict:
     """A yard track as a route piece (in its trains' direction): s_centre goes on from the alignment's end."""
     pts, z, th = np.asarray(tr["pts"]), np.asarray(tr["z"]), np.asarray(tr["heading"])
     lim = np.asarray(tr.get("maxspeed", np.full(len(pts), LINE_SPEED)), dtype=np.float64)
-    sc = s_start + rg.cumlen(pts)
+    sc = s_start + md.cumlen(pts)
     if reverse:
         pts, z, th, lim, sc = pts[::-1], z[::-1], th[::-1] + math.pi, lim[::-1], sc[::-1]
     return {"pts": pts, "z": z, "heading": th, "roll": np.zeros(len(pts)), "limit": lim, "s_centre": sc}
@@ -2481,7 +2483,7 @@ def island_furniture(Y: dict) -> list:
     items = []
     for isl in Y["islands"]:
         spine = np.asarray(isl["spine"])
-        d = rg.cumlen(spine)
+        d = md.cumlen(spine)
         e = np.asarray(isl["edges"][0]["pts"])
         L = float(d[-1])
 
@@ -2514,15 +2516,15 @@ def island_furniture(Y: dict) -> list:
 def main() -> None:
     t_start = time.time()
     osm = load_osm()
-    rg.ensure_base()
-    world = rg.load_json(rg.BASE / "world.json")
+    md.ensure_base()
+    world = md.load_json(md.BASE / "world.json")
     set_data_area(world)
     t1, ids1 = chain_track(osm, "1")
     t2, ids2 = chain_track(osm, "2")
     fa = fit_alignment(t1, t2)
     al = alignment_arrays(fa)
     spacing = al["spacing"]
-    H = rg.Heights(rg.BASE, world["terrain"], world["ground_mesh"]["cell"])
+    H = md.Heights(md.BASE, world["terrain"], world["ground_mesh"]["cell"])
     L = float(al["s"][-1])
     A0 = rg.Alignment({"step": 1.0, "pts": al["pts"], "heading": al["heading"], "z": np.zeros(len(al["s"])),
                        "length": L})
@@ -2733,7 +2735,7 @@ def main() -> None:
     # bytes, not text: on Windows write_text would end it with CRLF and the patch stamp (its SHA-1) would not be the one
     # a checkout elsewhere has (.gitattributes keeps godot/world/*.json LF)
     rg.RAIL_JSON.write_bytes((text + "\n").encode("utf-8"))
-    log("wrote %s (%.1f MB) in %.0f s" % (rg.RAIL_JSON.relative_to(rg.ROOT), len(text) / 1e6, time.time() - t_start))
+    log("wrote %s (%.1f MB) in %.0f s" % (rg.RAIL_JSON.relative_to(md.ROOT), len(text) / 1e6, time.time() - t_start))
     import review
     review.draw(rail, world, H)
 

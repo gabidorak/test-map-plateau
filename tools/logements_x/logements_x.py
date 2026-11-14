@@ -40,7 +40,7 @@ import shapely
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import unary_union
 
-import railgeo as rg
+import mapdata as md
 
 PLOTS = [("osm:w1338308398", "17"), ("osm:w1338308397", "18"), ("osm:w1338308396", "19"),
          ("osm:w1338308395", "20"), ("osm:w1338308393", "21"), ("osm:w1338308394", "22")]
@@ -173,7 +173,7 @@ SQUARES = [(684.6, -328.4, 3.0), (714.0, -327.8, 3.2), (742.6, -333.0, 3.2), (77
 
 
 class Site:
-    def __init__(self, world: dict, H: rg.Heights):
+    def __init__(self, world: dict, H: md.Heights):
         self.W = world
         self.H = H
         G = world["ground"]
@@ -906,7 +906,7 @@ class Site:
                     len(self.props_moved), len(self.props_dropped), len(self.bollards), len(self.rocks)))
 
 
-def build(world: dict, H: rg.Heights) -> tuple:
+def build(world: dict, H: md.Heights) -> tuple:
     """(lot logementsX's plan, its zones) for build_plan.py."""
     S = Site(world, H)
     data = S.data(world)

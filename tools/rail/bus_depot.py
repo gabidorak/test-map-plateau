@@ -42,7 +42,7 @@ from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import unary_union
 
 import bus_station as bst
-import railgeo as rg
+import mapdata as md
 
 S0, T0 = -49.78, -38.36         # the depot's frame in the bus station's: u = s - S0, v = t - T0
 # the depot
@@ -233,7 +233,7 @@ def fillet(l1, l2, r: float, step: float = 0.5):
 class Depot:
     """The depot and its surroundings in (u, v), their levels, and on the map."""
 
-    def __init__(self, P, H: rg.Heights):
+    def __init__(self, P, H: md.Heights):
         self.P = P
         self.H = H
         self.lane_z = lambda u: P.z(np.asarray(u, dtype=float) + S0)
@@ -275,7 +275,7 @@ class Depot:
         line += [a2, *arc2[1:-1], b2]
         n = max(int(np.linalg.norm(e0 - b2) / 2.0), 1)
         line += [b2 + (e0 - b2) * i / n for i in range(1, n + 1)]
-        K = rg.resample(np.array(line), 1.0)
+        K = md.resample(np.array(line), 1.0)
         if np.linalg.norm(K[-1] - e0) > 0.05:
             K = np.vstack([K, e0])
         self.kerb = K                                         # u, v: the sidewalk on its left
@@ -288,7 +288,7 @@ class Depot:
         road = K - nl * 0.6
         mp = m(road[:, 0], road[:, 1])
         z = np.asarray(self.H.at(mp[:, 0], mp[:, 1]), dtype=float)
-        sk = rg.cumlen(K)
+        sk = md.cumlen(K)
         z = smooth_profile(sk, z)
         # where it meets the existing kerb east: that sidewalk's own level (its kerb over the map's road there)
         h = np.full(len(K), KERB)
@@ -298,7 +298,7 @@ class Depot:
         # the car park's entrance: a dropped kerb the width of the entrance, eased over 1 m each side
         back0 = offset_line(K, WALK_W)
         pu = K[:, 0]
-        on_av = sk > rg.cumlen(K)[np.argmin(np.linalg.norm(K - b, axis=1))]
+        on_av = sk > md.cumlen(K)[np.argmin(np.linalg.norm(K - b, axis=1))]
         ent = (pu > PARK_ENTRY[0] - 1.0) & (pu < PARK_ENTRY[1] + 1.0) & on_av
         w = np.clip(np.minimum(pu - (PARK_ENTRY[0] - 1.0), (PARK_ENTRY[1] + 1.0) - pu), 0, 1)
         h = np.where(ent, KERB + (DROP - KERB) * w, h)
@@ -715,7 +715,7 @@ class Depot:
                         "closed": False, "left": left})
         line(self.kerb, self.kerb_z, True)
         line(self.ne_kerb, self.ne_walk_z, True)
-        e = rg.resample(np.array([(ROOF[0], FLOOR_SE)] + ENTRY_SE), 1.0)
+        e = md.resample(np.array([(ROOF[0], FLOOR_SE)] + ENTRY_SE), 1.0)
         line(e, self.ramp_z(e[:, 0]), True)
         return out
 
@@ -726,7 +726,7 @@ class Depot:
 
         def add(pts_uv, z=None):
             pts_uv = np.asarray(pts_uv, float)
-            p = rg.resample(pts_uv, 2.5)
+            p = md.resample(pts_uv, 2.5)
             if np.linalg.norm(p[-1] - pts_uv[-1]) > 0.05:
                 p = np.vstack([p, pts_uv[-1]])
             zz = self.surf(p[:, 0], p[:, 1]) if z is None else z(p)

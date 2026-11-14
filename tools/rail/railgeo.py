@@ -1,165 +1,17 @@
-"""Shared helpers of the rail tools (build_rail.py, patch_world.py): paths, the pristine world files, the ground height
-as the game draws it, polylines, and the railway alignment read back from rail.json.
+"""The railway's geometry for the rail tools (build_rail.py, patch_world.py...): the alignment read back from rail.json,
+the yard's ballast beds, the designed ground (earthworks, zones). The map's files and heights: tools/common/mapdata.py.
 
-Map coordinates everywhere: metres, x east, y north, z up, origin Télécom Paris (Lambert-93 641117.6, 6846184.3);
-Godot = (x, z, -y). Alignment coordinates: s along the centreline from its west end, u across it (positive to the
-left of the west -> east direction, i.e. to the north).
-
-The pipeline's outputs in godot/world/ are patched in place by patch_world.py; the copies it started from live in
-godot/world/base/ (BASE_FILES, committed: git stores identical files once, so they cost nothing in the history; the
-folder has a .gdignore, so Godot neither imports nor exports it). world.json `meta.rail` stamps patched files.
+Alignment coordinates: s along the centreline from its west end, u across it (positive to the left of the west -> east
+direction, i.e. to the north).
 """
-import json
 import math
-import shutil
-from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[2]
-WORLD = ROOT / "godot" / "world"
-BASE = WORLD / "base"
+from mapdata import ROOT, WORLD, Heights, cumlen
+
 TOOLS = ROOT / "tools" / "rail"
 RAIL_JSON = WORLD / "rail.json"
-BASE_FILES = ["world.json", "heightmap.f32", "ground.bin", "ground_ids.bin", "ground_index.json"]
-PART_BYTES = 48_000_000     # large heightmaps and ground meshes are split in files under this (GitHub: 100 MB a file)
-
-
-def world_files(world: dict) -> list:
-    """The files of a world: world.json, its heightmap (one file or its bands, terrain "parts"), the ground mesh (its
-    chunks' files: ground.bin, ground.1.bin...), ground_ids.bin and ground_index.json."""
-    t = world["terrain"]
-    gm = world["ground_mesh"]
-    ground = sorted({gm["file"]} | {c["file"] for c in gm["chunks"] if "file" in c})
-    return ["world.json", *(t.get("parts") or [t["file"]]), *ground, "ground_ids.bin", "ground_index.json"]
-
-
-def read_heightmap(world_dir: Path, terrain: dict) -> np.ndarray:
-    """The heightmap of world.json `terrain` in world_dir, (h, w) float32 (its bands joined when split)."""
-    names = terrain.get("parts") or [terrain["file"]]
-    a = np.concatenate([np.fromfile(Path(world_dir) / n, dtype="<f4") for n in names])
-    return a.reshape(int(terrain["h"]), int(terrain["w"]))
-
-
-def write_heightmap(world_dir: Path, terrain: dict, z: np.ndarray) -> None:
-    """z (h, w) into world_dir as `terrain` names its files (the same bands of rows as the base)."""
-    names = terrain.get("parts") or [terrain["file"]]
-    a = np.asarray(z, dtype="<f4")
-    if len(names) == 1:
-        a.tofile(Path(world_dir) / names[0])
-        return
-    sizes = [(Path(BASE) / n).stat().st_size // (4 * a.shape[1]) for n in names]
-    r0 = 0
-    for n, rows in zip(names, sizes):
-        a[r0:r0 + rows].tofile(Path(world_dir) / n)
-        r0 += rows
-    assert r0 == a.shape[0], "heightmap bands do not add up"
-
-
-def load_json(path: Path):
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def ensure_base() -> None:
-    """godot/world/base/ holds the pipeline's files before the rail patch. When world.json carries no rail stamp, the
-    files in godot/world/ are fresh pipeline outputs: they become the base (a rerun of the pipeline replaces it)."""
-    world = load_json(WORLD / "world.json")
-    meta = world["meta"]
-    if "rail" in meta:
-        missing = [f for f in world_files(load_json(BASE / "world.json")) if not (BASE / f).exists()] \
-            if (BASE / "world.json").exists() else ["world.json"]
-        if missing:
-            raise SystemExit("godot/world/ is patched (world.json meta.rail) but godot/world/base/ lacks %s" % missing)
-        return
-    BASE.mkdir(parents=True, exist_ok=True)
-    (BASE / ".gdignore").write_text("")
-    files = world_files(world)
-    for old in BASE.iterdir():              # a previous base's files (one heightmap file then bands, or the reverse)
-        if old.name not in files and old.name != ".gdignore":
-            old.unlink()
-    for f in files:
-        shutil.copyfile(WORLD / f, BASE / f)
-    print("godot/world/base/: the pipeline's files copied before patching")
-
-
-class Heights:
-    """The ground height as godot/scripts/ground_heights.gd draws it: heightmap samples every `mesh_cell` metres (the
-    2 m grid nodes), planar inside the two triangles of each cell, diagonal south-west -> north-east. Also gives the
-    raw 0.5 m samples (sample) for the LiDAR statistics."""
-
-    def __init__(self, path: Path, terrain: dict, mesh_cell: float):
-        """`path`: the world's folder (or a file in it: the heightmap is read as `terrain` names it)."""
-        self.w, self.h = int(terrain["w"]), int(terrain["h"])
-        self.cell = float(terrain["cell"])
-        self.ox, self.oy = float(terrain["origin_xy"][0]), float(terrain["origin_xy"][1])
-        self.mesh_cell = float(mesh_cell)
-        self.step = int(round(self.mesh_cell / self.cell))
-        path = Path(path)
-        self.data = read_heightmap(path if path.is_dir() else path.parent, terrain).astype(np.float64)
-
-    def nodes(self, data=None) -> np.ndarray:
-        """The node grid ground_heights.gd builds: (nh, nw), node (j, i) at x = ox + (i - 1) * mesh_cell,
-        y = oy - (j - 1) * mesh_cell (one clamped node beyond each edge)."""
-        if data is None:                     # this heightmap's own grid: built once (per data array)
-            if getattr(self, "_nodes_of", None) is not self.data:
-                self._nodes_cache = self.nodes(self.data)
-                self._nodes_of = self.data
-            return self._nodes_cache
-        d = data
-        nw = (self.w - 1) // self.step + 4
-        nh = (self.h - 1) // self.step + 4
-        rows = np.clip((np.arange(nh) - 1) * self.step, 0, self.h - 1)
-        cols = np.clip((np.arange(nw) - 1) * self.step, 0, self.w - 1)
-        return d[np.ix_(rows, cols)]
-
-    def at(self, x, y, nodes=None):
-        """Drawn ground height at map (x, y) (arrays or scalars), as ground_heights.gd at()."""
-        n = self.nodes() if nodes is None else nodes
-        nh, nw = n.shape
-        fx = (np.asarray(x, dtype=np.float64) - self.ox) / self.mesh_cell + 1.0
-        fy = (self.oy - np.asarray(y, dtype=np.float64)) / self.mesh_cell + 1.0
-        i = np.clip(np.floor(fx).astype(int), 0, nw - 2)
-        j = np.clip(np.floor(fy).astype(int), 0, nh - 2)
-        u = fx - i
-        v = fy - j
-        z00 = n[j, i]
-        z10 = n[j, i + 1]
-        z01 = n[j + 1, i]
-        z11 = n[j + 1, i + 1]
-        lo = z00 + u * (z10 - z00) + v * (z01 - z00)
-        hi = z11 + (1.0 - u) * (z01 - z11) + (1.0 - v) * (z10 - z11)
-        return np.where(u + v <= 1.0, lo, hi)
-
-    def sample(self, x, y):
-        """Bilinear height of the raw 0.5 m samples (LiDAR statistics, not what the game draws)."""
-        fx = (np.asarray(x, dtype=np.float64) - self.ox) / self.cell
-        fy = (self.oy - np.asarray(y, dtype=np.float64)) / self.cell
-        i = np.clip(np.floor(fx).astype(int), 0, self.w - 2)
-        j = np.clip(np.floor(fy).astype(int), 0, self.h - 2)
-        u = np.clip(fx - i, 0, 1)
-        v = np.clip(fy - j, 0, 1)
-        d = self.data
-        return (d[j, i] * (1 - u) * (1 - v) + d[j, i + 1] * u * (1 - v) + d[j + 1, i] * (1 - u) * v
-                + d[j + 1, i + 1] * u * v)
-
-    def inside(self, x, y, margin=0.0):
-        x0 = self.ox + margin
-        y1 = self.oy - margin
-        x1 = self.ox + (self.w - 1) * self.cell - margin
-        y0 = self.oy - (self.h - 1) * self.cell + margin
-        return (np.asarray(x) >= x0) & (np.asarray(x) <= x1) & (np.asarray(y) >= y0) & (np.asarray(y) <= y1)
-
-
-# ---------------------------------------------------------------- polylines
-
-def cumlen(p: np.ndarray) -> np.ndarray:
-    return np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(p, axis=0), axis=1))]
-
-
-def resample(p: np.ndarray, step: float) -> np.ndarray:
-    d = cumlen(p)
-    s = np.arange(0.0, d[-1], step)
-    return np.c_[np.interp(s, d, p[:, 0]), np.interp(s, d, p[:, 1])]
 
 
 class Alignment:

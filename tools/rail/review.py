@@ -16,6 +16,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 import railgeo as rg
+import mapdata as md
 
 ZONE_COLOURS = {"trackbed": (120, 112, 104), "platform": (70, 74, 82), "slope": (196, 170, 120),
                 "landing": (170, 150, 120), "platform_blend": (150, 150, 140), "stairwell": (230, 120, 40),
@@ -216,7 +217,7 @@ def draw(rail: dict, world: dict, H) -> None:
         pl.img.save(out / ("station_%s.png" % name))
     _profile(rail, H, out / "profile.png", font)
     _sections(rail, H, out / "sections.png", font)
-    print("review: %s" % ", ".join(str((out / f).relative_to(rg.ROOT)) for f in ("rail.png", "rail_massy.png", "station.png",
+    print("review: %s" % ", ".join(str((out / f).relative_to(md.ROOT)) for f in ("rail.png", "rail_massy.png", "station.png",
                                                                                   "profile.png", "sections.png")))
 
 

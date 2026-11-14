@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common"))
 import bus_station as bst  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]

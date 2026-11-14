@@ -26,6 +26,7 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d, median_filter
 
 import railgeo as rg
+import mapdata as md
 from l93 import fwd
 
 BLEND = 40.0                    # m over which tracks 1 and 2 ease from the alignment onto OSM's shape
@@ -59,7 +60,7 @@ def _merge(lines: list) -> list:
 
 def smooth_line(p: np.ndarray, sigma: float = SMOOTH, keep_ends: bool = True) -> np.ndarray:
     """p resampled every metre and Gaussian-smoothed (its ends held)."""
-    q = rg.resample(p, 1.0)
+    q = md.resample(p, 1.0)
     q = np.vstack([q, p[-1]]) if np.linalg.norm(q[-1] - p[-1]) > 0.05 else q
     if len(q) < 5:
         return q
@@ -75,7 +76,7 @@ def headings(p: np.ndarray) -> np.ndarray:
     return np.unwrap(np.arctan2(d[:, 1], d[:, 0]))
 
 
-def level_profile(p: np.ndarray, H: rg.Heights, rail_above: float) -> np.ndarray:
+def level_profile(p: np.ndarray, H: md.Heights, rail_above: float) -> np.ndarray:
     """Rail top along p: the median LiDAR ground across the track (+-0.6 m), robustly smoothed, plus rail_above."""
     h = headings(p)
     n = np.c_[-np.sin(h), np.cos(h)]
@@ -96,7 +97,7 @@ def level_profile(p: np.ndarray, H: rg.Heights, rail_above: float) -> np.ndarray
     return gaussian_filter1d(z, LEVEL_SMOOTH, mode="nearest") + rail_above
 
 
-def main_continuation(osm: dict, ref: str, A: rg.Alignment, u: float, rail_above: float, H: rg.Heights,
+def main_continuation(osm: dict, ref: str, A: rg.Alignment, u: float, rail_above: float, H: md.Heights,
                       s_end: float) -> dict:
     """Track `ref` (1 or 2) from the alignment's end on: OSM's chained track from where it passes the alignment track's
     end point, eased onto from it, run on straight beyond the data (the hidden end)."""
@@ -104,7 +105,7 @@ def main_continuation(osm: dict, ref: str, A: rg.Alignment, u: float, rail_above
     pts, ids = chain_track(osm, ref)
     p0 = A.point(s_end, u)
     th0 = float(A.theta(s_end))
-    d = rg.cumlen(pts)
+    d = md.cumlen(pts)
     k = int(np.argmin(np.linalg.norm(pts - p0, axis=1)))
     tail = pts[k:]
     tail = np.vstack([p0, tail[1:]]) if len(tail) > 1 else np.vstack([p0, p0 + [math.cos(th0), math.sin(th0)]])
@@ -145,7 +146,7 @@ def way_speeds(osm: dict, line: np.ndarray, ids: list) -> np.ndarray:
     return out
 
 
-def build(osm: dict, A: rg.Alignment, spacing: float, rail_above: float, H: rg.Heights, data_area, main_ids: set,
+def build(osm: dict, A: rg.Alignment, spacing: float, rail_above: float, H: md.Heights, data_area, main_ids: set,
           s_end: float, platform_edge: float, platform_height: float) -> dict:
     """The yard: tracks (the two main continuations first) and islands."""
     from shapely.geometry import LineString, Point, Polygon
@@ -248,7 +249,7 @@ def build_islands(osm: dict, tracks: list, edge: float, height: float, data_area
         s0, s1 = min(ss), max(ss)
         sa = np.arange(s0, s1 + 0.01, 1.0)
         pa = np.array([la.interpolate(s).coords[0] for s in sa])
-        ha = np.interp(sa, rg.cumlen(ta["pts"]), ta["heading"])
+        ha = np.interp(sa, md.cumlen(ta["pts"]), ta["heading"])
         nrm = np.c_[-np.sin(ha), np.cos(ha)] * side_a
         edge_a = pa + nrm * edge
         lb = lines[b]
@@ -261,8 +262,8 @@ def build_islands(osm: dict, tracks: list, edge: float, height: float, data_area
         isl = Polygon(ring).buffer(0)
         if isl.is_empty or isl.area < 50:
             continue
-        za = np.interp(sa, rg.cumlen(ta["pts"]), ta["z"])
-        zb = np.array([np.interp(lb.project(Point(q)), rg.cumlen(tb["pts"]), tb["z"]) for q in pb])
+        za = np.interp(sa, md.cumlen(ta["pts"]), ta["z"])
+        zb = np.array([np.interp(lb.project(Point(q)), md.cumlen(tb["pts"]), tb["z"]) for q in pb])
         top = float(np.median(np.maximum(za, zb))) + height
         spine = (edge_a + edge_b) / 2
         name = t.get("name", "")
