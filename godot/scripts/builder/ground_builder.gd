@@ -3,13 +3,15 @@ extends RefCounted
 ## Ground (milestone M4): the draped ground mesh from the pipeline (world/ground.bin, see
 ## pipeline/plateau/ground_mesh.py) as one MeshInstance3D per 64 m chunk with the toy ground shader,
 ## collision for raised sidewalks, and the runtime grass scatter. The orthophoto is never used. Under the lakes and
-## ponds the ground is dug out and their water surface laid over it (root's "Water", scripts/water.gd).
+## ponds the ground is dug out and their water surface laid over it (root's "Water", scripts/water.gd). Where a lot
+## owns its ground (builder/ground_cut.gd) it is cut out: the lot draws its own.
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const GrassField = preload("res://scripts/grass_field.gd")
 const Lots = preload("res://scripts/builder/lots.gd")
 const Terraform = preload("res://scripts/builder/terraform.gd")
+const GroundCut = preload("res://scripts/builder/ground_cut.gd")
 const SHADER := "res://shaders/toy_ground.gdshader"
 ## Must match the material ids hard-coded in toy_ground.gdshader. "ballast" (the railway's trackbed) is appended by
 ## tools/rail/patch_world.py, after the pipeline's kerb and paint.
@@ -29,6 +31,7 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 	mat.shader = load(SHADER)
 	MeshUtils.save(mat, mesh_dir + "ground_material.tres")
 
+	var owned := GroundCut.new(Lots.owned_ground())  # (the lots' own ground cut out)
 	var node := Node3D.new()
 	node.name = "Ground"
 	root.add_child(node)
@@ -82,6 +85,22 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 			arrays[Mesh.ARRAY_COLOR] = rp[1]
 			arrays[Mesh.ARRAY_CUSTOM0] = parts[3]
 			arrays[Mesh.ARRAY_INDEX] = index
+			if owned.touches(c["aabb"]):            # (a lot's own ground there: cut out, round it exact collision)
+				var cut: Array = owned.cut(verts, normals, rp[1], parts[3], index)
+				arrays[Mesh.ARRAY_VERTEX] = cut[0]
+				arrays[Mesh.ARRAY_NORMAL] = cut[1]
+				arrays[Mesh.ARRAY_COLOR] = cut[2]
+				arrays[Mesh.ARRAY_CUSTOM0] = cut[3]
+				arrays[Mesh.ARRAY_INDEX] = cut[4]
+				if not (cut[5] as PackedVector3Array).is_empty():
+					var band := ConcavePolygonShape3D.new()
+					band.set_faces(cut[5])
+					band.backface_collision = true
+					var bs := CollisionShape3D.new()
+					bs.name = "OwnedEdge_" + c["name"]
+					bs.shape = MeshUtils.save(band, mesh_dir + "ground_edge_col_%s.res" % c["name"])
+					bs.set_meta("plateau", {"type": "ground", "id": "ground:edge_" + c["name"]})
+					body.add_child(bs)
 			var mesh := ArrayMesh.new()
 			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, custom_flags)
 			mesh.surface_set_material(0, mat)
@@ -96,6 +115,8 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 			var shape := ConcavePolygonShape3D.new()
 			var faces: PackedVector3Array = parts[5].to_vector3_array()
 			Terraform.move(faces, c["aabb"])
+			if owned.touches(c["aabb"]):
+				faces = owned.outside(faces)            # (none on a lot's own ground: it collides itself)
 			shape.set_faces(faces)
 			MeshUtils.save(shape, mesh_dir + "ground_col_%s.res" % c["name"])
 			var cs := CollisionShape3D.new()

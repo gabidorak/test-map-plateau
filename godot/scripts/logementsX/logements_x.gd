@@ -2,8 +2,9 @@ extends RefCounted
 ## Lot logementsX (data/lots/logementsX.json): the École polytechnique's new student housing on the Boulevard des
 ## Maréchaux, on its design data/logementsX/plan.json (tools/logements_x/build_plan.py, logements_x.py: the six R+5
 ## plots, their gardens, the residents' car park, the boulevard's sidewalk). When the map is built:
-## - its terraforming (terraform_zones()): the site's ground one smooth surface (the plan's repair grid), kept under the
-##   sidewalk;
+## - its terraforming (terraform_zones()): the site's ground one smooth surface (the plan's repair grid);
+## - its own ground (ground_owned()): the boulevard's sidewalk, a step over the road (the map's ground cut out there,
+##   builder/ground_cut.gd; logements_x_builder.gd draws it and its collision);
 ## - its removals and additions (drop()): the construction site's fence and trees out, its trees, props (lamps,
 ##   benches, bike racks...) in, the props on its sidewalk lifted onto it, the map's kerbs cut back, the kit modules
 ##   on its plots out, the six OSM placeholder blocks swapped for the plan's buildings (same ids);
@@ -13,10 +14,7 @@ extends RefCounted
 
 const Plan = preload("res://scripts/logementsX/logements_x_plan.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
-## The ground under the boulevard's sidewalk (drawn over it at its kerb's level, logements_x_builder.gd) and WALK_MARGIN
-## m round it (the ground mesh's cell) kept UNDER_WALK m under its top: it never shows through it.
-const WALK_MARGIN := 2.0
-const UNDER_WALK := 0.03
+
 
 
 static func terraform_zones() -> Array:
@@ -29,11 +27,6 @@ static func terraform_zones() -> Array:
 		var x0 := float(g["x0"])
 		var y0 := float(g["y0"])
 		var core: Array = rp["core"].map(func(c: Array) -> PackedVector2Array: return Plan.ring(c))
-		var walk: Array = []                                    # the sidewalk's zone: [polygons, axis, axis_z]
-		for z: Array in Plan.zones():
-			if z[0] == "logx:sidewalk":
-				walk = [z[3].map(func(pg: Array) -> PackedVector2Array: return Geometry2D.offset_polygon(pg[0], WALK_MARGIN)[0]),
-						z[5], z[6]]
 		var wt := PackedByteArray()
 		wt.resize(w * h)
 		var sf := PackedFloat32Array()
@@ -43,13 +36,19 @@ static func terraform_zones() -> Array:
 				var k := j * w + i
 				var p := Vector2(x0 + i * cell, y0 - j * cell)            # (the grid's samples on its nodes)
 				sf[k] = float(g["z"][k])
-				if not walk.is_empty() and (walk[0] as Array).any(func(w: PackedVector2Array) -> bool:
-						return Geometry2D.is_point_in_polygon(p, w)):
-					sf[k] = minf(sf[k], Plan.axis_z(walk[1], walk[2], p) - UNDER_WALK)   # (under the sidewalk drawn)
 				wt[k] = 255 if core.any(func(c: PackedVector2Array) -> bool: return Geometry2D.is_point_in_polygon(p, c)) else 0
 		# terraform.gd's samples are at their cells' middles: the grid moved half a cell so they fall on its nodes
 		out.append({"box": Rect2(x0 - cell * 0.5, y0 + cell * 0.5 - cell * h, cell * w, cell * h), "x0": x0 - cell * 0.5,
 				"y0": y0 + cell * 0.5, "cell": cell, "w": w, "h": h, "wt": wt, "s": sf})
+	return out
+
+
+static func ground_owned() -> Array:
+	var out := []
+	for z: Array in Plan.zones():
+		if z[0] == "logx:sidewalk":
+			for pg: Array in z[3]:
+				out.append(pg[0])
 	return out
 
 

@@ -12,6 +12,9 @@ extends RefCounted
 ##   "parent"     the lot it is part of (a block's own lot, whose plan the block's lots share): it comes after its
 ##                parent, its terraforming on the parent's, where the parent's script's child_weight(x, y) lets it
 ##                (inside the block, not under its streets)
+##   (ground)     its script's ground_owned(): polygons (map) where it owns the ground, steps and walls and all: the
+##                map's ground mesh and terrain collision cut out there (builder/ground_cut.gd), the lot draws and
+##                collides its own
 ##   "build"      a builder run when the map is built, with the map's own builds (its build(root, world, heights,
 ##                mesh_dir)): the railway's lots, their ground designed in world/rail.json and patched into the map's
 ##                files by tools/rail/patch_world.py ("ground" says which part)
@@ -118,6 +121,15 @@ static func terraform_entries() -> Array:
 			clip = Callable(load(str(p["script"])), "child_weight")
 		for name: String in l.get("terraform", []):
 			out.append([name, clip])
+	return out
+
+
+## The ground the lots own (their scripts' ground_owned(): polygons on the map), cut out of the map's (ground_cut.gd).
+static func owned_ground() -> Array:
+	var out := []
+	for lot: Dictionary in all():
+		if lot.has("script") and load(str(lot["script"])).has_method("ground_owned"):
+			out.append_array(load(str(lot["script"])).ground_owned())
 	return out
 
 

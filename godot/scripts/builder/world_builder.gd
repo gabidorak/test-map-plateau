@@ -11,6 +11,7 @@ const BuildingBuilder = preload("res://scripts/builder/building_builder.gd")
 const Terraform = preload("res://scripts/builder/terraform.gd")
 const GroundBake = preload("res://scripts/builder/ground_bake.gd")
 const LotBake = preload("res://scripts/builder/lot_bake.gd")
+const GroundCut = preload("res://scripts/builder/ground_cut.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const Lots = preload("res://scripts/builder/lots.gd")
 const CollisionBuilder = preload("res://scripts/builder/collision_builder.gd")
@@ -94,6 +95,10 @@ func build_and_save() -> Error:
 		root.free()
 		return err
 	LotBake.bake(root, MESH_DIR)                    # the finished lots' builds (builder/lot_bake.gd), streamed with the map's
+	# the terrain's collision holed where the lots own the ground (builder/ground_cut.gd: they collide themselves)
+	var holes: Dictionary = world["ground_mesh"].get_or_add("holes", {})
+	holes["samples"] = holes.get("samples", []) + GroundCut.new(Lots.owned_ground()).hole_samples(world["terrain"],
+			CollisionBuilder.STEP)
 	var collision := CollisionBuilder.new()
 	collision.terrain(root, world, heights, MESH_DIR)
 	collision.boundary(root, world)
