@@ -15,7 +15,7 @@ extends Control
 
 const BUS_ROUTES := "res://world/bus_routes.json"
 const CAR_ROUTES := "res://world/car_routes.json"
-const RAIL := "res://data/rerB/plan.json"
+const RAIL := "res://lots/rerB/plan.json"
 const RER_B := Color("#5291ce")               # the RER B's blue on the Île-de-France maps
 const ROAD := Color(1, 1, 1, 0.07)
 const THIN_M := 9.0                           # m between the points kept from the 1 m route samples

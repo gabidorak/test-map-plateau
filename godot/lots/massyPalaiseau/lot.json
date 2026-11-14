@@ -1,0 +1,11 @@
+{
+ "id": "massyPalaiseau",
+ "parent": "rerB",
+ "order": 1,
+ "finished": true,
+ "name": "Gare de Massy-Palaiseau",
+ "about": "Massy-Palaiseau's station rebuilt (godot/lots/rerB/tool/massy_station.py, with the RER B by godot/lots/rerB/tool/build_rail.py): its footbridges and halls, the line 18 box, the bus station and the bus depot (godot/lots/rerB/tool/bus_depot.py: its hangar, talus, bed and avenue's trees), the parked RER B trains; its plan lots/massyPalaiseau/plan.json, its own ground (lots/massyPalaiseau/ground.*: the bus station's islands, the line 18 shaft, the ground mended where the LiDAR saw a building site) and its changes to the map's world (lots/massyPalaiseau/drop.json), built by lots/massyPalaiseau/massy_builder.gd and hangar_builder.gd.",
+ "ground": "res://lots/massyPalaiseau/",
+ "drop": "res://lots/massyPalaiseau/drop.json",
+ "build": "res://lots/massyPalaiseau/massy_builder.gd"
+}

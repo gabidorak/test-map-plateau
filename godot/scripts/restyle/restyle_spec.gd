@@ -1,5 +1,6 @@
 extends RefCounted
-## Restyled buildings' specs (data/restyle/<slug>.json, made by tools/restyle.py: the method is that tool's help), the
+## Restyled buildings' specs (<slug>.json in their lot's folder, made by tools/restyle.py: the method is that tool's
+## help), the
 ## shared library (data/restyle/_library.json: materials, style presets) and geometry helpers. The building and its
 ## grounds are made by restyle_building.gd, set in the world by restyle.gd.
 ##
@@ -28,7 +29,6 @@ extends RefCounted
 ## elsewhere).
 
 const Kit = preload("res://scripts/build_kit.gd")
-const DIR := "res://data/restyle/"
 const Lots = preload("res://scripts/builder/lots.gd")
 const LIBRARY := "res://data/restyle/_library.json"
 
@@ -51,7 +51,8 @@ static func library() -> Dictionary:
 static func specs() -> Array:
 	if _specs.is_empty():
 		for slug: String in Lots.restyle_slugs():
-			var s: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + slug + ".json"))
+			var path := Lots.dir_of(str(Lots.restyle_lot(slug)["id"])) + slug + ".json"
+			var s: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 			if s is Dictionary:
 				s["slug"] = slug
 				s["style"] = style_of(s.get("style", {}))

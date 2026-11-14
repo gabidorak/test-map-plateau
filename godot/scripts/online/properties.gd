@@ -2,7 +2,7 @@ extends Node
 ## PTA Online's properties (ONLINE_MILESTONES.md O9 step 1, data/properties.json), Main/Mode/Properties under
 ## scripts/modes/online_mode.gd: flats behind real windows of real buildings.
 ## - Each property's front door is its building's entrance (the Logements de l'X: the porch beside the plot's number,
-##   scripts/logementsX/logements_x_builder.gd porch), with a sign saying what is for sale there (or that it is yours).
+##   lots/logementsX/logements_x_builder.gd porch), with a sign saying what is for sale there (or that it is yours).
 ##   E there: its panel (scripts/online/property_panel.gd): buy it (with or without its garage option), add the garage
 ##   option later, go in once it is yours, open or lock its door to visitors, visit the flats other owners opened.
 ## - Going in builds its interior (scripts/online/studio_builder.gd) where the flat really is, behind its windows
@@ -22,7 +22,7 @@ extends Node
 ## - The garage option (garage_price more): a private lift in the flat's hall (a hidden garage of kind "private" whose
 ##   terminal is the lift and whose bays are the residents'): E by it lists the owner's vehicles; the one picked comes
 ##   out on a residents' bay with the player at the wheel.
-## - Villa de charme (a property whose site is "villa", scripts/villaEnPierreCoteaux/): a whole estate. Its "front door" is the plaque by
+## - Villa de charme (a property whose site is "villa", lots/villaEnPierreCoteaux/): a whole estate. Its "front door" is the plaque by
 ##   its gate (the panel there); going in lets the player through the gate (villaEnPierreCoteaux.gd `allowed`: its owners and those
 ##   let in), its rooms are where they stand; its owners are let in by themselves as they come to the gate, and are
 ##   out once they leave its grounds. Its garage (the terminal by the utility room, a hidden garage of kind "private")
@@ -31,24 +31,24 @@ extends Node
 ## with step 2 (the accounts server keeps them); until then the host reads its owners from PLATEAU_ONLINE_HOMES
 ## ("name=property[+garage];...", for tests) and tells each player theirs.
 
-const LogX = preload("res://scripts/logementsX/logements_x_builder.gd")
+const LogX = preload("res://lots/logementsX/logements_x_builder.gd")
 const StudioBuilder = preload("res://scripts/online/studio_builder.gd")
 const PropertyPanel = preload("res://scripts/online/property_panel.gd")
 const Garages = preload("res://scripts/online/garages.gd")
 const Car = preload("res://scripts/car.gd")
 const Economy = preload("res://scripts/economy.gd")
 const Marks = preload("res://scripts/race_marks.gd")
-const VillaEnPierreCoteaux = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_data.gd")
-const VillaEnPierreCoteauxHouse = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_house.gd")
+const VillaEnPierreCoteaux = preload("res://lots/villaEnPierreCoteaux/villaEnPierreCoteaux_data.gd")
+const VillaEnPierreCoteauxHouse = preload("res://lots/villaEnPierreCoteaux/villaEnPierreCoteaux_house.gd")
 const DATA := "res://data/properties.json"
-const LogXPlan = preload("res://scripts/logementsX/logements_x_plan.gd")
+const LogXPlan = preload("res://lots/logementsX/logements_x_plan.gd")
 const REACH := 2.6                          # m from a front door for E
 const EXIT_REACH := 1.2                     # m from the flat's own front door (or its lift), inside, for E
 const STAND := 1.3                          # m out of the entrance where the player is put back
 const GARAGE_PRICE := 10000                 # € the garage option, when the data doesn't say
 const VILLA_REACH := 16.0                   # m from the villa's gate within which its owners are let in
 const VILLA_OUT := 24.0                     # m from it, outside its wall, beyond which they are out
-## The Logements de l'X's residents' car park, in its car park's (a, b) (tools/logements_x/logements_x.py: a north along it,
+## The Logements de l'X's residents' car park, in its car park's (a, b) (godot/lots/logementsX/tool/logements_x.py: a north along it,
 ## b east across it): the terminal at the mouth of the path from the residence (the planted island across the east
 ## row), facing north; two of its real bays either side of the path in the east row (drawn 0.6 m longer, into the
 ## aisle, for the long cars), their cars facing the aisle.

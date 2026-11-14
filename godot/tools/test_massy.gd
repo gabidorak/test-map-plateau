@@ -1,5 +1,5 @@
 extends SceneTree
-## Headless checks of Massy-Palaiseau's station (massyPalaiseau's plan, scripts/builder/massy_builder.gd). Exit code 0 when
+## Headless checks of Massy-Palaiseau's station (massyPalaiseau's plan, lots/massyPalaiseau/massy_builder.gd). Exit code 0 when
 ## everything passes.
 ##  1. The concourse deck: a ray down onto it lands on the deck's level (le Lien, the historic footbridge, the walkway).
 ##  2. Clearance: between the piers under each footbridge's spine, a ray up from the ground meets nothing before the
@@ -7,7 +7,7 @@ extends SceneTree
 ##  3. The line 18 station: rays down find the platforms, the mezzanine and the shaft's floor at their levels.
 ##  4. Walking: up one of le Lien's stairs from the forecourt to the deck, down the stairs from the mezzanine to a
 ##     platform, up the shaft's first flight from the mezzanine.
-##  5. The Atlantis bus station (massyPalaiseau's plan bus_station, tools/rail/bus_station.py): rays down find its lanes on
+##  5. The Atlantis bus station (massyPalaiseau's plan bus_station, godot/lots/rerB/tool/bus_station.py): rays down find its lanes on
 ##     their profile (flat across, no bump), the quays a bus kerb over them; the bus depot (bus_depot.py): its floor
 ##     flat, its ramps no steeper than 9.5 % over a metre, its sides open (rays across them under the roof meet
 ##     nothing: no walls).
@@ -29,7 +29,7 @@ var _failures: PackedStringArray = []
 
 
 func _initialize() -> void:
-	_M = JSON.parse_string(FileAccess.get_file_as_string("res://data/massyPalaiseau/plan.json"))
+	_M = JSON.parse_string(FileAccess.get_file_as_string("res://lots/massyPalaiseau/plan.json"))
 	_main = load("res://scenes/main.tscn").instantiate()
 	_main.debug_cars = false
 	root.add_child(_main)
@@ -202,7 +202,7 @@ func _bus_station() -> void:
 		print("bus station %s: %d of %d rays on its top (%.2f m over the lanes)" % [q["name"], ok, n, kerb])
 		if ok < n * 0.8:
 			_fail("%s's top is off: %d of %d rays at the kerb's height" % [q["name"], ok, n])
-	# the bus depot (tools/rail/bus_depot.py): its floor flat, its ramps' grades, open sides
+	# the bus depot (godot/lots/rerB/tool/bus_depot.py): its floor flat, its ramps' grades, open sides
 	if not B.has("depot"):
 		_fail("massyPalaiseau's plan's bus_station has no depot")
 		return

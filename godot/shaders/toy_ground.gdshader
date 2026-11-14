@@ -28,7 +28,7 @@ const int WOOD = 16;
 const int BUILDING = 17;
 const int KERB = 18;
 const int PAINT = 19;
-const int BALLAST = 20;     // the railway's trackbed (tools/rail/patch_world.py)
+const int BALLAST = 20;     // the railway's trackbed (lot rerB's own ground: builder/lot_ground.gd)
 
 uniform float bump_strength = 1.0;
 

@@ -235,9 +235,9 @@ func _events(d: Object, kind: String) -> Array:
 
 
 ## The depot's terminal and the lent bus under the bus depot's roof (massyPalaiseau's plan bus_station depot,
-## tools/rail/bus_depot.py), the bus on its floor, facing south-west (its way out, the ramp out).
+## godot/lots/rerB/tool/bus_depot.py), the bus on its floor, facing south-west (its way out, the ramp out).
 func _in_depot(car: Node) -> void:
-	var plan: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/massyPalaiseau/plan.json"))
+	var plan: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://lots/massyPalaiseau/plan.json"))
 	var B: Dictionary = plan.get("bus_station", {})
 	if not B.has("depot"):
 		_check(false, "massyPalaiseau's plan has the bus depot")

@@ -1,0 +1,12 @@
+{
+ "id": "residenceHaignere",
+ "order": 80,
+ "name": "Résidence Haigneré",
+ "about": "The grounds round the Haigneré residence (#536, kept as it is), on Thomas's plan (ref/residencHaignere/, lots/residenceHaignere/haignere_plan.gd): the ground one plane; along the roads the kerb, a planted strip (beds with a tree each on the south road, a verge on the west one), the two-way cycle track and the sidewalk up to the facades, lowered at the crossings; the alley in setts from the north-west corner to the south-east tip, a lawn strip with a row of trees along the residence, its terrace, two paths down to the south sidewalk; mown lawns; street and path lamps, benches, bins, bike racks.",
+ "terraform": [
+  "res://lots/residenceHaignere/haignere_plan.gd"
+ ],
+ "script": "res://lots/residenceHaignere/residence_haignere.gd",
+ "node": "residenceHaignere",
+ "paint": "res://lots/residenceHaignere/residence_haignere.gd"
+}

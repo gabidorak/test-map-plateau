@@ -43,7 +43,7 @@ func _run() -> void:
 	if parked == null:
 		_end()
 		return
-	var rail: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/rerB/plan.json"))
+	var rail: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://lots/rerB/plan.json"))
 	var by_id := {}
 	for t: Dictionary in rail["yard"]["tracks"]:
 		by_id[t["id"]] = t

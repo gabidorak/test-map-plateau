@@ -1,5 +1,5 @@
 extends "res://tools/test_base.gd"
-## Lot ligne18-viaduc (scripts/ligne18/viaduc/) against the line's master plan (ligne18_plan.gd): its joints with the
+## Lot ligne18-viaduc (lots/ligne18-viaduc/) against the line's master plan (ligne18_plan.gd): its joints with the
 ## stations' lots and the ground. Every cell built with its meshes (headless: the builder's, not the game's), then:
 ## the deck's top at rail_z - RAIL_OVER_DECK (rays on its collision), none over the stations' zones, its end faces at
 ## exactly zone_s (and s_edge) with section()'s outline, the piers' heads at soffit - BEARING (rays) and their feet
@@ -7,10 +7,10 @@ extends "res://tools/test_base.gd"
 ## Exit 1 on failure.
 ##   godot --headless --path godot --script res://tools/test_ligne18_viaduc.gd
 
-const Plan = preload("res://scripts/ligne18/ligne18_plan.gd")
-const Layout = preload("res://scripts/ligne18/viaduc/viaduc_layout.gd")
-const Builder = preload("res://scripts/ligne18/viaduc/viaduc_builder.gd")
-const Lot = preload("res://scripts/ligne18/viaduc/ligne18_viaduc.gd")
+const Plan = preload("res://lots/ligne18/ligne18_plan.gd")
+const Layout = preload("res://lots/ligne18-viaduc/viaduc_layout.gd")
+const Builder = preload("res://lots/ligne18-viaduc/viaduc_builder.gd")
+const Lot = preload("res://lots/ligne18-viaduc/ligne18_viaduc.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 
 var _failures: PackedStringArray = []

@@ -1,12 +1,12 @@
 extends "res://tools/test_base.gd"
-## Villa de charme (scripts/villaEnPierreCoteaux/, scripts/online/properties.gd) in the PTA Online test (--online-test): the map's
+## Villa de charme (lots/villaEnPierreCoteaux/, scripts/online/properties.gd) in the PTA Online test (--online-test): the map's
 ## buildings gone from its grounds, its gate shut to a passer-by (put back outside when found in), the plaque for
 ## sale; bought (5 M €, its garage with it); its owner let in at the gate, which opens; walking the grand stair up to
 ## the landing and on to the first floor, the hall's void (no floor over it); a car out in its garage on a bay, the
 ## garage's doors rising; the owner out once they have left the grounds. ~1 min. Exit 1 on failure.
 ##   godot --headless --fixed-fps 60 --path . --script res://tools/test_villaEnPierreCoteaux.gd -- --online-test
 
-const House = preload("res://scripts/villaEnPierreCoteaux/villaEnPierreCoteaux_house.gd")
+const House = preload("res://lots/villaEnPierreCoteaux/villaEnPierreCoteaux_house.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 
 var _main: Node

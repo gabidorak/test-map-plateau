@@ -1,5 +1,5 @@
 extends RefCounted
-## Terraforming, the zones the lots name (builder/lots.gd): files of data/terraform/ (made by tools/terraform.py: a
+## Terraforming, the zones the lots name (builder/lots.gd): files of their folders (made by tools/terraform.py: a
 ## surface fitted to the LiDAR ground, a quadratic or a plane, or a level: a restyled garden, the villa's garden path)
 ## or a lot's code (its terraform_zones(): a surface given cell by cell, the villa's court). In each zone the map's
 ## heights are eased onto the surface by the zone's weight grid (0 at its outline, full `blend` m in); the zones one on
@@ -11,14 +11,13 @@ extends RefCounted
 ## and its raised sidewalks' collision (builder/ground_builder.gd); the game reads the heights so made, baked
 ## (builder/ground_bake.gd, ground_map.gd): nothing of it runs in the game.
 
-const DIR := "res://data/terraform/"
 const Lots = preload("res://scripts/builder/lots.gd")
 
 static var _zones: Array = []                # [{"box", "x0", "y0", "cell", "w", "h", "wt"; "o", "c" or "s"; "clip"}]
 static var _loaded := false
 
 
-## A grid's layer (base64 of deflated bytes, w x h: data/terraform's weights, a restyled garden's kind).
+## A grid's layer (base64 of deflated bytes, w x h: a terraforming file's weights, a restyled garden's kind).
 static func layer(grid: Dictionary, key: String) -> PackedByteArray:
 	return Marshalls.base64_to_raw(str(grid[key])).decompress(int(grid["w"]) * int(grid["h"]),
 			FileAccess.COMPRESSION_DEFLATE)
@@ -27,29 +26,28 @@ static func layer(grid: Dictionary, key: String) -> PackedByteArray:
 static func zones() -> Array:
 	if not _loaded:
 		_loaded = true
-		if DirAccess.dir_exists_absolute(DIR):
-			for entry: Array in Lots.terraform_entries():        # (the lots' zones, in order: builder/lots.gd)
-				var name: String = entry[0]
-				var made: Array = []
-				if name.ends_with(".gd"):                       # (a lot's code makes its zones: terraform_zones())
-					made = load(name).terraform_zones()
-				elif name.begins_with("res://"):                 # (a lot's own ground's repairs: lot_ground.gd)
-					made = load(Lots.LOT_GROUND).of(name).terraform_zones()
-				else:
-					var s: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + name + ".json"))
-					for zn: Dictionary in (s.get("zones", []) if s is Dictionary else []):
-						var grid: Dictionary = zn["grid"]
-						var cell := float(grid["cell"])
-						var x0 := float(grid["origin"][0])
-						var y0 := float(grid["origin"][1])
-						made.append({"box": Rect2(x0, y0 - cell * int(grid["h"]), cell * int(grid["w"]),
-								cell * int(grid["h"])), "o": Vector2(zn["origin"][0], zn["origin"][1]),
-								"c": PackedFloat32Array(zn["coef"]), "x0": x0, "y0": y0, "cell": cell,
-								"w": int(grid["w"]), "h": int(grid["h"]), "wt": layer(grid, "weight")})
-				if (entry[1] as Callable).is_valid():            # (a child lot's: where its parent lets it)
-					for z: Dictionary in made:
-						z["clip"] = entry[1]
-				_zones.append_array(made)
+		for entry: Array in Lots.terraform_entries():        # (the lots' zones, in order: builder/lots.gd)
+			var name: String = entry[0]
+			var made: Array = []
+			if name.ends_with(".gd"):                       # (a lot's code makes its zones: terraform_zones())
+				made = load(name).terraform_zones()
+			elif name.ends_with("/"):                       # (a lot's own ground's repairs: lot_ground.gd)
+				made = load(Lots.LOT_GROUND).of(name).terraform_zones()
+			else:                                            # (a terraforming file: tools/terraform.py)
+				var s: Variant = JSON.parse_string(FileAccess.get_file_as_string(name))
+				for zn: Dictionary in (s.get("zones", []) if s is Dictionary else []):
+					var grid: Dictionary = zn["grid"]
+					var cell := float(grid["cell"])
+					var x0 := float(grid["origin"][0])
+					var y0 := float(grid["origin"][1])
+					made.append({"box": Rect2(x0, y0 - cell * int(grid["h"]), cell * int(grid["w"]),
+							cell * int(grid["h"])), "o": Vector2(zn["origin"][0], zn["origin"][1]),
+							"c": PackedFloat32Array(zn["coef"]), "x0": x0, "y0": y0, "cell": cell,
+							"w": int(grid["w"]), "h": int(grid["h"]), "wt": layer(grid, "weight")})
+			if (entry[1] as Callable).is_valid():            # (a child lot's: where its parent lets it)
+				for z: Dictionary in made:
+					z["clip"] = entry[1]
+			_zones.append_array(made)
 	return _zones
 
 

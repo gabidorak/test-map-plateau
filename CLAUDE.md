@@ -18,9 +18,10 @@ and `map_data.lock` pins the version each commit uses. Details: "Map data (not i
 
 ## Changes to the map are lots
 
-Any building replaced, restyled or added, any garden or ground reworked, is a **lot**: `godot/data/lots/<id>.json`
-ties its terraforming (`godot/data/terraform/`, made by `tools/terraform.py`), its removals (its script's `drop()`) and
-its building (its node, or its restyled specs in `godot/data/restyle/`), run in that order by
+Any building replaced, restyled or added, any garden or ground reworked, is a **lot**: one folder, `godot/lots/<id>/`,
+with all of it: `lot.json` (its declaration), its data (plan, own ground, `drop.json`, terraforming files made by
+`tools/terraform.py --lot`, restyled specs made by `tools/restyle.py`), its Godot scripts and its Python tool (`tool/`,
+which Godot ignores). `lot.json` ties its terraforming, its removals and its building together, run in that order by
 `godot/scripts/builder/lots.gd`. Add a lot rather than hooking a new build into `world_builder.gd`, `ground_builder.gd`
 or `game.gd`; ask Thomas the terraforming questions first (is the ground flat? the grass mown? trees, hedges, paths?).
 How it works, the finished lots built into the map and the railway's lots: [LOTS.md](LOTS.md).

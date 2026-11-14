@@ -6,7 +6,8 @@ it (the buildings in it left out) and a weight grid (0 at the outline, full `ble
 
   python3 tools/terraform.py zone <name> --label forecourt --poly "x,y x,y ..." [--mode smooth|plane|flat]
                                          [--blend 8] [--level h] [--append]
-      -> godot/data/terraform/<name>.json ("zones": one per label; --append keeps the others)
+      -> godot/lots/<lot>/terraform_<name>.json (--lot: "zones", one per label; --append keeps the others), which the
+         lot names in its lot.json "terraform" (res://lots/<lot>/terraform_<name>.json)
   modes: smooth a quadratic (bumps and pads ironed out, the lie of the land kept), plane a tilted plane, flat its
   median height (or --level)
 """
@@ -24,7 +25,7 @@ from shapely import Polygon
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORLD_DIR = os.path.join(ROOT, "godot", "world")
-OUT = os.path.join(ROOT, "godot", "data", "terraform")
+LOTS = os.path.join(ROOT, "godot", "lots")
 
 
 def _b64(a):
@@ -100,12 +101,14 @@ def zone(poly_pts, mode="smooth", blend=8.0, exclude=(), level=None, label=""):
             "origin": origin, "coef": coef, "blend": blend, "rms": round(rms, 2), "grid": weights(poly, blend)}
 
 
-def save(name, zones, append=False):
-    """data/terraform/<name>.json: its zones (with `append`, the file's other labels kept)."""
-    path = os.path.join(OUT, name + ".json")
+def save(lot, name, zones, append=False):
+    """godot/lots/<lot>/terraform_<name>.json: its zones (with `append`, the file's other labels kept)."""
+    out = os.path.join(LOTS, lot)
+    if not os.path.isdir(out):
+        sys.exit("no lot %s (godot/lots/%s/)" % (lot, lot))
+    path = os.path.join(out, "terraform_%s.json" % name)
     old = json.load(open(path, encoding="utf-8"))["zones"] if append and os.path.exists(path) else []
     labels = {z["label"] for z in zones}
-    os.makedirs(OUT, exist_ok=True)
     data = {"about": "Terraforming zones (tools/terraform.py, applied by scripts/builder/terraform.gd).",
             "zones": [z for z in old if z["label"] not in labels] + zones}
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
@@ -119,6 +122,7 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     z = sub.add_parser("zone", help="a zone of a terraforming file")
     z.add_argument("name")
+    z.add_argument("--lot", required=True, help="the lot it is (its folder godot/lots/<lot>/)")
     z.add_argument("--label", required=True)
     z.add_argument("--poly", required=True, help='its outline, map points "x,y x,y ..."')
     z.add_argument("--mode", choices=["smooth", "plane", "flat"], default="smooth")
@@ -128,7 +132,7 @@ def main() -> int:
     a = ap.parse_args()
     pts = [[float(v) for v in p.split(",")] for p in a.poly.split()]
     zn = zone(pts, a.mode, a.blend, level=a.level, label=a.label)
-    print("%s: %s %s, rms %.2f m" % (save(a.name, [zn], a.append), a.label, a.mode, zn["rms"]))
+    print("%s: %s %s, rms %.2f m" % (save(a.lot, a.name, [zn], a.append), a.label, a.mode, zn["rms"]))
     return 0
 
 

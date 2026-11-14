@@ -1,5 +1,5 @@
 extends SceneTree
-## Lot ligne18-universite (scripts/ligne18/universite/): the station meets the line's plan at its joints, as its
+## Lot ligne18-universite (lots/ligne18-universite/): the station meets the line's plan at its joints, as its
 ## collision shows (built headless, alone: rays and shapes against it): its deck's top at deck_top_z = rail_z - 0.47 at
 ## the zone's ends and middle, its end faces at u = +-45 (s = zone_s) exactly the line's section (in it: met at the
 ## face; out of it by 4 cm: nothing), the platforms' top at platform_z and their edge at |v| 4.00, the hall's floor at
@@ -9,11 +9,11 @@ extends SceneTree
 ## room, nothing in the way). Exit 1 on failure.
 ##   godot --headless --path godot --script res://tools/test_ligne18_universite.gd
 
-const L18 = preload("res://scripts/ligne18/ligne18_plan.gd")
-const Plan = preload("res://scripts/ligne18/universite/universite_plan.gd")
-const Lot = preload("res://scripts/ligne18/universite/universite.gd")
-const Station = preload("res://scripts/ligne18/universite/station_builder.gd")
-const Grounds = preload("res://scripts/ligne18/universite/grounds_builder.gd")
+const L18 = preload("res://lots/ligne18/ligne18_plan.gd")
+const Plan = preload("res://lots/ligne18-universite/universite_plan.gd")
+const Lot = preload("res://lots/ligne18-universite/universite.gd")
+const Station = preload("res://lots/ligne18-universite/station_builder.gd")
+const Grounds = preload("res://lots/ligne18-universite/grounds_builder.gd")
 
 const TOL := 0.005
 

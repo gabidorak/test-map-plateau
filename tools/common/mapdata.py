@@ -1,10 +1,10 @@
-"""The map's files and geometry, for the tools (tools/rail/, tools/logements_x/, tools/ligne18/...): the paths, the
+"""The map's files and geometry, for the tools (godot/lots/rerB/tool/, godot/lots/logementsX/tool/, godot/lots/ligne18/tool/...): the paths, the
 pipeline's world files, the heightmap, the ground height as the pipeline drew it, polylines.
 
 Map coordinates everywhere: metres, x east, y north, z up, origin Télécom Paris (Lambert-93 641117.6, 6846184.3;
 l93.py converts); Godot = (x, z, -y).
 
-godot/world/ holds the map pipeline's outputs as it wrote them: nothing changes them, the lots (godot/data/lots/)
+godot/world/ holds the map pipeline's outputs as it wrote them: nothing changes them, the lots (godot/lots/)
 change the map when it is built. A script using this module puts tools/common/ on its path.
 """
 import json

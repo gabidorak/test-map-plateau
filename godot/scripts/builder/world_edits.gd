@@ -3,7 +3,7 @@ extends RefCounted
 ## drop()): what they take over.
 ## - drop_buildings(): buildings out with their name signs and kit modules (a lot's code: Losplatos Custom, All Suites
 ##   Study, the Villa de charme, the restyled buildings...);
-## - apply(): a lot's changes as its tool decided them (its "drop": data/<lot>/drop.json, or its plan's;
+## - apply(): a lot's changes as its tool decided them (its "drop": lots/<lot>/drop.json, or its plan's;
 ##   tools/common/world_edits.py has the keys and does the same in Python), in this order:
 ##   trees_gone [id], trees_add [tree], hedges_add [hedge]
 ##   props_gone [id], props_moved {id: [x, y]}, props_lift {id: lift}, props_add [prop]

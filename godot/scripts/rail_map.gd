@@ -1,10 +1,10 @@
 extends RefCounted
-## Runtime railway lookups from lot rerB's plan, data/rerB/plan.json (tools/rail/build_rail.py): the centreline of the RER B at any
+## Runtime railway lookups from lot rerB's plan, lots/rerB/plan.json (godot/lots/rerB/tool/build_rail.py): the centreline of the RER B at any
 ## distance s from its west end (point, heading, rail level, cant), the projection of a map point onto it (s, u),
 ## which track a point is on, the kilometre point (PK) and the speed limit there. Pipeline coordinates (x east,
 ## y north, z up). Shared by the rail builder, the picker, the trains and the tests.
 
-const DEFAULT_PATH := "res://data/rerB/plan.json"
+const DEFAULT_PATH := "res://lots/rerB/plan.json"
 const BUCKET := 20.0                    # m, grid of centreline points for project()
 const REACH := 3                        # buckets project() widens its search to
 const LINE_SPEED := 90.0                # km/h, OSM maxspeed of the line (rerB's plan tracks[].maxspeed)

@@ -1,5 +1,5 @@
 extends Node
-## PTA Online at the boat hire on the Lac de l'X (scripts/baseNautique/: the lot), Main/Mode/BoatHire under
+## PTA Online at the boat hire on the Lac de l'X (lots/baseNautique/: the lot), Main/Mode/BoatHire under
 ## scripts/modes/online_mode.gd: its counter is the terminal of a garage of kind "lake", on the maps. There a player buys
 ## a jet-ski (it goes in their garage: data/prices.json, place "lake"), hires one (rentals: so many minutes for so much,
 ## shop.gd rent_for; the mode takes it back at the end, a minute's warning first) or gets their own out; any of them

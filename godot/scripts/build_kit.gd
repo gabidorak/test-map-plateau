@@ -1,5 +1,5 @@
 extends RefCounted
-## The building kit: what the buildings drawn by code share — Villa de charme (scripts/villaEnPierreCoteaux/: its builders extend it), the
+## The building kit: what the buildings drawn by code share — Villa de charme (lots/villaEnPierreCoteaux/: its builders extend it), the
 ## restyled buildings (scripts/restyle/). Meshes are merged per material (one SurfaceTool each, committed as one
 ## MeshInstance3D per material), collision boxes and faces go into one StaticBody3D (BUILDINGS), materials and their
 ## procedural textures (drawn once a session) are cached: mat() names them ("#rrggbb" a plain colour; the restyled
@@ -308,7 +308,7 @@ static func mat(name: String) -> Material:
 			p.cull_mode = BaseMaterial3D.CULL_DISABLED
 			m = p
 		"travertine": m = _textured("travertine", 1.0 / 2.4, 0.6)
-		# the streets' (the supermarket's block, scripts/ilot/; Losplatos Custom's site; the Haigneré residence's):
+		# the streets' (the supermarket's block, lots/ilot-001/; Losplatos Custom's site; the Haigneré residence's):
 		# concrete blocks, setts, asphalt, a concrete drive, granite kerbs (their top, their face, the gutter at their foot)
 		"street_asphalt":                       # (the map's roads' own: street_asphalt.gdshader)
 			var sa := ShaderMaterial.new()

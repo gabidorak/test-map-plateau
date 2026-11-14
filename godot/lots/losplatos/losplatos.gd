@@ -1,0 +1,220 @@
+extends Node3D
+## Losplatos Custom: the car repair and paint shop in place of building #758 (the LadHyX, osm:w71348311), Main/
+## Losplatos in every game mode (game.gd). The map's building is left out of the world when it is built (drop,
+## builder/world_builder.gd); the shop is drawn here at start (lots/losplatos/losplatos_builder.gd) on its
+## footprint, its roll-up door in the west facade facing the road. The door rolls up when a vehicle or a player comes
+## within OPEN_REACH m of it (each peer for itself: the ones it sees), and down once no one is near; open, its
+## collision goes. In the workshop, the service bay (in_bay) is where PTA Online repairs and paints a player's car
+## (scripts/online/custom_shop.gd). Its sidewalks and asphalt are its surfaces in the map's ground (surface_at():
+## builder/ground_bake.gd).
+
+const WorldEdits = preload("res://scripts/builder/world_edits.gd")
+const Builder = preload("res://lots/losplatos/losplatos_builder.gd")
+const Lots = preload("res://scripts/builder/lots.gd")
+const Marks = preload("res://scripts/race_marks.gd")
+const GroundMap = preload("res://scripts/ground_map.gd")
+const NAME := "Losplatos Custom"
+const BUILDING_ID := "osm:w71348311"        # #758, Laboratoire d'Hydrodynamique de l'École polytechnique
+## #758's footprint (map x east, y north): the kit modules on it go with it.
+const FOOTPRINT := [Vector2(405.613, -171.427), Vector2(407.37, -135.709), Vector2(391.176, -134.924),
+		Vector2(388.76, -139.491), Vector2(389.426, -170.63)]
+## The shop set square to the street (the block's frame, lots/ilot-001/ilot_plan.gd: its west facade WALK_W m back
+## from the west road's kerb, its front sidewalk the block's sidewalk there).
+const ORIGIN := Vector2(386.764, -169.478)   # the west facade's south end (the shop's frame)
+const NORTH := Vector2(388.557, -138.379)    # its north end: the facade runs ORIGIN -> NORTH
+const FLOOR_Z := 1.0                        # m, the workshop's floor at least (over the highest ground under it)
+const OPEN_REACH := 10.0                    # m from the door's middle within which it opens
+const YARD_LEVEL := 0.6                     # m: the yard and the lane, flat (the map's ground there 0.4 to 1.1, 0.6 on average)
+const BLEND := 3.0                          # m over which they ease back to the map's ground
+const OPEN_SPEED := 0.6                     # of the way a second
+const CHECK_EVERY := 0.15
+
+var game: Node                              # game.gd (null in the tools)
+var frame: Transform3D                      # the shop's frame (global)
+var floor_z := FLOOR_Z                      # m, its floor: over the map's ground under it
+var shop: Node3D                            # what the builder made
+var opening := 0.0                          # 0 shut .. 1 open
+var _want := false
+var _check_t := 0.0
+var _slats: Array = []
+var _door_shape: CollisionShape3D
+
+
+## Its plot's ground (builder/terraform.gd; a child of the block's lot, ilot-001, which keeps it off the streets): the
+## yard behind and the access lane along the north end flat at YARD_LEVEL (the tow truck's bay level), eased back to
+## the map's ground over BLEND m; 1 m grid on the map.
+static func terraform_zones() -> Array:
+	var f := shop_frame(0.0)
+	var inv := f.affine_inverse()
+	var lo := Vector2(INF, INF)
+	var hi := -lo
+	for c: Vector2 in [Vector2(-BLEND, -BLEND), Vector2(46.0 + BLEND, -BLEND), Vector2(46.0 + BLEND, 33.5 + BLEND),
+			Vector2(-BLEND, 33.5 + BLEND)]:
+		var w := f * Vector3(c.x, 0.0, c.y)
+		lo = lo.min(Vector2(w.x, -w.z))
+		hi = hi.max(Vector2(w.x, -w.z))
+	var x0 := floorf(lo.x)
+	var y0 := ceilf(hi.y)
+	var w := int(ceilf(hi.x - x0)) + 1
+	var h := int(ceilf(y0 - lo.y)) + 1
+	var wt := PackedByteArray()
+	wt.resize(w * h)
+	var sf := PackedFloat32Array()
+	sf.resize(w * h)
+	sf.fill(YARD_LEVEL)
+	for j in h:
+		for i in w:
+			var l := inv * Vector3(x0 + i + 0.5, 0.0, -(y0 - j - 0.5))
+			var d := INF
+			for r: Rect2 in [Builder.YARD_PLOT, Builder.LANE_PLOT]:
+				var dx := maxf(maxf(r.position.x - l.x, l.x - r.end.x), 0.0)
+				var dz := maxf(maxf(r.position.y - l.z, l.z - r.end.y), 0.0)
+				d = minf(d, Vector2(dx, dz).length())
+			var t := clampf(1.0 - d / BLEND, 0.0, 1.0)
+			wt[j * w + i] = roundi(t * t * (3.0 - 2.0 * t) * 255.0)
+	return [{"box": Rect2(x0, y0 - h, w, h), "x0": x0, "y0": y0, "cell": 1.0, "w": w, "h": h, "wt": wt, "s": sf}]
+
+
+## The world without #758 (builder/world_builder.gd, before the buildings are made): its building record, its name
+## sign, the kit modules on its roof.
+static func drop(world: Dictionary) -> void:
+	WorldEdits.drop_buildings(world, [BUILDING_ID], WorldEdits.grown(PackedVector2Array(FOOTPRINT), 1.0))
+
+
+## The shop's frame: x north along the west facade, y up, z east into it; its origin on the floor at the facade's
+## south end.
+static func shop_frame(z := FLOOR_Z) -> Transform3D:
+	var d := (NORTH - ORIGIN).normalized()
+	var inward := Vector2(d.y, -d.x)        # east
+	return Transform3D(Basis(Vector3(d.x, 0, -d.y), Vector3.UP, Vector3(inward.x, 0, -inward.y)),
+			Vector3(ORIGIN.x, z, -ORIGIN.y))
+
+
+func _ready() -> void:
+	name = "Losplatos"
+	# the floor just over the map's ground under the shop (the old building's pad), the apron down to the road
+	frame = shop_frame(0.0)
+	var top := -INF
+	for i in int(Builder.L) + 1:
+		for j in int(Builder.W) + 1:
+			var g := frame * Vector3(i, 0.0, j)
+			top = maxf(top, Marks.ground(g.x, -g.z))
+	floor_z = maxf(FLOOR_Z, top + 0.04)
+	frame = shop_frame(floor_z)
+	shop = Lots.baked(game, "losplatos")            # (finished: built into the map, builder/lot_bake.gd)
+	if shop == null:
+		var f := frame
+		var ground := func(x: float, z: float) -> float:
+			var g := f * Vector3(x, 0.0, z)
+			return Marks.ground(g.x, -g.z) - f.origin.y
+		var gm: RefCounted = GroundMap.get_map()
+		var road_ids := []
+		if gm:
+			for m: String in ["asphalt", "paint", "kerb"]:
+				road_ids.append(gm.materials.find(m))
+		var on_road := func(x: float, z: float) -> bool:
+			var g := f * Vector3(x, 0.0, z)
+			return gm != null and gm.material_at(g.x, -g.z) in road_ids
+		shop = Builder.new().build(ground, on_road, Lots.meshes())   # (headless: collision only)
+		shop.transform = frame
+		add_child(shop)
+	_slats = Lots.node_meta(shop, "slats")
+	for s: Node in _slats:                   # (shown and hidden by the door: not streamed, builder/lot_far.gd)
+		s.add_to_group("lot_own_visibility")
+	_door_shape = Lots.node_meta(shop, "door_shape")
+
+
+## The door's middle on the facade line (global).
+func door_point() -> Vector3:
+	return frame * (shop.get_meta("door") as Vector3)
+
+
+## The service bay's middle on the floor (global).
+func bay_point() -> Vector3:
+	return frame * (shop.get_meta("bay") as Vector3)
+
+
+## Where the maps mark it (map x, y): in front of the door.
+## The shop's surfaces in the map's ground (builder/ground_bake.gd): its sidewalks paving, its asphalt asphalt (the
+## builder's rectangles, 0.3 m over their edges: their kerbs).
+static func surface_boxes() -> Array:
+	var f := shop_frame()
+	var box := Rect2(Vector2(f.origin.x, -f.origin.z), Vector2.ZERO)
+	for r: Array in Builder.SIDEWALKS + Builder.ASPHALT:
+		for c: Vector2 in [Vector2(r[0], r[1]), Vector2(r[2], r[1]), Vector2(r[2], r[3]), Vector2(r[0], r[3])]:
+			var g := f * Vector3(c.x, 0.0, c.y)
+			box = box.expand(Vector2(g.x, -g.z))
+	return [box.grow(0.5)]
+
+
+static func surface_at(x: float, y: float, _current: String) -> String:
+	var l := shop_frame().affine_inverse() * Vector3(x, 0.0, -y)
+	for e: Array in [[Builder.SIDEWALKS, "paving"], [Builder.ASPHALT, "asphalt"]]:
+		for r: Array in e[0]:
+			if l.x >= r[0] - 0.3 and l.x <= r[2] + 0.3 and l.z >= r[1] - 0.3 and l.z <= r[3] + 0.3:
+				return e[1]
+	return ""
+
+
+func map_xy() -> Vector2:
+	var p := frame * ((shop.get_meta("door") as Vector3) + Vector3(0, 0, -2.0))
+	return Vector2(p.x, -p.z)
+
+
+## Whether `p` (global) is in the service bay (a car's middle standing there).
+func in_bay(p: Vector3) -> bool:
+	var l := frame.affine_inverse() * p
+	var bay: Vector3 = shop.get_meta("bay")
+	var size: Vector2 = shop.get_meta("bay_size")
+	return absf(l.x - bay.x) < size.x * 0.5 + 0.4 and absf(l.z - bay.z) < size.y * 0.5 + 0.6 and l.y > -1.0 and l.y < 2.5
+
+
+## Whether `p` (global) is inside the workshop.
+func in_workshop(p: Vector3) -> bool:
+	var l := frame.affine_inverse() * p
+	return l.x > Builder.HALL_X and l.x < Builder.L and l.z > 0.0 and l.z < Builder.W and l.y > -1.0 and l.y < Builder.H
+
+
+func _physics_process(delta: float) -> void:
+	_check_t -= delta
+	if _check_t <= 0.0:
+		_check_t = CHECK_EVERY
+		_want = _someone_near()
+	var was := opening
+	opening = move_toward(opening, 1.0 if _want else 0.0, OPEN_SPEED * delta)
+	if opening != was or _slats.is_empty():
+		_pose_door()
+
+
+## Someone this peer sees within OPEN_REACH of the door: the player (on foot, driving, the fly camera aside), a
+## vehicle, another player.
+func _someone_near() -> bool:
+	var d := door_point()
+	var r2 := OPEN_REACH * OPEN_REACH
+	if game == null:
+		return false
+	if game.mode != "" and game.mode != "server" and not game.flying:
+		var me: Vector3 = game.driving.global_position if game.driving else game.player.global_position
+		if me.distance_squared_to(d) < r2:
+			return true
+	for car: Node3D in game.cars:
+		if is_instance_valid(car) and car.global_position.distance_squared_to(d) < r2:
+			return true
+	if game.net and game.net.active:
+		for r: Node3D in game.net.avatars():
+			if r.visible and r.global_position.distance_squared_to(d) < r2:
+				return true
+	return false
+
+
+## The slats rolled up `opening` of the way: each rises with the roll, gone into the housing once over the opening.
+func _pose_door() -> void:
+	var h := Builder.DOOR.z / Builder.SLATS
+	for k in _slats.size():
+		var s: MeshInstance3D = _slats[k]
+		var y := (k + 0.5) * h + opening * Builder.DOOR.z
+		s.position.y = y
+		s.visible = y - h * 0.5 < Builder.DOOR.z - 0.02
+	if _door_shape:
+		_door_shape.disabled = opening > 0.55
+

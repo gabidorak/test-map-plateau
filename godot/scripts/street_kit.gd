@@ -1,13 +1,13 @@
 extends "res://scripts/build_kit.gd"
 ## The street kit: street works on a lot's plan (`plan`: a script with static height(Vector2) -> float, frame() ->
-## Transform3D, WALK_W, CORNER: the supermarket's block's, scripts/ilot/ilot_plan.gd, by default; the Haigneré
+## Transform3D, WALK_W, CORNER: the supermarket's block's, lots/ilot-001/ilot_plan.gd, by default; the Haigneré
 ## residence's...), drawn in the plan's frame (local u, v: the node turned onto the map when committed) on its designed
 ## ground (heights over it): asphalt, paving slabs, granite kerbs as at Losplatos Custom's (their top, their face, the
 ## gutter at their foot), sidewalks along a kerb line and round corners, lowered where an access crosses them, bands
 ## along a line, and road markings (lines, dashes, zebras, arrows, the bays' and cycle tracks' pictograms). Collision:
 ## boxes on flat ground, the sidewalks' faces where the ground slopes.
 
-const DEFAULT_PLAN := preload("res://scripts/ilot/ilot_plan.gd")
+const DEFAULT_PLAN := preload("res://lots/ilot-001/ilot_plan.gd")
 const KERB := 0.15                          # m: sidewalks over the asphalt (Losplatos Custom's KERB_UP)
 const ASPHALT_UP := 0.04                    # m: asphalt over the ground (its TAR_UP)
 const FILL := 0.05                          # m: painted fills (the bays') over the ground

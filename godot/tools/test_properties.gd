@@ -9,7 +9,7 @@ extends "res://tools/test_base.gd"
 ## at the wheel. ~1 min. Exit 1 on failure.
 ##   godot --headless --fixed-fps 60 --path . --script res://tools/test_properties.gd -- --online-test
 
-const LogX = preload("res://scripts/logementsX/logements_x_builder.gd")
+const LogX = preload("res://lots/logementsX/logements_x_builder.gd")
 const Studio = preload("res://scripts/online/studio_builder.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 
@@ -59,7 +59,7 @@ func _run() -> void:
 			"the studio of the Logements de l'X 19, 50 000 €, its garage 10 000 €")
 
 	# where it is: the windows are the building's, the flat inside the building's upper body; twice the first one
-	var lx: Dictionary = load("res://scripts/logementsX/logements_x_plan.gd").data()
+	var lx: Dictionary = load("res://lots/logementsX/logements_x_plan.gd").data()
 	var pl: Dictionary = {}
 	for q: Dictionary in lx["plots"]:
 		if q["num"] == "19":

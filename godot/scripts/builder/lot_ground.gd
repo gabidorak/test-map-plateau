@@ -1,5 +1,5 @@
 extends RefCounted
-## A lot's own ground (its lot's "ground": data/<lot>/ground.json and ground.bin, made by its tool with
+## A lot's own ground (its lot's "ground": lots/<lot>/ground.json and ground.bin, made by its tool with
 ## tools/common/lot_ground.py): its zones (polygons on the map, [outer, holes...] each) with their heights on grids, the
 ## material each lays (or the map's), and its repairs (the map's ground reshaped round them). Python designs it; here it
 ## is laid into the map when the map is built (builder/lots.gd, builder/world_builder.gd):
@@ -42,7 +42,7 @@ var _index := {}                            # Vector2i bucket -> [[zone index, o
 var _edges: Array = []                      # per zone: {band (int): PackedFloat32Array [ax, ay, bx, by...]}
 
 
-## The lot ground in `path` (data/<lot>/, or its ground.json), read once.
+## The lot ground in `path` (lots/<lot>/, or its ground.json), read once.
 static func of(path: String) -> RefCounted:
 	var d := path if path.ends_with("/") else path.get_base_dir() + "/"
 	if not _cache.has(d):

@@ -1,5 +1,5 @@
 extends "res://tools/test_base.gd"
-## Screenshots of a site, to check a restyled building (data/restyle/, scripts/restyle/): one from above and four
+## Screenshots of a site, to check a restyled building (its lot, scripts/restyle/): one from above and four
 ## oblique views from its corners, plus one at eye level from the south. Windowed (it renders):
 ##   CAP_X=585 CAP_Y=-262 CAP_R=80 CAP_OUT=C:/tmp/shots/ensae_ godot --path . --script res://tools/capture_site.gd -- --online-test
 ## CAP_X, CAP_Y: the site's middle (map x east, y north); CAP_R: its half size (m); CAP_OUT: the files' prefix;

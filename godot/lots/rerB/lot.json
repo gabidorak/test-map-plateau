@@ -1,0 +1,10 @@
+{
+ "id": "rerB",
+ "order": 1,
+ "finished": true,
+ "name": "RER B",
+ "about": "The RER B line (Ligne de Sceaux) across the map: its formation, tracks, catenary, platforms and stations (Lozère, Le Guichet, Orsay-Ville...), bridges, underpasses, fences, the yard's tracks; designed by godot/lots/rerB/tool/build_rail.py (OSM, LiDAR) into its plan lots/rerB/plan.json, its own ground (lots/rerB/ground.*, builder/lot_ground.gd) and its changes to the map's world (lots/rerB/drop.json: the trees and props in its way, its fences, Lozère's station building, the buildings over its tracks), built by lots/rerB/rail_builder.gd.",
+ "ground": "res://lots/rerB/",
+ "drop": "res://lots/rerB/drop.json",
+ "build": "res://lots/rerB/rail_builder.gd"
+}

@@ -1,6 +1,6 @@
 extends Node3D
 ## Restyled buildings: some of the map's large buildings redrawn with real facades, each after its spec
-## (data/restyle/<slug>.json: restyle_spec.gd), made by restyle_building.gd; in every game mode (game.gd). The map's
+## (<slug>.json in their lot's folder: restyle_spec.gd), made by restyle_building.gd; in every game mode (game.gd). The map's
 ## building leaves the world when it is built (drop, builder/world_builder.gd) and a garden's trees and hedges come
 ## in; the ground's paint in the grounds turns to lawn or meadow (repaint, builder/ground_builder.gd), so do their
 ## surfaces in the map's ground (surface_at(): builder/ground_bake.gd); the ground is terraformed by

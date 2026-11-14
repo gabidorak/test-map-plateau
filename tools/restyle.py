@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Restyled buildings: a building of the map redrawn with real facades by godot/scripts/restyle/restyle.gd, after a spec
-in godot/data/restyle/<slug>.json. The method, for any large building (a school, a campus, offices):
+in its lot's folder, godot/lots/<lot>/<slug>.json (--lot for a new one; the lot names it in its lot.json
+"restyle"). The method, for any large building (a school, a campus, offices):
 
   1. python3 tools/restyle.py init <num or osm id> <slug> [--preset <style>] [--no-site]
        the spec from the map: the footprint (with its courtyards), the roof's triangles, the height, the storeys, a style
@@ -30,7 +31,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORLD = os.path.join(ROOT, "godot", "world", "world.json")
-OUT = os.path.join(ROOT, "godot", "data", "restyle")
+LOTS = os.path.join(ROOT, "godot", "lots")
 PATH_KINDS = {"path", "footway", "sidewalk", "pedestrian", "cycleway", "steps", "track", "bridleway"}
 
 
@@ -85,11 +86,27 @@ def roof_of(rings):
     return pts, tris
 
 
-def write(slug, spec, force):
-    path = os.path.join(OUT, slug + ".json")
+def lot_of(slug, lot=None):
+    """The lot a spec belongs to: `lot`, or the one whose lot.json "restyle" names it."""
+    if lot:
+        if not os.path.isdir(os.path.join(LOTS, lot)):
+            sys.exit("no lot %s (godot/lots/%s/)" % (lot, lot))
+        return lot
+    for d in sorted(os.listdir(LOTS)):
+        f = os.path.join(LOTS, d, "lot.json")
+        if os.path.exists(f) and slug in json.load(open(f, encoding="utf-8")).get("restyle", []):
+            return d
+    sys.exit("no lot names %s in its \"restyle\": --lot <id>" % slug)
+
+
+def spec_path(slug, lot=None):
+    return os.path.join(LOTS, lot_of(slug, lot), slug + ".json")
+
+
+def write(slug, spec, force, lot=None):
+    path = spec_path(slug, lot)
     if os.path.exists(path) and not force:
         sys.exit("%s exists (--force overwrites it)" % path)
-    os.makedirs(OUT, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(dumps(spec))
     return path
@@ -106,7 +123,7 @@ def cmd_init(a, w):
     key = a.building.lstrip("#")
     found = [b for b in w["buildings"] if str(b.get("num")) == key or b["id"].split("_rest")[0] == key]
     if not found:
-        sys.exit("no building %s in the map (dropped already? specs in %s leave it when the map is built)" % (a.building, OUT))
+        sys.exit("no building %s in the map (dropped already? specs in the lots leave it when the map is built)" % a.building)
     base = found[0]["id"].split("_rest")[0]
     b = found[0]
     rings = [[r2(p) for p in ring] for ring in b["rings"]]
@@ -150,13 +167,13 @@ def cmd_site(a, w):
     area = [[float(v) for v in p.split(",")] for p in a.area.split()]
     spec = {"name": a.slug, "replace": [], "rings": [],
             "site": {"area": [r2(p) for p in area], "paths": paths_in(w, area), "walks": []}}
-    path = write(a.slug, spec, a.force)
+    path = write(a.slug, spec, a.force, a.lot)
     print("%s: grounds, %d path(s)" % (path, len(spec["site"]["paths"])))
 
 
 def cmd_roof(a, w):
     for slug in a.slugs:
-        path = os.path.join(OUT, slug + ".json")
+        path = spec_path(slug)
         spec = json.load(open(path, encoding="utf-8"))
         if not spec.get("rings"):
             continue
@@ -167,14 +184,14 @@ def cmd_roof(a, w):
 
 def cmd_garden(a, w):
     import restyle_garden
-    path = os.path.join(OUT, a.slug + ".json")
+    path = spec_path(a.slug)
     spec = json.load(open(path, encoding="utf-8"))
     garden, paths, res = restyle_garden.read(spec, w, a.image, a.pairs, a.meadow_px, a.flatten, a.grass, a.dark,
                                              a.debug)
     tz = garden.pop("terraform", None)
     if tz:
         import terraform
-        terraform.save(a.slug, [tz])
+        terraform.save(lot_of(a.slug), a.slug, [tz])
     spec["site"]["garden"] = garden
     spec["site"]["paths"] = (spec["site"].get("paths", []) if a.keep_map_paths else []) + paths
     write(a.slug, spec, True)
@@ -201,6 +218,7 @@ def main() -> int:
     ini = sub.add_parser("init", help="a building's spec from the map")
     ini.add_argument("building", help="its number (#996) or id (osm:r9921491)")
     ini.add_argument("slug")
+    ini.add_argument("--lot", help="its lot (godot/lots/<lot>/), for a new spec")
     ini.add_argument("--preset", help="a style of the library (_library.json)")
     ini.add_argument("--height", type=float, help="m, ground floor to roof (default: the map's)")
     ini.add_argument("--storeys", type=int, help="how many (default: the map's)")
@@ -209,6 +227,7 @@ def main() -> int:
     ini.add_argument("--force", action="store_true", help="overwrite an existing spec")
     si = sub.add_parser("site", help="grounds alone, for several buildings")
     si.add_argument("slug")
+    si.add_argument("--lot", help="its lot (godot/lots/<lot>/), for a new spec")
     si.add_argument("--area", required=True, help='its outline, map points "x,y x,y ..."')
     si.add_argument("--force", action="store_true")
     ro = sub.add_parser("roof", help="a spec's roof again from its footprint")

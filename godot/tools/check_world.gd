@@ -18,7 +18,7 @@ extends SceneTree
 ##  6. Toy buildings (M7): every mass has its mesh with the facade data (UV2 + four custom channels) and the
 ##     one shared building material, a collision shape, and every kit module and name sign is drawn once, but those an
 ##     interior building loses (world/interiors.json, builder/interior_builder.gd).
-##  7. RER B (lot rerB's plan, tools/rail/): along both tracks, across
+##  7. RER B (lot rerB's plan, godot/lots/rerB/tool/): along both tracks, across
 ##     the playable box, the ground is the railway's trackbed piece and the drawn mesh lies on the designed formation
 ##     with no step; no tree, prop or building inside the kinematic gauge; each platform edge is 1.60-1.70 m from its
 ##     track centre, the platform top 1.15 m above the rail and the ground drops in front of its wall.
@@ -32,7 +32,7 @@ const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
 const InteriorBuilder = preload("res://scripts/builder/interior_builder.gd")
 const SCENE := "res://scenes/generated/neighborhood.tscn"
 const WORLD := "res://world/world.json"
-const RAIL := "res://data/rerB/plan.json"
+const RAIL := "res://lots/rerB/plan.json"
 const GAUGE_HALF := 1.75                   # m from a track centre: GC kinematic gauge half-width (EN 15273-2, 1.645 m) + 0.1 m
 const EDGE_MIN := 1.60                     # m, platform edge from its track centre (RATP RER platforms: 1.65 m)...
 const EDGE_MAX := 1.70                     # ...within this range
@@ -567,7 +567,7 @@ func _check_railway(world: Dictionary, rail: Dictionary) -> void:
 			_fail("prop %s %s: %.2f m from a track centre" % [p["id"], p["model"], d])
 	for b: Dictionary in world["buildings"]:
 		if float(b.get("min_height", 0.0)) >= 5.0:
-			continue                            # standing over the line, above the trains (tools/rail/drops.py)
+			continue                            # standing over the line, above the trains (godot/lots/rerB/tool/drops.py)
 		var ring: Array = b["rings"][0]
 		for i in ring.size():
 			var p0 := Vector2(ring[i][0], ring[i][1])
@@ -617,7 +617,7 @@ func _check_railway(world: Dictionary, rail: Dictionary) -> void:
 	print("railway: %d trackbed samples (%d off the trackbed, worst %.3f m from the formation), %d objects in the gauge, %d platform samples" % [
 			samples, off_bed, worst, in_gauge, platform_samples])
 	# 4. the yard's ballast beds (rail_builder.gd _yard_beds): the drawn ground under the sleepers stays under the bed's
-	# top, never over the sleepers' tops (the LiDAR ground kept as it was covered them, tools/rail/yard.py)
+	# top, never over the sleepers' tops (the LiDAR ground kept as it was covered them, godot/lots/rerB/tool/yard.py)
 	var bed: Dictionary = rail.get("yard", {}).get("bed", {})
 	if not bed.is_empty():
 		var below_rail: float = bed["below_rail"]

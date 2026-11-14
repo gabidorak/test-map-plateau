@@ -1,8 +1,8 @@
 extends SceneTree
-## Line 18's master plan (scripts/ligne18/ligne18_plan.gd, data/ligne18/plan.json): its frames agree.
+## Line 18's master plan (lots/ligne18/ligne18_plan.gd, lots/ligne18/plan.json): its frames agree.
 ##   godot --headless --path godot --script res://tools/test_ligne18_plan.gd
 
-const Plan = preload("res://scripts/ligne18/ligne18_plan.gd")
+const Plan = preload("res://lots/ligne18/ligne18_plan.gd")
 
 
 func _initialize() -> void:

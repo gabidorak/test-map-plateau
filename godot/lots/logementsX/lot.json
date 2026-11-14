@@ -1,0 +1,14 @@
+{
+ "id": "logementsX",
+ "order": 3,
+ "finished": true,
+ "name": "Nouveaux logements de l'X",
+ "about": "The École polytechnique's new student housing on the Boulevard des Maréchaux (ref/logementsX/; its plan lots/logementsX/plan.json, made by godot/lots/logementsX/tool/build_plan.py from the map's own ground): six R+5 plots in khaki ribbed panels over white ground floors, their gardens, the residents' car park, the boulevard's sidewalk; its ground one smooth surface (terraformed), the construction site's fence and the map's placeholder blocks out, its trees and props in, its surfaces drawn in the ground's material (lots/logementsX/).",
+ "terraform": [
+  "res://lots/logementsX/logements_x.gd"
+ ],
+ "drop": "res://lots/logementsX/drop.json",
+ "script": "res://lots/logementsX/logements_x.gd",
+ "paint": "res://lots/logementsX/logements_x.gd",
+ "build": "res://lots/logementsX/logements_x_builder.gd"
+}

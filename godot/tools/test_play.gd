@@ -135,7 +135,7 @@ func _wall_top(b: Dictionary) -> float:
 
 
 ## How far the ground tier's wall stands back from the outline at map point p (0 when p is on or inside it, or the
-## ground tier floats): a ground floor set back under the floors over it (tools/logements_x/logements_x.py CORE_IN, 0.25 m)
+## ground tier floats): a ground floor set back under the floors over it (godot/lots/logementsX/tool/logements_x.py CORE_IN, 0.25 m)
 ## stops the player that much further in. At most MAX_SETBACK: more is another shape, not a setback.
 const MAX_SETBACK := 0.5
 

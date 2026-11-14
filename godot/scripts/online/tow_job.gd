@@ -2,7 +2,7 @@ extends "res://scripts/online/job.gd"
 ## PTA Online's tow truck job (ONLINE_MILESTONES.md O10), a child of the PTA Online mode (scripts/modes/online_mode.gd)
 ## on every peer, with its own RPCs; the host calls the breakdowns, judges the deliveries and pays.
 ## - Duty: at Losplatos Custom's tow terminal (the yard behind the shop: a garage of kind "tow", its bay painted there,
-##   scripts/losplatos/losplatos_builder.gd), "Tow truck duty": a lent tow truck (scripts/tow_truck.gd) comes out on the
+##   lots/losplatos/losplatos_builder.gd), "Tow truck duty": a lent tow truck (scripts/tow_truck.gd) comes out on the
 ##   bay. Off duty: at the terminal, the truck gone or wrecked, leaving the game.
 ## - Breakdowns: for each tow driver on duty, one at a time, `first` s after going on duty then `gap` s after each
 ##   delivery: a car broken down (grey smoke, hazard lights) on the shoulder of a bot car route (world/car_routes.json),

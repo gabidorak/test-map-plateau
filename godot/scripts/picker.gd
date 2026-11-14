@@ -210,17 +210,17 @@ func describe(info: Dictionary) -> String:
 			_describe_track(lines, h, false)
 		"restyle":
 			lines.append(("#%d  %s" % [int(info["num"]), info["name"]]) if info.get("num") else str(info["name"]))
-			lines.append("%s · restyled: data/restyle/%s.json%s (scripts/restyle/)" % [info["id"], info["slug"],
+			lines.append("%s · restyled: lots/%s/%s.json%s (scripts/restyle/)" % [info["id"], info.get("lot", "?"), info["slug"],
 					(" · preset " + str(info["preset"])) if str(info["preset"]) != "" else ""])
 			if info["storeys"] > 0:
 				lines.append("height %.1f m · %d storeys: %s" % [info["height"], info["storeys"], info["fills"]])
 		"allsuites":
-			lines.append("%s · %s (in place of #184: scripts/allsuites/)" % [info["name"], info["kind"]])
+			lines.append("%s · %s (in place of #184: lots/allSuites/)" % [info["name"], info["kind"]])
 		"lot":
 			lines.append(str(info["name"]))
-			lines.append("lot %s (data/lots/%s.json) · %s" % [info["lot"], info["lot"], info["about"]])
+			lines.append("lot %s (lots/%s/) · %s" % [info["lot"], info["lot"], info["about"]])
 		"custom_garage":
-			lines.append("%s · %s (in place of #758, the LadHyX: scripts/losplatos/)" % [info["name"], info["kind"]])
+			lines.append("%s · %s (in place of #758, the LadHyX: lots/losplatos/)" % [info["name"], info["kind"]])
 		"interior":
 			lines.append("%s, the %s inside %s (world/interiors.json)" % [info["name"], info["kind"], info["id"]])
 		"rail_track":

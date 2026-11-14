@@ -2,4 +2,5 @@
 # checkout: a tool run again changes nothing).
 godot/world/*.json text eol=lf
 godot/data/**/*.json text eol=lf
-godot/data/**/*.bin binary
+godot/lots/**/*.json text eol=lf
+godot/lots/**/*.bin binary

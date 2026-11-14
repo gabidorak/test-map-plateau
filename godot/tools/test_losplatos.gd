@@ -1,5 +1,5 @@
 extends "res://tools/test_base.gd"
-## Losplatos Custom (scripts/losplatos/, scripts/online/custom_shop.gd), played in the PTA Online test (--online-test):
+## Losplatos Custom (lots/losplatos/, scripts/online/custom_shop.gd), played in the PTA Online test (--online-test):
 ## building #758 makes way for it (its roof, not the LadHyX's, over its footprint), its roll-up door stays shut with no
 ## one about and opens for a car coming up (its collision gone), our own car stopped in the service bay gets the
 ## panel (U), a damaged bodywork is repaired (paid by the damage), a coat of paint is paid and worn, a lent or wrong car
@@ -7,7 +7,7 @@ extends "res://tools/test_base.gd"
 ##   godot --headless --fixed-fps 60 --path . --script res://tools/test_losplatos.gd -- --online-test
 
 const Layers = preload("res://scripts/physics_layers.gd")
-const Builder = preload("res://scripts/losplatos/losplatos_builder.gd")
+const Builder = preload("res://lots/losplatos/losplatos_builder.gd")
 const Prices = preload("res://scripts/online/prices.gd")
 const Paint = preload("res://scripts/paint.gd")
 

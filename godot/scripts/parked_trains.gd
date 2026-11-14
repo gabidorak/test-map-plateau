@@ -1,6 +1,6 @@
 extends Node3D
 ## RER B trains stabled in Massy-Palaiseau's storage yard (the "Voie de Garage des trains de la ligne B du RER" and its
-## fan of service=yard tracks south-west of the station: rerB's plan yard tracks, tools/rail/yard.py), standing
+## fan of service=yard tracks south-west of the station: rerB's plan yard tracks, godot/lots/rerB/tool/yard.py), standing
 ## still as at off-peak. train_traffic.gd makes it (Main/Traffic/Trains/Parked) on every peer, from the same plan (rerB's),
 ## so every peer has the same trains without any network state.
 ## - Tracks: the yard tracks (not the running lines: `main`, `rer`) whose OSM track numbers (rerB's plan `ref`, OSM

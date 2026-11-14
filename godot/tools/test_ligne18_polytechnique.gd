@@ -1,5 +1,5 @@
 extends "res://tools/test_base.gd"
-## Lot ligne18-polytechnique (scripts/ligne18/polytechnique/) against the line's master plan (ligne18_plan.gd): its
+## Lot ligne18-polytechnique (lots/ligne18-polytechnique/) against the line's master plan (ligne18_plan.gd): its
 ## joints with the viaduc lot and the ground. Its four cells built with their meshes (headless), then: the deck's top
 ## at rail_z - RAIL_OVER_DECK (deck_top_z) at the zone's ends and middle (rays on its collision), its end faces at
 ## exactly zone_s with section()'s outline (the mesh's vertices there), the platforms' top at platform_z and their edge
@@ -9,11 +9,11 @@ extends "res://tools/test_base.gd"
 ## Exit 1 on failure.
 ##   godot --headless --path godot --script res://tools/test_ligne18_polytechnique.gd
 
-const Line = preload("res://scripts/ligne18/ligne18_plan.gd")
-const Plan = preload("res://scripts/ligne18/polytechnique/polytechnique_plan.gd")
-const StationBuilder = preload("res://scripts/ligne18/polytechnique/station_builder.gd")
-const GroundsBuilder = preload("res://scripts/ligne18/polytechnique/grounds_builder.gd")
-const Lot = preload("res://scripts/ligne18/polytechnique/polytechnique.gd")
+const Line = preload("res://lots/ligne18/ligne18_plan.gd")
+const Plan = preload("res://lots/ligne18-polytechnique/polytechnique_plan.gd")
+const StationBuilder = preload("res://lots/ligne18-polytechnique/station_builder.gd")
+const GroundsBuilder = preload("res://lots/ligne18-polytechnique/grounds_builder.gd")
+const Lot = preload("res://lots/ligne18-polytechnique/polytechnique.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 
 var _failures: PackedStringArray = []

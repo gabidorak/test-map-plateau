@@ -1,5 +1,5 @@
 extends "res://tools/test_base.gd"
-## All Suites Study (scripts/allsuites/), in place of building #184: no z-fighting anywhere in its meshes (no two
+## All Suites Study (lots/allSuites/), in place of building #184: no z-fighting anywhere in its meshes (no two
 ## triangles facing the same way overlap in one plane, within 4 mm: drawn the same, the depth test flickers between
 ## them), every material known; in the game (the PTA Online test) its roofs over the old footprint, its walls stopping
 ## rays at the street, the courtyard and the gables, its threshold and colonnades' paving solid, its ground floor over
@@ -7,7 +7,7 @@ extends "res://tools/test_base.gd"
 ##   godot --headless --fixed-fps 60 --path . --script res://tools/test_allsuites.gd -- --online-test
 
 const Layers = preload("res://scripts/physics_layers.gd")
-const Builder = preload("res://scripts/allsuites/allsuites_builder.gd")
+const Builder = preload("res://lots/allSuites/allsuites_builder.gd")
 const WorldQuery = preload("res://scripts/world_query.gd")
 
 const PLANE := 0.004                        # m: faces this close are in one plane

@@ -7,7 +7,7 @@ beside the row's first bay:
 - public garages on OSM car parks, spread so one is never far on the campus (fewer along the Massy and west
   corridors); a "big" bay takes the long and wide vehicles (truck + trailer, biplane);
 - the bus depot at Massy-Palaiseau station (buses only, bus drivers): under the bus depot's roof by the Atlantis bus
-  station (tools/rail/bus_depot.py, lot massyPalaiseau's plan, bus_station depot depot: its terminal on the drivers' walkway by
+  station (godot/lots/rerB/tool/bus_depot.py, lot massyPalaiseau's plan, bus_station depot depot: its terminal on the drivers' walkway by
   the stairs, its six bays on the three lanes, facing the ramp out), when its plan has it;
 - the fire station at Polytechnique, building #1289 "SPIS" (osm:w1063984911, an open canopy 2.9 m high: the 3.1 m
   fire truck doesn't fit under it, so the bays are beside it), fire trucks only;
@@ -41,8 +41,8 @@ WORLD = ROOT / "godot/world/world.json"
 BUS_ROUTES = ROOT / "godot/world/bus_routes.json"
 CAR_ROUTES = ROOT / "godot/world/car_routes.json"
 RACES = ROOT / "godot/world/races.json"
-RER_PLAN = ROOT / "godot/data/rerB/plan.json"            # (lot rerB: the trains' services)
-MASSY_PLAN = ROOT / "godot/data/massyPalaiseau/plan.json"   # (lot massyPalaiseau: the bus depot)
+RER_PLAN = ROOT / "godot/lots/rerB/plan.json"            # (lot rerB: the trains' services)
+MASSY_PLAN = ROOT / "godot/lots/massyPalaiseau/plan.json"   # (lot massyPalaiseau: the bus depot)
 OUT = ROOT / "godot/world/garages.json"
 
 # bay sizes (m, width x length): what fits is decided in the game from each vehicle's size

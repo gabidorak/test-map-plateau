@@ -1,0 +1,13 @@
+{
+ "id": "ligne18-polytechnique",
+ "parent": "ligne18",
+ "order": 2,
+ "name": "Ligne 18 : gare Polytechnique",
+ "about": "Line 18's Polytechnique station (ex Palaiseau) and its grounds (ref/metro18/ §4; lots/ligne18-polytechnique/, on the line's plan): over its zone (u -45..45) the deck at deck_top_z under the tracks (the viaduc lot's), its end faces the viaduct's section, the end supports the first spans rest on, the station's elliptic piers; the two side platforms (60 m) behind glass screens; the hall at the ground under the deck (its opaque base, the white Gare box, the terracotta east box, the 1 000 m² shops building square to the boulevard, the porch of the main doors), the passerelle at level 1, stairs, escalators and lifts; the origami: folded glass skirts, leaning gables, the folded glass roof in white frames on steel trees. Its grounds redone up to the roads round it (polytechnique_plan.gd, in the streets' grid): the TCSP's kerb, a planted strip with its trees, the two-way cycle track, the forecourt (place Marguerite Perey's parvis) with its beds and groves, the east esplanade to av. de la Vauve's zebra, the west street (the old construction loop's) down to its turning circle, a north path; the ground flat at hall_z round the station, eased into the map's; mown lawns, trees in rows, lamps, benches, bins, bike racks; #394 out.",
+ "terraform": [
+  "res://lots/ligne18-polytechnique/polytechnique_plan.gd"
+ ],
+ "script": "res://lots/ligne18-polytechnique/polytechnique.gd",
+ "node": "ligne18_polytechnique",
+ "paint": "res://lots/ligne18-polytechnique/polytechnique.gd"
+}

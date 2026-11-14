@@ -1,22 +1,39 @@
 # Lots
 
-Every change made to the map (a building replaced, a garden redone, a villa built) is a **lot**:
-`godot/data/lots/<id>.json` ties its three phases together, and `godot/scripts/builder/lots.gd` runs them in order.
+Every change made to the map (a building replaced, a garden redone, a villa built) is a **lot**, one folder with all
+of it, `godot/lots/<id>/`:
+
+```
+godot/lots/<id>/
+  lot.json                  its declaration: its phases (below), its parent, its order, finished or not
+  plan.json, ...            its design, made by its tool
+  ground.json, ground.bin   its own ground (tools/common/lot_ground.py), if it owns some
+  drop.json                 its changes to the map's world (tools/common/world_edits.py), if its tool decides them
+  terraform_<name>.json     its terraforming zones (tools/terraform.py zone <name> --lot <id>)
+  <slug>.json               its restyled buildings' specs (tools/restyle.py, --lot <id> for a new one)
+  *.gd                      its Godot scripts (its node, builders, plan readers)
+  tool/                     its Python tool (.gdignore: Godot neither imports nor exports it)
+```
+
+`lot.json` ties its phases together, and `godot/scripts/builder/lots.gd` finds every `godot/lots/*/lot.json` and runs
+them in order. What all lots share stays out of their folders: `scripts/builder/` (lots.gd, lot_ground.gd,
+world_edits.gd, terraform.gd...), `scripts/restyle/`, `scripts/street_kit.gd`, `tools/common/`, `tools/terraform.py`,
+`tools/restyle.py`, `godot/data/restyle/_library.json`.
 
 | Phase | When | A lot's key | Where |
 |---|---|---|---|
-| 1. Terraforming | right after the map is read, when it is built | `terraform`: files of `godot/data/terraform/`, or a script whose `terraform_zones()` makes them from its design | `scripts/builder/terraform.gd` (file zones made by `tools/terraform.py`; the villa's court from `villaEnPierreCoteaux_data.gd`) |
-| 2. Removal | when the map is built | `drop`: its changes to the map's world as its tool decided them (`godot/data/<lot>/drop.json`), then `script`: its `drop(world)` | `scripts/builder/world_edits.gd` (its keys: `tools/common/world_edits.py`), the lot's script |
-| 2a. Own ground | when the map is built | `ground`: `godot/data/<lot>/` (`ground.json`, `ground.bin`), or its script's `ground_owned()` | `scripts/builder/lot_ground.gd` (made with `tools/common/lot_ground.py`), `scripts/builder/ground_cut.gd` |
+| 1. Terraforming | right after the map is read, when it is built | `terraform`: files of its folder (`res://lots/<id>/terraform_<name>.json`), or a script whose `terraform_zones()` makes them from its design | `scripts/builder/terraform.gd` (file zones made by `tools/terraform.py`; the villa's court from `villaEnPierreCoteaux_data.gd`) |
+| 2. Removal | when the map is built | `drop`: its changes to the map's world as its tool decided them (`godot/lots/<lot>/drop.json`), then `script`: its `drop(world)` | `scripts/builder/world_edits.gd` (its keys: `tools/common/world_edits.py`), the lot's script |
+| 2a. Own ground | when the map is built | `ground`: `godot/lots/<lot>/` (`ground.json`, `ground.bin`), or its script's `ground_owned()` | `scripts/builder/lot_ground.gd` (made with `tools/common/lot_ground.py`), `scripts/builder/ground_cut.gd` |
 | 2b. Ground paint | when the map is built | `paint`: a script's `repaint()` | the lot's data script |
 | 2c. Ground surfaces | when the map is built | its script's `surface_boxes()`, `surface_at()` | `scripts/builder/ground_bake.gd` |
-| 3. Building | in the game | `node` (game.gd's member), `restyle` (specs of `godot/data/restyle/`) | the lot's script, `scripts/restyle/` |
+| 3. Building | in the game | `node` (game.gd's member), `restyle` (its specs, `<slug>.json` in its folder) | the lot's script, `scripts/restyle/` |
 
 A terraforming file or a restyled building's spec counts only when a lot names it. Lots today: `rerB`, `massyPalaiseau` (the railway's,
 below), `logementsX`, `losplatos`,
 `allSuites`, `villaEnPierreCoteaux`, `ensae`, `campusEdf`, `ilot-001`, `superette258`, `baseNautique` (the boat hire
 on the Lac de l'X: its counter is PTA Online's terminal, `godot/scripts/online/boat_hire.gd`), `residenceHaignere`
-(the grounds round the Haigneré residence, #536 kept: `godot/scripts/residenceHaignere/`, its plan made of a few
+(the grounds round the Haigneré residence, #536 kept: `godot/lots/residenceHaignere/`, its plan made of a few
 lines with Godot's polygon tools: the bands along the roads offset from their kerb, the alley off the facade),
 `ligne18` and its children `ligne18-viaduc`, `ligne18-polytechnique`, `ligne18-universite` (line 18, below).
 
@@ -42,16 +59,16 @@ sidewalks, never under its streets, which are drawn on the block's plan). A chil
 the block. To redo a building of a block with its ground: a lot with `"parent": "ilot-NNN"`, its zones, and the
 building out of the plan's `KEPT`.
 
-A whole block redone (the 25/8 supermarket's): one master plan, `godot/scripts/ilot/ilot_plan.gd`, drawn in the
+A whole block redone (the 25/8 supermarket's): one master plan, `godot/lots/ilot-001/ilot_plan.gd`, drawn in the
 block's streets' frame (the map turned so they run straight), that its lots share: `ilot-001`, the block's own lot and the parent of the others (the ground's
 terraforming from the plan's `terraform_zones()`, the ring of roads and sidewalks round the block, its greenery and
 furniture; `scripts/street_kit.gd`, the street kit any lot's plan can use, draws streets: asphalt, setts, granite
 kerbs, sidewalks lowered at accesses, markings)
-then its children `superette258` (the shop, its yard, the filling station, the car park: `scripts/superette/`) and
+then its children `superette258` (the shop, its yard, the filling station, the car park: `lots/superette258/`) and
 `losplatos` (Losplatos Custom, set square to its street, its front sidewalk the block's).
 
 Line 18 of the Grand Paris Express (ref/metro18/, research): one master plan its lots share, frozen,
-`godot/data/ligne18/plan.json` (read by `godot/scripts/ligne18/ligne18_plan.gd`, made by `tools/ligne18/build_plan.py`
+`godot/lots/ligne18/plan.json` (read by `godot/lots/ligne18/ligne18_plan.gd`, made by `godot/lots/ligne18/tool/build_plan.py`
 from OSM and the map's ground; a rerun keeps the piers where they are, moving only those in the AI's car and bus
 lanes). It holds the axis, straight through the stations; the rails' profile (stations level, 3 % at most); the
 piers' places, clear of the roads and lanes; and each station's frame and levels. `ligne18` is the line's own lot
@@ -79,7 +96,7 @@ stairwell, a platform, a raised quay or sidewalk) owns its ground there: the map
 polygons (`scripts/builder/ground_cut.gd`: the triangles inside out, those across the outline cut, the rest exactly as
 they were), the terrain's collision holed over them, and the lot draws and collides its own. A lot's tool designs it
 (`tools/common/lot_ground.py`: its zones, each with its heights on 1 m grids, its material, the ground piece the game
-reads there, the material of its walls; its repairs, the map's ground mended round it) into `godot/data/<lot>/ground.*`,
+reads there, the material of its walls; its repairs, the map's ground mended round it) into `godot/lots/<lot>/ground.*`,
 and `scripts/builder/lot_ground.gd` lays it into the map when the map is built: the heights stamped into the
 heightmap, the materials into the ground the game reads, the zones drawn in 2 m squares with a wall wherever a zone
 meets another ground higher or lower (its 2 m cells cliffs: no grass), or its edge brought onto the map's ground where
@@ -89,25 +106,25 @@ it is designed to meet it (`snap`). Nothing of the design is computed again in G
 
 The RER B line (`rerB`) and Massy-Palaiseau's station with its bus station and bus depot (`massyPalaiseau`) are lots
 with no node: their `"build"` is a builder run when the map is built, with the map's own builds
-(`builder/rail_builder.gd`, `massy_builder.gd` with `hangar_builder.gd`: `Lots.build()`, in the lots' order), so they
-are always finished. One tool designs both, `tools/rail/` (they are designed together: the line's zones first,
-Massy-Palaiseau's after them; the trees, props and fences of both), and `tools/rail/lots.py` writes each lot's folder:
-- `plan.json`: its design, its zones among it (`godot/data/rerB/plan.json`: the alignment, profile, earthworks,
-  platforms, structures, signals, catenary, services, the yard: `build_rail.py`; `godot/data/massyPalaiseau/plan.json`:
+(`lots/rerB/rail_builder.gd`, `massy_builder.gd` with `hangar_builder.gd`: `Lots.build()`, in the lots' order), so they
+are always finished. One tool designs both, `godot/lots/rerB/tool/` (they are designed together: the line's zones first,
+Massy-Palaiseau's after them; the trees, props and fences of both), and `godot/lots/rerB/tool/lots.py` writes each lot's folder:
+- `plan.json`: its design, its zones among it (`godot/lots/rerB/plan.json`: the alignment, profile, earthworks,
+  platforms, structures, signals, catenary, services, the yard: `build_rail.py`; `godot/lots/massyPalaiseau/plan.json`:
   the footbridges, halls, line 18 box, bus station and depot: `massy_station.py`, `bus_station.py`, `bus_depot.py`);
 - `ground.json`, `ground.bin`: its own ground (the trackbed, platforms, slopes, stairwells, the road's trench, the
   yard; the bus station's islands, the line 18 shaft, Massy-Palaiseau's repaired ground), the zones' designed heights
   (`railgeo.zone_heights`);
-- `drop.json`: its changes to the map's world (`tools/rail/drops.py`: the trees and props in the line's way, its
+- `drop.json`: its changes to the map's world (`godot/lots/rerB/tool/drops.py`: the trees and props in the line's way, its
   fences, Lozère's station building, the canopies and huts on its tracks, the buildings over them; the bus station's
   props, fences and kerbs, the halls and decks `massy_builder.gd` draws instead, the bus depot's trees).
 The game reads the plans (the builders, the trains: `rail_map.gd`, `train_traffic.gd`, `loading_map.gd`). A change:
-`tools/rail/build_rail.py` (all of it again, ~1 min) or `tools/rail/lots.py` (ground and drops from the plans), then
+`godot/lots/rerB/tool/build_rail.py` (all of it again, ~1 min) or `godot/lots/rerB/tool/lots.py` (ground and drops from the plans), then
 the map rebuilt. Nothing changes the map pipeline's files in `godot/world/`: the lots change the map when it is built.
 
 The Logements de l'X (`logementsX`) were laid out by the same tools once; they are a lot like any other now: their
-plan `godot/data/logementsX/plan.json` and their `drop.json` (`tools/logements_x/build_plan.py` from the map's own
+plan `godot/lots/logementsX/plan.json` and their `drop.json` (`godot/lots/logementsX/tool/build_plan.py` from the map's own
 ground: the construction site out, their trees, props, the plan's buildings in), their terraforming (the site's
-smooth ground), own ground (the boulevard's raised sidewalk), surfaces and paint in `scripts/logementsX/`, and their
+smooth ground), own ground (the boulevard's raised sidewalk), surfaces and paint in `lots/logementsX/`, and their
 `"build"` drawing the facades and the surfaces themselves (the road fill, the car park, paths, the raised sidewalk) in
 the ground's material.

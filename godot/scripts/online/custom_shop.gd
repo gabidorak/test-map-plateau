@@ -1,5 +1,5 @@
 extends Node
-## PTA Online at Losplatos Custom (scripts/losplatos/losplatos.gd: the shop in place of building #758), Main/Mode/
+## PTA Online at Losplatos Custom (lots/losplatos/losplatos.gd: the shop in place of building #758), Main/Mode/
 ## CustomShop under scripts/modes/online_mode.gd: a player who stops their own vehicle in the workshop's service bay
 ## and presses U (the vehicle menu's key: E is a turn signal at the wheel) gets its panel (scripts/online/custom_panel.gd):
 ## - Repair: the bodywork back to new (car.gd health), paid by the damage: Prices.repair (what a wreck costs) times

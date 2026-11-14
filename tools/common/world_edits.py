@@ -1,5 +1,5 @@
 """A lot's changes to the map's world: what it takes out of world.json, moves and adds (its drop.json, written by its
-tool, godot/data/<lot>/drop.json). The game applies them when the map is built (godot/scripts/builder/world_edits.gd,
+tool, godot/lots/<lot>/drop.json). The game applies them when the map is built (godot/scripts/builder/world_edits.gd,
 from builder/lots.gd drop(), in the lots' order); apply() here does the same, for the tools that read the world as it
 is built (apply_lots(): every lot's, in the lots' order; the changes a lot's own code makes, its script's drop(),
 are the game's only), and to check a tool's edits. Only the sections the world has are changed (a tool may read a few).
@@ -28,13 +28,13 @@ from shapely.ops import unary_union
 from shapely.prepared import prep
 
 KERB_MIN = 0.3          # m: a kerb cut back shorter than this goes
-LOTS = ROOT / "godot" / "data" / "lots"
+LOTS = ROOT / "godot" / "lots"
 
 
 def lots() -> list:
-    """Every lot's declaration (godot/data/lots/*.json), in the order the game takes them (godot/scripts/builder/lots.gd
+    """Every lot's declaration (godot/lots/*/lot.json), in the order the game takes them (godot/scripts/builder/lots.gd
     all(): each parent before its children, each level by "order")."""
-    every = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(LOTS.glob("*.json"))]
+    every = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(LOTS.glob("*/lot.json"))]
     out = []
 
     def level(parent):

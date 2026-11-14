@@ -50,7 +50,7 @@ func build_and_save() -> Error:
 	if heights.size() != int(world["terrain"]["w"]) * int(world["terrain"]["h"]):
 		push_error("heightmap size mismatch")
 		return ERR_INVALID_DATA
-	# terraforming first (builder/terraform.gd, data/terraform/): the heightmap here, the ground's mesh alike
+	# terraforming first (builder/terraform.gd, the lots'): the heightmap here, the ground's mesh alike
 	Terraform.patch(heights, world["terrain"])
 	# the lots' own ground (builder/lot_ground.gd): the map's round it as it is, then their zones' heights stamped in
 	var t0: Dictionary = world["terrain"]

@@ -1,9 +1,11 @@
 extends RefCounted
-## Lots: each change made to the map (a building replaced, a garden redone, a villa built) is one lot,
-## data/lots/<id>.json, that ties its three phases together:
-##   "terraform"  its zones, applied first (builder/terraform.gd): files of data/terraform/ (tools/terraform.py), or a
+## Lots: each change made to the map (a building replaced, a garden redone, a villa built) is one lot, a folder
+## lots/<id>/ with all of it: its declaration lot.json, its data (plan, ground, drop, terraforming, restyled specs), its
+## scripts, its tool (tool/, Python, out of Godot's sight: .gdignore). lot.json ties its phases together:
+##   "terraform"  its zones, applied first (builder/terraform.gd): files of its folder (terraform_<name>.json, made by
+##                tools/terraform.py), or a
 ##                script whose static terraform_zones() makes them from its design (the villa's court)
-##   "drop"       its changes to the map's world as its tool decided them (data/<lot>/drop.json:
+##   "drop"       its changes to the map's world as its tool decided them (lots/<lot>/drop.json:
 ##                builder/world_edits.gd, tools/common/world_edits.py), applied when the map is built
 ##   "script"     its own code: drop(world), if it has one, takes out of the map what it replaces (when the map is built,
 ##                builder/world_builder.gd, after its "drop"); its node is made in the game (game.gd), held by game's
@@ -11,18 +13,19 @@ extends RefCounted
 ##   "paint"      a script whose repaint() paints the ground in its grounds (builder/ground_builder.gd)
 ##                (its script's surface_boxes() and surface_at(): its surfaces in the map's ground the game reads, its
 ##                roads, paving, lawns, baked when the map is built: builder/ground_bake.gd)
-##   "restyle"    restyled buildings' specs (data/restyle/<slug>.json, scripts/restyle/): their drop, paint and node
+##   "restyle"    restyled buildings' specs (<slug>.json in its folder, tools/restyle.py; scripts/restyle/): their drop,
+##                paint and node
 ##   "parent"     the lot it is part of (a block's own lot, whose plan the block's lots share): it comes after its
 ##                parent, its terraforming on the parent's, where the parent's script's child_weight(x, y) lets it
 ##                (inside the block, not under its streets)
 ##   (ground)     its script's ground_owned(): polygons (map) where it owns the ground, steps and walls and all: the
 ##                map's ground mesh and terrain collision cut out there (builder/ground_cut.gd), the lot draws and
 ##                collides its own
-##   "ground"     its own ground's data, data/<lot>/ (builder/lot_ground.gd, made by its tool with
+##   "ground"     its own ground's data, lots/<lot>/ (builder/lot_ground.gd, made by its tool with
 ##                tools/common/lot_ground.py): its zones cut out of the map's ground and drawn on their heights, walls
 ##                and all, its repairs terraformed
 ##   "build"      a builder run when the map is built, with the map's own builds (its build(root, world, heights,
-##                mesh_dir)): the railway's lots (their plans, ground and drop made by tools/rail/)
+##                mesh_dir)): the railway's lots (their plans, ground and drop made by godot/lots/rerB/tool/)
 ##   "finished"   true: its node's builds and its restyled buildings are built into the map when the map is built
 ##                (builder/lot_bake.gd), and its node in the game takes them back (baked()) and only brings them to
 ##                life (a door, a terminal); unfinished, they are built at start, so a change needs no map rebuilt
@@ -32,7 +35,7 @@ extends RefCounted
 ## when the map is built, their own ground ("ground") and their changes to the world ("drop") with it.
 ## No preloads (terraform.gd and the restyled buildings' specs read it): the lots' scripts are loaded by path.
 
-const DIR := "res://data/lots/"
+const DIR := "res://lots/"
 const RESTYLE := "res://scripts/restyle/restyle.gd"
 const LOT_FAR := "res://scripts/builder/lot_far.gd"
 const LOT_GROUND := "res://scripts/builder/lot_ground.gd"
@@ -48,10 +51,12 @@ static var baking := false
 static func all() -> Array:
 	if _lots.is_empty() and DirAccess.dir_exists_absolute(DIR):
 		var found := {}
-		for f in DirAccess.get_files_at(DIR):
-			if f.ends_with(".json"):
-				var l: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + f))
+		for d in DirAccess.get_directories_at(DIR):
+			if FileAccess.file_exists(DIR + d + "/lot.json"):
+				var l: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + d + "/lot.json"))
 				if l is Dictionary:
+					if str(l["id"]) != d:
+						push_error("lots/%s/lot.json: its id is %s" % [d, l["id"]])
 					found[str(l["id"])] = l
 		for l: Dictionary in found.values():
 			if l.has("parent") and not found.has(str(l["parent"])):
@@ -109,6 +114,11 @@ static func restyle_lot(slug: String) -> Dictionary:
 	return {}
 
 
+## Lot `id`'s folder.
+static func dir_of(id: String) -> String:
+	return DIR + id + "/"
+
+
 ## The lot `id` ({} if none).
 static func lot(id: String) -> Dictionary:
 	for l: Dictionary in all():
@@ -117,7 +127,7 @@ static func lot(id: String) -> Dictionary:
 	return {}
 
 
-## The terraforming the lots name, in order: [name (a file of data/terraform/, or a script), where it may act (its
+## The terraforming the lots name, in order: [name (a file of its folder, or a script), where it may act (its
 ## lot's parent's child_weight(x, y), a Callable; none for a lot with no parent)].
 static func terraform_entries() -> Array:
 	var out := []

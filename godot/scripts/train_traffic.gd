@@ -17,7 +17,7 @@ extends Node
 ##   traffic.gd's snapshot where it runs the bots) for every train's look and knocks. A train far from every player
 ##   and the camera is posed every few ticks (POSE_NEAR, POSE_FAR).
 ## - Every peer: the lineside signals show the blocks' occupancy (S or the carré's two reds for an occupied block, A for
-##   the one after, else VL: scripts/builder/rail_builder.gd's lamps); the departure screens at Lozère list the next two
+##   the one after, else VL: lots/rerB/rail_builder.gd's lamps); the departure screens at Lozère list the next two
 ##   trains of their platform; a train running into something this peer simulates knocks it aside (its own player:
 ##   pushed off the track, not launched; a vehicle: a capped push and damage, car.gd damage(), the two kept from
 ##   colliding while it clears); a player riding a train off the playable box is put down next to the line at that end
@@ -27,9 +27,9 @@ const Train = preload("res://scripts/train.gd")
 const TrainBot = preload("res://scripts/train_bot.gd")
 const ParkedTrains = preload("res://scripts/parked_trains.gd")
 const RailMap = preload("res://scripts/rail_map.gd")
-const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
+const RailBuilder = preload("res://lots/rerB/rail_builder.gd")
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
-const RAIL := "res://data/rerB/plan.json"
+const RAIL := "res://lots/rerB/plan.json"
 const FILL_STEP := 0.25                     # s per step when filling the line at the start
 const MAX_TRIP := 1500.0                    # s: a trip longer than this is given up (stowed)
 const KNOCK_SPEED := 6.0                    # m/s: the most a train's knock sends a vehicle off at
