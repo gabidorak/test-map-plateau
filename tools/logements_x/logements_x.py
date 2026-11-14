@@ -1,9 +1,10 @@
 """The École polytechnique's new student housing (2026-11-08): lot S3.2 of the ZAC du quartier de l'École
 polytechnique, on the Boulevard des Maréchaux, Palaiseau (around map x 785, y -339). The map pipeline had it as the
-building site it was (a fenced construction ground, a gravel lot, six 12 m placeholder blocks from OSM); build_rail.py
-calls build() and writes what it returns to rail.json `logements_x`; patch_world.py consumes it like any site (its
-zones, its repair, apply_site: props, trees, fences, kerbs, kit modules, the six buildings restyled) and
-scripts/builder/logements_x_builder.gd draws the details.
+building site it was (a fenced construction ground, a gravel lot, six 12 m placeholder blocks from OSM);
+build_plan.py calls build() and writes what it returns to lot logementsX's plan (godot/data/logementsX/plan.json), which
+the lot's scripts (godot/scripts/logementsX/) use when the map is built: its repair as its terraforming, its zones as
+its surfaces (drawn over the ground by logements_x_builder.gd), its `site` as its drop() (props, trees, fences, kerbs,
+kit modules, the six buildings restyled), the builder's details.
 
 Sources: Thomas's annotated top view and eight photos (ref/logementsX/), AMOES's project sheet ("300 logements
 étudiants, ZAC du quartier de l'École polytechnique": CDC Habitat, Dietrich | Untertrifaller, 6 plots RDC to R+5,
@@ -172,10 +173,9 @@ SQUARES = [(684.6, -328.4, 3.0), (714.0, -327.8, 3.2), (742.6, -333.0, 3.2), (77
 
 
 class Site:
-    def __init__(self, world: dict, H: rg.Heights, taken=None):
+    def __init__(self, world: dict, H: rg.Heights):
         self.W = world
         self.H = H
-        self.taken = taken if taken is not None else Polygon()
         G = world["ground"]
         self.roads = unary_union([Polygon(g["rings"][0], g["rings"][1:]).buffer(0) for g in G if g["kind"] == "road"
                                   and g["rings"] and _bb(g).intersects(box(630, -390, 900, -330))])
@@ -226,9 +226,9 @@ class Site:
         east = [g for g in self.W["ground"] if g["kind"] == "path" and g["rings"] and _bb(g).intersects(
             box(880, -372, 890, -360))]
         self.east_path = unary_union([Polygon(g["rings"][0], g["rings"][1:]).buffer(0) for g in east])
-        self.walk = snap(band.difference(self.east_path).difference(self.taken))
+        self.walk = snap(band.difference(self.east_path))
         south = Polygon(np.r_[K, (K - n * 1.5)[::-1]]).buffer(0).intersection(cut0).intersection(cut1)
-        self.roadfill = snap(south.difference(self.roads).difference(self.east_path).difference(self.taken))
+        self.roadfill = snap(south.difference(self.roads).difference(self.east_path))
         self.back = back
 
     def throat_x(self) -> tuple:
@@ -278,11 +278,11 @@ class Site:
         reach = Polygon(np.r_[self.K - self.Kn * 1.5, (self.K + self.Kn * 6.5)[::-1]]).buffer(0)
         reach = reach.intersection(_halfplane(self.K[2], self.K[3] - self.K[2], +1))
         self.old_walk = snap(unary_union(old).intersection(reach))
-        s = unary_union([site, self.old_walk, self.walk, self.roadfill]).difference(self.taken)
+        s = unary_union([site, self.old_walk, self.walk, self.roadfill])
         # no pinholes where the pieces' outlines and the sidewalk's nearly meet
         s = unary_union([Polygon(p.exterior, [h for h in p.interiors if Polygon(h).area > 1.0]) for p in polys(s)])
         # 1 mm beyond the pieces' outlines before the snap to the mm: the pieces it takes leave no hair-thin rests
-        self.site = snap(s.buffer(0.001, join_style=2).difference(self.taken))
+        self.site = snap(s.buffer(0.001, join_style=2))
 
     # ---------------------------------------------------------------- the car park
 
@@ -426,8 +426,8 @@ class Site:
 
     def _grid(self):
         """The finished ground on a 1 m grid on the 2 m nodes' lattice: fixed on the car park (its plane), the
-        sidewalk (the road's level near the kerb, the sidewalk's behind: patch_world.py draws each side of the kerb
-        from the nodes on its side), the road, the plots' pads and round the site (the ground as it is); the rest
+        sidewalk (the road's level near the kerb, the sidewalk's behind: the ground on each side of the kerb from the
+        nodes on its side), the road, the plots' pads and round the site (the ground as it is); the rest
         (lawns, paths) a harmonic surface between them."""
         from scipy.sparse import coo_matrix
         from scipy.sparse.linalg import spsolve
@@ -503,8 +503,8 @@ class Site:
                      "z": Z.reshape(X.shape)}
 
     def surf(self, x, y) -> np.ndarray:
-        """The finished ground at map points, as patch_world.py will draw it (the 2 m nodes of the repaired
-        heightmap, bilinear; the sidewalk's own level on it)."""
+        """The finished ground at map points, as the map will draw it (the 2 m nodes of the terraformed heightmap,
+        bilinear; the sidewalk's own level on it)."""
         G = self.grid
         x, y = np.atleast_1d(np.asarray(x, float)), np.atleast_1d(np.asarray(y, float))
         fx = (x - G["x0"]) / G["cell"]
@@ -519,12 +519,11 @@ class Site:
             z[on] = self.walk_z_at(np.c_[x[on], y[on]])
         return z
 
-    # ---------------------------------------------------------------- for patch_world.py
+    # ---------------------------------------------------------------- the lot's surfaces
 
     def zones(self) -> list:
-        """Zones (patch_world.py; all take the pipeline's raised pieces, kerbs and markings in: `absorb`): the
-        sidewalk at its kerb's level along it (bus_island: the kerb a step); the rest on the repaired ground
-        (regrade: one surface), each with its ground piece."""
+        """Zones (the lot's surfaces, drawn over the ground by logements_x_builder.gd): the sidewalk at its kerb's
+        level along it (its `axis`: the kerb a step); the rest on the repaired ground, each with its ground piece."""
         out = []
         ax = self.K[::2]
         az = self.z_walk[::2]
@@ -801,7 +800,7 @@ class Site:
     # ---------------------------------------------------------------- the plots in world.json
 
     def buildings(self) -> list:
-        """The six plots as world.json buildings (patch_world.apply_site swaps them in): a white concrete ground floor
+        """The six plots as world.json buildings (the lot's drop() swaps them in): a white concrete ground floor
         core (the recess cut out) and a floating upper body in the khaki panels with a green roof; the builder adds
         the rest."""
         import copy
@@ -830,7 +829,7 @@ class Site:
             out.append(b)
         return out
 
-    # ---------------------------------------------------------------- rail.json `logements_x`
+    # ---------------------------------------------------------------- the lot's plan
 
     def data(self, world: dict) -> dict:
         self.furnish(world)
@@ -869,10 +868,10 @@ class Site:
                           "ea": r3([pl["ea"]])[0], "eb": r3([pl["eb"]])[0], "recess": list(RECESS),
                           "core_in": CORE_IN, "core": r3(_ccw(np.asarray(pl["core"].exterior.coords)[:-1]))})
         return {
-            "about": "tools/rail/logements_x.py: the École polytechnique's new student housing (lot S3.2), its car "
-                     "park, gardens and the boulevard's north sidewalk; zones in rail.json zones (logx:*), the ground "
-                     "in `repairs`, world.json changes in `site` (patch_world.apply_site), the details for "
-                     "scripts/builder/logements_x_builder.gd",
+            "about": "tools/logements_x/logements_x.py: the École polytechnique's new student housing (lot S3.2), "
+                     "its car park, gardens and the boulevard's north sidewalk; its surfaces in `zones` (logx:*), its "
+                     "ground in `repairs`, its changes to world.json in `site` (the lot's drop()), the details for "
+                     "scripts/logementsX/logements_x_builder.gd",
             "repairs": [self.repair()],
             "site": {"fences_gone": [self.fence_id], "clear": [r3(np.asarray(p.exterior.coords)[:-1])
                                                                for p in polys(self.site.buffer(0.3))],
@@ -907,9 +906,9 @@ class Site:
                     len(self.props_moved), len(self.props_dropped), len(self.bollards), len(self.rocks)))
 
 
-def build(world: dict, H: rg.Heights, taken=None) -> tuple:
-    """(rail.json `logements_x`, its zones) for build_rail.py."""
-    S = Site(world, H, taken)
+def build(world: dict, H: rg.Heights) -> tuple:
+    """(lot logementsX's plan, its zones) for build_plan.py."""
+    S = Site(world, H)
     data = S.data(world)
     print(S.summary(), flush=True)
     return data, S.zones()
