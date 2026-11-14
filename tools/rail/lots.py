@@ -100,7 +100,7 @@ def write(rail: dict, world: dict, plans: bool = True) -> None:
 def write_grounds(rail: dict, world: dict) -> None:
     """Both lots' ground: their zones' designed heights (railgeo.zone_heights, on the map's own ground mended by
     Massy-Palaiseau's repairs), their materials, walls and edges, the repairs."""
-    H = md.Heights(md.BASE, world["terrain"], world["ground_mesh"]["cell"])
+    H = md.Heights(md.WORLD, world["terrain"], world["ground_mesh"]["cell"])
     A = rg.Alignment(rail["alignment"])
     H_fix = H
     repairs = rail.get("massy", {}).get("repairs", [])
@@ -140,8 +140,7 @@ def write_grounds(rail: dict, world: dict) -> None:
 
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
-    md.ensure_base()
-    write(load(), md.load_json(md.BASE / "world.json"), plans=False)
+    write(load(), md.load_json(md.WORLD / "world.json"), plans=False)
 
 
 if __name__ == "__main__":

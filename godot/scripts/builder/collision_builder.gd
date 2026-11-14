@@ -14,11 +14,11 @@ const WALL_HEIGHT := 400.0
 
 
 ## One StaticBody3D with a HeightMapShape3D per tile, sampled every 1 m on the ground as the ground
-## mesh draws it (ground_heights.gd), so the player's feet stay on the visible ground. Where the ground steps (the
-## railway's walls, platform edges, stairwells and trench: tools/rail/patch_world.py) the height field cannot follow
-## it: world.json ground_mesh.holes lists those samples (heightmap row, column), left out as holes (NAN, which Jolt
-## takes as a hole), and the ground mesh's raised collision faces cover them exactly (ground_builder.gd).
-func terrain(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_dir: String) -> void:
+## mesh draws it (ground_heights.gd), so the player's feet stay on the visible ground. Where a lot owns the ground
+## (builder/ground_cut.gd: the railway's trackbed, platforms, stairwells, trench...) the height field cannot follow
+## its steps: `holes` lists those samples (heightmap row, column), left out as holes (NAN, which Jolt takes as a hole);
+## the lot's own ground collides there, and the ground mesh's faces round it (ground_builder.gd).
+func terrain(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_dir: String, holes_in: Array) -> void:
 	var t: Dictionary = world["terrain"]
 	var w: int = t["w"]
 	var h: int = t["h"]
@@ -31,7 +31,7 @@ func terrain(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_
 	var ground := GroundHeights.new(heights, w, h, cell, ox, oy, world["ground_mesh"]["cell"])
 	var water: Variant = root.get_node_or_null("Water")     # lake beds dug out (scripts/water.gd)
 	var holes := {}                         # Vector2i(tile row, tile column) -> PackedInt32Array of sample rows, columns
-	for hs: Array in world["ground_mesh"].get("holes", {}).get("samples", []):
+	for hs: Array in holes_in:
 		var r: int = hs[0]
 		var c: int = hs[1]
 		# a sample on a tile's edge belongs to both tiles sharing it

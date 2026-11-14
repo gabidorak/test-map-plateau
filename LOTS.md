@@ -103,8 +103,7 @@ Massy-Palaiseau's after them; the trees, props and fences of both), and `tools/r
   props, fences and kerbs, the halls and decks `massy_builder.gd` draws instead, the bus depot's trees).
 The game reads the plans (the builders, the trains: `rail_map.gd`, `train_traffic.gd`, `loading_map.gd`). A change:
 `tools/rail/build_rail.py` (all of it again, ~1 min) or `tools/rail/lots.py` (ground and drops from the plans), then
-the map rebuilt. `tools/rail/patch_world.py` still patches the map's own files with the railway's ground, under the
-lots' own ground; it goes with `godot/world/base/`.
+the map rebuilt. Nothing changes the map pipeline's files in `godot/world/`: the lots change the map when it is built.
 
 The Logements de l'X (`logementsX`) were laid out by the same tools once; they are a lot like any other now: their
 plan `godot/data/logementsX/plan.json` and their `drop.json` (`tools/logements_x/build_plan.py` from the map's own

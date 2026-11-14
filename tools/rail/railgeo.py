@@ -147,7 +147,7 @@ class Design:
         self.sides = {k: {a: np.asarray(v, dtype=np.float64) for a, v in ew[k].items() if a != "why"}
                       for k in ("left", "right")}
         self.n = len(self.F)
-        self.yard_bed = None            # YardBed: caps the "yard" zones' ground (patch_world.py sets it)
+        self.yard_bed = None            # YardBed: caps the "yard" zones' ground (lots.py sets it)
         self.zones = []
         for z in zones:
             self.add_zone(z)

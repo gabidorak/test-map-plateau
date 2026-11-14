@@ -13,8 +13,8 @@ const Lots = preload("res://scripts/builder/lots.gd")
 const Terraform = preload("res://scripts/builder/terraform.gd")
 const GroundCut = preload("res://scripts/builder/ground_cut.gd")
 const SHADER := "res://shaders/toy_ground.gdshader"
-## Must match the material ids hard-coded in toy_ground.gdshader. "ballast" (the railway's trackbed) is appended by
-## tools/rail/patch_world.py, after the pipeline's kerb and paint.
+## Must match the material ids hard-coded in toy_ground.gdshader: the pipeline's, then "ballast" (the railway's
+## trackbed: lot rerB's own ground brings it, builder/lot_ground.gd).
 const MATERIALS := ["asphalt", "concrete", "paving", "sett", "gravel", "dirt", "sand", "grass", "tall_grass",
 		"forest_floor", "construction", "water", "clay", "tartan", "artificial_turf", "court", "wood", "building",
 		"kerb", "paint", "ballast"]
@@ -22,8 +22,7 @@ const MATERIALS := ["asphalt", "concrete", "paving", "sett", "gravel", "dirt", "
 
 func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String) -> Error:
 	var gm: Dictionary = world["ground_mesh"]
-	# the railway patch (tools/rail/patch_world.py) appends "ballast": a world without it builds too
-	if gm["materials"] != MATERIALS and gm["materials"] != MATERIALS.slice(0, MATERIALS.size() - 1):
+	if gm["materials"] != MATERIALS.slice(0, MATERIALS.size() - 1):
 		push_error("ground materials changed in the pipeline: update toy_ground.gdshader and ground_builder.gd")
 		return ERR_INVALID_DATA
 	var files := {}                     # ground.bin and its parts ground.1.bin... (a chunk's "file") once read

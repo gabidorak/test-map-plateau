@@ -22,8 +22,7 @@ __pycache__/
 /godot/world/world.json
 /godot/world/ground*
 /godot/world/heightmap*
-/godot/world/base/*
-!/godot/world/base/.gdignore
+/godot/world/base/
 /godot/scenes/generated/neighborhood.tscn
 /godot/scenes/generated/ground.json
 /godot/scenes/generated/ground_ids.bin

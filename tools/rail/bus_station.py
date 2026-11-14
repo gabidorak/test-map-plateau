@@ -1,7 +1,7 @@
 """The Atlantis bus station at Massy-Palaiseau laid out again (2026-11-07), and the bus depot beside it (bus_depot.py).
 massy_station.py calls plan() (the ground: repairs and zones) and finish() (what the builder draws, the props, the
-routes); its result is rail.json `massy` `bus_station`. patch_world.py draws the ground (the zones), moves and drops
-the props, fences and kerbs in the way; scripts/builder/massy_builder.gd (and hangar_builder.gd) draw the rest;
+routes); its result is massyPalaiseau's plan `bus_station`. The lot's own ground has the zones, its drop.json moves
+and drops the props, fences and kerbs in the way (lots.py, drops.py); scripts/builder/massy_builder.gd (and hangar_builder.gd) draw the rest;
 tools/rail/bus_routes.py puts the 4606 on the new lanes; tools/online/garages.py puts the bus job's depot under the
 depot's roof.
 
@@ -140,11 +140,10 @@ def seam_on(g, refs: list, tol: float = SEAM_TOL):
 
 
 def seams(zs: list) -> list:
-    """Each zone's outline put on the earlier zones' where it runs along them (seam_on; patch_world.py: first wins).
+    """Each zone's outline put on the earlier zones' where it runs along them (seam_on; the first zone wins).
     Where two zones met, the later one's vertices stood a fraction of a mm off the earlier one's edge (the lanes' Massy
     edge kept its 0.5 m samples where the sidewalks' simplified kerb line and the depot's ramps have none, then both were
-    rounded to the mm): patch_world.py cut hair-thin slivers along those kerbs, ground edges used three times and
-    cracks."""
+    rounded to the mm): hair-thin slivers along those kerbs, ground edges used three times and cracks."""
     done = []
     for z in zs:
         g = unary_union([Polygon(p[0], p[1:]) for p in z["polygons"]])
@@ -248,7 +247,7 @@ class Plan:
         self.m_lanes = m(self.lanes)
         self.m_apron = m(self.apron)
         self.m_all = self.m_apron
-        # the bus depot and the ground round it (bus_depot.py; imported here: patch_world.py never loads it)
+        # the bus depot and the ground round it (bus_depot.py; imported here: lots.py never loads it)
         import bus_depot
         self.depot = bus_depot.Depot(self, H)
         dep = self.depot
@@ -316,7 +315,7 @@ def repairs(P: Plan) -> list:
     the core at that height, the rest of the ring eased into the ground over `blend` from the core): the lanes and
     quays on their profile, eased into the ground round them. Only where the ground goes on smoothly: where a zone
     meets the ground at a step (the sidewalk's back, the depot: their walls) the ground there stays
-    as it was, so patch_world.py draws the step's far side on it."""
+    as it was, the lot's own ground's wall drawn on it."""
     ax, az = P.axis_line(ENDS[0] - BLEND - 2, ENDS[1] + BLEND + 2, 0.0, 0.0, 4.0)
     core_g = unary_union([P.m_lanes] + P.m_quays)
     core = [ring(p) for p in polys(core_g)]
@@ -335,7 +334,7 @@ def _pg(ps) -> list:
 
 
 def zones(P: Plan) -> list:
-    """Zones for patch_world.py, first wins: the quays and the sidewalks (raised), the depot's (bus_depot.py: its
+    """Zones of the lot's own ground, first wins: the quays and the sidewalks (raised), the depot's (bus_depot.py: its
     floor, ramps, car park, sidewalks and green), the lanes (asphalt), at heights along an axis (kind bus_island: exact
     on both sides of a step); the ground eased round the lanes (the repaired ground, material kept). `piece`: the ground
     piece a zone gets ([kind, material]); `absorb`: the pipeline's raised pieces, kerbs, markings and raised collision
@@ -792,7 +791,7 @@ def finish(P: Plan, Hf, world: dict, flights: list, lifts_: list, piers_: list, 
 
 def fence(P: Plan, Hf, gaps, world: dict) -> list:
     """The fence between the RER side lane and the tracks: straight at FENCE_T (FENCE_TRACK m off a track at least),
-    open at the gaps (flights, lifts, piers) and buildings. For patch_world.py's world fences."""
+    open at the gaps (flights, lifts, piers) and buildings. For the lot's drop.json fences."""
     if P.tracks_near is None or P.tracks_near.is_empty:
         return []
     ln = to_xy(LineString([(ENDS[0] - 2.0, FENCE_T), (ENDS[1] + 2.0, FENCE_T)]))

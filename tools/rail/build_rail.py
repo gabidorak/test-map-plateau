@@ -1,5 +1,5 @@
 """Designs the RER B (Ligne de Sceaux, RATP, 1,500 V DC) across the map, from OpenStreetMap (tools/rail/osm_rail.json,
-fetch_osm.py) and the LiDAR ground the pipeline drew (godot/world/base/heightmap.f32), and Massy-Palaiseau's station
+fetch_osm.py) and the LiDAR ground the pipeline drew (godot/world/ heightmap), and Massy-Palaiseau's station
 with it (massy_station.py): the railway's two lots, rerB and massyPalaiseau, written by lots.py into godot/data/rerB/
 and godot/data/massyPalaiseau/ (their plans, ground and changes to the map's world), with review images in
 tools/rail/review/.
@@ -2518,15 +2518,14 @@ def island_furniture(Y: dict) -> list:
 def main() -> None:
     t_start = time.time()
     osm = load_osm()
-    md.ensure_base()
-    world = md.load_json(md.BASE / "world.json")
+    world = md.load_json(md.WORLD / "world.json")
     set_data_area(world)
     t1, ids1 = chain_track(osm, "1")
     t2, ids2 = chain_track(osm, "2")
     fa = fit_alignment(t1, t2)
     al = alignment_arrays(fa)
     spacing = al["spacing"]
-    H = md.Heights(md.BASE, world["terrain"], world["ground_mesh"]["cell"])
+    H = md.Heights(md.WORLD, world["terrain"], world["ground_mesh"]["cell"])
     L = float(al["s"][-1])
     A0 = rg.Alignment({"step": 1.0, "pts": al["pts"], "heading": al["heading"], "z": np.zeros(len(al["s"])),
                        "length": L})
@@ -2675,7 +2674,7 @@ def main() -> None:
                  "map coordinates (x east, y north, z up, metres; Godot = (x, z, -y)); s along the centreline from "
                  "its west end, u across it (north positive). Schema: the docstring of build_rail.py.",
         "built_from": {"osm": "tools/rail/osm_rail.json + osm_rail_massy.json", "osm_timestamp": osm["timestamp"],
-                       "lidar": "godot/world/base (heightmap)"},
+                       "lidar": "godot/world (heightmap)"},
         "box": box, "playable": world["meta"]["playable"],
         "playable_area": world["meta"].get("playable_area"),
         "fit": fa["stats"],

@@ -596,14 +596,14 @@ class Depot:
         gz = (Z[j, i] * (1 - a) * (1 - b) + Z[j, i + 1] * a * (1 - b) + Z[j + 1, i] * (1 - a) * b + Z[j + 1, i + 1] * a * b)
         return np.where(np.isnan(hz), gz, hz)
 
-    # ---------------------------------------------------------------- for patch_world.py
+    # ---------------------------------------------------------------- the lot's own ground
 
     def _axis_u(self, u0: float, u1: float, v: float, zf) -> tuple:
         us = np.arange(u0, u1 + 1e-6, 1.0)
         return r3(m(us, np.full(len(us), v))), [round(float(z), 3) for z in zf(us, np.full(len(us), v))]
 
     def zones(self) -> list:
-        """Zones for patch_world.py (bus_station.zones puts them after its quays and sidewalks): the floor (concrete),
+        """Zones of the lot's own ground (bus_station.zones puts them after its quays and sidewalks): the floor (concrete),
         the ramps (asphalt; flat across, their level along u), the stairs' foot, the car park (asphalt, the sidewalk
         back's level along it), the sidewalks (their kerb's level), the green (grass on the repaired ground: repair())."""
         out = []

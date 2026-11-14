@@ -18,7 +18,7 @@ extends SceneTree
 ##  6. Toy buildings (M7): every mass has its mesh with the facade data (UV2 + four custom channels) and the
 ##     one shared building material, a collision shape, and every kit module and name sign is drawn once, but those an
 ##     interior building loses (world/interiors.json, builder/interior_builder.gd).
-##  7. RER B (lot rerB's plan, tools/rail/): world.json carries the patch stamp of the railway's plans; along both tracks, across
+##  7. RER B (lot rerB's plan, tools/rail/): along both tracks, across
 ##     the playable box, the ground is the railway's trackbed piece and the drawn mesh lies on the designed formation
 ##     with no step; no tree, prop or building inside the kinematic gauge; each platform edge is 1.60-1.70 m from its
 ##     track centre, the platform top 1.15 m above the rail and the ground drops in front of its wall.
@@ -33,7 +33,6 @@ const InteriorBuilder = preload("res://scripts/builder/interior_builder.gd")
 const SCENE := "res://scenes/generated/neighborhood.tscn"
 const WORLD := "res://world/world.json"
 const RAIL := "res://data/rerB/plan.json"
-const MASSY := "res://data/massyPalaiseau/plan.json"
 const GAUGE_HALF := 1.75                   # m from a track centre: GC kinematic gauge half-width (EN 15273-2, 1.645 m) + 0.1 m
 const EDGE_MIN := 1.60                     # m, platform edge from its track centre (RATP RER platforms: 1.65 m)...
 const EDGE_MAX := 1.70                     # ...within this range
@@ -499,16 +498,6 @@ func _check_buildings(root: Node, world: Dictionary) -> void:
 # --- 7. RER B -------------------------------------------------------------------------------------
 
 func _check_railway(world: Dictionary, rail: Dictionary) -> void:
-	var stamp: Dictionary = world["meta"].get("rail", {})
-	if stamp.is_empty():
-		_fail("world.json has no rail stamp: run tools/rail/patch_world.py")
-	else:
-		var ctx := HashingContext.new()
-		ctx.start(HashingContext.HASH_SHA1)
-		ctx.update(FileAccess.get_file_as_bytes(RAIL))
-		ctx.update(FileAccess.get_file_as_bytes(MASSY))
-		if ctx.finish().hex_encode() != stamp.get("plans", ""):
-			_fail("world.json was patched from other plans of the railway's lots: run tools/rail/patch_world.py")
 	var map := GroundMap.get_map()
 	var a: Dictionary = rail["alignment"]
 	var ew: Dictionary = rail["earthworks"]

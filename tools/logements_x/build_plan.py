@@ -1,6 +1,6 @@
 """Lot logementsX's design (the École polytechnique's new student housing): godot/data/logementsX/plan.json and
 drop.json, made by logements_x.py (its docstring: what it lays out, its sources) from the map's own ground
-(godot/world/base/: world.json and its heightmap). The game reads the plan through
+(godot/world/: world.json and its heightmap). The game reads the plan through
 godot/scripts/logementsX/logements_x_plan.gd: the lot's terraforming (its `repairs`), its surfaces (`zones`), its
 builder's details; drop.json, its removals and additions to the world (tools/common/world_edits.py), through
 builder/world_edits.gd.
@@ -24,9 +24,8 @@ DROP = OUT.parent / "drop.json"
 
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
-    md.ensure_base()
-    world = md.load_json(md.BASE / "world.json")
-    H = md.Heights(md.BASE, world["terrain"], world["ground_mesh"]["cell"])
+    world = md.load_json(md.WORLD / "world.json")
+    H = md.Heights(md.WORLD, world["terrain"], world["ground_mesh"]["cell"])
     data, zones = lx.build(world, H)
     data["zones"] = zones
     site = data.pop("site")

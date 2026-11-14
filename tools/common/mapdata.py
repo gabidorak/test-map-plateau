@@ -1,24 +1,19 @@
 """The map's files and geometry, for the tools (tools/rail/, tools/logements_x/, tools/ligne18/...): the paths, the
-pipeline's world files and their pristine copies, the heightmap, the ground height as the game draws it, polylines.
+pipeline's world files, the heightmap, the ground height as the pipeline drew it, polylines.
 
 Map coordinates everywhere: metres, x east, y north, z up, origin Télécom Paris (Lambert-93 641117.6, 6846184.3;
 l93.py converts); Godot = (x, z, -y).
 
-The pipeline's outputs in godot/world/ are patched in place by tools/rail/patch_world.py; the copies it started from
-live in godot/world/base/ (BASE_FILES; the folder has a .gdignore, so Godot neither imports nor exports it). world.json
-`meta.rail` stamps patched files. A script using this module puts tools/common/ on its path.
+godot/world/ holds the map pipeline's outputs as it wrote them: nothing changes them, the lots (godot/data/lots/)
+change the map when it is built. A script using this module puts tools/common/ on its path.
 """
 import json
-import shutil
 from pathlib import Path
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 WORLD = ROOT / "godot" / "world"
-BASE = WORLD / "base"
-BASE_FILES = ["world.json", "heightmap.f32", "ground.bin", "ground_ids.bin", "ground_index.json"]
-PART_BYTES = 48_000_000     # large heightmaps and ground meshes are split in files under this (GitHub: 100 MB a file)
 
 
 def world_files(world: dict) -> list:
@@ -37,45 +32,8 @@ def read_heightmap(world_dir: Path, terrain: dict) -> np.ndarray:
     return a.reshape(int(terrain["h"]), int(terrain["w"]))
 
 
-def write_heightmap(world_dir: Path, terrain: dict, z: np.ndarray) -> None:
-    """z (h, w) into world_dir as `terrain` names its files (the same bands of rows as the base)."""
-    names = terrain.get("parts") or [terrain["file"]]
-    a = np.asarray(z, dtype="<f4")
-    if len(names) == 1:
-        a.tofile(Path(world_dir) / names[0])
-        return
-    sizes = [(Path(BASE) / n).stat().st_size // (4 * a.shape[1]) for n in names]
-    r0 = 0
-    for n, rows in zip(names, sizes):
-        a[r0:r0 + rows].tofile(Path(world_dir) / n)
-        r0 += rows
-    assert r0 == a.shape[0], "heightmap bands do not add up"
-
-
 def load_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def ensure_base() -> None:
-    """godot/world/base/ holds the pipeline's files before the rail patch. When world.json carries no rail stamp, the
-    files in godot/world/ are fresh pipeline outputs: they become the base (a rerun of the pipeline replaces it)."""
-    world = load_json(WORLD / "world.json")
-    meta = world["meta"]
-    if "rail" in meta:
-        missing = [f for f in world_files(load_json(BASE / "world.json")) if not (BASE / f).exists()] \
-            if (BASE / "world.json").exists() else ["world.json"]
-        if missing:
-            raise SystemExit("godot/world/ is patched (world.json meta.rail) but godot/world/base/ lacks %s" % missing)
-        return
-    BASE.mkdir(parents=True, exist_ok=True)
-    (BASE / ".gdignore").write_text("")
-    files = world_files(world)
-    for old in BASE.iterdir():              # a previous base's files (one heightmap file then bands, or the reverse)
-        if old.name not in files and old.name != ".gdignore":
-            old.unlink()
-    for f in files:
-        shutil.copyfile(WORLD / f, BASE / f)
-    print("godot/world/base/: the pipeline's files copied before patching")
 
 
 class Heights:

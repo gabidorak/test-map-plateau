@@ -5,7 +5,7 @@ python tools/rail/fetch_osm.py --massy [--out tools/rail/osm_rail_massy.json]
 python tools/rail/fetch_osm.py --west [--out tools/rail/osm_rail_west.json]
 
 The committed osm_rail.json is what build_rail.py reads, so the railway rebuilds the same way without the network;
-rerun this to take OSM edits in (then build_rail.py and patch_world.py). Overpass query (BOX: the line's corridor, the
+rerun this to take OSM edits in (then build_rail.py). Overpass query (BOX: the line's corridor, the
 map's data box x -250..1810 widened to x -600..2150 so the trains' routes start and end beyond it, y -1000..-700):
 - the tracks (railway=rail named "Ligne de Sceaux"), the platforms, every railway node (signals, stop positions,
   milestones, the station, its entrances, switches);

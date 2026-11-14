@@ -17,7 +17,8 @@ Landmark buildings are done one by one: say **"landmark &lt;folder&gt;"**. The w
    Massy-Palaiseau station, 150 m walkable either side of the 4606 bus route and of the RER B (+50 m of data), built as
    the sub-areas `massy_a/b/c` (`python -m plateau corridors`, then `PLATEAU_AREA=massy_x python -m plateau fetch|build`)
    and appended to the old world by `python -m plateau merge` (the old world's files stay as they were); then
-   `buses`, `tools/rail/build_rail.py`, `patch_world.py`, `build_world.gd`. Since 2026-10-21 it also has a west box
+   `buses`, `tools/rail/build_rail.py`, `build_world.gd` (until 2026-11-14 `patch_world.py` patched `godot/world/`
+   in between; the railway's lots own their ground since). Since 2026-10-21 it also has a west box
    (x −3386…−250, y −1110…630, the old box's north and south edges: out to 48°42'43.8"N 2°09'17.1"E, local (−3307, −70),
    walkable 50 m inside), built the same way as the sub-areas `west_a/b/c` (`[corridors] boxes`, cut at x −1290 and
    −2330). Before that, `campus_lozere`:

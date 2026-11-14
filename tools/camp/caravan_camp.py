@@ -4,8 +4,8 @@
 
 Lays out caravans (blender/props/camp.py) across the six double-row bay strips and along the perimeter bays, each
 pitch a caravan with, at random, its porch awning, garden table, washing line, gas bottles, generator, water tank,
-barbecue and the family's van, then writes them as props "camp:N" (src "camp") into godot/world/world.json and
-godot/world/base/world.json (the rail patch input), with their tint colours in palette.props and their models in
+barbecue and the family's van, then writes them as props "camp:N" (src "camp") into godot/world/world.json, with
+their tint colours in palette.props and their models in
 prop_models. Reruns replace the previous camp:* props, so it can be reapplied after a pipeline rebuild. Then run
 build_world.gd.
 
@@ -25,7 +25,7 @@ from shapely.affinity import rotate, translate
 from shapely.ops import unary_union
 
 ROOT = Path(__file__).resolve().parents[2]
-WORLDS = [ROOT / "godot/world/world.json", ROOT / "godot/world/base/world.json"]
+WORLDS = [ROOT / "godot/world/world.json"]
 MODELS = json.loads((ROOT / "godot/assets/props/props.json").read_text())["models"]
 LOT = "w730167662"
 GATE = (354.6, -257.6)          # lift gate at the lot entrance: kept clear

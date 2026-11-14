@@ -13,7 +13,7 @@ the RER C beside), every track is a line of its own.
 - Islands: OSM's platform multipolygons between two tracks (Massy-Palaiseau's two islands); the island between the
   tracks on either side over OSM's extent along them, its edges PLATFORM_EDGE from both track centres, its top
   PLATFORM_HEIGHT above the higher rail.
-- Zones for patch_world.py: "yard" (the tracks' ballast strips: ground kept as it is, ballast material) and "island"
+- Zones of lot rerB's own ground: "yard" (the tracks' ballast strips: ground kept as it is, ballast material) and "island"
   (the raised platform: its own flat top along an axis).
 - Ballast beds (2026-11-07): each track's `bed` runs (where its centre is on the "yard" zones) get a ballast prism in
   rail_builder.gd, its top BED_SHOW under the sleepers' tops, as the alignment's; the patch lowers the strips' ground
@@ -287,7 +287,7 @@ def bed_runs(pts: np.ndarray, area) -> list:
 
 
 def zones(yard: dict, taken, data_area=None, streets=None) -> list:
-    """patch_world zones: the islands (axis zones: their flat top along the spine) and the tracks' ballast strips
+    """The lot's own ground's zones: the islands (axis zones: their flat top along the spine) and the tracks' ballast strips
     ("yard": the ground kept, ballast material), outside what the alignment's zones already take (`taken`).
     `streets`: the map's carriageways and pavements; a strip overlapping one (OSM's track a metre off the street
     beside it, a decorative siding drawn under a street) leaves it, else the zebras and kerbs there lose their

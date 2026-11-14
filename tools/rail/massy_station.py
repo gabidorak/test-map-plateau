@@ -1,17 +1,17 @@
 """Massy-Palaiseau's station precinct rebuilt (2026-11-06): the footbridges at their real height, the halls, the line
 18 station and the ground under them. build_rail.py calls build(): the result is lot massyPalaiseau's plan (lots.py);
-patch_world.py repairs the ground (apply_repairs), opens the line 18 shaft (a stairwell zone) and drops the map's
-own decks and halls this replaces; scripts/builder/massy_builder.gd draws it.
+its own ground (lots.py: the repairs, the line 18 shaft as a stairwell zone) and its drop.json (drops.py: the map's
+own decks and halls this replaces) with it; scripts/builder/massy_builder.gd draws it.
 
 Why: the map pipeline took the footbridges' decks from OSM ways and the LiDAR (a deck sagging 4 m over the tracks,
-the Atlantis walkway on the ground), cut the halls at 6.2 m over the rail (patch_world.over_tracks: floating boxes),
+the Atlantis walkway on the ground), cut the halls at 6.2 m over the rail (drops.over_tracks: floating boxes),
 and the LiDAR (flown while the line 18 station was dug) left two pits 21 m deep where the station is and a 4 m hump
 where it saw le Lien's main hall as ground.
 
-What it decides, from tools/rail/osm_massy_station.json (fetch_osm.py --station) and the base heightmap:
+What it decides, from tools/rail/osm_massy_station.json (fetch_osm.py --station) and the map's heightmap:
 - Repairs (`repairs`): the line 18 site levelled on a plane fitted to the ground round it; the hump under le Lien's
   hall taken off with a grey opening (a plane survives an opening, a hump narrower than the window does not); both
-  eased into the ground over BLEND m inside their outline. patch_world.py draws them as `regrade` zones.
+  eased into the ground over BLEND m inside their outline. The lot's own ground has them as `regrade` zones.
 - The concourse level: every footbridge here is OSM `level=1` and they join, so one walking level for all,
   LEVEL1_STEPS steps of STEP_RISE above the forecourts (le Lien's stairs count 42, 43 and 48 steps; the Atlantis
   walkway's 40). Its structure leaves DECK_DEPTH under the floor: the clearance over the tracks is reported.
@@ -38,7 +38,7 @@ What it decides, from tools/rail/osm_massy_station.json (fetch_osm.py --station)
   one, a white block at the high end, corten posts along the tracks) and under it, L18_DEPTH m down ("the Line 18
   runs some 23 meters underneath ground level", beta-architecture.com on the station's competition), the station
   box: two side platforms (one per direction) behind half-height platform doors, a mezzanine over the tracks reached
-  from the hall through an open shaft (two flights and a landing; patch_world.py opens it in the ground as a
+  from the hall through an open shaft (two flights and a landing; the lot's own ground opens it as a
   stairwell zone whose floor is the mezzanine), stairs down to each platform, the tunnel mouths at both ends. The
   next patch runs the metro in it (Paris Metro line 18: 45 m trains, platforms for 60 m).
 - The Atlantis bus station and the bus depot (`bus_station`): bus_station.py, bus_depot.py (their docstrings): its repairs come after
@@ -142,7 +142,7 @@ def polys(g) -> list:
 
 def mesh2d(pg: Polygon) -> dict:
     """A polygon for the builder: its rings (no closing point) and triangles (indices into the rings' concatenation;
-    constrained Delaunay, as patch_world.ring_tris)."""
+    constrained Delaunay)."""
     from scipy.spatial import cKDTree
     pg = shapely.set_precision(pg, 0.001)
     rings = [np.asarray(pg.exterior.coords)[:-1]] + [np.asarray(h.coords)[:-1] for h in pg.interiors]
@@ -738,7 +738,7 @@ def l18(osm: dict, Hf, lien) -> dict:
 
 
 def l18_zone(st: dict) -> dict:
-    """The shaft as a stairwell zone for patch_world.py: the ground drops to the mezzanine's floor in it, and its
+    """The shaft as a stairwell zone of the lot's own ground: the ground drops to the mezzanine's floor in it, and its
     walls (the patch's skirts) start at the box's ceiling all round (portals): under it the shaft's floor is part of
     the mezzanine, above it the shaft is a light well up to the hall."""
     rg_ = st["shaft_ring"]
@@ -855,7 +855,7 @@ def rer_fences(osm: dict, Hf, world: dict, tracks, area, busways, gaps) -> list:
     """The fence between the bus station and the tracks beside it (RATP welded mesh, FENCE_HEIGHT m): the outline
     FENCE_OFFSET m off the nearest track centre, where it faces the bus station's lanes and runs within FENCE_REACH m
     of them; open round every quay, flight, lift and pier (`gaps`), at the buildings, and where a path crosses the
-    tracks on the ground. Polylines resampled every 2.5 m, for patch_world.py's world fences (prop_placer.gd)."""
+    tracks on the ground. Polylines resampled every 2.5 m, for the lot's drop.json fences (prop_placer.gd)."""
     if tracks.is_empty:
         return []
     corridor = tracks.buffer(FENCE_OFFSET)

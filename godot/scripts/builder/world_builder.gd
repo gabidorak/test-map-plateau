@@ -102,11 +102,9 @@ func build_and_save() -> Error:
 		return err
 	LotBake.bake(root, MESH_DIR)                    # the finished lots' builds (builder/lot_bake.gd), streamed with the map's
 	# the terrain's collision holed where the lots own the ground (builder/ground_cut.gd: they collide themselves)
-	var holes: Dictionary = world["ground_mesh"].get_or_add("holes", {})
-	holes["samples"] = holes.get("samples", []) + GroundCut.new(Lots.owned_ground()).hole_samples(world["terrain"],
-			CollisionBuilder.STEP)
+	var holes := GroundCut.new(Lots.owned_ground()).hole_samples(world["terrain"], CollisionBuilder.STEP)
 	var collision := CollisionBuilder.new()
-	collision.terrain(root, world, heights, MESH_DIR)
+	collision.terrain(root, world, heights, MESH_DIR, holes)
 	collision.boundary(root, world)
 	err = FarBuilder.new().build(root, world, MESH_DIR)
 	if err != OK:

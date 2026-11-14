@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """tools/map_data.py: the generated map data lives on a GitHub release, not in git.
 
-The map files (godot/world/ heightmaps, ground meshes and world.json, godot/world/base/, the generated scene, its
+The map files (godot/world/ heightmaps, ground meshes and world.json, the generated scene, its
 meshes and the ground the game reads: DATA below, ignored by git) weigh ~1.9 GB and change at every map rebuild, which made the git history grow by
 gigabytes. They are cut into shards (one per world file, the 21 000 meshes in 32 buckets), each published once per
 content as an asset of the "map-data" prerelease (downloads are free and unmetered, unlike Git LFS). map_data.lock,
@@ -48,7 +48,8 @@ FORMAT = 1
 
 # The data, as (directory, file patterns, excluded names). Keep in step with .gitignore.
 WORLD = "godot/world"
-BASE = "godot/world/base"
+BASE = "godot/world/base"           # (the former rail patch's copies of the pipeline's files: no longer published, so
+                                    # fetch takes them away as files not in map_data.lock)
 GENERATED = "godot/scenes/generated"
 MESHES = "godot/scenes/generated/meshes"
 DATA = [

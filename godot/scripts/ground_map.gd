@@ -2,7 +2,7 @@ extends RefCounted
 ## The ground as the game reads it: which ground piece covers a point (kind, material, its source), the ground's
 ## height as its mesh draws it, where it steps. Baked when the map is built (builder/ground_bake.gd) into
 ## res://scenes/generated/ground.json: the map's own ground (world/ground_index.json, written by
-## pipeline/plateau/ground_mesh.py and tools/rail/patch_world.py) with the lots in it, their terraforming in its
+## pipeline/plateau/ground_mesh.py) with the lots in it, their terraforming in its
 ## heights and their surfaces (roads, paving, lawns) among its pieces. Shared by the grass scatter, the picker, the
 ## bots, the races... Coordinates are the map's x (east), y (north).
 
@@ -24,8 +24,8 @@ var _cell := 0.5
 var _ox := 0.0
 var _oy := 0.0
 var heights: RefCounted              # GroundHeights: ground height as drawn
-var cliffs := {}                     # Vector2i 2 m cells where the drawn ground steps (the railway's walls, edges):
-									 # there the height is not the drawn one (index "cliffs", tools/rail/patch_world.py)
+var cliffs := {}                     # Vector2i 2 m cells where the drawn ground steps (the lots' own ground's walls:
+									 # builder/lot_ground.gd): there the height is not the drawn one (index "cliffs")
 var _cliffs_index := {}              # (as read: saved again)
 var _mesh_cell := 2.0
 var _hox := 0.0
@@ -47,7 +47,7 @@ static func install(map: RefCounted, path := DEFAULT_INDEX) -> void:
 	_cache[path] = map
 
 
-## The map's own ground (world/ground_index.json, as the pipeline and the railway's patch wrote it) on `h`, its
+## The map's own ground (world/ground_index.json, as the pipeline wrote it) on `h`, its
 ## heights as built (GroundHeights of the terraformed heightmap): what builder/ground_bake.gd bakes.
 static func from_map_index(path: String, h: RefCounted) -> RefCounted:
 	var index = JSON.parse_string(FileAccess.get_file_as_string(path))

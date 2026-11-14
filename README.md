@@ -166,8 +166,8 @@ buildings, interiors, vegetation, props, bridges, rail, Massy, Logements X; coll
 
 ### Map data (not in git)
 
-The generated map (~1.9 GB: `godot/world/` heightmaps, ground and `world.json`, `godot/world/base/`,
-`godot/scenes/generated/neighborhood.tscn`, `meshes/` and the ground the game reads, `ground.json` and its two files) changes at every map rebuild, so it lives on the
+The generated map (~1.9 GB: `godot/world/` heightmaps, ground and `world.json`, the map pipeline's output as it wrote
+it, `godot/scenes/generated/neighborhood.tscn`, `meshes/` and the ground the game reads, `ground.json` and its two files) changes at every map rebuild, so it lives on the
 [`map-data`](https://github.com/gabidorak/test-map-plateau/releases/tag/map-data) prerelease instead of the git
 history, and git ignores it. `map_data.lock` pins the version each commit uses. Python 3.8+, nothing to install:
 
@@ -208,7 +208,6 @@ blender -b --factory-startup -P blender/vehicles/build_train.py -- --preview=$PW
 .venv/Scripts/python tools/rail/lots.py           # or only their ground and drop again from the plans (a new map from the pipeline, ~1 min)
 .venv/Scripts/python tools/rail/bus_routes.py     # then: the 4606 on Massy-Palaiseau's bus station lanes (bus_routes.json, ~2 s)
 .venv/Scripts/python tools/online/garages.py --only=bus-depot   # then: the bus depot under the depot's roof (garages.json)
-.venv/Scripts/python tools/rail/patch_world.py    # godot/world/base/ + the lots' plans -> godot/world/ (~25 min, ~6 GB RAM), then build_world.gd
 
 cd godot
 godot --headless --path . --import
@@ -632,15 +631,14 @@ committed scripts that regenerate everything from data (commands above).
   `regrade` zones): the map's ground mesh is cut out there and the lots draw theirs, walls and all
   (`scripts/builder/lot_ground.gd`, LOTS.md). Their `drop.json` takes the trees and props in the line's way out or
   moves them, adds the right-of-way fences, restyles the station building after the photos, and at Massy-Palaiseau
-  drops the map's footbridge decks and halls `massy_builder.gd` replaces. `patch_world.py` still patches the map's own
-  files with the same ground (from the pipeline's files kept in `godot/world/base/`; `world.json` `meta.rail` holds
-  the version and the inputs' SHA-1), under the lots'. The bus and car routes are unchanged; the bot cars do not use the
+  drops the map's footbridge decks and halls `massy_builder.gd` replaces. The map pipeline's files in `godot/world/`
+  are never changed. The bus and car routes are unchanged; the bot cars do not use the
   covered road (their routes cannot be regenerated without the pipeline), the players can drive through it.
 - Godot: `scripts/builder/rail_builder.gd` draws the track (ballast bed, rails, sleepers per 96 m chunk, streamed with
   a far strip), the platforms (copings, edge slabs, tactile strip), the furniture (lamps lit at night, seats, bins,
   "Lozère" boards, departure screens listing the next trains, Navigo validators, canopies), signals with their lamps,
   posts, the catenary, the structures and the station roof; `scripts/rail_map.gd` answers where things are along the
-  line (the picker names tracks, platforms, signals). `tools/check_world.gd` checks the patch stamp, the trackbed along
+  line (the picker names tracks, platforms, signals). `tools/check_world.gd` checks the trackbed along
   both tracks, nothing in the kinematic gauge and the platforms' edge and height.
 - Trains: MI 79 R units (the renovated MI 79 of the B4 branch), two units of four cars, from
   `blender/vehicles/build_train.py` (26.00 m cars, 2.80 m wide, floor 1.19 m above the rail, four double doors a side;
