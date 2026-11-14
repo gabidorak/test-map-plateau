@@ -1,9 +1,9 @@
 extends Node3D
 ## RER B trains stabled in Massy-Palaiseau's storage yard (the "Voie de Garage des trains de la ligne B du RER" and its
-## fan of service=yard tracks south-west of the station: world/rail.json yard tracks, tools/rail/yard.py), standing
-## still as at off-peak. train_traffic.gd makes it (Main/Traffic/Trains/Parked) on every peer, from the same rail.json,
+## fan of service=yard tracks south-west of the station: rerB's plan yard tracks, tools/rail/yard.py), standing
+## still as at off-peak. train_traffic.gd makes it (Main/Traffic/Trains/Parked) on every peer, from the same plan (rerB's),
 ## so every peer has the same trains without any network state.
-## - Tracks: the yard tracks (not the running lines: `main`, `rer`) whose OSM track numbers (rail.json `ref`, OSM
+## - Tracks: the yard tracks (not the running lines: `main`, `rer`) whose OSM track numbers (rerB's plan `ref`, OSM
 ##   railway:track_ref) are the RER B garage's (GARAGE_REFS, "4T"). Along each, the stretch clear of every other track
 ##   (CLEAR m between track centres, RUN_CLEAR from a running line: the fouling points of the switches and the
 ##   ladders are left out), less FOUL_MARGIN beyond the fouling points and END_MARGIN before a track's end (the buffer
@@ -44,7 +44,7 @@ var tracks_empty := 0                       # of them left empty (tests)
 var _meshes := {}                           # "cab_near", "cab_inside", "cab_far", "mid_*", "bogie" -> Mesh
 
 
-## Places the trains from rail.json (the parsed dictionary). Call before adding it to the tree.
+## Places the trains from rerB's plan (the parsed dictionary). Call before adding it to the tree.
 func setup(rail: Dictionary) -> void:
 	name = "Parked"
 	var yard: Dictionary = rail.get("yard", {})

@@ -1,4 +1,4 @@
-"""The railway's geometry for the rail tools (build_rail.py, patch_world.py...): the alignment read back from rail.json,
+"""The railway's geometry for the rail tools (build_rail.py, lots.py...): the alignment read back from its plan,
 the yard's ballast beds, the designed ground (earthworks, zones). The map's files and heights: tools/common/mapdata.py.
 
 Alignment coordinates: s along the centreline from its west end, u across it (positive to the left of the west -> east
@@ -8,14 +8,13 @@ import math
 
 import numpy as np
 
-from mapdata import ROOT, WORLD, Heights, cumlen
+from mapdata import ROOT, Heights, cumlen
 
 TOOLS = ROOT / "tools" / "rail"
-RAIL_JSON = WORLD / "rail.json"
 
 
 class Alignment:
-    """The centreline as written in rail.json `alignment`: points, heading and rail level every `step` m; evaluates
+    """The centreline as written in rerB's plan `alignment`: points, heading and rail level every `step` m; evaluates
     positions at (s, u) and projects map points onto (s, u)."""
 
     def __init__(self, a: dict):
@@ -75,7 +74,7 @@ class Alignment:
 
 
 class YardBed:
-    """The ground under the yard tracks' ballast beds (rail.json yard `bed`: tools/rail/yard.py; rail_builder.gd draws
+    """The ground under the yard tracks' ballast beds (rerB's plan yard `bed`: tools/rail/yard.py; rail_builder.gd draws
     each track's bed as a prism, its top SHOW under the sleepers' tops, like the alignment's): the patched ground in
     the "yard" zones may not rise above cap(x, y), DROP under the nearest bed top out to FLAT m from the track centre,
     then rising RISE per metre. The ground mesh is draped on 2 m nodes, so a node up to ~2.8 m off a track shapes the
@@ -125,7 +124,7 @@ class YardBed:
 
 
 class Design:
-    """The ground the railway shapes, from rail.json `earthworks` and `zones` (or the same in memory): z(s, u, p) is
+    """The ground the railway shapes, from rerB's plan `earthworks` and the plans' `zones` (or the same in memory): z(s, u, p) is
     the designed height at map point p, which is at (s, u) on the alignment, or the existing ground `H` where the
     railway leaves it alone. Per side, each metre: kind 0, the formation then a straight slope from its edge (edge,
     level) to where it meets the ground (reach, top); kind 1, the formation up to a wall at its edge, then a landing from
@@ -207,7 +206,7 @@ class Design:
         return (k0, lerp(sd["edge"]), lerp(sd["level"]), lerp(sd["reach"]), lerp(sd["top"]), F)
 
     def landing_far(self, s: float, side: str, top: float, want: int = 1) -> float:
-        """The ground height a wall's landing runs down (or up) to at its reach (`far`; older rail.json: flat)."""
+        """The ground height a wall's landing runs down (or up) to at its reach (`far`; older plans: flat)."""
         sd = self.sides[side]
         if "far" not in sd:
             return top
@@ -259,7 +258,7 @@ class Design:
         return self.ground(p) if v is None else v
 
     def zone_fn(self, zone: dict, s: float, u: float, p) -> float:
-        """Height zone `zone` (rail.json zones) gives point p (= (s, u)), also a little outside it (the patch draws
+        """Height zone `zone` (the plans' zones) gives point p (= (s, u)), also a little outside it (the patch draws
         both sides of a cliff from their own zone); `None` zone: the existing ground."""
         if zone is None:
             return self.ground(p)
@@ -302,6 +301,105 @@ class Design:
 
 
 def godot(x, y, z) -> list:
-    """Map point -> Godot (x, z, -y), rounded to the millimetre (rail.json is written in map coordinates; this is for
+    """Map point -> Godot (x, z, -y), rounded to the millimetre (the plans are written in map coordinates; this is for
     the review only)."""
     return [round(x, 3), round(z, 3), round(-y, 3)]
+
+
+# ---------------------------------------------------------------- the zones' ground (the plans' zones)
+
+HARD = {"trackbed": ("railway", "ballast"), "platform": ("platform", "asphalt"), "stairwell": ("steps", "concrete"),
+        "road_trench": ("road", "asphalt"), "island": ("platform", "asphalt"), "yard": ("railway", "ballast"),
+        # Massy-Palaiseau's repaired ground with a ground of its own (massy_station.py): the line 18 hall's floor and
+        # its site (OSM's building site, now the station's gravel)
+        "regrade_floor": ("pedestrian", "concrete"), "regrade_gravel": ("landcover", "gravel"),
+        # the Atlantis bus station's islands, raised to a bus kerb's height (massy_station.bus_islands)
+        "bus_island": ("platform", "concrete")}
+REGRADE = ("regrade", "regrade_floor", "regrade_gravel")    # zones whose height is the repaired ground
+AXIS_KINDS = ("stairwell", "road_trench", "island", "bus_island")   # zones whose height runs along an axis
+# zones that take the pipeline's raised pieces (and their kerbs, skirts, markings) inside them into their own surface:
+# the bus islands, whose OSM outlines the pipeline had partly raised as platforms
+ABSORB = ("bus_island",)
+
+
+def hard_of(z: dict):
+    """(piece kind, material) of zone z's new ground piece, None when it keeps the ground's (a regrade zone may name
+    one: `piece`, bus_station.py), and whether it absorbs the pipeline's raised pieces (`absorb`)."""
+    return tuple(z["piece"]) if z.get("piece") else HARD.get(z["kind"])
+
+
+def absorbs(z: dict) -> bool:
+    return z["kind"] in ABSORB or bool(z.get("absorb"))
+
+
+def project(A: Alignment, x: np.ndarray, y: np.ndarray) -> tuple:
+    """(s, u) of map points, vectorized: the centreline runs west -> east with x always increasing, so s starts from
+    x and three Newton steps along the tangent finish it."""
+    s = np.interp(x, A.pts[:, 0], A.s)
+    for _ in range(4):
+        P = A.point(s, np.zeros_like(s))
+        th = A.theta(s)
+        s = s + (x - P[:, 0]) * np.cos(th) + (y - P[:, 1]) * np.sin(th)
+    P = A.point(s, np.zeros_like(s))
+    th = A.theta(s)
+    u = -(x - P[:, 0]) * np.sin(th) + (y - P[:, 1]) * np.cos(th)
+    return s, u
+
+
+def zone_heights(design: Design, zone: dict, s: np.ndarray, u: np.ndarray, x: np.ndarray, y: np.ndarray):
+    """Vectorized railgeo.Design.zone_fn for many points of one zone."""
+    kind = zone["kind"]
+    if kind == "yard" and design.yard_bed is not None:     # under the yard tracks' ballast beds (yard.py)
+        return np.minimum(design.H.at(x, y), design.yard_bed.cap(x, y))
+    if kind == "yard" or kind in REGRADE:       # the yard's ballast strips keep the ground (tools/rail/yard.py), a
+        return design.H.at(x, y)                # repair takes the repaired ground (design.H: massy_station.py)
+    if kind in AXIS_KINDS:
+        ax = np.asarray(zone["axis"], dtype=np.float64)
+        az = np.asarray(zone["axis_z"], dtype=np.float64)
+        best = np.full(len(x), np.inf)
+        out = np.zeros(len(x))
+        for a in range(len(ax) - 1):
+            ab = ax[a + 1] - ax[a]
+            t = np.clip(((x - ax[a, 0]) * ab[0] + (y - ax[a, 1]) * ab[1]) / max(ab @ ab, 1e-12), 0, 1)
+            cx, cy = ax[a, 0] + ab[0] * t, ax[a, 1] + ab[1] * t
+            d2 = (x - cx) ** 2 + (y - cy) ** 2
+            m = d2 < best
+            best[m] = d2[m]
+            out[m] = az[a] + (az[a + 1] - az[a]) * t[m]
+        return out
+    ew = design
+    f = np.clip((s - ew.s0) / ew.step, 0, ew.n - 1.000001)
+    j = np.floor(f).astype(int)
+    t = f - j
+    side = zone.get("side")
+    sides = np.where(u >= 0, 0, 1) if side is None else np.full(len(u), 0 if side == "left" else 1)
+    vals = {}
+    for key in ("kind", "edge", "level", "reach", "top", "far"):
+        if key == "far" and "far" not in ew.sides["left"]:
+            vals["far"] = vals["top"]           # older plans: flat landings
+            continue
+        arr = np.stack([ew.sides["left"][key], ew.sides["right"][key]])
+        a0, a1 = arr[sides, j], arr[sides, j + 1]
+        same = ew.sides["left"]["kind"][j] == ew.sides["left"]["kind"][j + 1]
+        same = np.where(sides == 0, same, ew.sides["right"]["kind"][j] == ew.sides["right"]["kind"][j + 1])
+        vals[key] = np.where(same, a0 * (1 - t) + a1 * t, np.where(t < 0.5, a0, a1))
+    F = ew.F[j] * (1 - t) + ew.F[j + 1] * t
+    a = np.abs(u)
+    if kind == "trackbed":
+        return F - ew.cf * a
+    if kind == "slope":
+        w = np.clip((a - vals["edge"]) / np.maximum(vals["reach"] - vals["edge"], 1e-6), 0, 1)
+        return vals["level"] + (vals["top"] - vals["level"]) * w
+    if kind == "landing":
+        w = np.clip((a - vals["edge"]) / np.maximum(vals["reach"] - vals["edge"], 1e-6), 0, 1)
+        return vals["top"] + (vals["far"] - vals["top"]) * w
+    if kind == "platform":
+        return vals["top"]
+    if kind == "platform_blend":
+        sg = np.where(sides == 0, 1.0, -1.0)
+        q = design.A.point(s, sg * vals["reach"])
+        tb = design.H.at(q[:, 0], q[:, 1])
+        g = design.H.at(x, y)
+        w = np.clip((a - vals["reach"]) / design.BLEND_RUN, 0, 1)
+        return np.where(np.abs(tb - vals["top"]) <= design.BLEND_STEP, vals["top"] + (g - vals["top"]) * w, g)
+    raise ValueError(kind)

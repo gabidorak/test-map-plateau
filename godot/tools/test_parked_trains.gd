@@ -1,5 +1,5 @@
 extends SceneTree
-## Headless checks for the RER B trains stabled in Massy-Palaiseau's yard (scripts/parked_trains.gd; world/rail.json
+## Headless checks for the RER B trains stabled in Massy-Palaiseau's yard (scripts/parked_trains.gd; rerB's plan
 ## yard tracks), the running trains, bot buses and cars off:
 ## - they exist: several trains on several garage tracks, some tracks left empty;
 ## - each stands on a garage yard track (not a running line), every bogie pivot on the track's rail line (plan and
@@ -43,7 +43,7 @@ func _run() -> void:
 	if parked == null:
 		_end()
 		return
-	var rail: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://world/rail.json"))
+	var rail: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/rerB/plan.json"))
 	var by_id := {}
 	for t: Dictionary in rail["yard"]["tracks"]:
 		by_id[t["id"]] = t

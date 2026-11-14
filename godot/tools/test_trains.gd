@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless checks for the RER B trains (scripts/train.gd, scripts/train_bot.gd, scripts/train_traffic.gd;
-## world/rail.json services), the bot buses and cars off:
+## rerB's plan services), the bot buses and cars off:
 ## - departures: a train sets off in each direction every headway (later while the entry block is occupied, never on
 ##   top of another), both directions are out;
 ## - entering the map: at the planned speed (both directions come in from out of sight: westbound in the north-east,

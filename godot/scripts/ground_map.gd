@@ -162,6 +162,30 @@ func add_piece(kind: String, material: String, src: String) -> int:
 	return pieces.size() - 1
 
 
+## A material the map has not (a lot's: the railway's ballast), with its colour.
+func add_material(material: String, colour: String) -> void:
+	if not material in materials:
+		materials.append(material)
+		for k in pieces.size():
+			if pieces[k][1] == material:
+				piece_material[k] = materials.size() - 1
+	if not (palette.get("ground", {}) as Dictionary).has(material):
+		palette["ground"] = (palette.get("ground", {}) as Dictionary).duplicate()
+		palette["ground"][material] = colour
+
+
+## The 2 m cell at map (x, y) is a cliff: the drawn ground steps there (a lot's own ground's wall).
+func add_cliff(x: float, y: float) -> void:
+	var c := Vector2i(floori((x - _hox) / _mesh_cell + 1.0), floori((_hoy - y) / _mesh_cell + 1.0))
+	if cliffs.has(c):
+		return
+	cliffs[c] = true
+	if not _cliffs_index.has("cells"):
+		_cliffs_index = {"about": "2 m cells (node i, j as ground_heights.gd counts them) where the ground steps: the "
+				+ "height there is not the drawn one, so no grass tufts", "cells": []}
+	_cliffs_index["cells"].append([c.x, c.y])
+
+
 ## Saved as `path` (the index) and its two files beside it.
 func save(path: String, about: String) -> Error:
 	var dir := path.get_base_dir()

@@ -34,18 +34,20 @@ static func make(world: Dictionary, world_dir: String, heights: PackedFloat32Arr
 	for lot: Dictionary in Lots.all():
 		if lot.has("script"):
 			layers.append([str(lot["id"]), load(str(lot["script"]))])
+		if lot.has("ground"):                     # (its own ground's zones: builder/lot_ground.gd)
+			layers.append([str(lot["id"]) + ":ground", load(Lots.LOT_GROUND).of(str(lot["ground"]))])
 	if not Lots.restyle_slugs().is_empty():
 		layers.append(["restyle", load(Lots.RESTYLE)])
 	for l: Array in layers:
-		if (l[1] as Script).has_method("surface_at"):
-			var t0 := Time.get_ticks_msec()
-			var n := _lay(map, l[0], l[1])
+		if (l[1] as Object).has_method("lay") or (l[1] as Object).has_method("surface_at"):
+			var t0 := Time.get_ticks_msec()             # (a lot's own ground lays its zones row by row: lot_ground.gd)
+			var n: int = l[1].lay(map, l[0], KIND) if (l[1] as Object).has_method("lay") else _lay(map, l[0], l[1])
 			print("ground: lot %s, %d samples (%d ms)" % [l[0], n, Time.get_ticks_msec() - t0])
 	return map
 
 
 ## Lot `id`'s surfaces (its script's) into the map's pieces: how many samples it took.
-static func _lay(map: RefCounted, id: String, script: Script) -> int:
+static func _lay(map: RefCounted, id: String, script: Object) -> int:
 	var g: Dictionary = map.ids_grid()
 	var cell: float = g["cell"]
 	var o: Vector2 = g["origin"]

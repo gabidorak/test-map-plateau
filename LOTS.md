@@ -6,7 +6,8 @@ Every change made to the map (a building replaced, a garden redone, a villa buil
 | Phase | When | A lot's key | Where |
 |---|---|---|---|
 | 1. Terraforming | right after the map is read, when it is built | `terraform`: files of `godot/data/terraform/`, or a script whose `terraform_zones()` makes them from its design | `scripts/builder/terraform.gd` (file zones made by `tools/terraform.py`; the villa's court from `villaEnPierreCoteaux_data.gd`) |
-| 2. Removal | when the map is built | `script`: its `drop(world)` | the lot's script (`scripts/builder/world_edits.gd` helps) |
+| 2. Removal | when the map is built | `drop`: its changes to the map's world as its tool decided them (`godot/data/<lot>/drop.json`), then `script`: its `drop(world)` | `scripts/builder/world_edits.gd` (its keys: `tools/common/world_edits.py`), the lot's script |
+| 2a. Own ground | when the map is built | `ground`: `godot/data/<lot>/` (`ground.json`, `ground.bin`), or its script's `ground_owned()` | `scripts/builder/lot_ground.gd` (made with `tools/common/lot_ground.py`), `scripts/builder/ground_cut.gd` |
 | 2b. Ground paint | when the map is built | `paint`: a script's `repaint()` | the lot's data script |
 | 2c. Ground surfaces | when the map is built | its script's `surface_boxes()`, `surface_at()` | `scripts/builder/ground_bake.gd` |
 | 3. Building | in the game | `node` (game.gd's member), `restyle` (specs of `godot/data/restyle/`) | the lot's script, `scripts/restyle/` |
@@ -71,21 +72,43 @@ form without its details), without shadows. Nothing to do per building; a node w
 A new building or garden: make its terraforming zones (`tools/terraform.py zone ...`), its spec or script, then a lot
 that names them; rebuild the map (`godot/tools/build_world.gd`).
 
+## A lot's own ground
+
+Terraforming reshapes the map's ground as a height field: it cannot step. A lot whose ground steps (a trench, a
+stairwell, a platform, a raised quay or sidewalk) owns its ground there: the map's ground mesh is cut out along its
+polygons (`scripts/builder/ground_cut.gd`: the triangles inside out, those across the outline cut, the rest exactly as
+they were), the terrain's collision holed over them, and the lot draws and collides its own. A lot's tool designs it
+(`tools/common/lot_ground.py`: its zones, each with its heights on 1 m grids, its material, the ground piece the game
+reads there, the material of its walls; its repairs, the map's ground mended round it) into `godot/data/<lot>/ground.*`,
+and `scripts/builder/lot_ground.gd` lays it into the map when the map is built: the heights stamped into the
+heightmap, the materials into the ground the game reads, the zones drawn in 2 m squares with a wall wherever a zone
+meets another ground higher or lower (its 2 m cells cliffs: no grass), or its edge brought onto the map's ground where
+it is designed to meet it (`snap`). Nothing of the design is computed again in Godot.
+
 ## The railway's lots
 
 The RER B line (`rerB`) and Massy-Palaiseau's station with its bus station and bus depot (`massyPalaiseau`) are lots
 with no node: their `"build"` is a builder run when the map is built, with the map's own builds
 (`builder/rail_builder.gd`, `massy_builder.gd` with `hangar_builder.gd`: `Lots.build()`, in the lots' order), so they
-are always finished. Their ground is designed in `godot/world/rail.json` (`tools/rail/build_rail.py`,
-`massy_station.py`, `bus_depot.py`) and patched into the map's files by
-`tools/rail/patch_world.py` (walls, platform edges, the ground mesh cut again, collision holes: what
-`terraform.gd` cannot do), which also clears their trees and props; each lot's `"ground"` says which part of rail.json
-is its. Massy's `drop()` adds the bus depot's trees and hedge. A change to their ground: the tools, then
-`patch_world.py`, then the map rebuilt.
+are always finished. One tool designs both, `tools/rail/` (they are designed together: the line's zones first,
+Massy-Palaiseau's after them; the trees, props and fences of both), and `tools/rail/lots.py` writes each lot's folder:
+- `plan.json`: its design, its zones among it (`godot/data/rerB/plan.json`: the alignment, profile, earthworks,
+  platforms, structures, signals, catenary, services, the yard: `build_rail.py`; `godot/data/massyPalaiseau/plan.json`:
+  the footbridges, halls, line 18 box, bus station and depot: `massy_station.py`, `bus_station.py`, `bus_depot.py`);
+- `ground.json`, `ground.bin`: its own ground (the trackbed, platforms, slopes, stairwells, the road's trench, the
+  yard; the bus station's islands, the line 18 shaft, Massy-Palaiseau's repaired ground), the zones' designed heights
+  (`railgeo.zone_heights`);
+- `drop.json`: its changes to the map's world (`tools/rail/drops.py`: the trees and props in the line's way, its
+  fences, Lozère's station building, the canopies and huts on its tracks, the buildings over them; the bus station's
+  props, fences and kerbs, the halls and decks `massy_builder.gd` draws instead, the bus depot's trees).
+The game reads the plans (the builders, the trains: `rail_map.gd`, `train_traffic.gd`, `loading_map.gd`). A change:
+`tools/rail/build_rail.py` (all of it again, ~1 min) or `tools/rail/lots.py` (ground and drops from the plans), then
+the map rebuilt. `tools/rail/patch_world.py` still patches the map's own files with the railway's ground, under the
+lots' own ground; it goes with `godot/world/base/`.
 
-The Logements de l'X (`logementsX`) were laid out by the same tools; they are a lot like any other now, nothing of
-them in rail.json nor patch_world.py: their plan `godot/data/logementsX/plan.json` (`tools/logements_x/build_plan.py`
-from the map's own ground, clear of the railway's zones), their terraforming (the site's smooth ground), `drop()` (the
-construction site out, their trees, props, the plan's buildings in), surfaces and paint in `scripts/logementsX/`, and
-their `"build"` drawing the facades and the surfaces themselves (the road fill, the car park, paths, the raised
-sidewalk) in the ground's material.
+The Logements de l'X (`logementsX`) were laid out by the same tools once; they are a lot like any other now: their
+plan `godot/data/logementsX/plan.json` and their `drop.json` (`tools/logements_x/build_plan.py` from the map's own
+ground: the construction site out, their trees, props, the plan's buildings in), their terraforming (the site's
+smooth ground), own ground (the boulevard's raised sidewalk), surfaces and paint in `scripts/logementsX/`, and their
+`"build"` drawing the facades and the surfaces themselves (the road fill, the car park, paths, the raised sidewalk) in
+the ground's material.

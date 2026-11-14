@@ -1,6 +1,7 @@
 @tool
 extends RefCounted
-## Massy-Palaiseau's station precinct (world/rail.json `massy`, tools/rail/massy_station.py), drawn from code in the
+## Massy-Palaiseau's station precinct (lot massyPalaiseau's plan, data/massyPalaiseau/plan.json:
+## tools/rail/massy_station.py), drawn from code in the
 ## toy prop style of the RER B's structures (rail_builder.gd), its glazing in see-through glass
 ## (shaders/toy_prop_glass.gdshader):
 ## - the concourse deck the three footbridges share at their real level (le Lien, the historic footbridge, the Atlantis
@@ -28,8 +29,7 @@ const GroundMap = preload("res://scripts/ground_map.gd")
 const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
 const LabelFit = preload("res://scripts/label_fit.gd")
 const HangarBuilder = preload("res://scripts/builder/hangar_builder.gd")
-const VegetationBuilder = preload("res://scripts/builder/vegetation_builder.gd")
-const RAIL_PATH := "res://world/rail.json"
+const PLAN := "res://data/massyPalaiseau/plan.json"
 const PROP_SHADER := "res://shaders/toy_prop.gdshader"
 const GLASS_SHADER := "res://shaders/toy_prop_glass.gdshader"
 const NO_LEG := ["road", "railway", "platform", "steps"]     # ground a canopy frame's leg never stands on
@@ -78,19 +78,13 @@ var _box_faces := PackedVector3Array()      # the line 18 box's floors and walls
 var _lamp_lights := PackedVector3Array()    # night.gd lights the bus station and the hangar from these (node meta)
 
 
-## Lot massyPalaiseau's removals and additions to the world (builder/lots.gd drop, before the buildings and the
-## vegetation are made): the bus depot's trees and hedge (rail.json massy bus_station greenery).
-static func drop(world: Dictionary) -> void:
-	VegetationBuilder.add_rail_greenery(world)
-
-
 func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_dir: String) -> void:
-	if not FileAccess.file_exists(RAIL_PATH):
+	if not FileAccess.file_exists(PLAN):
 		return
-	var rail = JSON.parse_string(FileAccess.get_file_as_string(RAIL_PATH))
-	if not rail is Dictionary or not (rail as Dictionary).has("massy"):
+	var plan = JSON.parse_string(FileAccess.get_file_as_string(PLAN))
+	if not plan is Dictionary:
 		return
-	_M = rail["massy"]
+	_M = plan
 	_level = _M["level"]
 	_depth = _M["deck_depth"]
 	_mesh_dir = mesh_dir

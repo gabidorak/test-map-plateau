@@ -7,6 +7,7 @@
  "terraform": [
   "res://scripts/logementsX/logements_x.gd"
  ],
+ "drop": "res://data/logementsX/drop.json",
  "script": "res://scripts/logementsX/logements_x.gd",
  "paint": "res://scripts/logementsX/logements_x.gd",
  "build": "res://scripts/logementsX/logements_x_builder.gd"

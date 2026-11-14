@@ -1,7 +1,7 @@
 extends Node
 ## The RER B service (traffic.gd makes it as Main/Traffic/Trains on every peer).
-## - Departures (on the peer running the bots: solo, the host, a dedicated server): per direction (world/rail.json
-##   services) a train sets off every `headway` s (rail.json: HEADWAY, a compressed game headway; PLATEAU_TRAIN_HEADWAY=s
+## - Departures (on the peer running the bots: solo, the host, a dedicated server): per direction (rerB's plan
+##   services) a train sets off every `headway` s (rerB's plan: HEADWAY, a compressed game headway; PLATEAU_TRAIN_HEADWAY=s
 ##   overrides; the real B4 service at Lozère is every 10-15 min), offset by the service's phase so that the two
 ##   directions meet in the station now and then. A departure waits while the previous train of its direction is still
 ##   in the entry block (the line carries ~0.75 trains a minute per direction: on the clock, they would pile up at the
@@ -21,7 +21,7 @@ extends Node
 ##   trains of their platform; a train running into something this peer simulates knocks it aside (its own player:
 ##   pushed off the track, not launched; a vehicle: a capped push and damage, car.gd damage(), the two kept from
 ##   colliding while it clears); a player riding a train off the playable box is put down next to the line at that end
-##   of the map (rail.json landing), as the train goes on out of sight.
+##   of the map (rerB's plan landing), as the train goes on out of sight.
 
 const Train = preload("res://scripts/train.gd")
 const TrainBot = preload("res://scripts/train_bot.gd")
@@ -29,7 +29,7 @@ const ParkedTrains = preload("res://scripts/parked_trains.gd")
 const RailMap = preload("res://scripts/rail_map.gd")
 const RailBuilder = preload("res://scripts/builder/rail_builder.gd")
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
-const RAIL := "res://world/rail.json"
+const RAIL := "res://data/rerB/plan.json"
 const FILL_STEP := 0.25                     # s per step when filling the line at the start
 const MAX_TRIP := 1500.0                    # s: a trip longer than this is given up (stowed)
 const KNOCK_SPEED := 6.0                    # m/s: the most a train's knock sends a vehicle off at
@@ -45,8 +45,8 @@ const POSE_FAR := 1200.0                    # m: ...and farther than this every 
 const POSE_FARTHEST_TICKS := 12
 
 var game: Node3D                            # game.gd
-var services: Array = []                    # rail.json services
-var spec: Dictionary                        # rail.json train
+var services: Array = []                    # rerB's plan services
+var spec: Dictionary                        # rerB's plan train
 var trains: Array = []                      # Train, stowed ones included
 var bots := {}                              # Train -> TrainBot (on the peer running them)
 var headway := 120.0                        # s per direction
@@ -64,7 +64,7 @@ var _track_u := PackedFloat32Array()        # per service: its track centre's of
 var _cum: Array = []                        # per service: s from its route's start to each metre, planned (screens)
 var _landing := {}
 var _play := Rect2()
-var _play_area: Array = []                  # rail.json playable_area: rings of the walkable polygon (else _play)
+var _play_area: Array = []                  # rerB's plan playable_area: rings of the walkable polygon (else _play)
 var _signals := {}                          # signal id -> Node3D (Rail/Signals)
 var _screens: Array = []                    # [service index, Array[Label3D], stop s, station name]
 var _signal_t := 0.0
@@ -532,7 +532,7 @@ func _land_riders() -> void:
 	game._show_toast("The RER B leaves the map here: you are put down by the line")
 
 
-## Map point inside the walkable area (rail.json playable_area: the corridors' polygon, holes included; else the box).
+## Map point inside the walkable area (rerB's plan playable_area: the corridors' polygon, holes included; else the box).
 func _walkable(xy: Vector2) -> bool:
 	if _play_area.is_empty():
 		return _play.has_point(xy)

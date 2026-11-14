@@ -1,5 +1,5 @@
 """Massy-Palaiseau's station precinct rebuilt (2026-11-06): the footbridges at their real height, the halls, the line
-18 station and the ground under them. build_rail.py calls build() and writes the result to rail.json `massy`;
+18 station and the ground under them. build_rail.py calls build(): the result is lot massyPalaiseau's plan (lots.py);
 patch_world.py repairs the ground (apply_repairs), opens the line 18 shaft (a stairwell zone) and drops the map's
 own decks and halls this replaces; scripts/builder/massy_builder.gd draws it.
 
@@ -795,7 +795,7 @@ FENCE_HEIGHT = 2.0              # m, as the line's right-of-way fences (build_ra
 def bus_area(osm: dict, tracks_xy: list) -> tuple:
     """(the bus station and its busways as an area, the tracks on the ground near it as a line union): a track
     running BUS_UNDERGROUND m inside the bus station is under it (the TGV line, in a tunnel there: yard.py leaves it
-    out, a rail.json built before still has it)."""
+    out, a plan built before still has it)."""
     bs = wpoly(osm, BUS_STATION)
     ways = [LineString(wpts(osm, i)) for i, w in osm["ways"].items()
             if w.get("tags", {}).get("highway") == "busway" and len(w.get("geometry", [])) > 1]
@@ -914,7 +914,7 @@ def rer_fences(osm: dict, Hf, world: dict, tracks, area, busways, gaps) -> list:
 # ---------------------------------------------------------------- all of it
 
 def build(world: dict, H: md.Heights, tracks_xy: list, islands: list) -> tuple:
-    """(rail.json `massy`, zones to add: the line 18 shaft (stairwell) and the repairs (regrade)). `tracks_xy`: every
+    """(massyPalaiseau's plan, zones to add: the line 18 shaft (stairwell) and the repairs (regrade)). `tracks_xy`: every
     track as (id, points, rail z per point): the alignment's two and the yard's; `islands`: (polygon, top z) of the
     raised platforms."""
     osm = load()

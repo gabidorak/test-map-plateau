@@ -5,9 +5,10 @@ extends RefCounted
 ## - its terraforming (terraform_zones()): the site's ground one smooth surface (the plan's repair grid);
 ## - its own ground (ground_owned()): the boulevard's sidewalk, a step over the road (the map's ground cut out there,
 ##   builder/ground_cut.gd; logements_x_builder.gd draws it and its collision);
-## - its removals and additions (drop()): the construction site's fence and trees out, its trees, props (lamps,
-##   benches, bike racks...) in, the props on its sidewalk lifted onto it, the map's kerbs cut back, the kit modules
-##   on its plots out, the six OSM placeholder blocks swapped for the plan's buildings (same ids);
+## - its removals and additions (its drop, data/logementsX/drop.json: builder/world_edits.gd): the construction site's
+##   fence and trees out, its trees, props (lamps, benches, bike racks...) in, the props on its sidewalk lifted onto it,
+##   the map's kerbs cut back, the kit modules on its plots out, the six OSM placeholder blocks swapped for the plan's
+##   buildings (same ids);
 ## - its surfaces in the map's ground (surface_at()) and the ground's paint (repaint()): the plan's zones (the road
 ##   fill and the car park asphalt, the forecourts, paths and sidewalk concrete, the gravel strips, the lawns);
 ## - its build (logements_x_builder.gd): the facades, the surfaces themselves, kerbs, markings, bollards, boulders.
@@ -50,71 +51,6 @@ static func ground_owned() -> Array:
 			for pg: Array in z[3]:
 				out.append(pg[0])
 	return out
-
-
-static func drop(world: Dictionary) -> void:
-	var site: Dictionary = Plan.data()["site"]
-	var gone_t := {}
-	for id: String in site.get("trees_gone", []):
-		gone_t[id] = true
-	world["trees"] = world["trees"].filter(func(t: Dictionary) -> bool: return not gone_t.has(str(t["id"])))
-	world["trees"].append_array(site.get("trees_add", []))
-	var moved: Dictionary = site.get("props_moved", {})
-	var lift: Dictionary = site.get("props_lift", {})
-	var gone_p := {}
-	for id: String in site.get("props_gone", []):
-		gone_p[id] = true
-	var props := []
-	for p: Dictionary in world["props"]:
-		var id := str(p["id"])
-		if gone_p.has(id):
-			continue
-		if moved.has(id) or lift.has(id):
-			p = p.duplicate()
-			if moved.has(id):
-				p["x"] = moved[id][0]
-				p["y"] = moved[id][1]
-			if lift.has(id):
-				p["lift"] = lift[id]
-		props.append(p)
-	props.append_array(site.get("props_add", []))
-	world["props"] = props
-	var gone_f := {}
-	for id: String in site.get("fences_gone", []):
-		gone_f[id] = true
-	world["fences"] = world["fences"].filter(func(f: Dictionary) -> bool: return not gone_f.has(str(f["id"])))
-	var clear: Array = site.get("clear", []).map(func(r: Array) -> PackedVector2Array: return Plan.ring(r))
-	var kerbs := []
-	for kb: Dictionary in world["kerbs"]:
-		if (kb["pts"] as Array).size() < 2:
-			kerbs.append(kb)
-			continue
-		var runs := [Plan.ring(kb["pts"])]
-		for c: PackedVector2Array in clear:
-			var cut := []
-			for r: PackedVector2Array in runs:
-				cut.append_array(Geometry2D.clip_polyline_with_polygon(r, c))
-			runs = cut
-		if runs.size() == 1 and runs[0].size() == (kb["pts"] as Array).size():
-			kerbs.append(kb)                                            # (untouched)
-			continue
-		for r: PackedVector2Array in runs:
-			var length := 0.0
-			for i in r.size() - 1:
-				length += r[i].distance_to(r[i + 1])
-			if length > 0.3:
-				var k := kb.duplicate()
-				k["pts"] = Array(r).map(func(q: Vector2) -> Array: return [snappedf(q.x, 0.001), snappedf(q.y, 0.001)])
-				kerbs.append(k)
-	world["kerbs"] = kerbs
-	var mc: Array = site.get("modules_clear", []).map(func(r: Array) -> PackedVector2Array: return Plan.ring(r))
-	world["building_modules"] = world["building_modules"].filter(func(m: Dictionary) -> bool:
-		var q := Vector2(m["x"], m["y"])
-		return not mc.any(func(c: PackedVector2Array) -> bool: return Geometry2D.is_point_in_polygon(q, c)))
-	var swap := {}
-	for b: Dictionary in site.get("buildings", []):
-		swap[str(b["id"])] = b
-	world["buildings"] = world["buildings"].map(func(b: Dictionary) -> Dictionary: return swap.get(str(b["id"]), b))
 
 
 static func surface_boxes() -> Array:

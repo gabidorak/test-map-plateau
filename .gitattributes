@@ -1,3 +1,6 @@
-# The map's JSON files keep LF everywhere: world.json's patch stamp is the SHA-1 of rail.json's bytes
-# (tools/rail/patch_world.py, godot/tools/check_world.gd), which a CRLF checkout on Windows would change.
+# The map's JSON files and the lots' data keep LF everywhere, as their tools write them: world.json's patch stamp is
+# the SHA-1 of the railway's lots' plans (tools/rail/patch_world.py, godot/tools/check_world.gd), which a CRLF checkout
+# on Windows would change.
 godot/world/*.json text eol=lf
+godot/data/**/*.json text eol=lf
+godot/data/**/*.bin binary

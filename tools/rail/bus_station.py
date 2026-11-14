@@ -752,7 +752,7 @@ def paths(P: Plan) -> dict:
             "turns": turns, "area": ring(to_xy(box(ENDS[0], -60.0, ENDS[1] + 10.0, FENCE_T)))}
 
 def finish(P: Plan, Hf, world: dict, flights: list, lifts_: list, piers_: list, deck) -> dict:
-    """rail.json massy `bus_station` (its fence comes from fence())."""
+    """massyPalaiseau's plan `bus_station` (its fence comes from fence())."""
     props = move_props(P, world)
     moved = {p["id"]: p for p in props}
     final_props = []

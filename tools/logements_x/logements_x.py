@@ -870,11 +870,11 @@ class Site:
         return {
             "about": "tools/logements_x/logements_x.py: the École polytechnique's new student housing (lot S3.2), "
                      "its car park, gardens and the boulevard's north sidewalk; its surfaces in `zones` (logx:*), its "
-                     "ground in `repairs`, its changes to world.json in `site` (the lot's drop()), the details for "
+                     "ground in `repairs`, its changes to world.json in `site` (its drop.json), the details for "
                      "scripts/logementsX/logements_x_builder.gd",
             "repairs": [self.repair()],
-            "site": {"fences_gone": [self.fence_id], "clear": [r3(np.asarray(p.exterior.coords)[:-1])
-                                                               for p in polys(self.site.buffer(0.3))],
+            "site": {"fences_gone": [self.fence_id], "kerbs_clear": [r3(np.asarray(p.exterior.coords)[:-1])
+                                                                     for p in polys(self.site.buffer(0.3))],
                      "trees_gone": self.trees_gone, "trees_add": self.trees_new,
                      "props_moved": self.props_moved, "props_gone": self.props_dropped, "props_lift": self.props_lift,
                      "props_add": self.props_new, "buildings": self.buildings(),

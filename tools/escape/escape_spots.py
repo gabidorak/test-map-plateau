@@ -22,6 +22,9 @@ from pathlib import Path
 from shapely.geometry import Point, Polygon
 from shapely.strtree import STRtree
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common"))
+import world_edits  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[2]
 WORLD = ROOT / "godot/world/world.json"
 INTERIORS = ROOT / "godot/world/interiors.json"
@@ -165,7 +168,7 @@ def plot(path: str, polys: list, out: dict) -> None:
 
 def main() -> None:
     opt = args()
-    world = json.loads(WORLD.read_text())
+    world = world_edits.apply_lots(json.loads(WORLD.read_text()))          # (as the map is built)
     interiors = json.loads(INTERIORS.read_text())
     footprints = {}
     polys = []

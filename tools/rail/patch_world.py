@@ -1,12 +1,15 @@
-"""Patches the map files in godot/world/ with the railway of godot/world/rail.json (tools/rail/build_rail.py).
+"""Patches the map files in godot/world/ with the railway's ground (lots rerB and massyPalaiseau: their plans,
+godot/data/<lot>/plan.json, tools/rail/build_rail.py, lots.py).
 
 .venv/Scripts/python tools/rail/patch_world.py      (Linux/macOS: .venv/bin/python; ~2 min)
 
 The map pipeline is not in this repository, so its outputs cannot be regenerated: this step patches them. It always
 starts from the pipeline's files kept in godot/world/base/ (mapdata.ensure_base: a fresh pipeline output there is
 taken as the new base), never from patched ones, so running it twice gives the same files. world.json gets
-`meta.rail` (the base files' and rail.json's SHA-1, the patch's version). What it changes, all consumers together:
-- heightmap.f32: inside the railway's zones (rail.json zones: the trackbed, platforms, slopes, wall landings, the
+`meta.rail` (the base files' and the plans' SHA-1, the patch's version). What it changes, all consumers together
+(the railway's changes to the world's trees, props, fences, kerbs, buildings and markings are its lots' own,
+godot/data/<lot>/drop.json, applied by the game: tools/rail/drops.py):
+- heightmap.f32: inside the railway's zones (the plans' zones: the trackbed, platforms, slopes, wall landings, the
   platforms' blends, stairwells, the road's open trench) the designed ground (railgeo.Design); elsewhere untouched.
 - ground.bin: every 2 m grid triangle a zone touches is cut again (the old triangles' edges and the zones' outlines
   noded together, faces triangulated, crossings of the grid lines computed once so neighbours share them exactly),
@@ -21,17 +24,12 @@ taken as the new base), never from patched ones, so running it twice gives the s
 - ground_ids.bin, ground_index.json: the new pieces (the picker names them, grass never grows on them), the
   `ballast` material, the holes (GroundMap: no grass tufts in them).
 - world.json: ground[] keeps its gap-free partition (the new pieces cut out of the old ones, triangulated again),
-  the trees and props rail.json clears, the right-of-way fences, the ballast material and palette colour; wall-less
-  station canopies standing on the trackbed or a platform (OSM's footbridge stair roof, a slab at knee height over
-  the track) are left to the railway's builder; the station building takes its real look (STATION_LOOK: the body up
-  to the eaves, rail_builder.gd adds the gabled roof).
-- Massy-Palaiseau (rail.json `massy`, massy_station.py): the ground repaired where the LiDAR saw the line 18
+  the ballast material and palette colour.
+- Massy-Palaiseau (lot massyPalaiseau's plan, massy_station.py): the ground repaired where the LiDAR saw the line 18
   station's excavation and le Lien's hall (`regrade` zones: the repaired ground, the material kept), the line 18
-  shaft opened down to the mezzanine (a stairwell zone), and the map's footbridge decks, halls and the line 18 and
-  TGV buildings there dropped (massy_builder.gd draws them). The Atlantis bus station and the bus hangar (rail.json
-  massy bus_station, bus_station.py): their zones (regrade zones with a ground piece of their own, `piece`, that take
-  the pipeline's raised pieces, kerbs and markings in, `absorb`), its props moved onto the quays or dropped, the map's
-  fences across its lanes dropped, world.json kerbs cut back.
+  shaft opened down to the mezzanine (a stairwell zone). The Atlantis bus station and the bus hangar
+  (bus_station.py): their zones (regrade zones with a ground piece of their own, `piece`, that take the pipeline's
+  raised pieces, kerbs and markings in, `absorb`).
 A report goes to tools/rail/review/patch.md.
 """
 import gc
@@ -55,46 +53,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common"))
 import railgeo as rg  # noqa: E402
 import mapdata as md  # noqa: E402
 
-PATCH_VERSION = 6              # 3: Massy-Palaiseau's ground repairs, line 18 shaft and replaced decks and halls;
+PATCH_VERSION = 7              # 3: Massy-Palaiseau's ground repairs, line 18 shaft and replaced decks and halls;
                                # 4: the yard's ground lowered under its tracks' ballast beds (railgeo.YardBed);
                                # 5: sites laid out after the pipeline (rail.json logements_x: apply_site);
-                               # 6: none any more: the École polytechnique's new housing is lot logementsX
-HARD = {"trackbed": ("railway", "ballast"), "platform": ("platform", "asphalt"), "stairwell": ("steps", "concrete"),
-        "road_trench": ("road", "asphalt"), "island": ("platform", "asphalt"), "yard": ("railway", "ballast"),
-        # Massy-Palaiseau's repaired ground with a ground of its own (massy_station.py): the line 18 hall's floor and
-        # its site (OSM's building site, now the station's gravel)
-        "regrade_floor": ("pedestrian", "concrete"), "regrade_gravel": ("landcover", "gravel"),
-        # the Atlantis bus station's islands, raised to a bus kerb's height (massy_station.bus_islands)
-        "bus_island": ("platform", "concrete")}
-REGRADE = ("regrade", "regrade_floor", "regrade_gravel")    # zones whose height is the repaired ground
-AXIS_KINDS = ("stairwell", "road_trench", "island", "bus_island")   # zones whose height runs along an axis
-# zones that take the pipeline's raised pieces (and their kerbs, skirts, markings) inside them into their own surface:
-# the bus islands, whose OSM outlines the pipeline had partly raised as platforms
-ABSORB = ("bus_island",)
-
-
-def hard_of(z: dict):
-    """(piece kind, material) of zone z's new ground piece, None when it keeps the ground's (a regrade zone may name
-    one: `piece`, bus_station.py), and whether it absorbs the pipeline's raised pieces (`absorb`)."""
-    return tuple(z["piece"]) if z.get("piece") else HARD.get(z["kind"])
-
-
-def absorbs(z: dict) -> bool:
-    return z["kind"] in ABSORB or bool(z.get("absorb"))
+                               # 6: none any more: the École polytechnique's new housing is lot logementsX;
+                               # 7: from the lots' plans, the world's trees, props... their drop.json
 BALLAST_COLOUR = "#8c8379"      # toy ballast: rust-stained crushed granite (photos of the station), lightened like the
                                 # rest of the palette
-# The station building as the photos show it (Wikimedia Commons, "Gare Lozère RER IdF Ligne B - Palaiseau (FR91) -
-# 2026-01-17"): a cream rendered pavilion, brick quoins and window surrounds, tall ground-floor windows, a slate
-# gabled roof; the pipeline's guess (a grey flat-roofed "campus" box from a photo colour of confidence 0.54) goes.
-# building_builder.gd has no gables: the body stops at the eaves and rail_builder.gd draws the roof (rail.json-free:
-# it reads this building's `rail_roof`).
-STATION_BUILDING = "osm:w71346991"
-STATION_LOOK = {"wall": "#ece2c6", "accent": "#b4683f", "roof": "#5b616b",
-                "eaves": 4.6,           # m above the base: a tall ground floor and attic windows (photos)
-                "rise": 2.8,            # m from the eaves to the ridge (~40°, a usual slate pitch)
-                "overhang": 0.35,       # m beyond the walls
-                "g": 3.2, "f": 2.6,     # ground floor and floor heights (photos: tall arched ground-floor windows)
-                "floors": 1, "ground": 0, "material": 0, "windows": 1, "top": 0}   # punched, plain, render, framed
 SKIRT_COLOUR = "#c9c4b8"        # cliff skirts (mostly behind the railway's walls): the palette's concrete
 CLIFF = 0.02                    # m: two zones meeting further apart than this make a cliff
 KERB, PAINT = 18, 19            # pipeline material ids (ground_builder.gd MATERIALS)
@@ -106,27 +71,10 @@ def sha1(path: Path) -> str:
     return hashlib.sha1(path.read_bytes()).hexdigest()
 
 
-def restyle_station(b: dict) -> None:
-    """STATION_LOOK on the station building: its tiers end at the eaves without a parapet, punched framed windows in
-    cream render with brick accents; `rail_roof` tells rail_builder.gd the gabled roof to put on top."""
-    L = STATION_LOOK
-    top = b["base_z"] + L["eaves"]
-    b["height"] = L["eaves"]
-    b["heights"]["rail"] = L["eaves"] + L["rise"]
-    b["height_src"] = "rail"
-    b["roof"]["shape"] = "gabled"
-    b["roof"]["color"] = L["roof"]
-    b["facade"].update({"color": L["wall"], "accent": L["accent"], "color_src": "rail", "levels": 1.0})
-    st = b["toy"]["style"]
-    st.update({"group": "station", "floors": L["floors"], "ground": L["ground"], "material": L["material"],
-               "top": L["top"], "windows": L["windows"], "wall": L["wall"], "accent": L["accent"], "g": L["g"],
-               "f": L["f"], "levels": 1, "wall_src": "rail", "names": ["punched", "plain", "render", "plain"]})
-    for t in b["toy"]["tiers"]:
-        t["top"] = round(top, 3)
-        t["parapet"] = 0.0
-        t["roof"] = L["roof"]
-    b["rail_roof"] = {"eaves": round(top, 3), "rise": L["rise"], "overhang": L["overhang"], "slate": L["roof"],
-                      "wall": L["wall"], "accent": L["accent"]}
+def plans_sha1() -> str:
+    """The railway's lots' plans' SHA-1 (rerB's bytes, then massyPalaiseau's): godot/tools/check_world.gd checks it."""
+    import lots
+    return hashlib.sha1(lots.plan_path(lots.RER).read_bytes() + lots.plan_path(lots.MASSY).read_bytes()).hexdigest()
 
 
 def log(*a):
@@ -154,9 +102,9 @@ class Zones:
             shapely.prepare(g)
             self.geoms.append(g)
         self.union = unary_union(self.geoms)
-        self.hard = unary_union([g for g, z in zip(self.geoms, self.list) if hard_of(z)])
+        self.hard = unary_union([g for g, z in zip(self.geoms, self.list) if rg.hard_of(z)])
         # the zones that take the pipeline's raised pieces into their own surface: its raised collision faces go too
-        self.absorb = unary_union([g for g, z in zip(self.geoms, self.list) if absorbs(z)])
+        self.absorb = unary_union([g for g, z in zip(self.geoms, self.list) if rg.absorbs(z)])
         shapely.prepare(self.absorb)
         shapely.prepare(self.union)
         shapely.prepare(self.hard)
@@ -217,79 +165,6 @@ class Zones:
             if g.contains(p):
                 return k
         return -1
-
-
-def project(A: rg.Alignment, x: np.ndarray, y: np.ndarray) -> tuple:
-    """(s, u) of map points, vectorized: the centreline runs west -> east with x always increasing, so s starts from
-    x and three Newton steps along the tangent finish it."""
-    s = np.interp(x, A.pts[:, 0], A.s)
-    for _ in range(4):
-        P = A.point(s, np.zeros_like(s))
-        th = A.theta(s)
-        s = s + (x - P[:, 0]) * np.cos(th) + (y - P[:, 1]) * np.sin(th)
-    P = A.point(s, np.zeros_like(s))
-    th = A.theta(s)
-    u = -(x - P[:, 0]) * np.sin(th) + (y - P[:, 1]) * np.cos(th)
-    return s, u
-
-
-def zone_heights(design: rg.Design, zone: dict, s: np.ndarray, u: np.ndarray, x: np.ndarray, y: np.ndarray):
-    """Vectorized railgeo.Design.zone_fn for many points of one zone."""
-    kind = zone["kind"]
-    if kind == "yard" and design.yard_bed is not None:     # under the yard tracks' ballast beds (yard.py)
-        return np.minimum(design.H.at(x, y), design.yard_bed.cap(x, y))
-    if kind == "yard" or kind in REGRADE:       # the yard's ballast strips keep the ground (tools/rail/yard.py), a
-        return design.H.at(x, y)                # repair takes the repaired ground (design.H: massy_station.py)
-    if kind in AXIS_KINDS:
-        ax = np.asarray(zone["axis"], dtype=np.float64)
-        az = np.asarray(zone["axis_z"], dtype=np.float64)
-        best = np.full(len(x), np.inf)
-        out = np.zeros(len(x))
-        for a in range(len(ax) - 1):
-            ab = ax[a + 1] - ax[a]
-            t = np.clip(((x - ax[a, 0]) * ab[0] + (y - ax[a, 1]) * ab[1]) / max(ab @ ab, 1e-12), 0, 1)
-            cx, cy = ax[a, 0] + ab[0] * t, ax[a, 1] + ab[1] * t
-            d2 = (x - cx) ** 2 + (y - cy) ** 2
-            m = d2 < best
-            best[m] = d2[m]
-            out[m] = az[a] + (az[a + 1] - az[a]) * t[m]
-        return out
-    ew = design
-    f = np.clip((s - ew.s0) / ew.step, 0, ew.n - 1.000001)
-    j = np.floor(f).astype(int)
-    t = f - j
-    side = zone.get("side")
-    sides = np.where(u >= 0, 0, 1) if side is None else np.full(len(u), 0 if side == "left" else 1)
-    vals = {}
-    for key in ("kind", "edge", "level", "reach", "top", "far"):
-        if key == "far" and "far" not in ew.sides["left"]:
-            vals["far"] = vals["top"]           # older rail.json: flat landings
-            continue
-        arr = np.stack([ew.sides["left"][key], ew.sides["right"][key]])
-        a0, a1 = arr[sides, j], arr[sides, j + 1]
-        same = ew.sides["left"]["kind"][j] == ew.sides["left"]["kind"][j + 1]
-        same = np.where(sides == 0, same, ew.sides["right"]["kind"][j] == ew.sides["right"]["kind"][j + 1])
-        vals[key] = np.where(same, a0 * (1 - t) + a1 * t, np.where(t < 0.5, a0, a1))
-    F = ew.F[j] * (1 - t) + ew.F[j + 1] * t
-    a = np.abs(u)
-    if kind == "trackbed":
-        return F - ew.cf * a
-    if kind == "slope":
-        w = np.clip((a - vals["edge"]) / np.maximum(vals["reach"] - vals["edge"], 1e-6), 0, 1)
-        return vals["level"] + (vals["top"] - vals["level"]) * w
-    if kind == "landing":
-        w = np.clip((a - vals["edge"]) / np.maximum(vals["reach"] - vals["edge"], 1e-6), 0, 1)
-        return vals["top"] + (vals["far"] - vals["top"]) * w
-    if kind == "platform":
-        return vals["top"]
-    if kind == "platform_blend":
-        sg = np.where(sides == 0, 1.0, -1.0)
-        q = design.A.point(s, sg * vals["reach"])
-        tb = design.H.at(q[:, 0], q[:, 1])
-        g = design.H.at(x, y)
-        w = np.clip((a - vals["reach"]) / design.BLEND_RUN, 0, 1)
-        return np.where(np.abs(tb - vals["top"]) <= design.BLEND_STEP, vals["top"] + (g - vals["top"]) * w, g)
-    raise ValueError(kind)
 
 
 # ---------------------------------------------------------------- ground.bin
@@ -453,7 +328,7 @@ def rebuild_chunk(d: dict, ctx: dict) -> tuple:
         stats["cells"] += 1
         rebuilt.add(key)
         surface, raised, overlay = [], [], []     # the tiling (raised sidewalks kept whole) and what lies on it
-        absorb = [k for k in local if absorbs(zones.list[k])]
+        absorb = [k for k in local if rg.absorbs(zones.list[k])]
         for t in ts:
             a, b, c = tri[t]
             m, f = int(cus[a, 0]), int(cus[a, 1])
@@ -513,7 +388,7 @@ def rebuild_chunk(d: dict, ctx: dict) -> tuple:
         def fz(zk, x, y):
             ck = (zk, round(x, 7), round(y, 7))
             if ck not in fn_cache:
-                s, u = project(A, np.array([x]), np.array([y]))
+                s, u = rg.project(A, np.array([x]), np.array([y]))
                 zone = zones.list[zk] if zk >= 0 else None
                 fn_cache[ck] = design.zone_fn(zone, float(s[0]), float(u[0]), (x, y))
             return fn_cache[ck]
@@ -565,7 +440,7 @@ def rebuild_chunk(d: dict, ctx: dict) -> tuple:
             col = d["col"][a].astype(np.float64)
             cu = d["cus"][a].copy()
             zone = zones.list[zk] if zk >= 0 else None
-            if zone is not None and hard_of(zone):
+            if zone is not None and rg.hard_of(zone):
                 col, cu = ctx["piece_attr"][zk]
             # Godot front faces are clockwise seen from above (map y flipped): keep the old winding's sense
             (x0, y0, _), (x1, y1, _), (x2, y2, _) = pts
@@ -1231,7 +1106,8 @@ def ring_tris(poly: Polygon) -> tuple:
 def main() -> None:
     t0 = time.time()
     md.ensure_base()
-    rail = md.load_json(rg.RAIL_JSON)
+    import lots
+    rail = lots.load()
     world = md.load_json(md.BASE / "world.json")
     index = md.load_json(md.BASE / "ground_index.json")
     gm = world["ground_mesh"]
@@ -1252,7 +1128,7 @@ def main() -> None:
     zones = Zones(rail)
     grid = Grid(H_old)
     report = ["# Rail patch report", "", "Generated by tools/rail/patch_world.py from godot/world/base/ and "
-              "godot/world/rail.json.", ""]
+              "the railway's lots' plans (godot/data/rerB/, godot/data/massyPalaiseau/).", ""]
 
     # --- heightmap
     x0, y0, x1, y1 = zones.union.bounds
@@ -1272,8 +1148,8 @@ def main() -> None:
         if not m.any():
             continue
         x, y = xs[m], ys[m]
-        s, u = project(A, x, y)
-        zz = zone_heights(design, z, s, u, x, y)
+        s, u = rg.project(A, x, y)
+        zz = rg.zone_heights(design, z, s, u, x, y)
         new[rr[m], cc[m]] = zz
         changed += int(m.sum())
     H_new = md.Heights(md.BASE, world["terrain"], gm["cell"])
@@ -1293,9 +1169,9 @@ def main() -> None:
     piece_of_zone = {}
     key_piece = {}
     for k, z in enumerate(zones.list):
-        if not hard_of(z):
+        if not rg.hard_of(z):
             continue
-        pk, mat = hard_of(z)
+        pk, mat = rg.hard_of(z)
         key = (pk, z.get("source", ""), z.get("side"))
         if key not in key_piece:
             src = z.get("source", "") or "rail"
@@ -1558,144 +1434,6 @@ def main() -> None:
         report.append("- #%d %s (%s), from %s" % (id_map[pi], p[0], p[1], p[2]))
     report.append("")
 
-    # --- trees, props, fences, buildings
-    clear = rail["clearance"]
-    gone = {t["id"]: t for t in clear["trees"]}
-    before = len(world["trees"])
-    world["trees"] = [t for t in world["trees"] if t["id"] not in gone]
-    acts = {p["id"]: p for p in clear["props"]}
-    props = []
-    for p in world["props"]:
-        a = acts.get(p["id"])
-        if a is None or a["action"] == "kept":
-            props.append(p)
-        elif a["action"] == "moved":
-            q = dict(p)
-            q["x"], q["y"] = a["to"]
-            props.append(q)
-    # the Atlantis bus station's lanes and the bus hangar (rail.json massy bus_station, bus_station.py): props there
-    # onto the quays and sidewalks or gone, the map's fences across them (OSM's wall along the avenue) gone, its kerbs
-    # (the pipeline's raised pieces there are the zones' own ground now) cut back
-    bst = rail.get("massy", {}).get("bus_station")
-    if bst:
-        bacts = {p["id"]: p for p in bst["props"]}
-        kept = []
-        for p in props:
-            a = bacts.get(p["id"])
-            if a is None:
-                kept.append(p)
-            elif a["action"] == "moved":
-                kept.append(dict(p, x=a["to"][0], y=a["to"][1]))
-        props = kept
-        gone_f = set(bst["fences_gone"])
-        world["fences"] = [f for f in world["fences"] if f["id"] not in gone_f]
-        cut = unary_union([Polygon(r).buffer(0) for r in bst["clear"]])
-        kerbs = []
-        for kb in world["kerbs"]:
-            if len(kb["pts"]) < 2 or not LineString(kb["pts"]).intersects(cut):
-                kerbs.append(kb)
-                continue
-            rest = LineString(kb["pts"]).difference(cut)
-            for part in getattr(rest, "geoms", [rest]):
-                if part.geom_type == "LineString" and part.length > 0.3:
-                    kerbs.append(dict(kb, pts=[[round(x, 3), round(y, 3)] for x, y in part.coords]))
-        log("bus station: %d props moved, %d dropped, fences gone %s, kerbs %d -> %d" % (
-            sum(a["action"] == "moved" for a in bacts.values()), sum(a["action"] == "dropped" for a in bacts.values()),
-            sorted(gone_f), len(world["kerbs"]), len(kerbs)))
-        world["kerbs"] = kerbs
-    dropped = len(world["props"]) - len(props)
-    world["props"] = props
-    nf = 0
-    # the line's right-of-way fences, and Massy-Palaiseau's between the bus station and the tracks
-    # (massy_station.rer_fences: drawn by prop_placer.gd like the others)
-    for f in rail["fences"] + rail.get("massy", {}).get("fences", []):
-        world["fences"].append({"style": f["style"], "h": f["h"], "height_src": "rail", "osm": "",
-                                "pts": [[round(p[0], 3), round(p[1], 3)] for p in f["pts"]], "id": f["id"]})
-        nf += 1
-    canopies = []
-    keep_b = []
-    restyled = ""
-    # wall-less canopies on the line's own trackbed, platforms and stairs (the yard's islands keep theirs)
-    own = unary_union([g for g, z in zip(zones.geoms, zones.list) if z["kind"] in ("trackbed", "platform", "stairwell")])
-    for b in world["buildings"]:
-        if not b.get("walls", True) and Polygon(b["rings"][0]).intersects(own):
-            canopies.append(b["id"])
-            continue
-        if b["id"] == STATION_BUILDING:
-            restyle_station(b)
-            restyled = b["id"]
-        keep_b.append(b)
-    world["buildings"] = keep_b
-    # Massy-Palaiseau: the halls, footbridge boxes and line 18 / TGV buildings massy_builder.gd draws instead, the kit
-    # modules on them, and the map's footbridge decks there (OSM's footways at the LiDAR's height)
-    massy_gone = []
-    if rail.get("massy"):
-        M = rail["massy"]
-        rep = set(M["replaces"]["buildings"])
-        gone = [b for b in world["buildings"] if b["id"].split("_rest")[0] in rep]
-        massy_gone = [b["id"] for b in gone]
-        world["buildings"] = [b for b in world["buildings"] if b["id"].split("_rest")[0] not in rep]
-        fp = unary_union([Polygon(b["rings"][0]).buffer(1.0) for b in gone if b["rings"]])
-        # (but not those of a building kept there: the old station building beside le Lien's end)
-        fp = fp.difference(unary_union([Polygon(b["rings"][0]).buffer(0.3) for b in world["buildings"]
-                                        if b["rings"] and Polygon(b["rings"][0]).intersects(fp)]))
-        n_mod = len(world["building_modules"])
-        world["building_modules"] = [m for m in world["building_modules"] if not fp.contains(Point(m["x"], m["y"]))]
-        near = unary_union([Polygon(r) for r in M["replaces"]["bridges_near"]])
-        n_br0 = len(world.get("bridges", []))
-        world["bridges"] = [b for b in world.get("bridges", []) if b["kind"] == "road" or not near.contains(
-            Point(b["pts"][len(b["pts"]) // 2][0], b["pts"][len(b["pts"]) // 2][1]))]
-        log("massy: %d buildings, %d kit modules and %d footbridge decks replaced" % (
-            len(gone), n_mod - len(world["building_modules"]), n_br0 - len(world["bridges"])))
-    lifted, dropped_b = over_tracks(world, rail)
-    # the map's bridge decks the railway builds itself (Lozère's footbridges: rail.json footbridges)
-    own_fb = {o for fb in rail.get("footbridges", []) for o in fb["osm"]}
-    n_br = len(world.get("bridges", []))
-    world["bridges"] = [b for b in world.get("bridges", []) if b["osm"] not in own_fb]
-    report += ["## Trees, props, fences, buildings", "",
-               "- bridge decks left to the railway's footbridges: %d" % (n_br - len(world["bridges"])),
-               "- buildings over the tracks raised into bridge buildings (above the trains): %s" % (", ".join(lifted) or "none"),
-               "- huts standing on a yard track dropped: %s" % (", ".join(dropped_b) or "none"),
-               "- trees removed: %d of %d (%s)" % (before - len(world["trees"]), before,
-                                                   ", ".join("%s %d" % (r, sum(1 for t in clear["trees"] if t["reason"] == r))
-                                                             for r in sorted({t["reason"] for t in clear["trees"]}))),
-               "- props moved: %d, dropped: %d, kept on the railway's ground: %d" % (
-                   sum(1 for p in clear["props"] if p["action"] == "moved"), dropped,
-                   sum(1 for p in clear["props"] if p["action"] == "kept")),
-               "- right-of-way fences added: %d" % nf,
-               "- wall-less canopies left to the railway's builder: %s" % (", ".join(canopies) or "none"),
-               "- station building restyled from the photos (cream render, brick, slate gabled roof): %s"
-               % (restyled or "not found"),
-               "- Massy-Palaiseau's halls and footbridge boxes left to massy_builder.gd: %s" % (
-                   ", ".join(massy_gone) or "none"), ""]
-    for p in clear["props"]:
-        report.append("  - %s %s: %s%s (%s)" % (p["id"], p["model"], p["action"],
-                                               " to %s" % p["to"] if p.get("to") else "", p["reason"]))
-    report += ["", "Buildings within 6 m of a track (kept; the formation stops short of them, walls where needed):", ""]
-    for b in clear["buildings"]:
-        report.append("- %s %s (%s): %.2f m from the nearest track centre%s" % (
-            b["id"], b["name"], b["kind"], b["nearest_track"], ", IN THE GAUGE" if b["in_gauge"] else ""))
-    # markings on ground the railway took (a lot's bays under a platform): those triangles go
-    n_mk = 0
-    for mk in world["markings"]:
-        v = np.asarray(mk["verts"], dtype=np.float64)
-        t = np.asarray(mk["tris"], dtype=np.int64).reshape(-1, 3)
-        if not len(t):
-            continue
-        c = v[t].mean(axis=1)
-        keep = ~shapely.contains_xy(zones.hard, c[:, 0], c[:, 1])
-        if keep.all():
-            continue
-        n_mk += int((~keep).sum())
-        used, inv = np.unique(t[keep].ravel(), return_inverse=True)
-        mk["verts"] = np.round(v[used], 3).tolist()
-        mk["tris"] = inv.astype(int).tolist()
-    world["markings"] = [mk for mk in world["markings"] if mk["tris"]]
-    report += ["", "Marking triangles dropped on the railway's ground: %d" % n_mk]
-    # kerbs and markings crossing the railway's hard ground (none expected)
-    bad_k = [k for k, kb in enumerate(world["kerbs"]) if len(kb["pts"]) > 1 and LineString(kb["pts"]).intersects(zones.hard)]
-    report += ["", "Kerbs crossing the railway's ground: %d" % len(bad_k), ""]
-
     # --- world.json and ground_index.json
     gm2 = dict(gm)
     gm2["materials"] = mats
@@ -1710,7 +1448,7 @@ def main() -> None:
     world["ground_materials"] = [m for m in mats if m not in ("kerb", "paint")]
     world["palette"]["ground"] = palette
     # No date in the stamp: the same inputs give the same bytes.
-    world["meta"]["rail"] = {"version": PATCH_VERSION, "rail_json": sha1(rg.RAIL_JSON),
+    world["meta"]["rail"] = {"version": PATCH_VERSION, "plans": plans_sha1(),
                              "base": {f: sha1(md.BASE / f) for f in md.world_files(md.load_json(md.BASE / "world.json"))},
                              "tool": "tools/rail/patch_world.py"}
     index["pieces"] = final_pieces
@@ -1732,65 +1470,6 @@ def main() -> None:
         "- collision holes: %d samples, covered by raised faces over %d cells" % (len(holes), len(cover)), ""]
     (rg.TOOLS / "review" / "patch.md").write_text("\n".join(report) + "\n", encoding="utf-8")
     log("patched godot/world/ in %.0f s (report: tools/rail/review/patch.md)" % (time.time() - t0))
-
-
-GAUGE_HALF = 1.75              # m from a track centre (godot/tools/check_world.gd)
-TRAIN_CLEARANCE = 6.2           # m above the rail where a building over the line may start (catenary, its supports)
-HUT_AREA = 60.0                 # m²: a smaller building on a yard track goes (a cabin on the ballast)
-
-
-def over_tracks(world: dict, rail: dict) -> tuple:
-    """Walled buildings reaching into the trains' gauge: one standing over a track trains run on (the alignment's,
-    the yard's mains), or a station hall or footbridge over any yard track, with its roof well above the trains (a
-    station hall over the cutting, as at Palaiseau) keeps only what is above TRAIN_CLEARANCE, its tiers floating
-    there; a small one on a yard track is dropped; the others are left (depot sheds the yard's tracks run into;
-    patch.md lists them). Returns (raised ids, dropped ids)."""
-    A = rg.Alignment(rail["alignment"])
-    sp = rail["alignment"]["spacing"]
-    th = A.heading
-    n = np.c_[-np.sin(th), np.cos(th)]
-    lines = [(LineString(A.pts - n * sp / 2), A.s, A.z), (LineString(A.pts + n * sp / 2), A.s, A.z)]
-    trains = [True, True]                       # trains run on it (the alignment's tracks, the yard's mains)
-    for t in rail.get("yard", {}).get("tracks", []):
-        p = np.asarray(t["pts"])
-        lines.append((LineString(p), md.cumlen(p), np.asarray(t["z"])))
-        trains.append(bool(t["main"]))
-    tree = shapely.STRtree([ln for ln, _, _ in lines])
-    lifted, dropped, keep = [], [], []
-    for b in world["buildings"]:
-        if not b.get("walls", True) or not b["rings"]:
-            keep.append(b)
-            continue
-        pg = Polygon(b["rings"][0]).buffer(0)
-        hits = [k for k in tree.query(pg.buffer(GAUGE_HALF)) if lines[k][0].distance(pg) < GAUGE_HALF]
-        if not hits:
-            keep.append(b)
-            continue
-        rail_z = max(float(np.interp(lines[k][0].project(pg.centroid), lines[k][1], lines[k][2])) for k in hits)
-        tiers = b.get("toy", {}).get("tiers", [])
-        top = max([t["top"] for t in tiers] or [b["base_z"] + b["height"]])
-        over_trains = any(trains[k] for k in hits)
-        hall = b.get("kind") == "train_station"   # a station hall or footbridge over the yard
-        if top - rail_z > TRAIN_CLEARANCE + 2.0 and (over_trains or hall):
-            z_min = rail_z + TRAIN_CLEARANCE
-            new = []
-            for t in tiers:
-                if t["top"] <= z_min + 0.5:
-                    continue
-                if t["z0"] < z_min:
-                    t["z0"] = round(z_min, 3)
-                    t["floating"] = True
-                new.append(t)
-            b["toy"]["tiers"] = new
-            b["min_height"] = round(z_min - b["base_z"], 3)
-            lifted.append(b["id"])
-            keep.append(b)
-        elif pg.area < HUT_AREA and any(k >= 2 for k in hits) and not over_trains:
-            dropped.append(b["id"])
-        else:
-            keep.append(b)
-    world["buildings"] = keep
-    return lifted, dropped
 
 
 def rg_hex(c: str) -> tuple:

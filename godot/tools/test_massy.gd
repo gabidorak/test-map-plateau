@@ -1,5 +1,5 @@
 extends SceneTree
-## Headless checks of Massy-Palaiseau's station (rail.json massy, scripts/builder/massy_builder.gd). Exit code 0 when
+## Headless checks of Massy-Palaiseau's station (massyPalaiseau's plan, scripts/builder/massy_builder.gd). Exit code 0 when
 ## everything passes.
 ##  1. The concourse deck: a ray down onto it lands on the deck's level (le Lien, the historic footbridge, the walkway).
 ##  2. Clearance: between the piers under each footbridge's spine, a ray up from the ground meets nothing before the
@@ -7,11 +7,11 @@ extends SceneTree
 ##  3. The line 18 station: rays down find the platforms, the mezzanine and the shaft's floor at their levels.
 ##  4. Walking: up one of le Lien's stairs from the forecourt to the deck, down the stairs from the mezzanine to a
 ##     platform, up the shaft's first flight from the mezzanine.
-##  5. The Atlantis bus station (rail.json massy bus_station, tools/rail/bus_station.py): rays down find its lanes on
+##  5. The Atlantis bus station (massyPalaiseau's plan bus_station, tools/rail/bus_station.py): rays down find its lanes on
 ##     their profile (flat across, no bump), the quays a bus kerb over them; the bus depot (bus_depot.py): its floor
 ##     flat, its ramps no steeper than 9.5 % over a metre, its sides open (rays across them under the roof meet
 ##     nothing: no walls).
-##  6. Driving (the depot's ways, rail.json depot paths): an 18 m and a 12 m bus from a bay out down the ramp onto the
+##  6. Driving (the depot's ways, massyPalaiseau's plan depot paths): an 18 m and a 12 m bus from a bay out down the ramp onto the
 ##     Massy side lane to the bus station's end, and in from the RER side lane round the turnaround up the ramp to the
 ##     passage lane and each lane: never stuck, never far off the path, on their wheels. (PLATEAU_TEST_ONLY=bus runs 5
 ##     and 6 only.)
@@ -29,8 +29,7 @@ var _failures: PackedStringArray = []
 
 
 func _initialize() -> void:
-	var rail = JSON.parse_string(FileAccess.get_file_as_string("res://world/rail.json"))
-	_M = rail["massy"]
+	_M = JSON.parse_string(FileAccess.get_file_as_string("res://data/massyPalaiseau/plan.json"))
 	_main = load("res://scenes/main.tscn").instantiate()
 	_main.debug_cars = false
 	root.add_child(_main)
@@ -160,7 +159,7 @@ func _profile(B: Dictionary, s: float) -> float:
 
 func _bus_station() -> void:
 	if not _M.has("bus_station"):
-		_fail("rail.json massy has no bus_station")
+		_fail("massyPalaiseau's plan has no bus_station")
 		return
 	var B: Dictionary = _M["bus_station"]
 	_o = _v(B["frame"]["o"])
@@ -205,7 +204,7 @@ func _bus_station() -> void:
 			_fail("%s's top is off: %d of %d rays at the kerb's height" % [q["name"], ok, n])
 	# the bus depot (tools/rail/bus_depot.py): its floor flat, its ramps' grades, open sides
 	if not B.has("depot"):
-		_fail("rail.json bus_station has no depot")
+		_fail("massyPalaiseau's plan's bus_station has no depot")
 		return
 	var Dp: Dictionary = B["depot"]
 	var s0: float = Dp["s0"]
@@ -271,7 +270,7 @@ func _bus_station() -> void:
 				else "lane %d" % k))
 
 
-## A bot drives a `model` bus along the map polyline `pts` (the depot's ways, rail.json massy bus_station depot
+## A bot drives a `model` bus along the map polyline `pts` (the depot's ways, massyPalaiseau's plan bus_station depot
 ## paths) to its end: never stuck, never far off the path, on its wheels.
 func _drive(pts: Array, model: String, name: String) -> void:
 	var step := 1.0

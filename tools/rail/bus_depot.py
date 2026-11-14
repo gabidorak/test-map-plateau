@@ -872,7 +872,7 @@ class Depot:
         return {"trees": trees, "hedges": hedges}
 
     def data(self) -> dict:
-        """rail.json massy bus_station `depot`: what hangar_builder.gd draws (in the depot's frame: the bus station's
+        """massyPalaiseau's plan, bus_station `depot`: what hangar_builder.gd draws (in the depot's frame: the bus station's
         (s, t) = (u + s0, v + t0)), the bus job's depot (garages.py), the buses' ways in and out (test_massy.gd)."""
         bays = []
         for bi in (0, 1):                                  # the south-west bays first (garages.gd takes the first free)

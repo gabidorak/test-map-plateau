@@ -1,7 +1,7 @@
 extends "res://tools/test_base.gd"
 ## PTA Online's bus job (ONLINE_MILESTONES.md O5, scripts/online/bus_job.gd). The role is the first argument after `--`:
 ## - `--check`: played solo (PLATEAU_MODE=online, an empty garage): the depot's lines (its terminal and bays under the
-##   bus depot's roof by the Atlantis bus station, rail.json massy bus_station depot), going on duty (a lent 18 m bus
+##   bus depot's roof by the Atlantis bus station, massyPalaiseau's plan bus_station depot), going on duty (a lent 18 m bus
 ##   comes out under the roof, on its floor, facing its way out), duty refused away from the depot; a bot drives the whole 4606 to the west edge (towards Christ de Saclay) on duty: every stop served,
 ##   no penalty, the pay per hour within PAY_BAND; then skipped stops, off the route, a teleport (the stretch pays
 ##   nothing), the hourly cap; off duty; with the bot buses running, duty holds one of them off the map and off duty
@@ -234,13 +234,13 @@ func _events(d: Object, kind: String) -> Array:
 	return d.events.filter(func(e: Array) -> bool: return e[0] == kind)
 
 
-## The depot's terminal and the lent bus under the bus depot's roof (rail.json massy bus_station depot,
+## The depot's terminal and the lent bus under the bus depot's roof (massyPalaiseau's plan bus_station depot,
 ## tools/rail/bus_depot.py), the bus on its floor, facing south-west (its way out, the ramp out).
 func _in_depot(car: Node) -> void:
-	var rail: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://world/rail.json"))
-	var B: Dictionary = rail.get("massy", {}).get("bus_station", {})
+	var plan: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/massyPalaiseau/plan.json"))
+	var B: Dictionary = plan.get("bus_station", {})
 	if not B.has("depot"):
-		_check(false, "rail.json has the bus depot")
+		_check(false, "massyPalaiseau's plan has the bus depot")
 		return
 	var o := Vector2(B["frame"]["o"][0], B["frame"]["o"][1])
 	var dd := Vector2(B["frame"]["d"][0], B["frame"]["d"][1]).normalized()

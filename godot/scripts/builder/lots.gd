@@ -3,8 +3,11 @@ extends RefCounted
 ## data/lots/<id>.json, that ties its three phases together:
 ##   "terraform"  its zones, applied first (builder/terraform.gd): files of data/terraform/ (tools/terraform.py), or a
 ##                script whose static terraform_zones() makes them from its design (the villa's court)
-##   "script"     its own code: drop(world) takes out of the map what it replaces (when the map is built,
-##                builder/world_builder.gd); its node is made in the game (game.gd), held by game's member "node"
+##   "drop"       its changes to the map's world as its tool decided them (data/<lot>/drop.json:
+##                builder/world_edits.gd, tools/common/world_edits.py), applied when the map is built
+##   "script"     its own code: drop(world), if it has one, takes out of the map what it replaces (when the map is built,
+##                builder/world_builder.gd, after its "drop"); its node is made in the game (game.gd), held by game's
+##                member "node"
 ##   "paint"      a script whose repaint() paints the ground in its grounds (builder/ground_builder.gd)
 ##                (its script's surface_boxes() and surface_at(): its surfaces in the map's ground the game reads, its
 ##                roads, paving, lawns, baked when the map is built: builder/ground_bake.gd)
@@ -15,21 +18,25 @@ extends RefCounted
 ##   (ground)     its script's ground_owned(): polygons (map) where it owns the ground, steps and walls and all: the
 ##                map's ground mesh and terrain collision cut out there (builder/ground_cut.gd), the lot draws and
 ##                collides its own
+##   "ground"     its own ground's data, data/<lot>/ (builder/lot_ground.gd, made by its tool with
+##                tools/common/lot_ground.py): its zones cut out of the map's ground and drawn on their heights, walls
+##                and all, its repairs terraformed
 ##   "build"      a builder run when the map is built, with the map's own builds (its build(root, world, heights,
-##                mesh_dir)): the railway's lots, their ground designed in world/rail.json and patched into the map's
-##                files by tools/rail/patch_world.py ("ground" says which part)
+##                mesh_dir)): the railway's lots (their plans, ground and drop made by tools/rail/)
 ##   "finished"   true: its node's builds and its restyled buildings are built into the map when the map is built
 ##                (builder/lot_bake.gd), and its node in the game takes them back (baked()) and only brings them to
 ##                life (a door, a terminal); unfinished, they are built at start, so a change needs no map rebuilt
 ## The order: parents first, then their children (each level by "order"); every lot's terraforming, one zone on the
 ## other in that order, then their drops, then the map's own builds, then (in the game) their nodes.
-## The railway's lots (rerB, massyPalaiseau with its bus depot, logementsX) have no node: their "build" makes them when
-## the map is built; their designed ground is patched into the map by tools/rail/patch_world.py (rail.json).
+## The railway's lots (rerB, massyPalaiseau with its bus depot) and logementsX have no node: their "build" makes them
+## when the map is built, their own ground ("ground") and their changes to the world ("drop") with it.
 ## No preloads (terraform.gd and the restyled buildings' specs read it): the lots' scripts are loaded by path.
 
 const DIR := "res://data/lots/"
 const RESTYLE := "res://scripts/restyle/restyle.gd"
 const LOT_FAR := "res://scripts/builder/lot_far.gd"
+const LOT_GROUND := "res://scripts/builder/lot_ground.gd"
+const WORLD_EDITS := "res://scripts/builder/world_edits.gd"
 const BAKED := "Lots"                       # the finished lots' builds in the map's scene: Lots/<id>(/<slug>)
 
 static var _lots: Array = []
@@ -121,16 +128,35 @@ static func terraform_entries() -> Array:
 			clip = Callable(load(str(p["script"])), "child_weight")
 		for name: String in l.get("terraform", []):
 			out.append([name, clip])
+		if l.has("ground"):                         # (its own ground's repairs: builder/lot_ground.gd)
+			out.append([str(l["ground"]), clip])
 	return out
 
 
-## The ground the lots own (their scripts' ground_owned(): polygons on the map), cut out of the map's (ground_cut.gd).
+## The ground the lots own (their scripts' ground_owned(), their "ground"'s owned zones: polygons on the map), cut
+## out of the map's (ground_cut.gd).
 static func owned_ground() -> Array:
 	var out := []
 	for lot: Dictionary in all():
 		if lot.has("script") and load(str(lot["script"])).has_method("ground_owned"):
 			out.append_array(load(str(lot["script"])).ground_owned())
+		if lot.has("ground"):
+			out.append_array(load(LOT_GROUND).of(str(lot["ground"])).owned())
 	return out
+
+
+## The lots' own grounds (their "ground": builder/lot_ground.gd), in the lots' order.
+static func grounds() -> Array:
+	return all().filter(func(l: Dictionary) -> bool: return l.has("ground")).map(
+			func(l: Dictionary) -> RefCounted: return load(LOT_GROUND).of(str(l["ground"])))
+
+
+## When the map is built: the owned zones' heights into the heightmap (builder/lot_ground.gd stamp()).
+static func stamp_grounds(heights: PackedFloat32Array, t: Dictionary) -> int:
+	var n := 0
+	for g: RefCounted in grounds():
+		n += g.stamp(heights, t)
+	return n
 
 
 ## The restyled buildings' specs the lots name.
@@ -142,7 +168,16 @@ static func restyle_slugs() -> Array:
 
 
 ## When the map is built: each lot's builder ("build"), in the lots' order; the first error stops them.
-static func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_dir: String) -> Error:
+static func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_dir: String,
+		shared: RefCounted = null) -> Error:
+	for lot: Dictionary in all():                  # their own ground first (builder/lot_ground.gd)
+		if lot.has("ground"):
+			var t0 := Time.get_ticks_msec()
+			var lost: float = load(LOT_GROUND).of(str(lot["ground"])).draw(root, world, mesh_dir,
+					load("res://scripts/ground_map.gd").get_map(), shared, "LotGround_" + str(lot["id"]))
+			print("lot %s: its own ground drawn (%d ms)" % [lot["id"], Time.get_ticks_msec() - t0])
+			if lost > 0.01:
+				push_warning("lot %s: %.2f m² of its own ground not drawn" % [lot["id"], lost])
 	for lot: Dictionary in all():
 		if lot.has("build"):
 			var r: Variant = load(str(lot["build"])).new().build(root, world, heights, mesh_dir)
@@ -155,7 +190,9 @@ static func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, 
 ## When the map is built: what each lot replaces out of the world.
 static func drop(world: Dictionary) -> void:
 	for lot: Dictionary in all():
-		if lot.has("script"):
+		if lot.has("drop"):
+			load(WORLD_EDITS).apply_file(world, str(lot["drop"]))
+		if lot.has("script") and load(str(lot["script"])).has_method("drop"):
 			load(str(lot["script"])).drop(world)
 	if not restyle_slugs().is_empty():
 		load(RESTYLE).drop(world)

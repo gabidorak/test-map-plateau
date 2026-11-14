@@ -1,16 +1,16 @@
 extends RefCounted
 ## Bot driver of an RER B train (scripts/train.gd) on the peer simulating it (one per train, scripts/train_traffic.gd).
-## Traction and braking as an MI 79's (rail.json train: ACCEL 1.0 m/s² from rest, service braking 0.7 m/s², up to
+## Traction and braking as an MI 79's (rerB's plan train: ACCEL 1.0 m/s² from rest, service braking 0.7 m/s², up to
 ## 1.1 m/s² when it must, emergency braking 1.15 m/s²; the rate of change of the acceleration limited to JERK for
-## comfort), at the planned speed of its service (rail.json services v: the line speed, the curves' limits over the
+## comfort), at the planned speed of its service (rerB's plan services v: the line speed, the curves' limits over the
 ## train's whole length, braking curves ahead of each slower stretch and to a terminus), and:
 ## - stops: at Lozère the front stops on the 8-car stopping mark (within STOP_TOLERANCE), the doors open on the platform
-##   side after OPEN_DELAY, stay open `dwell` s (rail.json: 40 s) and as long as a player stands in a doorway, then the
+##   side after OPEN_DELAY, stay open `dwell` s (rerB's plan: 40 s) and as long as a player stands in a doorway, then the
 ##   door warning sounds (CHIME s) and they shut; a player stepping into a doorway meanwhile opens them again (the
-##   bus's door hold) for HOLD_AGAIN s before the next warning. At a terminus stop (rail.json stops "terminus"; none
+##   bus's door hold) for HOLD_AGAIN s before the next warning. At a terminus stop (rerB's plan stops "terminus"; none
 ##   since the line runs on out of the map at both ends) and at the end of its route the train is `done`:
 ##   train_traffic.gd stows it.
-## - signals: block signalling on its service's signals (rail.json services blocks): the block beyond a signal is
+## - signals: block signalling on its service's signals (rerB's plan services blocks): the block beyond a signal is
 ##   occupied while a train ahead has any of its length in it; the train then stops SIGNAL_MARGIN short of the signal,
 ##   and never runs closer than SIGNAL_MARGIN behind the tail of the train ahead.
 ## - people and vehicles on the track (the players on foot, every vehicle out; `obstacles`, within TRACK_HALF of the
@@ -38,7 +38,7 @@ var state := "run"                          # "run", "stopped" (at a stop, doors
 var stop_k := 0                             # the next stop (service stops)
 var t := 0.0                                # s in this state
 var trip_t := 0.0                           # s since start() (train_traffic.gd gives up a trip past MAX_TRIP)
-var accel := 1.0                            # m/s², rail.json train
+var accel := 1.0                            # m/s², rerB's plan train
 var service_brake := 0.7
 var max_brake := 1.1
 var emergency_brake := 1.15

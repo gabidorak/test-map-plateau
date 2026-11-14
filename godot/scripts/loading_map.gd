@@ -1,6 +1,6 @@
 extends Control
 ## The loading screen's animated map (scripts/loading_screen.gd): the plateau drawn as a transit map from the game's
-## own route data. The roads the bot cars drive (world/car_routes.json) as a faint web, the RER B (world/rail.json)
+## own route data. The roads the bot cars drive (world/car_routes.json) as a faint web, the RER B (lot rerB's plan)
 ## and the four bus lines in their colours (world/bus_routes.json), with their stops and stations, and buses and
 ## trains running along them. Nothing to load before it can draw: the files are read and thinned out on a worker thread
 ## the first time a screen asks (MAP.parse below), the map fades in once they are, and the result is kept for the
@@ -15,7 +15,7 @@ extends Control
 
 const BUS_ROUTES := "res://world/bus_routes.json"
 const CAR_ROUTES := "res://world/car_routes.json"
-const RAIL := "res://world/rail.json"
+const RAIL := "res://data/rerB/plan.json"
 const RER_B := Color("#5291ce")               # the RER B's blue on the Île-de-France maps
 const ROAD := Color(1, 1, 1, 0.07)
 const THIN_M := 9.0                           # m between the points kept from the 1 m route samples

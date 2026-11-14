@@ -1,8 +1,9 @@
-"""Lot logementsX's design (the École polytechnique's new student housing): godot/data/logementsX/plan.json, made by
-logements_x.py (its docstring: what it lays out, its sources) from the map's own ground (godot/world/base/: world.json
-and its heightmap). The game reads it through
-godot/scripts/logementsX/logements_x_plan.gd: the lot's terraforming (its `repairs`), its removals and additions to the
-world (`site`), its surfaces (`zones`), its builder's details.
+"""Lot logementsX's design (the École polytechnique's new student housing): godot/data/logementsX/plan.json and
+drop.json, made by logements_x.py (its docstring: what it lays out, its sources) from the map's own ground
+(godot/world/base/: world.json and its heightmap). The game reads the plan through
+godot/scripts/logementsX/logements_x_plan.gd: the lot's terraforming (its `repairs`), its surfaces (`zones`), its
+builder's details; drop.json, its removals and additions to the world (tools/common/world_edits.py), through
+builder/world_edits.gd.
 
 Run from the repository: .venv/Scripts/python.exe -I tools/logements_x/build_plan.py   (then rebuild the map)
 """
@@ -14,9 +15,11 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "common"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mapdata as md  # noqa: E402
+import world_edits  # noqa: E402
 import logements_x as lx                          # noqa: E402
 
 OUT = ROOT / "godot" / "data" / "logementsX" / "plan.json"
+DROP = OUT.parent / "drop.json"
 
 
 def main() -> None:
@@ -26,9 +29,14 @@ def main() -> None:
     H = md.Heights(md.BASE, world["terrain"], world["ground_mesh"]["cell"])
     data, zones = lx.build(world, H)
     data["zones"] = zones
+    site = data.pop("site")
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_bytes((json.dumps(data, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8"))
-    print("wrote", OUT.relative_to(ROOT))
+    world_edits.write(DROP, site, "Lot logementsX's changes to the map's world: tools/logements_x/build_plan.py "
+                      "(the construction site's fence and trees out, its trees and props in, the props on its sidewalk "
+                      "lifted, the kerbs cut back, the kit modules on its plots out, the six placeholder blocks swapped "
+                      "for its buildings); keys: tools/common/world_edits.py")
+    print("wrote", OUT.relative_to(ROOT), "and", DROP.relative_to(ROOT))
 
 
 if __name__ == "__main__":

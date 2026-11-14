@@ -1,21 +1,21 @@
 extends RefCounted
-## Runtime railway lookups from world/rail.json (tools/rail/build_rail.py): the centreline of the RER B at any
+## Runtime railway lookups from lot rerB's plan, data/rerB/plan.json (tools/rail/build_rail.py): the centreline of the RER B at any
 ## distance s from its west end (point, heading, rail level, cant), the projection of a map point onto it (s, u),
 ## which track a point is on, the kilometre point (PK) and the speed limit there. Pipeline coordinates (x east,
 ## y north, z up). Shared by the rail builder, the picker, the trains and the tests.
 
-const DEFAULT_PATH := "res://world/rail.json"
+const DEFAULT_PATH := "res://data/rerB/plan.json"
 const BUCKET := 20.0                    # m, grid of centreline points for project()
 const REACH := 3                        # buckets project() widens its search to
-const LINE_SPEED := 90.0                # km/h, OSM maxspeed of the line (rail.json tracks[].maxspeed)
+const LINE_SPEED := 90.0                # km/h, OSM maxspeed of the line (rerB's plan tracks[].maxspeed)
 
 static var _cache := {}
 
-var data: Dictionary                    # rail.json as parsed
+var data: Dictionary                    # the plan as parsed
 var step := 1.0                         # m between centreline points
 var length := 0.0
 var spacing := 0.0                      # m between the track centres
-var tracks: Array = []                  # rail.json tracks: ref, side, offset (u), direction, maxspeed
+var tracks: Array = []                  # rerB's plan tracks: ref, side, offset (u), direction, maxspeed
 var _pts := PackedVector2Array()
 var _heading := PackedFloat32Array()
 var _z := PackedFloat32Array()
@@ -23,7 +23,7 @@ var _cant := PackedFloat32Array()       # m, signed: positive raises the north r
 var _grid := {}                         # Vector2i -> PackedInt32Array of point indices
 var _reach := {}                        # Vector2i -> true: the buckets project() finds a centreline point from
 var _none := PackedInt32Array()
-var _pk_a := 0.0                        # PK (km) = a + b * s (rail.json pk, fitted on the OSM posts)
+var _pk_a := 0.0                        # PK (km) = a + b * s (rerB's plan pk, fitted on the OSM posts)
 var _pk_b := 0.0
 var _limits: Array = []                 # [s0, s1, km/h]: curves and speed signs
 
@@ -150,7 +150,7 @@ func project(p: Vector2) -> Vector2:
 	return out
 
 
-## The track (rail.json tracks entry) whose centre is nearest to offset u, or {} beyond max_off of any.
+## The track (rerB's plan tracks entry) whose centre is nearest to offset u, or {} beyond max_off of any.
 func track_at(u: float, max_off := 2.5) -> Dictionary:
 	var best := {}
 	var best_d := max_off

@@ -7,8 +7,8 @@ beside the row's first bay:
 - public garages on OSM car parks, spread so one is never far on the campus (fewer along the Massy and west
   corridors); a "big" bay takes the long and wide vehicles (truck + trailer, biplane);
 - the bus depot at Massy-Palaiseau station (buses only, bus drivers): under the bus depot's roof by the Atlantis bus
-  station (tools/rail/bus_depot.py, rail.json massy bus_station depot depot: its terminal on the drivers' walkway by
-  the stairs, its six bays on the three lanes, facing the ramp out), when rail.json has it;
+  station (tools/rail/bus_depot.py, lot massyPalaiseau's plan, bus_station depot depot: its terminal on the drivers' walkway by
+  the stairs, its six bays on the three lanes, facing the ramp out), when its plan has it;
 - the fire station at Polytechnique, building #1289 "SPIS" (osm:w1063984911, an open canopy 2.9 m high: the 3.1 m
   fire truck doesn't fit under it, so the bays are beside it), fire trucks only;
 - Prestige Motors' delivery bays, by its main door (the shop, scripts/online/shop.gd: a vehicle bought there comes out
@@ -33,12 +33,16 @@ from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import unary_union
 from shapely.prepared import prep
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common"))
+import world_edits  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[2]
 WORLD = ROOT / "godot/world/world.json"
 BUS_ROUTES = ROOT / "godot/world/bus_routes.json"
 CAR_ROUTES = ROOT / "godot/world/car_routes.json"
 RACES = ROOT / "godot/world/races.json"
-RAIL = ROOT / "godot/world/rail.json"
+RER_PLAN = ROOT / "godot/data/rerB/plan.json"            # (lot rerB: the trains' services)
+MASSY_PLAN = ROOT / "godot/data/massyPalaiseau/plan.json"   # (lot massyPalaiseau: the bus depot)
 OUT = ROOT / "godot/world/garages.json"
 
 # bay sizes (m, width x length): what fits is decided in the game from each vehicle's size
@@ -99,7 +103,7 @@ def ring_polygon(rings: list) -> Polygon | None:
 
 
 def load() -> dict:
-    w = json.loads(WORLD.read_text(encoding="utf-8"))
+    w = world_edits.apply_lots(json.loads(WORLD.read_text(encoding="utf-8")))   # (as the map is built)
     paved, parks, water, rails = [], {}, [], []
     for g in w["ground"]:
         p = ring_polygon(g["rings"])
@@ -134,7 +138,7 @@ def load() -> dict:
         obstacles.append(p.buffer(CLEAR["water"]))
     for p in rails:
         obstacles.append(p.buffer(1.0))
-    for s in json.loads(RAIL.read_text(encoding="utf-8"))["services"]:
+    for s in json.loads(RER_PLAN.read_text(encoding="utf-8"))["services"]:
         obstacles.append(LineString([(q[0], q[1]) for q in s["pts"]]).buffer(CLEAR["rail"]))
     for r in json.loads(RACES.read_text(encoding="utf-8"))["races"]:
         for key in ("start", "finish"):
@@ -178,8 +182,8 @@ def terminal_spot(x: float, y: float, yaw: float, bays: list) -> tuple:
 
 
 def rail_depot(g: dict) -> dict | None:
-    """The bus depot under the depot's roof (rail.json massy bus_station depot depot), or None."""
-    h = json.loads(RAIL.read_text(encoding="utf-8")).get("massy", {}).get("bus_station", {}).get("depot")
+    """The bus depot under the depot's roof (lot massyPalaiseau's plan: bus_station depot depot), or None."""
+    h = json.loads(MASSY_PLAN.read_text(encoding="utf-8")).get("bus_station", {}).get("depot")
     if not h:
         return None
     d = h["depot"]

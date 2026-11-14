@@ -1,8 +1,9 @@
-"""Puts the 4606 on the Atlantis bus station's new lanes (rail.json massy bus_station routes, bus_station.py):
+"""Puts the 4606 on the Atlantis bus station's new lanes (lot massyPalaiseau's plan: bus_station routes,
+bus_station.py):
 godot/world/bus_routes.json, in place.
 
     .venv/Scripts/python tools/rail/bus_routes.py        (after build_rail.py; ~2 s; running it again changes nothing)
-    [--rail=rail.json --routes=in.json --out=out.json]  (to try it on other files)
+    [--plan=plan.json --routes=in.json --out=out.json]  (to try it on other files)
 
 The bus routes come from the map pipeline (plateau/transit.py), which is not in this repository, so they are patched:
 the 4606's two routes keep their way up to JOIN m outside the bus station's south-west end (s along the station's axis,
@@ -26,7 +27,7 @@ import bus_station as bst  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 ROUTES = ROOT / "godot/world/bus_routes.json"
-RAIL = ROOT / "godot/world/rail.json"
+PLAN = ROOT / "godot/data/massyPalaiseau/plan.json"
 OUT, IN = "4606:2393305", "4606:2393303"     # Gare de Massy - Palaiseau -> Christ de Saclay, and back
 JOIN = 13.0                     # m outside the bus station's south-west end the old way is kept up to
 V_STATION = 8.0                 # m/s at most in the bus station (~30 km/h)
@@ -181,10 +182,9 @@ def _finish(r: dict, pts, v, room, j: int, shift: int, B: dict, out: bool) -> No
 
 def main() -> None:
     opt = dict(a[2:].split("=", 1) for a in sys.argv[1:] if a.startswith("--") and "=" in a)
-    rail = json.loads(Path(opt.get("rail", RAIL)).read_text(encoding="utf-8"))
-    B = (rail["massy"] if "massy" in rail else rail).get("bus_station")
+    B = json.loads(Path(opt.get("plan", PLAN)).read_text(encoding="utf-8")).get("bus_station")
     if not B:
-        sys.exit("rail.json has no massy bus_station: run build_rail.py first")
+        sys.exit("lot massyPalaiseau's plan has no bus_station: run build_rail.py first")
     data = json.loads(Path(opt.get("routes", ROUTES)).read_text(encoding="utf-8"))
     before = {k: (len(data["routes"][k]["pts"]), data["routes"][k]["length"]) for k in (OUT, IN)}
     patch_out(data["routes"][OUT], B)

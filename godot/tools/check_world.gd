@@ -6,8 +6,9 @@ extends SceneTree
 ##     made in code by their builders from colours, saved by builder/lot_bake.gd as meshes/lot_*).
 ##  2. No holes in the ground mesh: the ground surface triangles of all chunks cover the whole box,
 ##     and every edge is shared by exactly two triangles except along the box boundary (no gaps,
-##     cracks or T-junctions). Positions are compared exactly, as the pipeline writes shared
-##     vertices bit-identical.
+##     cracks or T-junctions) and the outlines of the ground the lots own (builder/ground_cut.gd: cut out of the map's,
+##     the lot draws its own there, LotGround_<lot>, counted in the cover). Positions are compared exactly, as the
+##     pipeline writes shared vertices bit-identical.
 ##  3. The runtime ground index loads and raised-surface collision exists.
 ##  4. Vegetation (M5): every tree of world.json is drawn once per LOD, has trunk data, and every
 ##     hedge has a mesh and a collision shape.
@@ -17,7 +18,7 @@ extends SceneTree
 ##  6. Toy buildings (M7): every mass has its mesh with the facade data (UV2 + four custom channels) and the
 ##     one shared building material, a collision shape, and every kit module and name sign is drawn once, but those an
 ##     interior building loses (world/interiors.json, builder/interior_builder.gd).
-##  7. RER B (rail.json, tools/rail/): world.json carries the patch stamp of this rail.json; along both tracks, across
+##  7. RER B (lot rerB's plan, tools/rail/): world.json carries the patch stamp of the railway's plans; along both tracks, across
 ##     the playable box, the ground is the railway's trackbed piece and the drawn mesh lies on the designed formation
 ##     with no step; no tree, prop or building inside the kinematic gauge; each platform edge is 1.60-1.70 m from its
 ##     track centre, the platform top 1.15 m above the rail and the ground drops in front of its wall.
@@ -31,11 +32,12 @@ const PropPlacer = preload("res://scripts/builder/prop_placer.gd")
 const InteriorBuilder = preload("res://scripts/builder/interior_builder.gd")
 const SCENE := "res://scenes/generated/neighborhood.tscn"
 const WORLD := "res://world/world.json"
-const RAIL := "res://world/rail.json"
+const RAIL := "res://data/rerB/plan.json"
+const MASSY := "res://data/massyPalaiseau/plan.json"
 const GAUGE_HALF := 1.75                   # m from a track centre: GC kinematic gauge half-width (EN 15273-2, 1.645 m) + 0.1 m
 const EDGE_MIN := 1.60                     # m, platform edge from its track centre (RATP RER platforms: 1.65 m)...
 const EDGE_MAX := 1.70                     # ...within this range
-const PLATFORM_HEIGHT := 1.15              # m above the rail (RER B "quais hauts", rail.json platforms height)
+const PLATFORM_HEIGHT := 1.15              # m above the rail (RER B "quais hauts", rerB's plan platforms height)
 const FORMATION_TOL := 0.03                # m, drawn ground vs the designed formation at a track centre
 const RAIL_SPAN := 40.0                    # m either side of the line where ground triangles are kept for the checks
 const IMAGE_EXT := ["jpg", "jpeg", "png", "webp", "tif", "tiff", "bmp", "tga", "exr", "hdr", "svg", "ktx",
@@ -46,6 +48,7 @@ var _seen := {}
 var _rail_box := Rect2()                   # map x, y around the line: ground triangles kept there for the railway checks
 var _beds_rect := Rect2()                  # map x, y around the yard's ballast beds: ground triangles kept there too
 var _rail_tris := {}                       # Vector2i 2 m cell -> PackedVector3Array of map-space triangles over it
+var _owned_segs := {}                      # Vector2i 2 m cell -> [[a, b]...]: the lots' owned ground's outlines (map)
 
 
 func _initialize() -> void:
@@ -238,6 +241,23 @@ func _check_ground(root: Node, world: Dictionary) -> void:
 				var j := (i + 1) % r.size()
 				a2 += float(r[i][0]) * float(r[j][1]) - float(r[j][0]) * float(r[i][1])
 			box_area += absf(a2) * 0.5 * (1.0 if k == 0 else -1.0)
+	for lg: Node in root.get_children():       # the lots' own ground (builder/lot_ground.gd): its tops in the cover
+		if not lg.name.begins_with("LotGround_") or lg is CollisionObject3D:
+			continue
+		for mi: Node in lg.get_children():
+			if not mi is MeshInstance3D:
+				continue
+			var v: PackedVector3Array = (mi as MeshInstance3D).mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+			for t in range(0, v.size(), 3):
+				var a := Vector2(v[t].x, v[t].z)
+				var cross := (Vector2(v[t + 1].x, v[t + 1].z) - a).cross(Vector2(v[t + 2].x, v[t + 2].z) - a)
+				if absf(cross) < 1e-9:
+					continue                    # (its walls)
+				area += absf(cross) / 2.0
+				var am := Vector2(a.x, -a.y)
+				if (_rail_box.has_area() and _rail_box.has_point(am)) or (_beds_rect.has_area() and _beds_rect.has_point(am)):
+					_keep_triangle(v[t], v[t + 1], v[t + 2])
+	_index_owned()
 	var holes := 0
 	for key: Vector4 in open:
 		# box edges, Godot axes: x = const at bounds x, or z = const at -bounds y
@@ -245,6 +265,8 @@ func _check_ground(root: Node, world: Dictionary) -> void:
 				(key.y == key.w and (is_equal_approx(key.y, -b[1]) or is_equal_approx(key.y, -b[3])))
 		if not outline.is_empty():
 			on_box = _on_outline(outline, Vector2(key.x, -key.y)) and _on_outline(outline, Vector2(key.z, -key.w))
+		if not on_box and _on_owned(Vector2(key.x, -key.y)) and _on_owned(Vector2(key.z, -key.w)):
+			continue                            # (the edge of a lot's own ground)
 		if not on_box:
 			holes += 1
 			if holes <= 10:
@@ -254,6 +276,29 @@ func _check_ground(root: Node, world: Dictionary) -> void:
 		_fail("ground mesh covers %.1f m² of the %.1f m² %s" % [area, box_area, "box" if rings.is_empty() else "data area"])
 	print("ground: %d chunks, %d surface triangles, %.1f m² of %.1f m², %d open edges inside the box" % [
 			ground.get_child_count(), tris, area, box_area, holes])
+
+
+## The outlines of the ground the lots own (builder/lots.gd owned_ground()) by 2 m cell.
+func _index_owned() -> void:
+	for p: Variant in Lots.owned_ground():
+		for r: PackedVector2Array in ([p] if p is PackedVector2Array else p):
+			for i in r.size():
+				var a := r[i]
+				var b := r[(i + 1) % r.size()]
+				for x in range(floori(minf(a.x, b.x) / 2.0), floori(maxf(a.x, b.x) / 2.0) + 1):
+					for y in range(floori(minf(a.y, b.y) / 2.0), floori(maxf(a.y, b.y) / 2.0) + 1):
+						var c := Vector2i(x, y)
+						if not _owned_segs.has(c):
+							_owned_segs[c] = []
+						_owned_segs[c].append([a, b])
+
+
+## True when map point p lies on an owned ground's outline (within 1 cm).
+func _on_owned(p: Vector2) -> bool:
+	for s: Array in _owned_segs.get(Vector2i(floori(p.x / 2.0), floori(p.y / 2.0)), []):
+		if Geometry2D.get_closest_point_to_segment(p, s[0], s[1]).distance_to(p) < 0.01:
+			return true
+	return false
 
 
 ## True when map point p lies on the data area's outline (within 10 cm: the land cover stops a few cm short of it).
@@ -461,8 +506,9 @@ func _check_railway(world: Dictionary, rail: Dictionary) -> void:
 		var ctx := HashingContext.new()
 		ctx.start(HashingContext.HASH_SHA1)
 		ctx.update(FileAccess.get_file_as_bytes(RAIL))
-		if ctx.finish().hex_encode() != stamp.get("rail_json", ""):
-			_fail("world.json was patched from another rail.json: run tools/rail/patch_world.py")
+		ctx.update(FileAccess.get_file_as_bytes(MASSY))
+		if ctx.finish().hex_encode() != stamp.get("plans", ""):
+			_fail("world.json was patched from other plans of the railway's lots: run tools/rail/patch_world.py")
 	var map := GroundMap.get_map()
 	var a: Dictionary = rail["alignment"]
 	var ew: Dictionary = rail["earthworks"]
@@ -532,7 +578,7 @@ func _check_railway(world: Dictionary, rail: Dictionary) -> void:
 			_fail("prop %s %s: %.2f m from a track centre" % [p["id"], p["model"], d])
 	for b: Dictionary in world["buildings"]:
 		if float(b.get("min_height", 0.0)) >= 5.0:
-			continue                            # standing over the line, above the trains (patch_world.py)
+			continue                            # standing over the line, above the trains (tools/rail/drops.py)
 		var ring: Array = b["rings"][0]
 		for i in ring.size():
 			var p0 := Vector2(ring[i][0], ring[i][1])
@@ -633,7 +679,7 @@ func _line_box(rail: Dictionary, world: Dictionary) -> Rect2:
 	return r
 
 
-## Map-space box around the yard's ballast beds (rail.json yard tracks `bed` runs).
+## Map-space box around the yard's ballast beds (rerB's plan yard tracks `bed` runs).
 func _beds_box(rail: Dictionary) -> Rect2:
 	var r := Rect2()
 	for t: Dictionary in rail.get("yard", {}).get("tracks", []):
@@ -675,7 +721,7 @@ func _mesh_z(p: Vector2) -> float:
 	return NAN
 
 
-## Map point at s along the rail.json centreline, u to its left.
+## Map point at s along rerB's plan's centreline, u to its left.
 func _along(a: Dictionary, s: float, u: float) -> Vector2:
 	var pts: Array = a["pts"]
 	var f := clampf(s / float(a["step"]), 0.0, pts.size() - 1.000001)

@@ -30,6 +30,9 @@ from shapely.ops import unary_union
 from shapely.prepared import prep
 from shapely.strtree import STRtree
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common"))
+import world_edits  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[2]
 WORLD = ROOT / "godot/world/world.json"
 BUS_ROUTES = ROOT / "godot/world/bus_routes.json"
@@ -107,7 +110,7 @@ class World:
     whole of it as Python objects takes several GB)."""
 
     def __init__(self) -> None:
-        w = read_sections(WORLD, ("meta", "buildings", "ground", "trees", "props"))
+        w = world_edits.apply_lots(read_sections(WORLD, ("meta", "buildings", "ground", "trees", "props")))
         self.area = unary_union([Polygon(r) for r in w["meta"]["playable_area"]]).buffer(-10.0) \
             if "playable_area" in w["meta"] else None
         self.near = Point(*STATION).buffer(RADIUS)

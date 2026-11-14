@@ -125,6 +125,8 @@ func build(root: Node3D, world: Dictionary, world_dir: String, mesh_dir: String)
 			cs.set_meta("plateau", {"type": "ground", "id": "ground:raised_" + c["name"]})
 			body.add_child(cs)
 
+	if owned.lost > 0.01:
+		push_warning("ground: %.2f m² of the map's ground lost cutting the lots' own out" % owned.lost)
 	var grass := GrassField.new()                   # (on the ground the game reads: ground_map.gd, baked)
 	grass.name = "Grass"
 	root.add_child(grass)

@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## The Atlantis bus station's finish and the bus depot beside it (world/rail.json massy `bus_station`,
+## The Atlantis bus station's finish and the bus depot beside it (massyPalaiseau's plan `bus_station`,
 ## tools/rail/bus_station.py and bus_depot.py), drawn for massy_builder.gd (`host`: its meshers, collision, labels and
 ## lamp lights):
 ## - the road markings (white and yellow triangles just over the ground: lane lines, arrows, the stop bays' zigzags,

@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
-## The RER B (Ligne de Sceaux) in the generated scene, from world/rail.json (tools/rail/build_rail.py; the ground it
-## reshapes is already in world/: tools/rail/patch_world.py). Structures, built from code in the toy prop style
+## The RER B (Ligne de Sceaux) in the generated scene, lot rerB's build, from its plan data/rerB/plan.json
+## (tools/rail/build_rail.py; the ground it reshapes is its own: builder/lot_ground.gd). Structures, built from code in the toy prop style
 ## (shaders/toy_prop.gdshader, vertex colour = palette colour and ambient occlusion):
 ## - the covered road under the line (Place de la Gare de Lozère): its concrete box (road surface with its lines,
 ##   walls, ceiling and lights) from portal to portal, a frame round each portal; the open ends are the patched
@@ -20,7 +20,7 @@ const GroundHeights = preload("res://scripts/ground_heights.gd")
 const RailMap = preload("res://scripts/rail_map.gd")
 const GroundBuilder = preload("res://scripts/builder/ground_builder.gd")
 const LabelFit = preload("res://scripts/label_fit.gd")
-const RAIL_PATH := "res://world/rail.json"
+const RAIL_PATH := "res://data/rerB/plan.json"
 const PROP_SHADER := "res://shaders/toy_prop.gdshader"
 const CONCRETE := Color("#cfc8ba")          # palette props.concrete
 const CONCRETE_DARK := Color("#b4ad9f")
@@ -39,7 +39,7 @@ const TUNNEL_WALL := 0.40                   # m, the covered road's walls; assum
 const LIGHT_SPACING := 8.0                  # m between tunnel and passage lights; assumed
 const DASH := [3.0, 10.0]                   # French road centre line T1: 3 m dashes, 10 m apart (urban)
 const LINE_WIDTH := 0.12                    # m (urban centre line)
-# the track (dimensions from rail.json track: UIC 60 rails, M450 sleepers, ballast)
+# the track (dimensions from rerB's plan track: UIC 60 rails, M450 sleepers, ballast)
 const CHUNK := 96.0                         # m, as the props, trees and kit: nested in far_builder.gd's 192 m cells
 const SEG := 2.0                            # m per rail and ballast segment (sagitta 1.2 mm on the tightest 404 m curve)
 const FAR_SEG := 8.0                        # m per segment of the far ballast strip
@@ -102,7 +102,7 @@ var _ground_mat: Material                   # the toy ground's (the ballast bed 
 var _ballast_col := Color("#8f8a84")
 var _rm                                     # RailMap: the centreline
 var _rail: Dictionary
-var _box := Rect2()                         # the map box (rail.json box): the line is drawn inside it
+var _box := Rect2()                         # the map box (rerB's plan box): the line is drawn inside it
 var _chunks := {}                           # Vector2i -> chunk Node3D under Rail/Track
 var _ground: GroundHeights
 var _body: StaticBody3D
@@ -986,7 +986,7 @@ func _sleepers(span: Vector2, tracks: Array, tr: Dictionary) -> Dictionary:
 
 # ---------------------------------------------------------------- rail bridges
 
-## The line's short bridges beyond the first box (rail.json rail_bridges: the ground under them is the road's): a
+## The line's short bridges beyond the first box (rerB's plan rail_bridges: the ground under them is the road's): a
 ## concrete deck under the formation from one formation edge to the other, parapets along both edges; collision for
 ## the deck top and the parapets (the ballast is the track's). Where a platform runs over one (Le Guichet's, over the
 ## N118), the platform's floor is a slab on the deck (the patch leaves no platform ground over the road): from behind
@@ -1056,7 +1056,7 @@ func _rail_bridges(node: Node3D) -> void:
 
 # ---------------------------------------------------------------- the yard (tools/rail/yard.py)
 
-## The yard's tracks beyond the alignment (rail.json yard tracks: each its own line, rail top per metre): rails and
+## The yard's tracks beyond the alignment (rerB's plan yard tracks: each its own line, rail top per metre): rails and
 ## sleepers per CHUNK m chunk; the ballast is each track's bed (_yard_beds) on the patched ground ("yard" zones).
 func _yard(node: Node3D) -> void:
 	var yard: Dictionary = _rail.get("yard", {})
@@ -1140,7 +1140,7 @@ func _yard(node: Node3D) -> void:
 		chunk.add_child(mmi)
 
 
-## The yard tracks' ballast beds (rail.json yard tracks `bed` runs, yard `bed` section): a prism per track as the
+## The yard tracks' ballast beds (rerB's plan yard tracks `bed` runs, yard `bed` section): a prism per track as the
 ## alignment's bed, its top `below_rail` under the rail top (the sleepers' tops show SLEEPER_SHOW above it) out to the
 ## shoulder, its sides sloping down `depth` m at the ballast slope, its ends sloped too; the patched ground under it is
 ## lowered (railgeo.YardBed), so the LiDAR ground never covers the sleepers. Drawn with the ground's material per
@@ -1233,7 +1233,7 @@ func _yard_beds(node: Node3D, root: Node3D) -> void:
 		body.add_child(cs)
 
 
-## The yard's islands (rail.json yard islands; their raised top is the patched ground's "island" zone): the edge
+## The yard's islands (rerB's plan yard islands; their raised top is the lot's ground's "island" zone): the edge
 ## coping over each track, the light band and the tactile strip behind it (walkable: collision), railings across the
 ## ends.
 func _islands(node: Node3D) -> void:
@@ -1291,7 +1291,7 @@ func _platform_frame(x: float, y: float, z: float, s: float, side: float) -> Tra
 	return Transform3D(Basis(along, Vector3.UP, out), _g(x, y, z))
 
 
-## Platform top at s (rail.json platforms top, per metre from s0; the ends half a metre beyond s0 and s1).
+## Platform top at s (rerB's plan platforms top, per metre from s0; the ends half a metre beyond s0 and s1).
 static func _platform_top(pf: Dictionary, s: float) -> float:
 	var top: Array = pf["top"]
 	var f := clampf(s - float(pf["s0"]), 0.0, top.size() - 1.000001)
@@ -1381,7 +1381,7 @@ func _track_offset(ref: String) -> float:
 	return 0.0
 
 
-## The station's furniture (rail.json station furniture, placed by build_rail.py): lamps, benches, bins, the
+## The station's furniture (rerB's plan station furniture, placed by build_rail.py): lamps, benches, bins, the
 ## "Lozère" name boards, the track number boards, the departure screens, the Navigo validators at the entrances and the
 ## platform canopies; one toy mesh, one glow mesh (lamps, screens: night.gd), labels, and collision boxes.
 func _furniture(node: Node3D) -> void:
@@ -1590,8 +1590,8 @@ func _label(parent: Node3D, text: String, pos: Vector3, size: int, color: Color,
 
 # ---------------------------------------------------------------- signals, posts, catenary
 
-## The lineside signals inside the map box (rail.json signals): a mast beside the track, the target facing the trains
-## it protects with a lamp per aspect it can show (rail.json states: VL green, A yellow, S and C red, R/RR yellow
+## The lineside signals inside the map box (rerB's plan signals): a mast beside the track, the target facing the trains
+## it protects with a lamp per aspect it can show (rerB's plan states: VL green, A yellow, S and C red, R/RR yellow
 ## pairs), the ref plate; the speed boards (TIV) with their number. Each signal is a node (meta type rail_signal) whose
 ## lamps the trains switch (scripts/rail_signals.gd); they show green until then.
 func _signals(node: Node3D) -> void:
@@ -1706,7 +1706,7 @@ static func _set_aspect(lamps: Dictionary, lit: Dictionary, off: Material, aspec
 		(lamps[a] as MeshInstance3D).material_override = lit[a] if on else off
 
 
-## Kilometre posts (rail.json pk: OSM, at their s, set beside their track outside the gauge) and the hectometre
+## Kilometre posts (rerB's plan pk: OSM, at their s, set beside their track outside the gauge) and the hectometre
 ## plates on the catenary masts.
 func _posts(node: Node3D) -> void:
 	var holder := Node3D.new()
@@ -1755,7 +1755,7 @@ func _posts(node: Node3D) -> void:
 	_emit_cells(holder, "PK", cells, _mat_toy, {"type": "rail_pk", "id": "rail:pk"}, SIGNAL_RANGE)
 
 
-## The catenary (rail.json catenary: portals by rule in build_rail.py): per support its two masts and the portal beam
+## The catenary (rerB's plan catenary: portals by rule in build_rail.py): per support its two masts and the portal beam
 ## over both tracks, per track a drop tube and the registration arm holding the contact wire at its stagger; the
 ## contact wire and the messenger (sagging between supports, droppers every `droppers` m) per span. Masts and beams
 ## are drawn far (one mesh per far cell), the wires near (per track chunk).
@@ -1883,7 +1883,7 @@ func _walls(node: Node3D) -> void:
 	_emit_cells(node, "WallCopings", cells, _mat_toy, {"type": "rail_structure", "id": "rail:walls"}, PORTAL_RANGE)
 
 
-## The gabled roofs patch_world.py asks for (world.json buildings[].rail_roof: the station building, whose body
+## The gabled roofs the lot's drop asks for (world.json buildings[].rail_roof, tools/rail/drops.py: the station building, whose body
 ## building_builder.gd stops at the eaves): slate planes over the longest walls with their overhang, the gable walls
 ## in the render colour with the station's name in brick lettering (photos), a brick chimney.
 func _station_roofs(node: Node3D, world: Dictionary) -> void:

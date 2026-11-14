@@ -3,7 +3,8 @@
  "order": 1,
  "finished": true,
  "name": "RER B",
- "about": "The RER B line (Ligne de Sceaux) across the map: its formation, tracks, catenary, platforms and stations (Lozère, Le Guichet, Orsay-Ville...), bridges, underpasses, fences, the yard's tracks; designed by tools/rail/build_rail.py (OSM, LiDAR) into world/rail.json, its ground patched into the map's files by tools/rail/patch_world.py, built by builder/rail_builder.gd.",
- "ground": "world/rail.json (all but massy, logements_x): tools/rail/patch_world.py",
+ "about": "The RER B line (Ligne de Sceaux) across the map: its formation, tracks, catenary, platforms and stations (Lozère, Le Guichet, Orsay-Ville...), bridges, underpasses, fences, the yard's tracks; designed by tools/rail/build_rail.py (OSM, LiDAR) into its plan data/rerB/plan.json, its own ground (data/rerB/ground.*, builder/lot_ground.gd) and its changes to the map's world (data/rerB/drop.json: the trees and props in its way, its fences, Lozère's station building, the buildings over its tracks), built by builder/rail_builder.gd.",
+ "ground": "res://data/rerB/",
+ "drop": "res://data/rerB/drop.json",
  "build": "res://scripts/builder/rail_builder.gd"
 }

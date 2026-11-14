@@ -204,10 +204,11 @@ blender -b --factory-startup -P blender/vehicles/build_train.py -- --preview=$PW
 .venv/Scripts/python tools/rail/fetch_osm.py --massy   # optional: the same for the line on to Massy-Palaiseau (osm_rail_massy.json)
 .venv/Scripts/python tools/rail/fetch_osm.py --west    # optional: the same for the line on through Le Guichet (osm_rail_west.json)
 .venv/Scripts/python tools/rail/fetch_osm.py --station # optional: Massy-Palaiseau's station precinct, every building and way (osm_massy_station.json)
-.venv/Scripts/python tools/rail/build_rail.py     # OSM + LiDAR -> godot/world/rail.json, tools/rail/review/*.png (~1 min)
+.venv/Scripts/python tools/rail/build_rail.py     # OSM + LiDAR -> lots rerB and massyPalaiseau: godot/data/rerB/, godot/data/massyPalaiseau/ (plan, ground, drop), tools/rail/review/*.png (~2 min)
+.venv/Scripts/python tools/rail/lots.py           # or only their ground and drop again from the plans (a new map from the pipeline, ~1 min)
 .venv/Scripts/python tools/rail/bus_routes.py     # then: the 4606 on Massy-Palaiseau's bus station lanes (bus_routes.json, ~2 s)
 .venv/Scripts/python tools/online/garages.py --only=bus-depot   # then: the bus depot under the depot's roof (garages.json)
-.venv/Scripts/python tools/rail/patch_world.py    # godot/world/base/ + rail.json -> godot/world/ (~25 min, ~6 GB RAM), then build_world.gd
+.venv/Scripts/python tools/rail/patch_world.py    # godot/world/base/ + the lots' plans -> godot/world/ (~25 min, ~6 GB RAM), then build_world.gd
 
 cd godot
 godot --headless --path . --import
@@ -520,8 +521,10 @@ committed scripts that regenerate everything from data (commands above).
 
 - Data, `tools/rail/` (Python: numpy, shapely, Pillow in `.venv`): `fetch_osm.py` keeps the Overpass extract
   (`osm_rail.json`: the two tracks named "Ligne de Sceaux", the platforms, signals, kilometre posts, and the roads,
-  buildings, barriers and bridges around them); `build_rail.py` writes `godot/world/rail.json` (its schema is the
-  script's docstring) and `tools/rail/review/` (`rail.png` over the toy ground map, `station.png`, `profile.png`: the
+  buildings, barriers and bridges around them); `build_rail.py` designs the railway (its schema is the
+  script's docstring) and writes its two lots, `rerB` and `massyPalaiseau` (`lots.py`: each its `plan.json`, its own
+  ground `ground.*` and its changes to the map's world `drop.json` in `godot/data/<lot>/`; LOTS.md), and
+  `tools/rail/review/` (`rail.png` over the toy ground map, `station.png`, `profile.png`: the
   long section against the LiDAR, `sections.png`). The alignment is a least-squares fit of straights, clothoids and
   arcs to both OSM tracks at once (one track spacing, 3.55 m; within 0.10 m rms and 0.33 m at worst of OSM in the map;
   tightest radius 345 m), cant and speed per curve (line speed 90 km/h, OSM speed boards), a vertical profile through
@@ -566,7 +569,7 @@ committed scripts that regenerate everything from data (commands above).
   culled where it is drawn (Godot measures a visibility range from the mesh's centre).
 - Massy-Palaiseau's station precinct (2026-11-06): `fetch_osm.py --station` keeps `osm_massy_station.json` (every
   building and way round the station) and `tools/rail/massy_station.py` (called by `build_rail.py`, its docstring has
-  the details) writes `rail.json` `massy`. The three footbridges (le Lien, the historic one, the Atlantis bus station
+  the details) designs lot `massyPalaiseau` (its plan, `godot/data/massyPalaiseau/plan.json`). The three footbridges (le Lien, the historic one, the Atlantis bus station
   walkway) share one concourse deck at their real level, 43 steps of 0.17 m over the forecourts (OSM's step counts),
   ~6.4 m clear under its structure over the RER tracks and the bus lanes (the map pipeline had them on the LiDAR's
   heights: a deck sagging over the tracks, the walkway on the ground, halls cut into floating boxes); le Lien under
@@ -580,7 +583,7 @@ committed scripts that regenerate everything from data (commands above).
   repaired there: the LiDAR was flown while the line 18 station was dug (two pits ~21 m deep) and saw le Lien's main
   hall as ground (a 4 m hump). `scripts/builder/massy_builder.gd` draws it all (glass in `toy_prop_glass.gdshader`).
 - The Atlantis bus station (2026-11-07): `tools/rail/bus_station.py` (called by `massy_station.py`,
-  its docstring has the details; `rail.json` `massy` `bus_station`) lays the bus station out again along the quays'
+  its docstring has the details; `massyPalaiseau`'s plan `bus_station`) lays the bus station out again along the quays'
   common axis: straight quays (Îlots C, B, A) with 18 cm bus kerbs, the RER side lane 8.5 m wide (two buses side by
   side), the Massy side one 5.5 m (a bus and a half), a raised sidewalk along it, a turnaround round Îlot B's north-east
   nose (the buses' path 10 m from its centre, 12.6 m of asphalt: an 18 m bus turns round), all on one smooth profile
@@ -588,7 +591,7 @@ committed scripts that regenerate everything from data (commands above).
   avenue becomes a straight retaining wall with a parapet; markings (lane lines, arrows, stop bays with yellow zigzags
   and BUS, zebras, a hatched nose); lamps.
 - The bus depot (2026-11-08, Thomas's plan, after Gent's bus station): `tools/rail/bus_depot.py` (called by
-  `bus_station.py`, its docstring has the details; `rail.json` `massy` `bus_station` `depot`) replaces the brick hangar
+  `bus_station.py`, its docstring has the details; `massyPalaiseau`'s plan `bus_station` `depot`) replaces the brick hangar
   and the herringbone bus layover there. One thin flat roof 49.5 x 21.6 m (light grey, smooth underside, bevelled
   edge, 6 m clear) on slender inclined columns in V pairs, no walls, over a flat floor at -70.8 m (~2 m over the bus
   lanes): the drivers' walkway along the Avenue Carnot side, a 6 m passage lane, three lanes of two 21 m bays (the
@@ -621,15 +624,17 @@ committed scripts that regenerate everything from data (commands above).
   3 m promenade, 2 m paths to the zebra and the ring residences, small squares with benches and bins, light bollards,
   path lamps, young staked trees on mulch rings, the LiDAR's poplars kept, boulders); the boulevard's north sidewalk
   redone at 3 m behind a smooth kerb, dropped at the zebras and the car park's entrance, with street trees.
-  `patch_world.py` consumes it like any site (`apply_site`). `godot/tools/test_logements_x.gd` checks it.
-- The map, `patch_world.py`: from the pipeline's files kept in `godot/world/base/` (never from patched ones: running
-  it twice gives the same bytes; `world.json` `meta.rail` holds the version and the inputs' SHA-1) it draws the
-  railway's ground into the heightmap and the ground mesh (cliff cells keep each side's plane, with skirts; the mesh
-  stays watertight), adds the ground pieces (trackbed, platforms, steps, the covered road), removes the 110 trees and
-  moves the 10 props in the way, adds the right-of-way fences and restyles the station building after the photos; at
-  Massy-Palaiseau it repairs the ground (`regrade` zones), opens the line 18 shaft (a stairwell zone whose walls start
-  at the box's ceiling: `portals`) and drops the map's footbridge decks and halls `massy_builder.gd` replaces
-  (`tools/rail/review/patch.md` lists it all). The bus and car routes are unchanged; the bot cars do not use the
+  Lot `logementsX` (`godot/data/logementsX/`, `tools/logements_x/`, `godot/scripts/logementsX/`; LOTS.md).
+  `godot/tools/test_logements_x.gd` checks it.
+- The map: the railway's lots own their ground (`godot/data/<lot>/ground.*`: the trackbed, platforms, slopes,
+  stairwells, the covered road's trench, the yard; at Massy-Palaiseau the bus station's islands, the line 18 shaft
+  whose walls start at the box's ceiling, `portals`, and the ground repaired where the LiDAR saw the works,
+  `regrade` zones): the map's ground mesh is cut out there and the lots draw theirs, walls and all
+  (`scripts/builder/lot_ground.gd`, LOTS.md). Their `drop.json` takes the trees and props in the line's way out or
+  moves them, adds the right-of-way fences, restyles the station building after the photos, and at Massy-Palaiseau
+  drops the map's footbridge decks and halls `massy_builder.gd` replaces. `patch_world.py` still patches the map's own
+  files with the same ground (from the pipeline's files kept in `godot/world/base/`; `world.json` `meta.rail` holds
+  the version and the inputs' SHA-1), under the lots'. The bus and car routes are unchanged; the bot cars do not use the
   covered road (their routes cannot be regenerated without the pipeline), the players can drive through it.
 - Godot: `scripts/builder/rail_builder.gd` draws the track (ballast bed, rails, sleepers per 96 m chunk, streamed with
   a far strip), the platforms (copings, edge slabs, tactile strip), the furniture (lamps lit at night, seats, bins,
@@ -652,7 +657,7 @@ committed scripts that regenerate everything from data (commands above).
   synthesized (`vehicle_audio.gd`: traction whine, rail rumble, horn, door warning, brake squeal). In LAN games the
   host runs the trains and sends their states on the shared clock; the others pose them from the same routes.
 - Stabled trains (2026-11-07): `scripts/parked_trains.gd` (made by `train_traffic.gd` on every peer, from the same
-  `rail.json`: no network state) stands MI 79 R trains still, as at off-peak, on the RER B's garage tracks at
+  `rerB`'s plan: no network state) stands MI 79 R trains still, as at off-peak, on the RER B's garage tracks at
   Massy-Palaiseau (the yard tracks with OSM track numbers 46-76 and 4T, south-west and north-east of the station):
   along each, the stretch clear of every other track (4.0 m between centres, 4.3 m from a running line: the switches'
   fouling zones left out, 4 m beyond them, 5 m before a buffer stop), an 8-car train where one fits, else a 4-car unit,

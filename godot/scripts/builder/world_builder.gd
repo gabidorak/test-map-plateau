@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 ## Builds res://scenes/generated/neighborhood.tscn from the pipeline output in res://world/ (and the lots: their
-## ground, removals, builds, builder/lots.gd, the railway's among them, world/rail.json; the building
+## ground, removals, builds, builder/lots.gd, the railway's among them; the building
 ## interiors, world/interiors.json: builder/interior_builder.gd), and the ground the game reads,
 ## res://scenes/generated/ground.json (builder/ground_bake.gd: the map's with the lots' terraforming and surfaces).
 ## Run from the editor (Project > Tools > Rebuild Plateau world) or headless via tools/build_world.gd.
@@ -52,6 +52,12 @@ func build_and_save() -> Error:
 		return ERR_INVALID_DATA
 	# terraforming first (builder/terraform.gd, data/terraform/): the heightmap here, the ground's mesh alike
 	Terraform.patch(heights, world["terrain"])
+	# the lots' own ground (builder/lot_ground.gd): the map's round it as it is, then their zones' heights stamped in
+	var t0: Dictionary = world["terrain"]
+	var shared := GroundHeights.new(heights, t0["w"], t0["h"], t0["cell"], t0["origin_xy"][0], t0["origin_xy"][1],
+			world["ground_mesh"]["cell"])
+	var ts := Time.get_ticks_msec()
+	print("lots' own ground: %d samples stamped (%d ms)" % [Lots.stamp_grounds(heights, t0), Time.get_ticks_msec() - ts])
 	# the ground the game reads, baked (builder/ground_bake.gd): the map's with the lots' surfaces, on these heights;
 	# every builder below reads it (GroundMap.get_map())
 	var ground: RefCounted = GroundBake.make(world, WORLD_PATH.get_base_dir(), heights)
@@ -90,7 +96,7 @@ func build_and_save() -> Error:
 		root.free()
 		return err
 	BridgeBuilder.new().build(root, world, heights, MESH_DIR)
-	err = Lots.build(root, world, heights, MESH_DIR)  # the lots built with the map: the railway's (builder/lots.gd)
+	err = Lots.build(root, world, heights, MESH_DIR, shared)  # the lots built with the map: the railway's (builder/lots.gd)
 	if err != OK:
 		root.free()
 		return err

@@ -33,6 +33,8 @@ static func zones() -> Array:
 				var made: Array = []
 				if name.ends_with(".gd"):                       # (a lot's code makes its zones: terraform_zones())
 					made = load(name).terraform_zones()
+				elif name.begins_with("res://"):                 # (a lot's own ground's repairs: lot_ground.gd)
+					made = load(Lots.LOT_GROUND).of(name).terraform_zones()
 				else:
 					var s: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + name + ".json"))
 					for zn: Dictionary in (s.get("zones", []) if s is Dictionary else []):

@@ -1,7 +1,7 @@
 extends Node3D
 ## An RER B train (the MI 79 R of blender/vehicles/build_train.py, assets/cars/mi79.glb and its layout mi79.json):
 ## eight cars, two units of four (cab, intermediate, intermediate, cab turned round), locked to the rails of its
-## service (world/rail.json services: the route of its track every metre, with the rail level and the cant). Nothing
+## service (rerB's plan services: the route of its track every metre, with the rail level and the cant). Nothing
 ## here is a VehicleBody3D: the whole state is the distance of the front coupler along the route (`front`), the
 ## speed, the doors and the lamps, and every physics tick each car is posed from it: each bogie on the rail curve
 ## (turned to it, canted), the car body between its two bogie pivots. A bot (scripts/train_bot.gd) drives it on the
@@ -48,7 +48,7 @@ static var night := false                   # scripts/night.gd: head lamp beams 
 static var _scene: PackedScene
 static var _layout: Dictionary
 
-var service: Dictionary                     # rail.json services entry
+var service: Dictionary                     # rerB's plan services entry
 var net_id := ""
 var front := 0.0                            # m along the route: the front coupler
 var speed := 0.0                            # m/s along the route (never negative)
@@ -98,7 +98,7 @@ static func layout() -> Dictionary:
 	return _layout
 
 
-## Builds the train for `svc` (rail.json services entry). Call before adding it to the tree.
+## Builds the train for `svc` (rerB's plan services entry). Call before adding it to the tree.
 func setup(svc: Dictionary, id: String) -> void:
 	service = svc
 	net_id = id

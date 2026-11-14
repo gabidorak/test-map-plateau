@@ -1,11 +1,13 @@
-"""Builds godot/world/rail.json, the RER B (Ligne de Sceaux, RATP, 1,500 V DC) across the map, from OpenStreetMap
-(tools/rail/osm_rail.json, fetch_osm.py) and the LiDAR ground the pipeline drew (godot/world/base/heightmap.f32),
-with review images in tools/rail/review/.
+"""Designs the RER B (Ligne de Sceaux, RATP, 1,500 V DC) across the map, from OpenStreetMap (tools/rail/osm_rail.json,
+fetch_osm.py) and the LiDAR ground the pipeline drew (godot/world/base/heightmap.f32), and Massy-Palaiseau's station
+with it (massy_station.py): the railway's two lots, rerB and massyPalaiseau, written by lots.py into godot/data/rerB/
+and godot/data/massyPalaiseau/ (their plans, ground and changes to the map's world), with review images in
+tools/rail/review/.
 
 .venv/Scripts/python tools/rail/build_rail.py      (Linux/macOS: .venv/bin/python; ~1 min; numpy, shapely, Pillow)
 
-Everything here is decided from data, by rule; patch_world.py then applies it to the map files and the Godot builders
-draw it. Steps:
+Everything here is decided from data, by rule; the Godot builders draw it (the lots' ground: builder/lot_ground.gd,
+their changes to the world: builder/world_edits.gd, their builds: rail_builder.gd, massy_builder.gd). Steps:
 1. Tracks: the OSM ways of track 1 (south, westbound: French trains keep left) and track 2 (north, eastbound),
    chained west -> east; their midpoints give the centreline.
 2. Horizontal alignment: straights, clothoids (transition curves, curvature linear in s) and circular arcs, fitted by
@@ -26,9 +28,9 @@ draw it. Steps:
    (portals by rule, wires at real heights).
 8. Services: per direction, the route along its track (points, planned speed per metre, the stop at Lozère, the
    signals facing it, the block sections), headways.
-9. What the railway clears: trees and props in its way (patch_world.py removes or moves them).
+9. What the railway clears: trees and props in its way (drops.py takes them out or moves them).
 
-rail.json (schema RAIL_SCHEMA; map coordinates, metres; s along the centreline from its west end, u across, positive
+The design (rerB's plan, godot/data/rerB/plan.json; massyPalaiseau's: its `massy`, with its zones; schema RAIL_SCHEMA; map coordinates, metres; s along the centreline from its west end, u across, positive
 to the north; levels are absolute map z):
 - alignment: elements [{type straight|clothoid|arc, s0, s1, k0, k1 (1/m, positive turning left)}], step, pts [[x, y]],
   heading [rad from east], z [rail level: top of the inner rail], length, curves [{s0, s1, radius, cant (mm),
@@ -2250,7 +2252,7 @@ def zones(ew: dict, A: rg.Alignment, platforms: list, structures: dict, design: 
 # ---------------------------------------------------------------- output
 
 def r3(a):
-    """Lists of floats rounded to the millimetre, for rail.json."""
+    """Lists of floats rounded to the millimetre, for the plans."""
     if isinstance(a, np.ndarray):
         a = a.tolist()
     if isinstance(a, (list, tuple)):
@@ -2731,11 +2733,9 @@ def main() -> None:
         "train": {"model": "mi79", "cars": 8, "length": TRAIN_LENGTHS["8"], "accel": ACCEL,
                   "service_brake": SERVICE_BRAKE, "max_service_brake": MAX_SERVICE_BRAKE, "emergency_brake": EMERGENCY_BRAKE},
     }
-    text = json.dumps(r3(rail), ensure_ascii=False, separators=(",", ":"))
-    # bytes, not text: on Windows write_text would end it with CRLF and the patch stamp (its SHA-1) would not be the one
-    # a checkout elsewhere has (.gitattributes keeps godot/world/*.json LF)
-    rg.RAIL_JSON.write_bytes((text + "\n").encode("utf-8"))
-    log("wrote %s (%.1f MB) in %.0f s" % (rg.RAIL_JSON.relative_to(md.ROOT), len(text) / 1e6, time.time() - t_start))
+    import lots
+    lots.write(json.loads(json.dumps(r3(rail), ensure_ascii=False)), world)
+    log("railway designed, its lots written in %.0f s" % (time.time() - t_start))
     import review
     review.draw(rail, world, H)
 

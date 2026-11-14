@@ -9,7 +9,7 @@ const WorldQuery = preload("res://scripts/world_query.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const RailMap = preload("res://scripts/rail_map.gd")
 const RANGE := 2000.0
-## RER B track directions (rail.json tracks[].direction) -> the branch's terminus that way (B4)
+## RER B track directions (rerB's plan tracks[].direction) -> the branch's terminus that way (B4)
 const DESTINATIONS := {"westbound": "Saint-Rémy-lès-Chevreuse", "eastbound": "Paris, Massy-Palaiseau"}
 const SIGNAL_KINDS := {"FR:CARRE": "carré (absolute stop)", "FR:S": "sémaphore (block signal)",
 		"FR:A": "avertissement (distant signal)", "FR:TIV-D": "TIV (speed board)"}
