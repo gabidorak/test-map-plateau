@@ -4,10 +4,11 @@ extends Node3D
 ## buy a jet-ski or hire one, scripts/online/boat_hire.gd), a floating pontoon into the lake, its slips (where a
 ## jet-ski bought or hired comes out: slips()), two of the base's jet-skis moored for show, flags, a lifebuoy, the price
 ## board, all on a wooden terrace fenced round (its gate on the esplanade), two palm trees and tables under parasols on
-## it; a bin and a lamp by it (map props). Drawn at start (base_nautique_builder.gd) on the water's level as the game finds
-## it; the ground is left as it is (the gravel).
+## it; a bin and a lamp by it (map props). Drawn (base_nautique_builder.gd) on the water's level as the game finds it, at
+## start or, finished, when the map is built (builder/lot_bake.gd); the ground is left as it is (the gravel).
 
 const Builder = preload("res://scripts/baseNautique/base_nautique_builder.gd")
+const Lots = preload("res://scripts/builder/lots.gd")
 const NAME := "Base nautique du lac"
 ## Its grounds (map x, y): the map's trees and props in them go.
 const SITE := Rect2(739.0, 187.0, 33.0, 42.0)
@@ -29,8 +30,10 @@ static func drop(world: Dictionary) -> void:
 
 func _ready() -> void:
 	name = "BaseNautique"
-	built = Builder.new().build(DisplayServer.get_name() != "headless")
-	add_child(built)
+	built = Lots.baked(game, "baseNautique")        # (finished: built into the map, builder/lot_bake.gd)
+	if built == null:
+		built = Builder.new().build(Lots.meshes())
+		add_child(built)
 
 
 ## The counter (global): PTA Online's terminal.

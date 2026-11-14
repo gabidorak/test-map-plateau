@@ -10,6 +10,7 @@ const Spec = preload("res://scripts/restyle/restyle_spec.gd")
 const WorldEdits = preload("res://scripts/builder/world_edits.gd")
 const Building = preload("res://scripts/restyle/restyle_building.gd")
 const Terraform = preload("res://scripts/builder/terraform.gd")
+const Lots = preload("res://scripts/builder/lots.gd")
 const PATH_MATS := ["concrete", "paving", "sett", "gravel", "dirt", "wood"]
 ## A garden's ground (site.garden): what becomes its lawn or meadow (roads, water, courts, buildings stay).
 const SOFT := ["concrete", "paving", "sett", "gravel", "dirt", "wood", "grass", "tall_grass", "sand", "forest_floor",
@@ -180,10 +181,14 @@ static func _walks() -> Array:
 
 func _ready() -> void:
 	name = "Restyle"
-	var meshes := DisplayServer.get_name() != "headless"
 	for s: Dictionary in Spec.specs():
 		var t0 := Time.get_ticks_msec()
+		var slug: String = s["slug"]
+		var node := Lots.baked(get_parent(), str(Lots.restyle_lot(slug).get("id", "")), slug)   # (finished: in the map)
+		if node:
+			built[slug] = {"node": node, "floor": float(node.get_meta("floor")), "ms": 0}
+			continue
 		var b := Building.new()
-		var node := b.build(s, meshes)
+		node = b.build(s, Lots.meshes())
 		add_child(node)
-		built[s["slug"]] = {"node": node, "floor": b.floor_y(), "ms": Time.get_ticks_msec() - t0}
+		built[slug] = {"node": node, "floor": b.floor_y(), "ms": Time.get_ticks_msec() - t0}

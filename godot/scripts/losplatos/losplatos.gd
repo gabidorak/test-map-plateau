@@ -10,6 +10,7 @@ extends Node3D
 
 const WorldEdits = preload("res://scripts/builder/world_edits.gd")
 const Builder = preload("res://scripts/losplatos/losplatos_builder.gd")
+const Lots = preload("res://scripts/builder/lots.gd")
 const Marks = preload("res://scripts/race_marks.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const NAME := "Losplatos Custom"
@@ -100,25 +101,27 @@ func _ready() -> void:
 			top = maxf(top, Marks.ground(g.x, -g.z))
 	floor_z = maxf(FLOOR_Z, top + 0.04)
 	frame = shop_frame(floor_z)
-	var f := frame
-	var ground := func(x: float, z: float) -> float:
-		var g := f * Vector3(x, 0.0, z)
-		return Marks.ground(g.x, -g.z) - f.origin.y
-	var gm: RefCounted = GroundMap.get_map()
-	var road_ids := []
-	if gm:
-		for m: String in ["asphalt", "paint", "kerb"]:
-			road_ids.append(gm.materials.find(m))
-	var on_road := func(x: float, z: float) -> bool:
-		var g := f * Vector3(x, 0.0, z)
-		return gm != null and gm.material_at(g.x, -g.z) in road_ids
-	shop = Builder.new().build(ground, on_road, DisplayServer.get_name() != "headless")   # (headless: collision only)
-	shop.transform = frame
-	add_child(shop)
-	_slats = shop.get_meta("slats")
+	shop = Lots.baked(game, "losplatos")            # (finished: built into the map, builder/lot_bake.gd)
+	if shop == null:
+		var f := frame
+		var ground := func(x: float, z: float) -> float:
+			var g := f * Vector3(x, 0.0, z)
+			return Marks.ground(g.x, -g.z) - f.origin.y
+		var gm: RefCounted = GroundMap.get_map()
+		var road_ids := []
+		if gm:
+			for m: String in ["asphalt", "paint", "kerb"]:
+				road_ids.append(gm.materials.find(m))
+		var on_road := func(x: float, z: float) -> bool:
+			var g := f * Vector3(x, 0.0, z)
+			return gm != null and gm.material_at(g.x, -g.z) in road_ids
+		shop = Builder.new().build(ground, on_road, Lots.meshes())   # (headless: collision only)
+		shop.transform = frame
+		add_child(shop)
+	_slats = Lots.node_meta(shop, "slats")
 	for s: Node in _slats:                   # (shown and hidden by the door: not streamed, builder/lot_far.gd)
 		s.add_to_group("lot_own_visibility")
-	_door_shape = shop.get_meta("door_shape")
+	_door_shape = Lots.node_meta(shop, "door_shape")
 
 
 ## The door's middle on the facade line (global).

@@ -11,6 +11,7 @@ const GroundBuilder = preload("res://scripts/builder/ground_builder.gd")
 const BuildingBuilder = preload("res://scripts/builder/building_builder.gd")
 const Terraform = preload("res://scripts/builder/terraform.gd")
 const GroundBake = preload("res://scripts/builder/ground_bake.gd")
+const LotBake = preload("res://scripts/builder/lot_bake.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 const Lots = preload("res://scripts/builder/lots.gd")
 const CollisionBuilder = preload("res://scripts/builder/collision_builder.gd")
@@ -99,6 +100,7 @@ func build_and_save() -> Error:
 		return err
 	MassyBuilder.new().build(root, world, heights, MESH_DIR)     # Massy-Palaiseau's station (rail.json massy)
 	LogementsXBuilder.new().build(root, world, heights, MESH_DIR)  # the École polytechnique's new housing (rail.json logements_x)
+	LotBake.bake(root, MESH_DIR)                    # the finished lots' builds (builder/lot_bake.gd), streamed with the map's
 	var collision := CollisionBuilder.new()
 	collision.terrain(root, world, heights, MESH_DIR)
 	collision.boundary(root, world)

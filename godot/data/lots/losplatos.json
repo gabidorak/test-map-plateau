@@ -2,6 +2,7 @@
  "id": "losplatos",
  "parent": "ilot-001",
  "order": 10,
+ "finished": true,
  "name": "Losplatos Custom",
  "about": "The repair and paint shop in place of #758 (the LadHyX), set square to its street in block ilot-001; its yard and lane flat.",
  "terraform": [

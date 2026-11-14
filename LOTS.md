@@ -25,6 +25,14 @@ gives its surfaces with `surface_boxes()` (where) and `surface_at(x, y, current)
 map's): its roads asphalt, its sidewalks and forecourts paving, its lawns grass. Nothing of a lot's ground runs in the
 game; like its terraforming, a change to it needs the map rebuilt.
 
+A lot is **in progress** or **finished** (`"finished": true`). In progress, its node builds it at start in the game,
+so a change to its building needs no map rebuilt (its ground, terraforming and removals do). Finished, it is built
+into the map when the map is built (`scripts/builder/lot_bake.gd`): its node's builds and its restyled buildings are
+saved in the generated scene under `Lots/<id>`, streamed with the map's buildings (their far shapes made then), and in
+the game its node takes them back (`Lots.baked()`) and only brings them to life (a door, a terminal). Finished:
+`losplatos`, `baseNautique`, `ensae`, `campusEdf` (the Logements de l'X are built when the map is built already, by
+`builder/logements_x_builder.gd`: a railway lot to come). To work on a finished lot again: drop its `"finished"`.
+
 A lot may be part of another (`"parent"`): a block's own lot (`ilot-NNN`, a generic name and a number) and the lots
 in that block. A child comes after its parent; its terraforming is laid on its parent's (the zones are applied one on
 the other, in the lots' order), only where the parent's script's `child_weight(x, y)` lets it (for a block: inside its

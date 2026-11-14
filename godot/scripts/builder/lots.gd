@@ -12,6 +12,9 @@ extends RefCounted
 ##   "parent"     the lot it is part of (a block's own lot, whose plan the block's lots share): it comes after its
 ##                parent, its terraforming on the parent's, where the parent's script's child_weight(x, y) lets it
 ##                (inside the block, not under its streets)
+##   "finished"   true: its node's builds and its restyled buildings are built into the map when the map is built
+##                (builder/lot_bake.gd), and its node in the game takes them back (baked()) and only brings them to
+##                life (a door, a terminal); unfinished, they are built at start, so a change needs no map rebuilt
 ## The order: parents first, then their children (each level by "order"); every lot's terraforming, one zone on the
 ## other in that order, then their drops, then the map's own builds, then (in the game) their nodes.
 ## The railway's lots (the RER B line, Massy-Palaiseau, the bus depot, the Logements de l'X) are not lots yet: their
@@ -21,8 +24,11 @@ extends RefCounted
 const DIR := "res://data/lots/"
 const RESTYLE := "res://scripts/restyle/restyle.gd"
 const LOT_FAR := "res://scripts/builder/lot_far.gd"
+const BAKED := "Lots"                       # the finished lots' builds in the map's scene: Lots/<id>(/<slug>)
 
 static var _lots: Array = []
+## While the map is built (builder/lot_bake.gd): the finished lots build their meshes, display or not.
+static var baking := false
 
 
 ## Every lot: each parent before its children, each level in its "order".
@@ -48,6 +54,46 @@ static func _add_level(lots: Array, parent: String) -> void:
 	for l: Dictionary in level:
 		_lots.append(l)
 		_add_level(lots, str(l["id"]))
+
+
+## Whether lot `l` is finished (its "finished": built into the map, builder/lot_bake.gd).
+static func finished(l: Dictionary) -> bool:
+	return bool(l.get("finished", false))
+
+
+## Whether a lot's builders make meshes: with a display, or when the map is built; else (headless) collision only.
+static func meshes() -> bool:
+	return baking or DisplayServer.get_name() != "headless"
+
+
+## Lot `id`'s builds as baked into the map (Lots/<id>; `name`: one of them, a restyled building's slug), or null: the
+## lot not finished, or the map built before it was (then the lot builds them itself).
+static func baked(game: Node, id: String, name := "") -> Node3D:
+	if baking or game == null or not finished(lot(id)):
+		return null
+	var root: Node = game.get("world_root")
+	var n: Node = root.get_node_or_null(NodePath("%s/%s" % [BAKED, id])) if root else null
+	if n and name != "":
+		n = n.get_node_or_null(NodePath(name))
+	return n as Node3D
+
+
+## Meta `key` of `n` naming nodes (a node, or an array of them), as nodes: when baked they are paths from `n`.
+static func node_meta(n: Node, key: String) -> Variant:
+	var v: Variant = n.get_meta(key)
+	if v is NodePath:
+		return n.get_node(v)
+	if v is Array:
+		return (v as Array).map(func(e: Variant) -> Variant: return n.get_node(e) if e is NodePath else e)
+	return v
+
+
+## The lot whose "restyle" names `slug` ({} if none).
+static func restyle_lot(slug: String) -> Dictionary:
+	for l: Dictionary in all():
+		if slug in l.get("restyle", []):
+			return l
+	return {}
 
 
 ## The lot `id` ({} if none).
