@@ -60,3 +60,12 @@
   by `blender/vehicles/import_car.py`: split into the game's parts (the gun's ring and the gun turn), own untextured
   materials (matt protective green), the cabin's single-skinned hull lined on the inside, dense parts decimated (~157k
   triangles), the grille's tiger-head emblem textured from the archive's `logo_tigr.jpg`.
+- `ec135_police/`: the police helicopter, based on "Eurocopter ec135 Politia - High-poly"
+  (https://sketchfab.com/3d-models/eurocopter-ec135-politia-high-poly-02373bff3f7f48bf8649805455fe4260) by solid3DDD
+  (https://sketchfab.com/solid3ddd), licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/); its
+  licence file is `ec135_police/LICENSE.txt`. Downloaded by the project owner (the original stays in
+  `ref/vehicules/helicopterPolice/`, not published). Changed by `tools/vehicles/helicopter_police.py`: nodes renamed
+  for `scripts/helicopter.gd`, the copies of the first UV set dropped, the textures scaled down (2048 and 1024 px
+  JPEGs), and the Romanian police livery made French: "POLITIA" written "POLICE", "UNITATEA SPECIALA DE AVIATIE"
+  written "UNITÉ AÉRIENNE" (Century Gothic), the two Romanian flags made French ones. The maker's marks are the
+  model's own (the Eurocopter logo, "EC135").

@@ -29,6 +29,8 @@ extends Node3D
 ## them down; carried, they struggle free with the arrow keys once they come to.
 ## The jet-ski (scripts/jet_ski.gd, in the vehicle menu) is parked on the nearest lake or pond (JET_SKI_REACH; on land
 ## beside the player when there is none), got on with E and off with Space, into the water.
+## The police helicopter (scripts/helicopter.gd, in the vehicle menu): got in like a car, it flies once its rotor has
+## spooled up; its pilot gets out only once it has landed (leave_problem).
 ## The biplane (scripts/plane.gd, in the vehicle menu) is got in and out of like a car, and flies. The armed one fires
 ## its machine guns with the left mouse button (scripts/plane_guns.gd; a ring on the screen shows where the rounds
 ## converge): a vehicle hit takes damage (net.gd hit_vehicle, car.gd damage) and smokes black once broken, a breakable
@@ -101,6 +103,7 @@ const Car = preload("res://scripts/car.gd")
 const Biplane = preload("res://scripts/plane.gd")
 const Horse = preload("res://scripts/horse.gd")
 const JetSki = preload("res://scripts/jet_ski.gd")
+const Helicopter = preload("res://scripts/helicopter.gd")
 const Water = preload("res://scripts/water.gd")
 const PlaneGuns = preload("res://scripts/plane_guns.gd")
 const FireTruck = preload("res://scripts/fire_truck.gd")
@@ -834,6 +837,8 @@ func _process(delta: float) -> void:
 		_dash.text = (driving as Horse).dash_text()
 	elif driving is JetSki:
 		_dash.text = (driving as JetSki).dash_text()
+	elif driving is Helicopter:
+		_dash.text = (driving as Helicopter).dash_text()
 	elif driving:
 		var arrows := ["  ", "  "]
 		if driving.indicator != 0 and fmod(Time.get_ticks_msec() / 1000.0, Car.BLINK) < Car.BLINK * 0.5:
@@ -1204,7 +1209,7 @@ func add_net_car(model: String, xf: Transform3D) -> Car:
 static func new_vehicle(model: String) -> Car:
 	var spec: Dictionary = Car.SPECS[model]
 	var car: Car = Horse.new() if spec.get("horse", false) else JetSki.new() if spec.get("jet_ski", false) \
-			else Biplane.new() if spec.get("plane", false) \
+			else Biplane.new() if spec.get("plane", false) else Helicopter.new() if spec.get("helicopter", false) \
 			else FireTruck.new() if spec.has("fittings") else PoliceCar.new() if spec.get("police", false) \
 			else ArmoredCar.new() if spec.get("roof_gun", false) else TowTruck.new() if spec.get("tow", false) else Car.new()
 	car.setup(model)
@@ -1730,7 +1735,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif car:
 			enter_car(car)
 	elif driving and event.is_action_pressed("interact" if driving is Horse else "exit_vehicle"):   # Space: the horse jumps
-		exit_car()
+		var why: String = driving.leave_problem()
+		if why != "":
+			_show_toast(why)                # (the helicopter in the air)
+		else:
+			exit_car()
 	elif event.is_action_pressed("exit_vehicle") and riding:
 		leave_ride()
 	elif event.is_action_pressed("park_car") and not flying and not driving and allows("park_car"):
@@ -1946,6 +1955,14 @@ func _update_help() -> void:
 				"%s landing lights · " % k.call("headlights") + \
 				("your gunner boards from the right side · " if (driving as Biplane).turret else "") + \
 				"%s get out · %s" % [k.call("exit_vehicle"), common]
+	elif driving is Helicopter:
+		_help.text = ("FLY · %s/%s climb/descend (released: the height held) · %s/%s nose down/up: forward/back · " % [
+				k.call("plane_throttle_up"), k.call("plane_throttle_down"), k.call("plane_nose_down"),
+				k.call("plane_nose_up")]) + "%s/%s bank (turns at speed) · %s/%s turn\n" % [k.call("plane_roll_left"),
+				k.call("plane_roll_right"), k.call("plane_rudder_left"), k.call("plane_rudder_right")] + \
+				"the rotor spools up first · %s level it · %s searchlight · %s · wheel zoom (all the way in: cockpit) · " % [
+				k.call("reset_vehicle"), k.call("headlights"), look] + "%s cockpit\n" % k.call("toggle_view") + \
+				"a passenger boards from the right side · %s get out (landed) · %s" % [k.call("exit_vehicle"), common]
 	elif driving is Horse:
 		_help.text = ("RIDE · %s go (canter), with %s gallop · %s stop, then back up · %s/%s turn · " % [k.call("throttle"),
 				k.call("run"), k.call("brake"), k.call("steer_left"), k.call("steer_right")]) + \

@@ -53,7 +53,7 @@ func update(tree: SceneTree, vehicles: Array, delta: float) -> void:
 	reach_max = 0.0
 	_cells.clear()
 	for c: Node3D in vehicles:
-		if c.stowed:
+		if c.stowed or c.flying():         # (a plane, a helicopter up in the air: nothing on the road)
 			continue
 		var xf: Transform3D = c.global_transform
 		var p := BusBot.flat(xf * c.extents_center)

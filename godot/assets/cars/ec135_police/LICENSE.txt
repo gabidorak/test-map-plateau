@@ -1,0 +1,11 @@
+Model Information:
+* title:	Eurocopter ec135 Politia - High-poly
+* source:	https://sketchfab.com/3d-models/eurocopter-ec135-politia-high-poly-02373bff3f7f48bf8649805455fe4260
+* author:	solid3DDD (https://sketchfab.com/solid3ddd)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Eurocopter ec135 Politia - High-poly" (https://sketchfab.com/3d-models/eurocopter-ec135-politia-high-poly-02373bff3f7f48bf8649805455fe4260) by solid3DDD (https://sketchfab.com/solid3ddd) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

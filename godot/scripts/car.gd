@@ -177,10 +177,15 @@ const SPECS := {
 			"credit": "toy two-seat biplane built by scripts/plane.gd"},
 	"horse": {"label": "Horse", "horse": true, "credit": "toy horse built by scripts/horse.gd"},
 	"jet-ski": {"label": "Jet-ski", "jet_ski": true, "credit": "toy jet-ski built by scripts/jet_ski.gd"},
+	# EC135 in a French police air unit's colours (scripts/helicopter.gd flies it)
+	"helicopter-police": {"label": "Police helicopter", "helicopter": true, "file": "ec135_police/ec135_police.gltf",
+			"credit": "\"Eurocopter ec135 Politia - High-poly\" by solid3DDD (CC BY 4.0), livery made French by "
+				+ "tools/vehicles/helicopter_police.py"},
 }
 const MODELS := ["bus-idfm", "bus-idfm-artic", "kaykit-hatchback", "sedan", "taxi", "suv", "police", "hatchback-sports", "van",
 		"sedan-sports", "suv-luxury", "delivery", "ambulance", "compact-hatchback", "family-suv", "police-hatchback", "renault-zoe", "fire-truck", "biplane", "biplane-armed", "biplane-gunner",
-		"horse", "audi-r8", "mercedes-1928", "bmw-m4", "audi-rs6", "volvo-fh16", "volvo-fh16-trailer", "gaz-tiger", "jet-ski", "tow-truck"]
+		"horse", "audi-r8", "mercedes-1928", "bmw-m4", "audi-rs6", "volvo-fh16", "volvo-fh16-trailer", "gaz-tiger", "jet-ski", "tow-truck",
+		"helicopter-police"]
 const REST_LENGTH := 0.2
 const BLINK := 0.75                         # s, indicator period
 const LAMP_DEPTH := 0.45                    # m, furthest a corner lamp sits behind its body box's face (_on_body)
@@ -2078,6 +2083,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("bell") and audio.kind == "bus":
 		ring_bell()
 		get_viewport().set_input_as_handled()
+
+
+## Why the driver may not get out now ("" they may: game.gd exit_car); the helicopter only lands them.
+func leave_problem() -> String:
+	return ""
+
+
+## In the air (the plane, the helicopter): the bots on the roads below take no notice (scripts/traffic/perception.gd).
+func flying() -> bool:
+	return false
 
 
 ## Extra line on the dashboard (the fire truck's water cannon and siren, the police car's siren); none by default.

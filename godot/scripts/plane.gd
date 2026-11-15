@@ -822,6 +822,11 @@ func set_cab_view(on: bool) -> void:
 	(_turret_camera if on else camera).make_current()
 
 
+## In the air, out of the bots' way (scripts/traffic/perception.gd).
+func flying() -> bool:
+	return not on_ground and height > 4.0
+
+
 func _measure_height() -> void:
 	var p := global_transform * center_of_mass
 	var q := PhysicsRayQueryParameters3D.create(p, p + Vector3.DOWN * 2000.0, Layers.SOLID)

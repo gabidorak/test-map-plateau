@@ -139,6 +139,16 @@ const KINDS := {
 				"formants": [[150.0, 1.5, 2.5], [400.0, 2.0, 1.4], [900.0, 2.0, 0.6], [2000.0, 2.0, 0.25]],
 				"pipe": [0.0018, 0.35], "clatter_hz": 2600.0, "intake_hz": 900.0, "turbo": [0.0, 0.0],
 				"rough": 0.25, "prop": 0.35, "drive": 1.8}},
+	# police helicopter (scripts/helicopter.gd): one "gear", the speed is the rotor's, from spooling up to flight speed;
+	# twin turbines (no firing pulses: many small ones, smooth, a high whine) and a four-blade rotor's thump (its beat
+	# from ~15 Hz while spooling up to ~28 Hz in flight), louder under load (the collective)
+	"helicopter": {"pitch_top": 1.8, "gears": [1.0], "unit_size": 24.0, "idle_db": -2.0,
+			"road_db": 0.0, "road_pitch": 0.0, "horn": [523, 659], "horn_harmonics": 6,
+			"engine": {"cyl": 16, "idle_hz": 62.0, "layers": 4, "off": 0.6, "pulse": [900.0, 700.0],
+				"burst": [0.3, 0.25], "clatter": [0.15, 0.15], "intake": [1.3, 0.9],
+				"formants": [[70.0, 1.0, 3.0], [160.0, 1.4, 2.0], [380.0, 2.0, 0.8], [1100.0, 2.0, 0.3]],
+				"pipe": [0.004, 0.3], "clatter_hz": 3000.0, "intake_hz": 1200.0, "turbo": [3800.0, 0.06],
+				"rough": 0.05, "prop": 0.7, "drive": 1.6}},
 }
 const SHIFT_LIFT := 0.3                     # s the throttle eases off while the gearbox shifts up
 const HEARD := 160.0                        # m: farther from the camera, the engine and tyres are stopped
@@ -155,6 +165,8 @@ var gear := 0                               # 0-based, shown on the HUD
 var horn := false                           # sounds while on (fades in and out in update())
 var siren := false                          # likewise (the fire truck's, the police car's)
 var siren_tone := "fire"                    # "fire": the fire brigade's la-si, "police": the police's la-ré
+var level := 1.0                            # times the engine's loudness, and its pitch times `slow`: the helicopter's
+var slow := 1.0                             # rotor spinning up or winding down (scripts/helicopter.gd)
 var _layers: Array[AudioStreamSynchronized] = []   # per recorded engine speed: its on and off the throttle loops
 var _engines: Array[AudioStreamPlayer3D] = []      # two: layer i plays on _engines[i % 2], so neighbours cross-fade
 var _road: AudioStreamPlayer3D              # tyre roar (none for the plane)
@@ -339,18 +351,18 @@ func _update_engine(k: Dictionary, heard: bool) -> void:
 	var frac := pos - i
 	# an engine roars a little louder revved; an electric motor's whine fades in from nothing at rest
 	var rev := linear_to_db(0.06 + _rpm) if k["engine"].has("motor") else 3.0 * _rpm
-	var base: float = k["idle_db"] + rev + linear_to_db(maxf(_gain, 0.0001))
+	var base: float = k["idle_db"] + rev + linear_to_db(maxf(_gain * level, 0.0001))
 	for layer in [i, i + 1]:
 		var p := _engines[layer % 2]
 		var share := cos(frac * PI * 0.5) if layer == i else sin(frac * PI * 0.5)
-		if share < 0.03 or _gain == 0.0 or not heard:
+		if share < 0.03 or _gain == 0.0 or level < 0.001 or not heard:
 			if p.playing:
 				p.stop()
 			continue
 		var s := _layers[layer]
 		s.set_sync_stream_volume(0, linear_to_db(maxf(sqrt(_load), 0.0001)))
 		s.set_sync_stream_volume(1, linear_to_db(maxf(sqrt(1.0 - _load), 0.0001)))
-		p.pitch_scale = ratio / layer_ratio(kind, layer)
+		p.pitch_scale = ratio / layer_ratio(kind, layer) * slow
 		p.volume_db = base + linear_to_db(share)
 		if p.stream != s:
 			p.stream = s
