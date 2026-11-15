@@ -1,0 +1,13 @@
+{
+	"about": "PTA Online's public vehicles (scripts/online/public_vehicles.gd), made by tools/online/public_vehicles.py: any player may take them; nobody's garage. x, y map coordinates (x east, y north), yaw degrees (0 north, clockwise).",
+	"vehicles": [
+		{
+			"id": "x-police-heli",
+			"model": "helicopter-police",
+			"name": "Polytechnique - Lac",
+			"x": 808.0,
+			"y": 172.0,
+			"yaw": 120.0
+		}
+	]
+}

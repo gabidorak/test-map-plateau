@@ -30,6 +30,8 @@ extends "res://scripts/modes/game_mode.gd"
 ##   maps) pay a bonus on any vehicle.
 ## - The firefighter job (scripts/online/fire_job.gd, O7): duty from the fire station's terminal; the host lights fires
 ##   (scripts/online/fires.gd) while anyone is on duty, and pays for those put out with the water cannon.
+## - Public vehicles (scripts/online/public_vehicles.gd, data/public_vehicles.json): nobody's, anyone may take them (the
+##   police helicopter on Polytechnique's car park by the lake, to try it online).
 ## The host (the official server) keeps who owns which vehicle; every peer gets it (`vehicles`) to show the prompts.
 ## Played solo (the tools: PLATEAU_MODE=online), the player's garage is PLATEAU_ONLINE_VEHICLES (models, comma-separated)
 ## and their money PLATEAU_ONLINE_MONEY (the starting money by default), kept here (test_garage, test_money).
@@ -58,6 +60,7 @@ const Properties = preload("res://scripts/online/properties.gd")
 const CustomShop = preload("res://scripts/online/custom_shop.gd")
 const BoatHire = preload("res://scripts/online/boat_hire.gd")
 const TowJob = preload("res://scripts/online/tow_job.gd")
+const PublicVehicles = preload("res://scripts/online/public_vehicles.gd")
 
 signal answered(ok: bool, text: String)     # the host's answer to our last request at a garage terminal
 
@@ -97,6 +100,7 @@ var properties: Properties
 var custom: CustomShop                      # Losplatos Custom's repairs and paint
 var boat_hire: BoatHire                     # the boat hire on the Lac de l'X (its garage)
 var tow_job: TowJob                         # Losplatos Custom's tow trucks
+var public_vehicles: PublicVehicles         # anyone's to take (the police helicopter)
 var _leaving := {}                         # host: account -> [net id, s left]
 var _panel: GaragePanel
 var _wallet: Label
@@ -171,6 +175,10 @@ func _ready() -> void:
 	tow_job.name = "TowJob"
 	tow_job.mode = self
 	add_child(tow_job)
+	public_vehicles = PublicVehicles.new()
+	public_vehicles.name = "PublicVehicles"
+	public_vehicles.mode = self
+	add_child(public_vehicles)
 	multiplayer.peer_disconnected.connect(_on_left)
 	game.economy.logged_in.connect(_on_login)
 
@@ -187,6 +195,7 @@ func _exit_tree() -> void:
 func begin() -> void:
 	hosting = game.mode in ["solo", "host", "server"]
 	garages.build(game.mode != "server")
+	public_vehicles.begin(hosting)
 	if game.mode == "server":
 		return
 	_build_hud()
@@ -565,6 +574,10 @@ func prompt_text() -> String:
 	if car == null:
 		return ""
 	var v: Dictionary = vehicles.get(car.net_id, {})
+	var public := public_vehicles.public_name(car)
+	if public != "":
+		return "%s · %s · free for anyone: %s get in" % [Car.display_name(car.model_name), public,
+				Settings.key_text("interact")]
 	if v.is_empty():
 		return "Not for driving: online, you drive your own vehicles (garages on the map)"
 	if car.net_id == mine:
@@ -806,6 +819,8 @@ func _public(id: String) -> Dictionary:
 func refuse_drive(net_id: String, peer: int) -> bool:
 	if game.carjack.is_stolen(net_id):
 		return false                        # a stolen bot car: anyone's
+	if public_vehicles.is_public(net_id):
+		return false                        # a public vehicle: anyone's
 	var v: Dictionary = vehicles.get(net_id, {})
 	var acc := account(peer)
 	if v.is_empty():
@@ -831,6 +846,7 @@ func player_registered(peer: int) -> void:
 	send_to(peer, self, "_c_vehicles", [all])
 	fires.player_registered(peer)
 	properties.player_registered(peer)
+	public_vehicles.player_registered(peer)
 
 
 ## Host: a player's login was checked: their vehicle waiting for them is theirs again.
