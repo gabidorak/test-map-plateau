@@ -529,7 +529,7 @@ func _plan(v: float, delta: float) -> float:
 		# (room behind a parked vehicle to pull out round it)
 		var gap := GAP + PASS_IN + 2.0 if _obstacle_parked and _pass.is_empty() else GAP
 		target = _limit(target, sqrt(_obstacle_v * _obstacle_v + 2.0 * HARD_BRAKE * maxf(_obstacle - gap, 0.0)) \
-				if _obstacle > gap else 0.0, "walker" if obstacle_walker else "vehicle ahead")
+				if _obstacle > gap else 0.0, "walker" if is_instance_valid(obstacle_walker) else "vehicle ahead")
 		_hold_at = minf(_hold_at, _obstacle - gap)
 		_blocked_t = _blocked_t + delta if _obstacle_still and v < 0.3 else 0.0
 		if _blocked_t > DEADLOCK and _deadlocked():
@@ -1001,8 +1001,10 @@ func _ignore_for(c: Node3D, t: float) -> void:
 ## Overtakes the vehicle in the way when no bot drives it, there is room on the left and the way is free. Gliding, it
 ## passes through it instead.
 func _overtake(front: float) -> void:
+	if not is_instance_valid(obstacle_car):
+		return
 	var c := obstacle_car
-	if c == null or (c.is_bot() and not c.broken):
+	if c.is_bot() and not c.broken:
 		return
 	if gliding:
 		_ignore_for(c, PASS_TIME)
@@ -1078,12 +1080,19 @@ func _lane(d: float) -> Vector2:
 
 ## Stopped right behind a bus with its doors open at a stop.
 func _behind_dwelling() -> bool:
+	if not is_instance_valid(obstacle_car):
+		return false
 	var c := obstacle_car
-	return c != null and c.pilot != null and c.pilot.state == DWELL and _obstacle < GAP + 2.0
+	return c.pilot != null and c.pilot.state == DWELL and _obstacle < GAP + 2.0
 
 
+## Counts down the vehicles it drives through (_ignore_for). One gone from the map meanwhile (freed: a stolen car
+## abandoned, the map cleared, a vehicle sent back to its garage) is dropped.
 func _tick_ignored(delta: float) -> void:
-	for c: Node3D in _ignored.keys():
+	for c: Variant in _ignored.keys():
+		if not is_instance_valid(c):
+			_ignored.erase(c)
+			continue
 		_ignored[c] -= delta
 		if _ignored[c] <= 0.0:
 			_ghost(c, false)
@@ -1091,8 +1100,9 @@ func _tick_ignored(delta: float) -> void:
 
 
 func _forget_ignored() -> void:
-	for c: Node3D in _ignored:
-		_ghost(c, false)
+	for c: Variant in _ignored:
+		if is_instance_valid(c):
+			_ghost(c, false)
 	_ignored.clear()
 
 
@@ -1110,8 +1120,10 @@ func _ghost(c: Node3D, on: bool) -> void:
 
 ## Waiting for a bot that waits for this one, longer than DEADLOCK s: true for one of the two (it drives on).
 func _deadlocked() -> bool:
+	if not is_instance_valid(obstacle_car):
+		return false
 	var c := obstacle_car
-	if c == null or c.pilot == null or c.pilot.obstacle_car != car:
+	if c.pilot == null or c.pilot.obstacle_car != car:
 		return false
 	return c.pilot._blocked_t > DEADLOCK and car.get_instance_id() < c.get_instance_id()
 
@@ -1210,7 +1222,8 @@ func _update_glide(force := false) -> void:
 	if want and not gliding:
 		_speed = clampf(car.speed(), 0.0, car.max_speed)     # (a body just moved by hand reports wild speeds)
 		if not _pass.is_empty():
-			_ignore_for(_pass["car"], PASS_TIME)    # back on its path: through what it was overtaking
+			if is_instance_valid(_pass["car"]):
+				_ignore_for(_pass["car"], PASS_TIME)    # back on its path: through what it was overtaking
 			_pass = {}
 	gliding = want
 	_held = false
