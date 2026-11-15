@@ -41,11 +41,14 @@ extends Node3D
 ## ring shows where the barrel points. So is the GAZ Tiger's (scripts/armored_car.gd): the gunner stands in its roof
 ## hatch and the mouse turns the machine gun on the hatch's ring all the way round.
 ## Vehicles bend thin trees and knock over sign poles, bollards and the like (scripts/breakables.gd).
-## Bot buses and bot cars (scripts/traffic.gd, scripts/bus_bot.gd) drive their lines and routes when playing solo,
-## hosting, or on a dedicated server: the player can ride the buses (in through the open doors at a stop) but drive
-## none of them. The host (or solo player) switches them and the RER B trains off and on in the in-game menu
-## (remembered, Settings "traffic"; --no-bots on the command line), and can clear the map of every vehicle there.
-## Instanced by the tools they stay off unless PLATEAU_BUSES=1. The traffic lights cycle on the game's shared clock (the same on every screen).
+## Bot buses and bot cars (scripts/traffic/traffic.gd, scripts/traffic/bus_bot.gd) drive their lines and routes when
+## playing solo, hosting, or on a dedicated server: the player can ride the buses (in through the open doors at a stop)
+## but drive none of them, unless they steal a bot car standing still: E at its driver's door, then the arrow keys
+## shown, in order (scripts/carjack/carjack.gd; the game mode allows("carjack")). They stop for people on foot in their
+## way and make way for a fire truck or a police car with its siren on (scripts/traffic/perception.gd). The host (or
+## solo player) switches them and the RER B trains off and on in the in-game menu (remembered, Settings "traffic";
+## --no-bots on the command line), and can clear the map of every vehicle there. Instanced by the tools they stay off
+## unless PLATEAU_BUSES=1. The traffic lights cycle on the game's shared clock (the same on every screen).
 ## The RER B trains (scripts/train_traffic.gd, scripts/train.gd) run both ways through Lozère likewise (PLATEAU_TRAINS=1
 ## for the tools): the player gets on at the station while the doors are open, walks through the cars of a unit and is
 ## carried like in a bus; riding one off the map puts them down by the line at that end.
@@ -109,7 +112,8 @@ const RemotePlayer = preload("res://scripts/remote_player.gd")
 const UiStyle = preload("res://scripts/ui_style.gd")
 const Chat = preload("res://scripts/chat.gd")
 const PlayerList = preload("res://scripts/player_list.gd")
-const Traffic = preload("res://scripts/traffic.gd")
+const Traffic = preload("res://scripts/traffic/traffic.gd")
+const Carjack = preload("res://scripts/carjack/carjack.gd")
 const Night = preload("res://scripts/night.gd")
 const Losplatos = preload("res://lots/losplatos/losplatos.gd")
 const AllSuites = preload("res://lots/allSuites/allsuites.gd")
@@ -159,6 +163,7 @@ var _next_model := 0
 var picker: Picker
 var breakables: Breakables
 var traffic: Traffic
+var carjack: Carjack                        # stealing bot cars (Main/Carjack)
 var night: Night
 var losplatos: Losplatos                    # Losplatos Custom, the repair and paint shop (lots/losplatos/)
 var allsuites: AllSuites                    # All Suites Study, the students' residence in place of #184 (lots/allSuites/)
@@ -252,6 +257,10 @@ func _ready() -> void:
 	traffic.name = "Traffic"
 	traffic.game = self
 	add_child(traffic)
+	carjack = Carjack.new()
+	carjack.name = "Carjack"
+	carjack.game = self
+	add_child(carjack)
 	Lots.spawn(self)                        # the lots' builds (builder/lots.gd: Losplatos, All Suites, the villa...)
 	if staged:
 		await get_tree().process_frame      # (the loader's screen moves on: the trains have read the whole line)
@@ -1038,7 +1047,8 @@ func park_vehicle(model: String, xf: Transform3D, exact := false) -> Car:
 	return car
 
 
-## A bot bus or car (scripts/traffic.gd): `car` (new_vehicle, not in the tree yet) at `xf`, driven by `bot` (bus_bot.gd).
+## A bot bus or car (scripts/traffic/traffic.gd): `car` (new_vehicle, not in the tree yet) at `xf`, driven by `bot`
+## (bus_bot.gd).
 func add_bot_bus(car: Car, xf: Transform3D, bot: Object) -> void:
 	add_child(car)
 	car.place(xf)
@@ -1115,7 +1125,7 @@ func riders(car: Car) -> int:
 
 
 ## The sections players ride (a car, its rear section, an RER B car) with how many on each: riders() for every vehicle
-## at once (scripts/traffic.gd, each tick).
+## at once (scripts/traffic/traffic.gd, each tick).
 func ridden_sections() -> Dictionary:
 	var out := {}
 	if mode != "server":
@@ -1514,10 +1524,11 @@ func set_pause_open(on: bool) -> void:
 	_update_controls()
 
 
-## True while the vehicle menu, the in-game menu, the full-screen map, the chat line or a game mode's panel is open.
+## True while the vehicle menu, the in-game menu, the full-screen map, the chat line or a game mode's panel is open, or
+## while the player breaks into a car (scripts/carjack/carjack_hud.gd takes the keys).
 func ui_open() -> bool:
 	return _menu.visible or pause.visible or chat.is_open() or (world_map != null and world_map.visible) \
-			or (game_mode != null and game_mode.ui_open())
+			or (game_mode != null and game_mode.ui_open()) or (carjack != null and carjack.busy())
 
 
 ## Opens or closes the full-screen map (M); the player and the vehicle driven take no keys while it is open.
@@ -1677,7 +1688,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("interact") and not flying and not driving:
 		var car := riding if riding else car_to_enter()
 		var bot := _bot_near() if car == null else null
-		if bot:
+		if bot and not carjack.request(bot):
 			_show_toast("A bot drives this bus: get on at a stop, while its doors are open" if bot.has_doors \
 					else "A bot drives this car")
 		elif car == null and traffic.trains.train_near(player.global_position, ENTER_RANGE):
@@ -1950,6 +1961,8 @@ func _update_help() -> void:
 				"from its right side, the passenger seat; biplane with gunner: from its right side, the turret; " + \
 				"GAZ Tiger: from its right side, the roof gun)\n" + \
 				"%s park a car here · %s vehicle menu · %s" % [k.call("park_car"), k.call("vehicle_menu"), common]
+	if allows("carjack") and not (flying or driving or riding):
+		_help.text += "\n%s at the driver's door of a bot car standing still: steal it" % k.call("interact")
 	if driving is FireTruck:
 		_help.text += "\n%s (held) water cannon, aimed where you look (the view holds while it sprays) · %s siren and beacons" % [
 				k.call("fire"), k.call("bell")]

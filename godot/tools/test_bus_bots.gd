@@ -1,8 +1,8 @@
 extends "res://tools/test_base.gd"
-## Headless checks for the bot buses (scripts/traffic.gd, scripts/bus_bot.gd; world/bus_routes.json), the bot cars
-## off (tools/test_car_bots.gd): they spawn on both directions of each line with a driver, a bus sets off from the
-## start of each direction every headway, nobody can take their wheel (E), the traffic lights run on the shared clock
-## (shader global), and, one bus per line left (the others stowed, no more departures), driving with the physics:
+## Headless checks for the bot buses (scripts/traffic/traffic.gd, scripts/traffic/bus_bot.gd; world/bus_routes.json),
+## the bot cars off (tools/test_car_bots.gd): they spawn on both directions of each line with a driver, a bus sets off
+## from the start of each direction every headway, nobody can take their wheel (E), the traffic lights run on the shared
+## clock (shader global), and, one bus per line left (the others stowed, no more departures), driving with the physics:
 ## - a stop: the right indicator on the way in, the doors open at the pole, closed, the left indicator on the way out;
 ## - boarding: the doors close after the dwell even with a player by one; the player aboard, it sets off;
 ## - a turn: its indicator while turning; the path is followed within LATERAL m, upright;

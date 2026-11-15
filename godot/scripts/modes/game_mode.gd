@@ -22,7 +22,8 @@ var id := ""                                # its key in modes.gd
 ## "debug_cars" (the cars parked next to the player at start), "showrooms" (the dealership's display cars and its
 ## salesman), "bot_traffic" (bot buses and cars, and the host's switch for them), "trains" (the RER B), "races",
 ## "vehicle_menu" (U), "park_car" (C), "clear_vehicles" (the host's button), "night_toggle" (N, the settings page's
-## time of day), "inspect" (F), "fly_camera" (F1), "map" (M, K), "armed_vehicles" (the showroom's armed display car).
+## time of day), "inspect" (F), "fly_camera" (F1), "map" (M, K), "armed_vehicles" (the showroom's armed display car),
+## "carjack" (stealing a bot car standing still: scripts/carjack/carjack.gd).
 func allows(_feature: String) -> bool:
 	return true
 

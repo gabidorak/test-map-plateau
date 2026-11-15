@@ -17,7 +17,7 @@ extends SceneTree
 ## PLATEAU_TEST_ONLY=lap,bus,bot_bus,bot_lap runs some of them.
 
 var _records := OS.get_temp_dir().path_join("plateau_test_races/records.json")   # (no /tmp on Windows)
-const BusBot = preload("res://scripts/bus_bot.gd")
+const BusBot = preload("res://scripts/traffic/bus_bot.gd")
 const GroundMap = preload("res://scripts/ground_map.gd")
 
 var _main: Node

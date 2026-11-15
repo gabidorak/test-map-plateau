@@ -18,7 +18,7 @@ extends SceneTree
 ## godot --headless --fixed-fps 60 --path godot --script res://tools/test_massy.gd
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
-const BusBot = preload("res://scripts/bus_bot.gd")
+const BusBot = preload("res://scripts/traffic/bus_bot.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 
 var _main: Node

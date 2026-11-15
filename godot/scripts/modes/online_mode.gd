@@ -12,7 +12,8 @@ extends "res://scripts/modes/game_mode.gd"
 ##   first back (it leaves the map).
 ## - Locks: a player's vehicle is locked when it comes out: the others may ride in it (walk in a bus, sit in the
 ##   passenger seat), not drive it, until its owner unlocks it (U: the vehicle's panel). Vehicles of nobody's garage
-##   (Prestige Motors' display cars) are never driven.
+##   (Prestige Motors' display cars) are never driven, but for the bot cars stolen (scripts/carjack/carjack.gd): those
+##   are anyone's to drive, in no garage, and leave the map once abandoned.
 ## - Leaving: a player's vehicle stays KEEP s after they disconnect, and is theirs again if they log in within that
 ##   time (they appear beside it); then it leaves the map.
 ## - Players join on foot by the garage nearest to the game's spawn point (beside their vehicle when it waited for
@@ -775,6 +776,8 @@ func _public(id: String) -> Dictionary:
 
 
 func refuse_drive(net_id: String, peer: int) -> bool:
+	if game.carjack.is_stolen(net_id):
+		return false                        # a stolen bot car: anyone's
 	var v: Dictionary = vehicles.get(net_id, {})
 	var acc := account(peer)
 	if v.is_empty():

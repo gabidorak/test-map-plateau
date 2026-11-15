@@ -6,9 +6,11 @@ extends Node3D
 ## does not hold back a car it stands on): they stop against it instead of driving through. Not the walkable vehicle
 ## the player stands in, nor one they walk in or out of through its open doors: there their own peer walks through
 ## its body box, as the local player does (update_collision).
+## The bot drivers of the host look out for them on foot (scripts/traffic/perception.gd: the walkers, walking()).
 
 const PlayerScene = preload("res://scenes/player.tscn")
 const Layers = preload("res://scripts/physics_layers.gd")
+const Perception = preload("res://scripts/traffic/perception.gd")
 const INSIDE_MARGIN := 0.15                 # m around a walkable interior: in the doorway, or only just left
 const DOOR_MARGIN := 0.7                    # m around it while the doors are open: the step through the body box
 const CAR_REACH := 40.0                     # m, no vehicle is longer: further off from its origin, it is not around their feet
@@ -27,6 +29,7 @@ var _seat: Node3D                           # the vehicle (car.gd) whose passeng
 
 func setup(nickname: String, color: Color) -> void:
 	name = "Remote_" + nickname.validate_node_name()
+	add_to_group(Perception.GROUP)
 	# the same body as the local player (scenes/player.tscn)
 	var p := PlayerScene.instantiate()
 	_body = p.get_node("Body")
@@ -97,6 +100,11 @@ func riding_in() -> Node3D:
 	if is_instance_valid(_frame):
 		return _frame
 	return _seat if is_instance_valid(_seat) else null
+
+
+## For the bots (scripts/traffic/perception.gd): walking on the map, not in a vehicle (its aisle or a seat).
+func walking() -> bool:
+	return riding_in() == null
 
 
 ## Sits the player in the passenger seat of `car` (car.gd, which shows them there) or nowhere (null).

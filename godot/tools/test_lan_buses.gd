@@ -1,6 +1,7 @@
 extends "res://tools/test_base.gd"
-## Headless check of the bot buses in a LAN game (scripts/traffic.gd, scripts/bus_bot.gd, scripts/net.gd): run it twice
-## at once, as the host (which drives the bots) and as a client, with tools/test_lan_buses.sh (port 7791).
+## Headless check of the bot buses in a LAN game (scripts/traffic/traffic.gd, scripts/traffic/bus_bot.gd,
+## scripts/net.gd): run it twice at once, as the host (which drives the bots) and as a client, with
+## tools/test_lan_buses.sh (port 7791).
 ## The client gets the host's bot buses as remote vehicles that say a bot drives them (driver shown), cannot take the
 ## wheel (E refused here, a request refused by the host), runs the traffic lights on the host's clock, stops showing a
 ## bus the host stows, and rides a bot bus: it steps in at a stop while the doors are open and stays standing in it as

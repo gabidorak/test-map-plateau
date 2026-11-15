@@ -5,18 +5,19 @@ extends Node
 ##   phase (pipeline/plateau/props.py). The cycle runs on the game's shared clock (net.gd clock(): the host's in a LAN
 ##   game), handed to the shader as the global `signal_clock` each frame: the lights show the same colour on every
 ##   screen, and the bots stop at the reds the players see (light()).
-## - Bot buses (scripts/bus_bot.gd): the lines of world/bus_routes.json (pipeline/plateau/transit.py, its lines and
-##   headways in pipeline/buses.toml). A bus sets off every `headway` s from the start of each direction of each line
-##   (where no bus runs on into it from a terminus), offset by the line's `phase`; at the start the lines are filled
-##   as if they had been running (bus spacing from the planned speeds and the stops). A bus that vanished (map edge,
-##   terminus) waits, stowed, for the next departure of its line; more buses are made while none waits.
-## - Bot cars (scripts/bus_bot.gd too): `cars` of them (world/car_routes.json, car_traffic.py; PLATEAU_CARS=n overrides)
-##   on routes from the map edge to the map edge, picked at random (longer ones more often). Spread along their routes
-##   at the start; one that vanished at the edge comes back on another route, mid-way where no player is within HIDDEN
-##   m, else at its map edge.
-## - Each tick: a snapshot of the vehicles out (positions on a grid of CELL m cells, near()) and of the players (where
-##   they are, what they ride) for the bots' looks around; then the gliding bots due this tick move on (BusBot
-##   glide_step: GLIDE_SLOTS slots of the ticks to come), the others are moved by their car.gd.
+## - Bot buses (scripts/traffic/bus_bot.gd): the lines of world/bus_routes.json (pipeline/plateau/transit.py, its lines
+##   and headways in pipeline/buses.toml). A bus sets off every `headway` s from the start of each direction of each
+##   line (where no bus runs on into it from a terminus), offset by the line's `phase`; at the start the lines are
+##   filled as if they had been running (bus spacing from the planned speeds and the stops). A bus that vanished (map
+##   edge, terminus) waits, stowed, for the next departure of its line; more buses are made while none waits.
+## - Bot cars (scripts/traffic/bus_bot.gd too): `cars` of them (world/car_routes.json, car_traffic.py; PLATEAU_CARS=n
+##   overrides) on routes from the map edge to the map edge, picked at random (longer ones more often). Spread along
+##   their routes at the start; one that vanished at the edge comes back on another route, mid-way where no player is
+##   within HIDDEN m, else at its map edge.
+## - Each tick: what the bots see (`seen`, scripts/traffic/perception.gd: the vehicles out, the emergency vehicles with
+##   their siren on, the people on foot) and the players (where they are, what they ride: who would see a bot appear or
+##   vanish) for the bots' looks around; then the gliding bots due this tick move on (BusBot glide_step: GLIDE_SLOTS
+##   slots of the ticks to come), the others are moved by their car.gd.
 ## - Load: the share of each tick the physics scripts take (`tick_load`, from this node, first, to TickEnd, last). In
 ##   the game (not the tools; PLATEAU_ADAPTIVE=1|0 overrides) the traffic thins out a level (LEVELS: gliding bots move
 ##   half as often, then fewer bot cars out) after LOAD_AFTER s over LOAD_HIGH, and fills up again a level after
@@ -27,11 +28,14 @@ extends Node
 ##   the planned speeds, as _after places the buses at the start), taking the departure it would have made at the end
 ##   of its trip: the line runs one bus fewer all along. Off duty (release_bus) it comes back where it would be by then,
 ##   out of the players' sight (RELEASE_SEEN), or at its next departure.
+## - Stolen cars (scripts/carjack/carjack.gd): release_car takes a bot car out of the traffic for good, its bot gone;
+##   a new bot car takes its place, sent out of the players' sight like the others.
 ## The host can stop them (stop_bots: game.gd set_bot_traffic, the in-game menu) and start them again.
 ## Only the peer that hosts (or plays solo, or a dedicated server) runs the bots; the other peers get their vehicles as
 ## remote vehicles (net.gd), which they can ride in (buses) but not drive.
 
-const BusBot = preload("res://scripts/bus_bot.gd")
+const BusBot = preload("res://scripts/traffic/bus_bot.gd")
+const Perception = preload("res://scripts/traffic/perception.gd")
 const TrainTraffic = preload("res://scripts/train_traffic.gd")
 const ROUTES := "res://world/bus_routes.json"
 const CAR_ROUTES := "res://world/car_routes.json"
@@ -48,8 +52,6 @@ const TERMINUS_WAIT := 0.5                  # ...for this share of the headway a
 const HIDDEN := 180.0                       # m from every player a bot car may come back in mid-route
 const EDGE_SEEN := 60.0                     # m from every player it may come back in at the map edge
 const CAR_LOOK := 0.5                       # s between looks for a way back in for the stowed cars
-const CELL := 50.0                          # m, the snapshot's grid (near())
-const CELL_KEY := 65536                     # grid key: x cell * CELL_KEY + y cell
 const GLIDE_SLOTS := 32                     # ticks ahead a glide step may be due (> GLIDE_TICKS_FAR × glide_scale)
 const LOAD_HIGH := 0.45                     # share of the tick the physics scripts may take...
 const LOAD_AFTER := 4.0                     # ...for this many s before the traffic thins out a level
@@ -74,16 +76,7 @@ var send_cars := true                       # stowed bot cars sent out again (te
 var holds: Array = []                       # buses held off the map for players on duty (hold_bus): {"bot", "line", "r"
 											# (route its trip started on), "elapsed" (s since), "trip" (s it takes),
 											# "waiting" (its trip is over: it takes the line's next departure)}
-# the vehicles out (not stowed) as of this physics tick, for the bots' looks around: footprint centre (pipeline x/y),
-# velocity (BusBot.velocity_of), heading, half length
-var snap_cars: Array = []
-var snap_pos := PackedVector2Array()
-var snap_vel := PackedVector2Array()
-var snap_fwd := PackedVector2Array()
-var snap_reach := PackedFloat32Array()
-var snap_reach_max := 0.0                   # the longest half length among them
-var _snap_feet: Array = []                  # their footprints (snap_footprint), null until a bot looks at one
-var _cells := {}                            # grid key -> Array of snapshot indices (near())
+var seen := Perception.new()                # what the bots see as of this physics tick (vehicles, sirens, walkers)
 # the players as of this physics tick (_players): game.player_spots(), the same and the camera, sections ridden
 var _players_frame := -1
 var _spots: Array = []
@@ -142,7 +135,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_tick_start = Time.get_ticks_usec()
 	time += delta
-	_snapshot()
+	seen.update(get_tree(), game.cars, delta)
 	for h: Dictionary in holds:
 		h["elapsed"] += delta
 		h["waiting"] = h["waiting"] or h["elapsed"] > h["trip"]
@@ -234,46 +227,6 @@ func schedule_glide(bot: Object, tick: int) -> void:
 	_glide_slots[tick % GLIDE_SLOTS].append(bot)
 
 
-func _snapshot() -> void:
-	snap_cars.clear()
-	snap_pos.clear()
-	snap_vel.clear()
-	snap_fwd.clear()
-	snap_reach.clear()
-	snap_reach_max = 0.0
-	_cells.clear()
-	for c: Node3D in game.cars:
-		if c.stowed:
-			continue
-		var xf: Transform3D = c.global_transform
-		var p := BusBot.flat(xf * c.extents_center)
-		var key := floori(p.x / CELL) * CELL_KEY + floori(p.y / CELL)
-		var cell: Array = _cells.get(key, [])
-		if cell.is_empty():
-			_cells[key] = cell
-		cell.append(snap_cars.size())
-		snap_cars.append(c)
-		snap_pos.append(p)
-		snap_vel.append(BusBot.velocity_of(c))
-		snap_fwd.append(BusBot.flat(xf.basis.z).normalized())
-		snap_reach.append(c.half_extents.z)
-		snap_reach_max = maxf(snap_reach_max, c.half_extents.z)
-	_snap_feet.clear()
-	_snap_feet.resize(snap_cars.size())
-
-
-## Indices into the snapshot of the vehicles whose footprint centre may be within `r` m of `p` (pipeline x/y): those
-## in the grid cells the square around it touches.
-func near(p: Vector2, r: float) -> Array:
-	var out := []
-	for x in range(floori((p.x - r) / CELL), floori((p.x + r) / CELL) + 1):
-		for y in range(floori((p.y - r) / CELL), floori((p.y + r) / CELL) + 1):
-			var cell: Variant = _cells.get(x * CELL_KEY + y)
-			if cell != null:
-				out.append_array(cell)
-	return out
-
-
 ## The players as of this physics tick, for every bot (_spots, _eyes, _ridden).
 func _players() -> void:
 	if _players_frame == Engine.get_physics_frames():
@@ -322,13 +275,6 @@ func stats_text() -> String:
 			" · traffic thinned (level %d)" % load_level if load_level > 0 else ""]
 
 
-## Footprint of snapshot vehicle k (BusBot.footprint), made once per tick however many bots look at it.
-func snap_footprint(k: int) -> PackedVector2Array:
-	if _snap_feet[k] == null:
-		_snap_feet[k] = BusBot.footprint(snap_cars[k])
-	return _snap_feet[k]
-
-
 ## Seconds on the game's shared clock (the lights' cycle runs on it).
 func clock() -> float:
 	return game.net.clock()
@@ -369,13 +315,7 @@ func stop_bots() -> Array:
 	departures.clear()
 	departed.clear()
 	time = 0.0
-	snap_cars.clear()
-	snap_pos.clear()
-	snap_vel.clear()
-	snap_fwd.clear()
-	snap_reach.clear()
-	_snap_feet.clear()
-	_cells.clear()
+	seen.clear()
 	for k in GLIDE_SLOTS:
 		_glide_slots[k] = []
 	_car_lengths.clear()
@@ -597,6 +537,25 @@ func _trip(line: Dictionary, r: int) -> float:
 
 
 # ---------------------------------------------------------------- cars
+
+## The bot car (not a bus) whose bot drives `car`, or null.
+func car_bot(car: Node3D) -> Object:
+	var b: Object = car.pilot if is_instance_valid(car) else null
+	return b if b != null and is_same(b.line, car_line) and bots.has(b) else null
+
+
+## Takes bot car `bot`'s car out of the traffic for good (stolen: scripts/carjack/carjack.gd): its bot gives it up
+## (BusBot.abandon: the car left where it stands, a car like any other now) and a new bot car takes its place, stowed
+## until _balance_cars sends it out out of the players' sight. Returns the car.
+func release_car(bot: Object) -> Node3D:
+	var car: Node3D = bot.car
+	bots.erase(bot)
+	bot.abandon()
+	if is_same(bot.line, car_line) and not _car_models.is_empty():
+		var fresh := _new_bot(car_line, _car_models[_rng.randi() % _car_models.size()])
+		fresh._stow()
+	return car
+
 
 func _start_cars(data: Dictionary, pacer: RefCounted = null) -> void:
 	var ids: Array = data["routes"].keys()

@@ -845,6 +845,19 @@ func request_drive(car: Car) -> void:
 		_ask_drive.rpc_id(1, car.net_id)
 
 
+## We may be handed vehicle `net_id` to drive without asking (a car we are stealing, scripts/carjack/carjack.gd):
+## game.drive_granted follows if the host does; "" no longer.
+func await_drive(net_id: String) -> void:
+	_pending_drive = net_id
+
+
+## Host: player `peer` drives vehicle `net_id` now and simulates it (a car they stole, scripts/carjack/carjack.gd),
+## whoever had it before.
+func give_drive(net_id: String, peer: int) -> void:
+	if multiplayer.is_server() and cars.has(net_id):
+		_car_control.rpc(net_id, peer, peer)
+
+
 ## Got out of `car` (game.gd): it stays ours to simulate, rolling on with its passengers.
 func release_drive(car: Car) -> void:
 	if multiplayer.is_server():

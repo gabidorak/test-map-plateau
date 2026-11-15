@@ -37,11 +37,11 @@ extends VehicleBody3D
 ## LAN games (scripts/net.gd): a vehicle another peer simulates is `remote`, its bodies frozen kinematic and posed from
 ## that peer's states (apply_net_state); the wheels still turn and steer, and lamps, doors, horn and sound follow the
 ## states.
-## Bot drivers (scripts/bus_bot.gd, the bot buses of scripts/traffic.gd): a vehicle with a `pilot` takes its pedals,
-## steering, horn and indicators from it instead of the keys (pilot.drive), on the peer simulating it; its states tell
-## the others (bot_driven: the driver look-alike shows, nobody can take the wheel). A bot bus waiting to come back in
-## at the map edge is `stowed`: hidden, out of the physics, everywhere. A parked vehicle at rest sleeps (out of the
-## solver, its script idle) until something touches or pushes it, or someone gets in (_sleep_parked).
+## Bot drivers (scripts/traffic/bus_bot.gd, the bot buses of scripts/traffic/traffic.gd): a vehicle with a `pilot` takes
+## its pedals, steering, horn and indicators from it instead of the keys (pilot.drive), on the peer simulating it; its
+## states tell the others (bot_driven: the driver look-alike shows, nobody can take the wheel). A bot bus waiting to
+## come back in at the map edge is `stowed`: hidden, out of the physics, everywhere. A parked vehicle at rest sleeps
+## (out of the solver, its script idle) until something touches or pushes it, or someone gets in (_sleep_parked).
 ## Damage (the armed biplane's rounds, scripts/plane_guns.gd): each vehicle has `health` (HEALTH for a 1,200 kg car,
 ## more for heavier ones); hits only count on the peer simulating it (damage), the others follow its states. Under
 ## half of it, grey smoke comes out of the engine; at 0 it is `broken`: a boom and a ball of fire, the engine dies, the
@@ -371,10 +371,17 @@ var _smoke: WreckSmoke                      # made at the first smoke
 var _broken_t := 0.0                        # s since it broke
 var _doused := 0.0                          # s of water on it since it broke
 var _net_seen := false                      # LAN, remote vehicle: a state came already (no boom for a wreck on joining)
-var pilot: Object                           # bot driver (scripts/bus_bot.gd) on the peer simulating it, or null
+var pilot: Object                           # bot driver (scripts/traffic/bus_bot.gd) on the peer simulating it, or null
 var bot_driven := false                     # LAN, remote vehicle: a bot drives it (its states say so)
 var stowed := false                         # hidden and out of the physics (a bot bus off the map, set_stowed)
-var flooded := 0.0                          # 0 dry .. 1 full of water (_water_physics)
+## An emergency vehicle's siren and flashing lights (the fire truck's and the police car's, switched with B): the bots
+## make way for it (scripts/traffic/perception.gd, bus_bot.gd). LAN games: net_state flag FLAGS_SIREN.
+var siren := false:
+	set(on):
+		siren = on
+		if audio:
+			audio.siren = on
+var flooded := 0.0                         # 0 dry .. 1 full of water (_water_physics)
 var in_water := 0.0                         # share of the body's height under water now
 var _rest_t := 0.0                          # s parked at rest (_sleep_parked)
 var _braking := false                       # brake lamps on (the driver's or the pilot's pedal)
@@ -385,6 +392,7 @@ var _head_lamps: Array[MeshInstance3D] = [] # lamp boxes (models without their o
 var _lit_surfaces: Array = []               # [MeshInstance3D, surface, material when lit]: the model's own lamps
 var _cabin_lights: Array[OmniLight3D] = []
 const BOT_COLOR := Color(0.16, 0.3, 0.55)   # the bot drivers' uniform
+const FLAGS_SIREN := 512                    # net_state flag: the siren on
 
 static var _soot: StandardMaterial3D        # drawn over a broken vehicle's meshes
 static var night := false                   # scripts/night.gd: bots drive with their headlights on
@@ -1663,7 +1671,7 @@ func is_bot() -> bool:
 	return pilot != null or bot_driven
 
 
-## A bot takes the wheel (`p`: scripts/bus_bot.gd) or leaves it (null).
+## A bot takes the wheel (`p`: scripts/traffic/bus_bot.gd) or leaves it (null).
 func set_pilot(p: Object) -> void:
 	pilot = p
 	for b in bodies():
@@ -1769,12 +1777,13 @@ func _apply_remote_freeze() -> void:
 
 
 ## LAN games: this vehicle's state for the other peers: [pose, rear section pose, steering, pedal, flags (1 doors
-## open, 2 someone drives, 4 braking, 8 horn, 16 bell strikes are odd, 32 a bot drives, 64 stowed, 128 headlights; the
-## fire truck adds its own above), indicator, health]. A bot's headlights follow each peer's own night instead.
+## open, 2 someone drives, 4 braking, 8 horn, 16 bell strikes are odd, 32 a bot drives, 64 stowed, 128 headlights,
+## 512 siren; the fire truck adds its spray, 256), indicator, health]. A bot's headlights follow each peer's own night
+## instead.
 func net_state() -> Array:
 	var flags := (1 if doors_open else 0) | (2 if driving or pilot else 0) | (4 if _braking else 0) \
 			| (8 if audio.horn else 0) | (16 if bells & 1 else 0) | (32 if pilot else 0) | (64 if stowed else 0) \
-			| (128 if headlights else 0)
+			| (128 if headlights else 0) | (FLAGS_SIREN if siren else 0)
 	return [global_transform, trailer.global_transform if trailer else Transform3D(), steering, _throttle, flags, indicator,
 			health]
 
@@ -1802,6 +1811,7 @@ func apply_net_state(a: Array, b: Array, w: float) -> void:
 		bot_driven = flags & 32 != 0
 		show_driver(false)
 	set_stowed(flags & 64 != 0)
+	siren = flags & FLAGS_SIREN != 0
 	set_headlights(night if bot_driven else flags & 128 != 0)
 	set_doors(flags & 1 != 0)
 	if b[5] != indicator:

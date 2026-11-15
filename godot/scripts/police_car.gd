@@ -5,13 +5,10 @@ extends "res://scripts/car.gd"
 ## police two-tone siren, la-ré (scripts/vehicle_audio.gd). The bell action (B) switches the siren and the lights on
 ## and off: the bar's left half and the left flasher flash three times, then the right ones (FLASH s), each side lighting
 ## the street around it in blue.
-## LAN games: net_state carries the switch (flag 512, as for the fire truck's siren); a remote copy flashes and sounds
-## from it.
+## The switch is car.gd's `siren` (the bots make way for it; LAN games: its net_state flag, a remote copy flashes and
+## sounds from it).
 
 const FLASH := 0.6                          # s, a cycle of the blue lights: three quick flashes on each side in turn
-const FLAGS_SIREN := 512                    # above car.gd's net_state flags
-
-var siren := false                          # siren sounding, lights flashing
 
 var _beacons := {"left": [], "right": []}   # per side: the bar's half and the grille flasher
 var _lit_beacon: StandardMaterial3D         # unlit, they show the model's own blue
@@ -56,12 +53,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	super(event)
 
 
-func _physics_process(delta: float) -> void:
-	super(delta)
-	if not remote:
-		audio.siren = siren
-
-
 func _process(delta: float) -> void:
 	super(delta)
 	_update_beacons(delta)
@@ -80,19 +71,6 @@ func _update_beacons(delta: float) -> void:
 		for mi: MeshInstance3D in _beacons["left" if k == 0 else "right"]:
 			mi.material_override = _lit_beacon if lit else null
 		_beacon_lights[k].visible = lit
-
-
-## LAN games: the car's state with the siren switch in the flags.
-func net_state() -> Array:
-	var s := super()
-	s[4] = s[4] | (FLAGS_SIREN if siren else 0)
-	return s
-
-
-func apply_net_state(a: Array, b: Array, w: float) -> void:
-	super(a, b, w)
-	siren = b[4] & FLAGS_SIREN != 0
-	audio.siren = siren
 
 
 func dash_line() -> String:

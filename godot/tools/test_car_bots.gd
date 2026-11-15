@@ -1,5 +1,5 @@
 extends SceneTree
-## Headless checks for the bot cars (scripts/traffic.gd, scripts/bus_bot.gd; world/car_routes.json):
+## Headless checks for the bot cars (scripts/traffic/traffic.gd, scripts/traffic/bus_bot.gd; world/car_routes.json):
 ## - they spawn (the [cars] count of pipeline/buses.toml) on their routes with a bot at the wheel, none on the player;
 ## - they drive: most of them out and moving a minute later, the ones that reached the map edge sent out again;
 ## - two of them meeting on a two-way road (one on its route, the other coming the other way in the other lane, both

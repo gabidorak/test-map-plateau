@@ -9,8 +9,9 @@ extends "res://scripts/car.gd"
 ## (and AIM_HOLD s after) the view keeps its direction in the world (holds_aim, car.gd _update_camera), so the jet stays
 ## on its target while the truck drives and turns, like a tank's turret. game.gd draws a ring
 ## where the jet as aimed would land (sight_point). The bell action (B) switches the siren and the beacons on and off.
-## LAN games: net_state also carries the turret aim and the spray and siren switches (flags 32, 64); a remote copy
-## turns its turret and sprays from them for show, the hits counting on the peer simulating the truck.
+## The siren switch is car.gd's `siren` (the bots make way for it).
+## LAN games: net_state also carries the turret aim and the spray switch (flag FLAGS_SPRAY; the siren's is car.gd's); a
+## remote copy turns its turret and sprays from them for show, the hits counting on the peer simulating the truck.
 
 const WaterCannon = preload("res://scripts/water_cannon.gd")
 const YAW_RATE := 1.4                       # rad/s, turret
@@ -23,11 +24,9 @@ const AIM_MASK := Layers.SOLID | Layers.VEGETATION | Layers.PROPS | Layers.VEHIC
 const AIM_HOLD := 1.0                       # s after spraying the view keeps its direction (then car.gd LOOK_HOLD more)
 const FLASH := 0.7                          # s, the blue beacons' cycle: two quick flashes on each side in turn
 const FLAGS_SPRAY := 256                    # above car.gd's net_state flags
-const FLAGS_SIREN := 512
 
 var cannon: WaterCannon
 var aim := Vector2.ZERO                     # turret yaw (+ to the left), barrel pitch (+ up), rad
-var siren := false                          # siren sounding, beacons flashing
 var aim_target := Vector3.INF               # global, the point the driver looks at (INF: none)
 
 var _fittings := {}                         # assets/cars/fire_truck.json
@@ -142,7 +141,6 @@ func _physics_process(delta: float) -> void:
 	aim.x = move_toward(aim.x, _want.x, YAW_RATE * delta)
 	aim.y = move_toward(aim.y, _want.y, PITCH_RATE * delta)
 	_pose_turret()
-	audio.siren = siren
 	if driving:
 		_sight = _predict_landing()
 
@@ -262,10 +260,10 @@ func _update_beacons(delta: float) -> void:
 			mi.material_override = _beacon_mats["amber"][1 if amber else 0]
 
 
-## LAN games: the car's state with the spray and siren switches in the flags and the turret aim after it.
+## LAN games: the car's state with the spray switch in the flags and the turret aim after it.
 func net_state() -> Array:
 	var s := super()
-	s[4] = s[4] | (FLAGS_SPRAY if cannon.firing else 0) | (FLAGS_SIREN if siren else 0)
+	s[4] = s[4] | (FLAGS_SPRAY if cannon.firing else 0)
 	s.append(aim)
 	return s
 
@@ -274,8 +272,6 @@ func apply_net_state(a: Array, b: Array, w: float) -> void:
 	super(a, b, w)
 	var flags: int = b[4]
 	cannon.firing = flags & FLAGS_SPRAY != 0
-	siren = flags & FLAGS_SIREN != 0
-	audio.siren = siren
 	if b.size() > 7:
 		aim = a[7].lerp(b[7], minf(w, 1.0)) if a.size() > 7 else b[7]
 		_want = aim

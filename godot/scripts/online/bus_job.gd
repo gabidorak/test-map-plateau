@@ -33,7 +33,7 @@ extends "res://scripts/online/job.gd"
 ## lines a dedicated server prints (every stop's pay worked out, the bonuses, the penalties).
 
 const Car = preload("res://scripts/car.gd")
-const BusBot = preload("res://scripts/bus_bot.gd")
+const BusBot = preload("res://scripts/traffic/bus_bot.gd")
 const Economy = preload("res://scripts/economy.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const UiStyle = preload("res://scripts/ui_style.gd")

@@ -1,7 +1,8 @@
 extends SceneTree
-## Long headless run of the bot traffic (scripts/traffic.gd), the lights on the simulated time. Every minute: the buses
-## on each direction of each line and the departures so far, the cars driving / stowed and their mean speed. Each bot
-## standing still 20 s with somewhere to go is logged with what holds it (the vehicle in its way: model, heading).
+## Long headless run of the bot traffic (scripts/traffic/traffic.gd), the lights on the simulated time. Every minute:
+## the buses on each direction of each line and the departures so far, the cars driving / stowed and their mean speed.
+## Each bot standing still 20 s with somewhere to go is logged with what holds it (the vehicle in its way: model,
+## heading).
 ## godot --headless --fixed-fps 60 --path godot --script res://tools/probe_traffic.gd -- [minutes] [physics] [cars=n]
 ## `physics`: the bots never glide (as if a player were everywhere).
 

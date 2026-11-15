@@ -13,8 +13,10 @@ extends CharacterBody3D
 ## splashes.
 ## A game mode can slow the player (speed_scale: carrying someone), stop running or jumping, turn the body with the
 ## view (face_aim: a gun in hand), lay it down crawling (set_crawling) and kick the view up (kick: recoil).
+## The bot drivers look out for the player on foot (scripts/traffic/perception.gd: the walkers, walking()).
 
 const Layers = preload("res://scripts/physics_layers.gd")
+const Perception = preload("res://scripts/traffic/perception.gd")
 const Prefs = preload("res://scripts/settings.gd")
 const Water = preload("res://scripts/water.gd")
 
@@ -82,6 +84,13 @@ func _ready() -> void:
 	collision_mask |= Layers.VEHICLE_INSIDE
 	_world_mask = collision_mask
 	_apply_view()
+	add_to_group(Perception.GROUP)
+
+
+## For the bots (scripts/traffic/perception.gd): walking on the map, not in a vehicle's aisle nor left behind for
+## the fly camera (hidden at the wheel or in a seat, they are not looked at either).
+func walking() -> bool:
+	return active and not is_instance_valid(carrier)
 
 
 ## Starts (vehicle) or stops (null) following a vehicle's motion.

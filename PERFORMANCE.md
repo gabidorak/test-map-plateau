@@ -91,7 +91,7 @@ Ranked by expected gain. C1 is backed by measurement. C3, C5, C6 and C7 are smal
 - **Effort:** small.
 
 **C2. Bot gliding distance and traffic density.**
-- **Where:** `NEAR = 200 m` in [bus_bot.gd:47](godot/scripts/bus_bot.gd#L47).
+- **Where:** `NEAR = 200 m` in [bus_bot.gd:47](godot/scripts/traffic/bus_bot.gd#L47).
 - **Measured:** bots that never glide cost 1.7× as much as the default (11.4 against 6.7 ms).
 - **Options:**
   - (a) A smaller `NEAR` on Low or on slow CPUs. **Tradeoff:** bots without physics come closer to the player, and since gliders move only every third tick (20 Hz) they could look jerky in view. Interpolating their pose would hide that.
@@ -106,7 +106,7 @@ Ranked by expected gain. C1 is backed by measurement. C3, C5, C6 and C7 are smal
 - **Est.:** 0.5–2 ms per tick with 100 vehicles. **Tradeoff:** none. **Effort:** tiny.
 
 **C4. Bot look-ahead.**
-- **Where:** [bus_bot.gd:592-600](godot/scripts/bus_bot.gd#L592-L600), [bus_bot.gd:758-769](godot/scripts/bus_bot.gd#L758-L769).
+- **Where:** [bus_bot.gd:592-600](godot/scripts/traffic/bus_bot.gd#L592-L600), [bus_bot.gd:758-769](godot/scripts/traffic/bus_bot.gd#L758-L769).
 - **Problem:** for every nearby vehicle, 8 footprint points are projected across the whole look window (50–115 segments each), allocating new arrays every time.
 - **Fix:**
   - Reject a vehicle early using its centre projection (behind, beyond reach, too far to the side).
@@ -437,7 +437,7 @@ Measured (frame-time change in ms when the feature is off):
 
 **How to reproduce:** `PLATEAU_BUSES=1 godot --headless --path godot --script res://tools/perf.gd`. It crashes with SIGSEGV after ~13 viewpoints (~10 s).
 
-**Backtrace:** `put` ([bus_bot.gd:563](godot/scripts/bus_bot.gd#L563), `car.set_indicator(0)`) ← `_depart` ([traffic.gd:232](godot/scripts/traffic.gd#L232)).
+**Backtrace:** `put` ([bus_bot.gd:563](godot/scripts/traffic/bus_bot.gd#L563), `car.set_indicator(0)`) ← `_depart` ([traffic.gd:232](godot/scripts/traffic/traffic.gd#L232)).
 
 **When it happens:**
 - It reproduces in 14 of 14 runs: windowed and headless, with or without trains, with the Dummy audio driver, with `perf.gd` and with my probe.
@@ -458,7 +458,7 @@ It is worth a look with a debug build of the engine, in case the real game can r
 - The horn and the one-shot sounds are synthesized on the main thread ([vehicle_audio.gd:589-608](godot/scripts/vehicle_audio.gd#L589-L608)). Their cache is cleared when the last vehicle leaves.
 - Each train car instances the whole `mi79.glb` ([train.gd:456-466](godot/scripts/train.gd#L456-L466)).
 - The first switch to night reads back the 71 lamp meshes ([night.gd:113-180](godot/scripts/night.gd#L113-L180)).
-- All ~100 bots are spawned in one frame ([traffic.gd:253-256](godot/scripts/traffic.gd#L253-L256)), and so is every vehicle when a LAN client joins ([net.gd:358](godot/scripts/net.gd#L358)).
+- All ~100 bots are spawned in one frame ([traffic.gd:253-256](godot/scripts/traffic/traffic.gd#L253-L256)), and so is every vehicle when a LAN client joins ([net.gd:358](godot/scripts/net.gd#L358)).
 - **Fix:** cache per model, synthesize on a worker thread at boot, and spread spawns over several frames.
 
 **VRAM, measured:** 847 MB, of which 556 MB are mesh buffers. The far building vertex compaction (G3d) and packed building vertex formats (CUSTOM channels as RGBA8/half floats, indexed: est. 182 → ~80 MB) would leave room for 2 GB GPUs and for iGPUs that share system RAM.

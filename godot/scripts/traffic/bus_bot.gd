@@ -1,8 +1,8 @@
 extends RefCounted
-## A bot driver: scripts/traffic.gd makes one per bot bus or bot car and car.gd asks it for the pedals and the steering
-## every physics tick (drive). It drives the route traffic.gd sends it on (put), and its line's next routes after it
-## (world/bus_routes.json, pipeline/plateau/transit.py; a bot car's "line" is every car route, world/car_routes.json,
-## car_traffic.py, and it has no stops):
+## A bot driver: scripts/traffic/traffic.gd makes one per bot bus or bot car and car.gd asks it for the pedals and the
+## steering every physics tick (drive). It drives the route traffic.gd sends it on (put), and its line's next routes
+## after it (world/bus_routes.json, pipeline/plateau/transit.py; a bot car's "line" is every car route,
+## world/car_routes.json, car_traffic.py, and it has no stops):
 ## - Path: pure pursuit of the route's path (the right-hand lane, eased to the kerb at stops) from the middle of the
 ##   front section (between its axles: in a bend its front swings out and its rear wheels cut in about as much,
 ##   which transit.py leaves room for); the speed follows the route's planned speed (limits, curves) and brakes for what
@@ -13,12 +13,27 @@ extends RefCounted
 ## - Traffic lights: waits at the red (and at the amber when it can stop), on the shared light clock (traffic.gd).
 ## - Junctions where it gives way (transit.py): waits at the line while a vehicle comes from a conflicting arm or moves
 ##   in the junction; a stop sign is a full stop first. It does not wait more than YIELD_PATIENCE s for nothing.
+## What it sees is traffic.gd's `seen` (scripts/traffic/perception.gd), as of this tick:
 ## - Vehicles ahead on its path (any vehicle, the players' too): follows them, stops GAP m behind, sounds the horn when
-##   kept waiting. Players on foot are not looked for. Vehicles coming the other way on their side of the road are
-##   passed by, even close on a narrow road (gliding, they are passed through). Two bots each waiting for the other
-##   (noses in a junction, head-on in a lane too narrow for both) settle it after DEADLOCK s: one of them drives on as if
-##   the other were not there for PASS_TIME s, the two not colliding meanwhile. Kept waiting GIVE_UP s with no player
-##   within GIVE_UP_SEEN m (a vehicle parked in its lane), it vanishes.
+##   kept waiting. Vehicles coming the other way on their side of the road are passed by, even close on a narrow road
+##   (gliding, they are passed through). Two bots each waiting for the other (noses in a junction, head-on in a lane
+##   too narrow for both) settle it after DEADLOCK s: one of them drives on as if the other were not there for
+##   PASS_TIME s, the two not colliding meanwhile. Kept waiting GIVE_UP s with no player within GIVE_UP_SEEN m (a
+##   vehicle parked in its lane), it vanishes.
+## - People on foot (the walkers) in its way ahead, or about to step into it (on their way there over the next
+##   WALKER_AHEAD s), on the road (not on a bridge over it): it stops GAP m short of them like behind a vehicle, sounds
+##   the horn when kept waiting, and never drives round them (`obstacle_walker`).
+## - Emergency vehicles with their siren on (perception.gd `sirens`), moving: one coming up behind on its road makes it
+##   put its right indicator on, pull over (as far right as there is room, up to PULL_RIGHT m: _room_right feels for
+##   the kerb, a post, a parked vehicle) and stop within MAKE_WAY_BRAKE braking; one coming the other way slows it to
+##   ONCOMING_SLOW m/s, pulled over likewise (`making_way`); one about to cross its path ahead (within SIREN_ACROSS s, on its course) stops it short of where it
+##   crosses. It drives on, back into its lane, MAKE_WAY_HOLD s after it last saw one.
+## - Reaction: a walker or an emergency vehicle counts only `reaction` s after it came into its sight (_notice; for
+##   FORGET s after it went out of it, it is still in mind): a driver's own reaction time, drawn each time it is put on
+##   the map (a new driver) about REACTION, log-normally (draw_reaction). Someone stepping out closer than what it
+##   drives in that time plus its braking distance is hit. The vehicles ahead are followed without it.
+## - Seized (`seized`: a carjacker at its door, scripts/carjack/carjack.gd) it stays where it is, its driver frozen;
+##   its car stolen, it gives it up for good (abandon, traffic.gd release_car).
 ## - A vehicle no bot drives (a player's, or a wreck) standing in its lane for PASS_AFTER s: it overtakes it on the left
 ##   when the room there (route "room": to the kerb) is enough and the way is free (nothing coming in the lane it takes
 ##   for PASS_CLEAR m, no light, give-way or stop just past it); gliding, it passes through it.
@@ -43,8 +58,10 @@ extends RefCounted
 ## the middle of the front section (the reference point), `s + nose` that of the front of the bus.
 
 const GroundMap = preload("res://scripts/ground_map.gd")
+const Layers = preload("res://scripts/physics_layers.gd")
 
 enum { DRIVE, DWELL, TERMINUS, STOWED }
+enum { WAY_NONE, WAY_BEHIND, WAY_ONCOMING }   # making_way: for an emergency vehicle coming up behind, or the other way
 
 const LOOK_EVERY := 0.1                     # s between looks around (vehicles ahead, give-ways)...
 const GLIDE_LOOK_EVERY := 0.25              # ...gliding
@@ -87,6 +104,31 @@ const PASS_CLEAR := 80.0                    # m of the lane it takes that must b
 const PASS_SPEED := 6.0                     # m/s at most while overtaking
 const BERTH := 20.0                         # m behind its stop a bus queued behind one there may serve it
 const JUNCTION_REACH := 120.0               # m from a junction traffic is watched (6 s away at 70 km/h)
+const WALKER_SIDE := 0.5                    # m beyond half the vehicle's width a walker's middle counts as in the way
+const WALKER_AHEAD := 1.2                   # s: where a walker will be by then counts too (one stepping off the kerb)
+const WALKER_HEIGHT := 2.5                  # m above or below its road a walker is not on it (a bridge, an underpass)
+const SIREN_BEHIND := 70.0                  # m behind it an emergency vehicle coming up makes it pull over and stop
+const SIREN_AHEAD := 90.0                   # m ahead one coming the other way, or across its way, is minded
+const SIREN_MOVING := 2.0                   # m/s: an emergency vehicle slower than this asks for nothing (at a fire)
+const SIREN_ACROSS := 4.0                   # s of an emergency vehicle's course looked at for where it crosses its path
+const ROAD_SIDE := 7.0                      # m from its path an emergency vehicle is on its road (either lane)
+const PULL_RIGHT := 0.8                     # m right of its path it pulls over at most (less where there is no room)
+const KERB_STEP := 0.06                     # m the ground rises (or drops, twice that) from one sample to the next on its
+											# right: a kerb (raised 0.12 m), not the road's camber...
+const KERB_SAMPLE := 0.15                   # ...sampled every this many m across
+const BODY_PROBE := 0.6                     # m above the road it feels for posts, walls, parked vehicles on its right
+const SIDE_CLEAR := 0.15                    # m it keeps from them
+const ASIDE_RATE := 0.1                     # m it moves sideways per m it drives, pulling over or back
+const MAKE_WAY_BRAKE := 2.5                 # m/s², stopping for one coming up behind
+const MAKE_WAY_STOP := 15.0                 # m at least it rolls on, pulling over, before it stops
+const ONCOMING_SLOW := 4.0                  # m/s, meeting one coming the other way
+const MAKE_WAY_HOLD := 2.0                  # s after it last saw one before it drives on
+# The French highway code counts 1 s of reaction in a stopping distance; studies find about 0.7 s for what a driver
+# expects, 1.25 s for the unexpected, 1.5 s for a surprise (M. Green, "How long does it take to stop?", 2000).
+const REACTION := 1.0                       # s, the drivers' median reaction time to a walker or a siren...
+const REACTION_SPREAD := 0.3                # ...log-normal: the log's standard deviation (68 % within 0.74-1.35 s)
+const REACTION_RANGE := Vector2(0.5, 2.5)   # s, the quickest and the slowest
+const FORGET := 2.0                         # s out of its sight before what it noticed has to be noticed afresh
 
 var traffic: Node                           # traffic.gd
 var car: Node3D                             # car.gd
@@ -112,7 +154,18 @@ var served := 0                             # stops served (tests)
 var idle := false                           # stowed, waiting for traffic.gd to send it out again
 var half_width := 1.3                       # m, half the vehicle's width
 var obstacle_car: Node3D                    # the vehicle in the way, or null
+var obstacle_walker: Node3D                 # the walker in the way (nearer than any vehicle), or null
+var making_way := WAY_NONE                  # for an emergency vehicle (_look_sirens)
+var reaction := REACTION                    # s, this driver's reaction time (draw_reaction, at each put)
+var seized := false                         # a carjacker at its door (scripts/carjack/carjack.gd): it does not move
 
+var _clock := 0.0                           # s it has driven (its own clock: _notice)
+var _noticed := {}                          # walker or emergency vehicle -> [_clock it came into sight, last seen]
+var _aside := 0.0                           # m it has moved right of its path, making way (_shift)
+var _aside_room := 0.0                      # m it may move right making way (_room_right)
+var _way_t := 0.0                           # s since it last saw the emergency vehicle it makes way for
+var _way_stop := INF                        # making way for one behind: where (s) it stops
+var _siren_stop := INF                      # m from its front to where an emergency vehicle crosses its path, INF none
 var _pts := PackedVector2Array()
 var _deck_z := PackedFloat32Array()         # per path point: the bridge deck's height (route "decks"), NAN on the ground
 var _v := PackedFloat32Array()
@@ -363,6 +416,7 @@ func _schedule(first: bool) -> void:
 
 func _drive(delta: float) -> Array:
 	_timer += delta
+	_clock += delta
 	horn = false
 	if state == STOWED:
 		return [0.0, 1.0, 0.0]
@@ -377,6 +431,13 @@ func _drive(delta: float) -> Array:
 	if _look_t <= 0.0:
 		_look_t = GLIDE_LOOK_EVERY if gliding else LOOK_EVERY
 		_look(v)
+	_way_t += delta
+	if making_way != WAY_NONE and _way_t > MAKE_WAY_HOLD:
+		making_way = WAY_NONE
+		_way_stop = INF
+	# pulled over while making way, back into the lane after, ASIDE_RATE m sideways per m driven (crawling when stopped)
+	var aside := _aside_room if making_way != WAY_NONE else 0.0
+	_aside = move_toward(_aside, aside, ASIDE_RATE * maxf(absf(v), 1.0) * delta)
 	var target := _plan(v, delta)
 	if state == STOWED:
 		return [0.0, 1.0, 0.0]
@@ -428,6 +489,9 @@ func _plan(v: float, delta: float) -> float:
 		reason = "terminus"
 		_wait_at_terminus()
 		return 0.0
+	if seized:
+		reason = "carjacked"
+		return 0.0
 	var target := minf(_planned(front + 1.0), _planned(s))
 	reason = "route"
 	# the stop
@@ -460,12 +524,12 @@ func _plan(v: float, delta: float) -> float:
 			target = _stop_within(target, d, "give way")
 		if d < 3.0 and v < 0.3:
 			_yield_wait += delta
-	# vehicles ahead
+	# vehicles (or walkers) ahead
 	if _obstacle < INF:
 		# (room behind a parked vehicle to pull out round it)
 		var gap := GAP + PASS_IN + 2.0 if _obstacle_parked and _pass.is_empty() else GAP
 		target = _limit(target, sqrt(_obstacle_v * _obstacle_v + 2.0 * HARD_BRAKE * maxf(_obstacle - gap, 0.0)) \
-				if _obstacle > gap else 0.0, "vehicle ahead")
+				if _obstacle > gap else 0.0, "walker" if obstacle_walker else "vehicle ahead")
 		_hold_at = minf(_hold_at, _obstacle - gap)
 		_blocked_t = _blocked_t + delta if _obstacle_still and v < 0.3 else 0.0
 		if _blocked_t > DEADLOCK and _deadlocked():
@@ -481,6 +545,14 @@ func _plan(v: float, delta: float) -> float:
 	else:
 		_blocked_t = 0.0
 		_horn_t = 0.0
+	# emergency vehicles (_look_sirens)
+	if making_way == WAY_BEHIND:
+		_hold_at = minf(_hold_at, maxf(_way_stop - s, 0.0))
+		target = _limit(target, _reach(_way_stop - s, MAKE_WAY_BRAKE), "making way")
+	elif making_way == WAY_ONCOMING:
+		target = _limit(target, ONCOMING_SLOW, "making way")
+	if _siren_stop < INF:
+		target = _stop_within(target, _siren_stop - GAP, "emergency vehicle")
 	if not _pass.is_empty():
 		target = _limit(target, PASS_SPEED, "overtaking")
 		if s > float(_pass["to"]) + PASS_IN:
@@ -581,6 +653,24 @@ func _next_route() -> void:
 		_next_stop += 1
 
 
+## Gives its car up for good (stolen: traffic.gd release_car): no longer its driver, the car let go where it stands
+## (unfrozen, its own physics on), its indicators off, its driver look-alike gone. The bot is done with.
+func abandon() -> void:
+	seized = false
+	_forget_ignored()
+	_forget_sights()
+	_pass = {}
+	gliding = false
+	_held = false
+	_due = -1
+	state = STOWED
+	idle = true
+	car.set_indicator(0)
+	_freeze(false)
+	car.set_pilot(null)                     # (its driver look-alike hidden)
+	car.set_physics_process(true)
+
+
 ## Off the map (hidden, out of the physics) until traffic.gd sends it out again (put).
 func _stow() -> void:
 	state = STOWED
@@ -595,6 +685,7 @@ func _stow() -> void:
 	obstacle_car = null
 	_pass = {}
 	_forget_ignored()
+	_forget_sights()
 	_sync_ticks()
 
 
@@ -617,19 +708,22 @@ func _place(xf: Transform3D) -> void:
 
 
 ## Puts the bus on route `index` (into line["routes"]) with its reference point `d` m along it, driving at `speed`
-## (traffic.gd sends it out with it; tests).
+## (traffic.gd sends it out with it; tests). Another driver: its own reaction time.
 func put(index: int, d: float, speed := 0.0) -> void:
 	_set_route(index)
 	s = d
 	state = DRIVE
 	idle = false
+	reaction = draw_reaction()
 	_timer = 0.0
 	_leaving_s = -INF
 	_stuck_t = 0.0
 	_blocked_t = 0.0
 	_still_t = 0.0
 	_held = false
+	seized = false
 	_forget_ignored()
+	_forget_sights()
 	_pass = {}
 	obstacle_car = null
 	_obstacle = INF
@@ -645,7 +739,8 @@ func put(index: int, d: float, speed := 0.0) -> void:
 
 # ---------------------------------------------------------------- looking around
 
-## Vehicles in the way on the path ahead, and whether to wait at the next give-way line.
+## Vehicles and walkers in the way on the path ahead, emergency vehicles to make way for, and whether to wait at the
+## next give-way line.
 func _look(v: float) -> void:
 	var front := s + nose
 	var reach := 10.0 + v * v / (2.0 * BRAKE) + 15.0
@@ -653,10 +748,15 @@ func _look(v: float) -> void:
 	_obstacle_still = false
 	var tip := at(front)
 	obstacle_car = null
-	var cars: Array = traffic.snap_cars
-	var pos: PackedVector2Array = traffic.snap_pos
-	var reaches: PackedFloat32Array = traffic.snap_reach
-	for k: int in traffic.near(tip, reach + traffic.snap_reach_max + 5.0):
+	obstacle_walker = null
+	for who: Variant in _noticed.keys():
+		if _clock - float(_noticed[who][1]) > FORGET:
+			_noticed.erase(who)
+	var seen: RefCounted = traffic.seen
+	var cars: Array = seen.cars
+	var pos: PackedVector2Array = seen.pos
+	var reaches: PackedFloat32Array = seen.reach
+	for k: int in seen.near(tip, reach + seen.reach_max + 5.0):
 		var c: Node3D = cars[k]
 		if c == car or _ignored.has(c):
 			continue
@@ -667,7 +767,7 @@ func _look(v: float) -> void:
 		# it passes by; both waiting for each other would never end. Gliding (nobody sees it): any facing the other way.
 		var cq := project(centre, front - 5.0, front + reach + 10.0)
 		var path_dir := (at(cq.x + 1.0) - at(cq.x)).normalized()
-		if (cq.y - _shift(cq.x - nose) < -ONCOMING_SIDE or gliding) and traffic.snap_fwd[k].dot(path_dir) < -0.5:
+		if (cq.y - _shift(cq.x - nose) < -ONCOMING_SIDE or gliding) and seen.fwd[k].dot(path_dir) < -0.5:
 			continue
 		# its footprint, looked for about its middle along the path: none of it is in the way when that is out of reach
 		var rk := reaches[k] + 4.0
@@ -677,7 +777,7 @@ func _look(v: float) -> void:
 		var lo := maxf(front - 1.0, cq.x - rk)
 		var hi := minf(front + reach, cq.x + rk)
 		var hit := INF
-		for p in traffic.snap_footprint(k):
+		for p in seen.footprint(k):
 			var q := project(p, lo, hi)
 			if q.x > front - 0.5 and q.x < front + reach and absf(q.y - _shift(q.x - nose)) < half_width + SIDE_MARGIN:
 				hit = minf(hit, q.x - front)
@@ -685,11 +785,16 @@ func _look(v: float) -> void:
 			_obstacle = maxf(hit, 0.0)
 			obstacle_car = c
 			var dir := (at(front + hit + 1.0) - at(front + hit)).normalized()
-			var vel: Vector2 = traffic.snap_vel[k]
+			var vel: Vector2 = seen.vel[k]
 			_obstacle_v = maxf(vel.dot(dir), 0.0)
 			_obstacle_still = vel.length() < 0.5
 			_obstacle_parked = _obstacle_still and (not c.is_bot() or c.broken) \
 					and _room_at(front + hit) > c.half_extents.x + half_width + PASS_ROOM
+	if not seen.walkers.is_empty():
+		_look_walkers(seen, front, reach, tip)
+	_siren_stop = INF
+	if not seen.sirens.is_empty():
+		_look_sirens(seen, front, v)
 	# the next give-way line ahead
 	var yields: Array = route["yields"]
 	var nxt := -1
@@ -703,6 +808,179 @@ func _look(v: float) -> void:
 	_conflict = false
 	if _yield >= 0 and float(yields[_yield]["s"]) - front < maxf(60.0, v * v / (2.0 * BRAKE) + 15.0):
 		_conflict = _junction_busy(yields[_yield], front)
+
+
+## Walkers (`seen`, perception.gd) in its way ahead within `reach` m of its front, or on their way into it (where they
+## will be WALKER_AHEAD s on, or crossing it in between), on its road (not on a bridge over it): the nearest one, when
+## nearer than the vehicles in the way, is what it stops for (`obstacle_walker`).
+func _look_walkers(seen: RefCounted, front: float, reach: float, tip: Vector2) -> void:
+	var side := half_width + WALKER_SIDE
+	var pos: PackedVector2Array = seen.walker_pos
+	var vel: PackedVector2Array = seen.walker_vel
+	for k: int in seen.walkers_near(tip, reach + 10.0):
+		var p := pos[k]
+		if p.distance_to(tip) > reach + 10.0:
+			continue
+		# (projected within [front - 1, front + reach]: a point beyond lands on an end, left out)
+		var a := project(p, front - 1.0, front + reach)
+		var b := project(p + vel[k] * WALKER_AHEAD, front - 1.0, front + reach)
+		var la := a.y - _shift(a.x - nose)
+		var lb := b.y - _shift(b.x - nose)
+		var hit := INF
+		if a.x > front - 0.5 and absf(la) < side:
+			hit = a.x
+		if b.x > front - 0.5 and absf(lb) < side:
+			hit = minf(hit, b.x)
+		if hit == INF and signf(la) != signf(lb) and minf(a.x, b.x) > front - 0.5:
+			hit = minf(a.x, b.x)
+		if hit > front + reach - 0.5 or absf(float(seen.walker_y[k]) - _surface(hit, at(hit))) > WALKER_HEIGHT:
+			continue
+		if not _notice(seen.walkers[k]):
+			continue                        # not reacted to yet
+		hit -= front
+		if hit < _obstacle:
+			_obstacle = maxf(hit, 0.0)
+			obstacle_car = null
+			obstacle_walker = seen.walkers[k]
+			var dir := (at(front + hit + 1.0) - at(front + hit)).normalized()
+			_obstacle_v = maxf(vel[k].dot(dir), 0.0)
+			_obstacle_still = vel[k].length() < 0.5
+			_obstacle_parked = false
+
+
+## Emergency vehicles with their siren on, moving (perception.gd `sirens`): one coming up behind on its road, or
+## alongside, makes it pull over and stop (WAY_BEHIND), one coming the other way pull over and slow down
+## (WAY_ONCOMING); one whose course crosses its path ahead within SIREN_ACROSS s, it stops short of where
+## (`_siren_stop`).
+func _look_sirens(seen: RefCounted, front: float, v: float) -> void:
+	var here := at(s)
+	var way := WAY_NONE
+	for k: int in seen.sirens:
+		var c: Node3D = seen.cars[k]
+		var vel: Vector2 = seen.vel[k]
+		var p: Vector2 = seen.pos[k]
+		if c == car or vel.length_squared() < SIREN_MOVING * SIREN_MOVING \
+				or p.distance_squared_to(here) > (SIREN_BEHIND + SIREN_AHEAD) * (SIREN_BEHIND + SIREN_AHEAD):
+			continue
+		if not _notice(c):
+			continue                        # heard, not reacted to yet
+		var q := project(p, s - tail - SIREN_BEHIND, front + SIREN_AHEAD)
+		var on_road := p.distance_to(at(q.x)) < ROAD_SIDE
+		var along := vel.normalized().dot((at(q.x + 1.0) - at(q.x)).normalized())
+		if on_road and along > 0.5:
+			if q.x < front + 2.0:
+				way = WAY_BEHIND
+			continue                        # ahead, going its way: one of the vehicles ahead
+		if on_road and along < -0.5:
+			if q.x > s - tail and way == WAY_NONE:
+				way = WAY_ONCOMING
+			continue
+		_siren_stop = minf(_siren_stop, _crossing(p, vel, front) - float(seen.reach[k]))
+	if way == WAY_NONE:
+		return
+	if way == WAY_BEHIND and making_way != WAY_BEHIND:
+		_way_stop = s + maxf(MAKE_WAY_STOP, v * v / (2.0 * MAKE_WAY_BRAKE))
+	if way != making_way:
+		_aside_room = _room_right(s, _way_stop if way == WAY_BEHIND else s + MAKE_WAY_STOP)
+	making_way = way
+	_way_t = 0.0
+
+
+## m from its front to where a vehicle at `p` driving at `vel` (pipeline x/y) crosses its path ahead (within
+## SIREN_AHEAD m) in the next SIREN_ACROSS s, on a straight course; INF when it does not.
+func _crossing(p: Vector2, vel: Vector2, front: float) -> float:
+	var ray := vel * SIREN_ACROSS
+	var n := _pts.size()
+	for i in range(clampi(floori(front / _step), 0, n - 2), clampi(ceili((front + SIREN_AHEAD) / _step), 0, n - 2) + 1):
+		var a := _pts[i]
+		var ab := _pts[i + 1] - a
+		var den := ray.cross(ab)
+		if absf(den) < 1e-6:
+			continue                        # parallel
+		var ap := a - p
+		var t := ap.cross(ab) / den         # along its course
+		var u := ap.cross(ray) / den        # along this segment
+		if t >= 0.0 and t <= 1.0 and u >= 0.0 and u <= 1.0:
+			return maxf((i + u) * _step - front, 0.0)
+	return INF
+
+
+## How far right of its path (m, PULL_RIGHT at most) it may pull over with its reference point from `from` to `to` m
+## along it, at its front, middle and back, at both ends and half way: across its right side the ground sampled every
+## KERB_SAMPLE m (rays down onto the terrain) up to a step of KERB_STEP m (a kerb: the road's camber or a hillside's
+## cross slope rises gradually), and a ray out at BODY_PROBE m up (posts, walls, trunks, parked vehicles); SIDE_CLEAR m
+## short of what it finds. Gliding (nobody sees it), none.
+func _room_right(from: float, to: float) -> float:
+	if gliding:
+		return 0.0
+	var space: PhysicsDirectSpaceState3D = car.get_world_3d().direct_space_state
+	var own: Array[RID] = []
+	for b: CollisionObject3D in car.bodies():
+		own.append(b.get_rid())
+	var body := PhysicsRayQueryParameters3D.new()
+	body.collision_mask = Layers.SOLID | Layers.VEGETATION | Layers.PROPS | Layers.VEHICLES
+	body.exclude = own
+	var down := PhysicsRayQueryParameters3D.new()
+	down.collision_mask = Layers.TERRAIN
+	var reach := half_width + PULL_RIGHT + SIDE_CLEAR
+	var room := PULL_RIGHT
+	for d: float in [from, (from + to) * 0.5, to]:
+		for z: float in [nose - 0.3, (nose - tail) * 0.5, 0.3 - tail]:
+			var p := at(d + z)
+			var t := (at(d + z + 1.0) - p).normalized()
+			var r := Vector2(t.y, -t.x)     # right
+			var y := _surface(d + z, p)
+			# the kerb: a step in the ground across
+			var prev := NAN
+			var off := half_width - 0.2
+			while off <= reach:
+				var q := p + r * off
+				down.from = Vector3(q.x, y + 1.5, -q.y)
+				down.to = Vector3(q.x, y - 1.5, -q.y)
+				var hit := space.intersect_ray(down)
+				var h: float = hit["position"].y if not hit.is_empty() else NAN
+				if not is_nan(prev) and not is_nan(h) and (h - prev > KERB_STEP or prev - h > KERB_STEP * 2.0):
+					room = minf(room, maxf(off - half_width - SIDE_CLEAR, 0.0))
+					break
+				prev = h
+				off += KERB_SAMPLE
+			# what stands there
+			var a := p + r * (half_width - 0.2)
+			var b := p + r * reach
+			body.from = Vector3(a.x, y + BODY_PROBE, -a.y)
+			body.to = Vector3(b.x, y + BODY_PROBE, -b.y)
+			var hit := space.intersect_ray(body)
+			if not hit.is_empty():
+				room = minf(room, maxf((flat(hit["position"]) - p).dot(r) - half_width - SIDE_CLEAR, 0.0))
+	return room
+
+
+## `who` (a walker, an emergency vehicle) is in its sight this look: true once it has been for `reaction` s (in sight
+## again within FORGET s, it was never out of mind).
+func _notice(who: Object) -> bool:
+	var n: Array = _noticed.get(who, [])
+	if n.is_empty():
+		_noticed[who] = [_clock, _clock]
+		return reaction <= 0.0
+	n[1] = _clock
+	return _clock - float(n[0]) >= reaction
+
+
+## A driver's reaction time: log-normal about REACTION (REACTION_SPREAD), within REACTION_RANGE.
+func draw_reaction() -> float:
+	return clampf(REACTION * exp(_rng.randfn(0.0, REACTION_SPREAD)), REACTION_RANGE.x, REACTION_RANGE.y)
+
+
+## Forgets the walkers and emergency vehicles it saw (put, _stow).
+func _forget_sights() -> void:
+	_noticed.clear()
+	obstacle_walker = null
+	making_way = WAY_NONE
+	_aside = 0.0
+	_aside_room = 0.0
+	_way_t = 0.0
+	_way_stop = INF
+	_siren_stop = INF
 
 
 ## Velocity (pipeline x/y) of vehicle `c`: a bot gliding along its path is frozen (no physics velocity), yet it moves.
@@ -757,13 +1035,13 @@ func _overtake(front: float) -> void:
 	if _next_stop < route["stops"].size() and float(route["stops"][_next_stop]["s"]) < past:
 		return
 	# the lane it takes free: nothing in it for PASS_CLEAR m past the vehicle, nothing just past it in its own
-	var cars: Array = traffic.snap_cars
+	var cars: Array = traffic.seen.cars
 	var tip := at(front)
 	for k in cars.size():
 		var o: Node3D = cars[k]
-		if o == car or o == c or traffic.snap_pos[k].distance_to(tip) > x1 - front + PASS_CLEAR + 20.0:
+		if o == car or o == c or traffic.seen.pos[k].distance_to(tip) > x1 - front + PASS_CLEAR + 20.0:
 			continue
-		var q := project(traffic.snap_pos[k], front - 10.0, x1 + PASS_CLEAR)
+		var q := project(traffic.seen.pos[k], front - 10.0, x1 + PASS_CLEAR)
 		if q.x < front - 10.0 or q.x > x1 + PASS_CLEAR:
 			continue
 		if q.y < 1.5 and q.y > lat - half_width - 2.0 and (q.y < -1.5 or q.x < x1 + 15.0):
@@ -778,16 +1056,17 @@ func _room_at(d: float) -> float:
 	return _room[clampi(roundi(d / _step), 0, _room.size() - 1)]
 
 
-## Offset (m right of the path) of the reference point `d` m along it: 0 but while overtaking.
+## Offset (m right of the path) of the reference point `d` m along it: 0 but while overtaking (left) or pulled over to
+## make way (right, `_aside`).
 func _shift(d: float) -> float:
 	if _pass.is_empty():
-		return 0.0
+		return _aside
 	var w := clampf(minf((d - (float(_pass["from"]) - PASS_IN)) / PASS_IN, (float(_pass["to"]) + PASS_IN - d) / PASS_IN),
 			0.0, 1.0)
-	return float(_pass["lat"]) * w * w * (3.0 - 2.0 * w)
+	return _aside + float(_pass["lat"]) * w * w * (3.0 - 2.0 * w)
 
 
-## Where the reference point heads for `d` m along the path: on it, or beside it while overtaking.
+## Where the reference point heads for `d` m along the path: on it, or beside it while overtaking or making way.
 func _lane(d: float) -> Vector2:
 	var p := at(d)
 	var sh := _shift(d)
@@ -856,9 +1135,9 @@ static func footprint(c: Node3D) -> PackedVector2Array:
 func _junction_busy(y: Dictionary, front: float) -> bool:
 	var j := Vector2(y["x"], y["y"])
 	var r: float = y["r"]
-	var cars: Array = traffic.snap_cars
-	var pos: PackedVector2Array = traffic.snap_pos
-	for k: int in traffic.near(j, JUNCTION_REACH):
+	var cars: Array = traffic.seen.cars
+	var pos: PackedVector2Array = traffic.seen.pos
+	for k: int in traffic.seen.near(j, JUNCTION_REACH):
 		var c: Node3D = cars[k]
 		if c == car:
 			continue
@@ -866,7 +1145,7 @@ func _junction_busy(y: Dictionary, front: float) -> bool:
 		var d := p.distance_to(j)
 		if d > JUNCTION_REACH:
 			continue
-		var vel: Vector2 = traffic.snap_vel[k]
+		var vel: Vector2 = traffic.seen.vel[k]
 		# behind the bus or beside it in its lane: not crossing its way
 		var q := project(p, front - 40.0, front + 2.0)
 		if absf(q.y) < 3.0 and q.x < front + 1.0:
@@ -901,6 +1180,8 @@ func _indicators(delta: float) -> void:
 			side = int(t[2])
 			break
 	_leave_t += delta
+	if making_way == WAY_BEHIND and state == DRIVE:
+		side = -1                           # pulling over to the right for an emergency vehicle
 	if side == 0:
 		if state == DWELL:
 			side = 1 if _timer >= _dwell + car.DOOR_TIME * 0.5 and not car.doors_open else 0

@@ -24,7 +24,7 @@ extends Node
 ## job's (solo_pay); PLATEAU_JOB_LOG=1 prints the log lines a dedicated server prints.
 
 const Car = preload("res://scripts/car.gd")
-const BusBot = preload("res://scripts/bus_bot.gd")
+const BusBot = preload("res://scripts/traffic/bus_bot.gd")
 const BusJob = preload("res://scripts/online/bus_job.gd")
 const Biplane = preload("res://scripts/plane.gd")
 const Economy = preload("res://scripts/economy.gd")

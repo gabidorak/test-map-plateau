@@ -356,8 +356,9 @@ func _route_distance_su(k: int, su: Vector2) -> Variant:
 ## The players on foot and the vehicles near the line this tick: [global position, (s, u) on the centreline, half
 ## width]. Projected once per tick for every train; most vehicles are far from the line and cost one lookup.
 ## The players on foot and the vehicles out near the line: [global position, (s, u) on the centreline (rail_map.gd
-## project()), half width, the vehicle or null]. The vehicles from traffic.gd's snapshot where it runs the bots (taken
-## this tick, their map positions at hand: one grid lookup each for those far from the line), else from game.cars.
+## project()), half width, the vehicle or null]. The vehicles from what traffic.gd's bots see where it runs them
+## (traffic.seen, scripts/traffic/perception.gd: taken this tick, their map positions at hand: one grid lookup each for
+## those far from the line), else from game.cars.
 func _near_line() -> Array:
 	var out: Array = []
 	if game == null:
@@ -366,10 +367,10 @@ func _near_line() -> Array:
 		_add_near(out, p, 0.0, null)
 	var traffic: Node = get_parent()
 	if not traffic.bots.is_empty():
-		var pos: PackedVector2Array = traffic.snap_pos
+		var pos: PackedVector2Array = traffic.seen.pos
 		for k in pos.size():
 			if _rm.near(pos[k]):
-				var car: Node3D = traffic.snap_cars[k]
+				var car: Node3D = traffic.seen.cars[k]
 				if is_instance_valid(car):
 					_add_near(out, car.global_position, 1.0, car)
 		return out

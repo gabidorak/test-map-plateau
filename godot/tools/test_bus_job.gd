@@ -13,7 +13,7 @@ extends "res://tools/test_base.gd"
 ## - `--watcher=TOKEN`: sees that bot bus leave the map, and come back once the driver has left.
 ## Exit code 1 on failure.
 
-const BusBot = preload("res://scripts/bus_bot.gd")
+const BusBot = preload("res://scripts/traffic/bus_bot.gd")
 const ROUTES := "res://world/bus_routes.json"
 const PAY_BAND := Vector2(12000.0, 18000.0)    # € an hour a bot driving the line on duty earns (ONLINE_MILESTONES.md O5)
 
