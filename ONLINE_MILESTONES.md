@@ -276,6 +276,32 @@ grotto fountain, an outdoor and an indoor pool, 5 M € with per-owner instances
 - Test: `tools/test_villaEnPierreCoteaux.gd` (the grounds cleared, a passer-by kept out, bought, let in and the gate opening, the
   grand stair walked up to the first floor, the hall's void, a car out in the garage, out of the grounds).
 
+## O12 — Items and non-lethal weapons *(Thomas's idea of 2026-11-15, branch `inventaireArmes`)*
+
+**Goal:** players own things: weapons first (non-lethal only), later food, medkits and the like; bought, found, lost
+when the police arrest them. One inventory system for every kind of item, built to last.
+
+Thomas's choices (2026-11-15): slots and stacks with a hotbar (5 on the keys 1-5, a bag of 20, I opens it); anyone
+(players and bots) may be stunned, but no weapon comes out in the safe places and nobody is stunned again in the 2 s
+after getting up; someone stunned can be carried, and struggles free with arrow keys shown one at a time (longer and
+harder than a carjacking's); ammunition is an item; Sandbox gives everything for nothing, the PTA Online test starts
+with a kit, Escape from Plateau keeps its own arsenal for now. The victim drops to the ground.
+
+- Step 1 (built): `data/items.json` (the catalogue: taser, net gun, their cartridges and shells), `scripts/items/`
+  (`inventory.gd`, a data-only container any owner can use; `items.gd`, Main/Items: the host's inventories, the shots it
+  checks, the reloads on its clock; `hands.gd`, `weapons/`: one script per weapon's behaviour; `hotbar_hud.gd`,
+  `inventory_panel.gd`, drawn icons, synthesized sounds), `scripts/people/` (`person.gd`, what a person is: the player,
+  the other players, the bots on foot; `people.gd`, Main/People: stunned, carried, struggling, decided by the host;
+  `people_fx.gd`: electric arcs and nets drawn by two shaders, no CPU per frame). Taser: hitscan 12 m, 3 s, reloads
+  in 2 s; net gun: a net flying at 24 m/s, 9 m, 5 s, reloads in 4 s. The game modes say who has what (`starting_items`,
+  `free_items`) and where the safe places are (`safe_place`: PTA Online's garages, Prestige Motors, the flats). Tests
+  `tools/test_items.gd` (solo) and `tools/test_lan_items.sh` (two players).
+- Step 2: the accounts service keeps each account's items (a table like `vehicles`, server API: Gabriel's OK), a shop
+  sells them (prices in `data/prices.json`), PTA Online's official server allows them.
+- Then: items on the ground (dropped, found: Escape's `loot.gd` made general), food and medkits (a use per item),
+  handcuffs and the police (arrests take what is `confiscable`; someone carried put in a car's back seat or boot),
+  Escape from Plateau's arsenal moved onto the same inventory.
+
 ## Later
 
 Bus upgrades and liveries, bot passengers at stops, more jobs (race prizes, taxi, delivery, police, ambulance),
@@ -297,3 +323,4 @@ a real fire station building at #1289.
 | O9 Properties | 🟡 | Proposal (branch `proprietesOnline`). Step 1 under way: the studio of the Logements de l'X 19 (3rd floor, north face, ~50 m²) in the offline test: `online/properties.gd`, `studio_builder.gd`, `property_panel.gd`, `data/properties.json`, open window frames in `logements_x_builder.gd`; the residents' car park and the garage option's lift (garage kinds `residence` and `private` in `garages.gd`); instances (players seen only in the same flat) and visits (doors open / locked). test_properties.gd green, test_properties_online.sh green (2 players). Online owners come from PLATEAU_ONLINE_HOMES until step 2. |
 | O10 Losplatos Custom | 🟡 | Branch `losplatosCustom`: the shop in place of #758, its door, repairs and paint, its paved site, the tow truck job. test_losplatos.gd and test_tow.gd green. Needs the map rebuilt (#758 left out). |
 | O11 Villa de charme | 🟡 | Branch `villaLuxe`: the estate in place of #628, #659, #671, #672 (and #620), its house, rooms, pools, fountain, gate and garage; buying and entering it in PTA Online (offline test; online owners from PLATEAU_ONLINE_HOMES). test_villaEnPierreCoteaux.gd green. Needs the map rebuilt. |
+| O12 Items and weapons | 🟡 | Branch `inventaireArmes`: step 1 (inventory, hotbar, taser, net gun, stuns, carrying, struggling) in Sandbox and the PTA Online test. `test_items.gd`, `test_lan_items.sh`. Step 2 (accounts storage, shop) to do. |

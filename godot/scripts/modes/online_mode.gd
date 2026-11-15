@@ -36,6 +36,10 @@ extends "res://scripts/modes/game_mode.gd"
 ## The PTA Online test (game.gd online_test: --online-test, or the account page's button in debug builds) is that solo
 ## game for people: TEST_MONEY € (a refill in the in-game menu), every unarmed vehicle in the garage, the fly camera, and
 ## the in-game menu's shortcuts to the bus depot, the fire station and Prestige Motors. Every other rule is the server's.
+## Items (scripts/items/items.gd): only in the PTA Online test for now (TEST_ITEMS to start with, anything from the
+## inventory for nothing), until the accounts service keeps them and a shop sells them. The safe places (safe_place),
+## where no weapon comes out and nobody is stunned: SAFE_RADIUS m round a garage's terminal (the shops', the boat
+## hire's...), Prestige Motors' showroom, the flats.
 
 const Garages = preload("res://scripts/online/garages.gd")
 const GaragePanel = preload("res://scripts/online/garage_panel.gd")
@@ -71,6 +75,8 @@ const PLACE_KINDS := {"public": "garage", "depot": "depot", "fire": "fire", "res
 const TOW := 15.0                           # s a broken player vehicle stays before it is towed back (PLATEAU_ONLINE_TOW)
 const TEST_MONEY := 10_000_000              # € in the PTA Online test's wallet, at start and at each refill
 const TEST_TRIPS := [["the bus depot", "depot"], ["the fire station", "fire"], ["Prestige Motors", "shop"]]
+const TEST_ITEMS := [["taser", 1], ["taser_cartridge", 10], ["net_gun", 1], ["net_shell", 6]]
+const SAFE_RADIUS := 14.0                   # m round a garage's terminal: a safe place
 
 var hosting := false                        # this peer keeps the garages (solo, host, official server)
 var testing := false                        # the PTA Online test (game.gd online_test): solo, test wallet, fly camera
@@ -105,6 +111,8 @@ var _next_solo := 0
 func allows(feature: String) -> bool:
 	if testing and feature == "fly_camera":
 		return true
+	if feature == "items":
+		return testing
 	return feature not in ["debug_cars", "vehicle_menu", "park_car", "clear_vehicles", "fly_camera", "armed_vehicles"]
 
 
@@ -191,6 +199,26 @@ func begin() -> void:
 	_show_wallet()
 	if _beside == "":
 		to_garage(game.spawn_xy)
+
+
+func starting_items() -> Array:
+	return TEST_ITEMS if testing else []
+
+
+func free_items() -> bool:
+	return testing
+
+
+func safe_place(peer: int, pos: Vector3) -> String:
+	if peer != 0 and str(properties.where.get(peer, "")) != "":
+		return "a home"
+	for g: Dictionary in garages.list:
+		if g["kind"] != "private" and (g["terminal"] as Vector3).distance_squared_to(pos) < SAFE_RADIUS * SAFE_RADIUS:
+			return str(g["name"])
+	for s: Node in get_tree().get_nodes_in_group("showroom"):
+		if s.dealer != "" and s.outline.size() > 2 and Geometry2D.is_point_in_polygon(Vector2(pos.x, -pos.z), s.outline):
+			return s.dealer
+	return ""
 
 
 func pause_info() -> String:

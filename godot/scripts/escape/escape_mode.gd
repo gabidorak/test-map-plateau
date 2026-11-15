@@ -145,9 +145,10 @@ var _rng := RandomNumberGenerator.new()
 var _resupplied := -INF                     # when the safehouse last topped us up (game clock)
 
 
+## (No "items": the weapons and kit are arsenal.gd's, until it moves to scripts/items/.)
 func allows(feature: String) -> bool:
 	return feature not in ["debug_cars", "showrooms", "bot_traffic", "trains", "races", "vehicle_menu", "park_car",
-			"clear_vehicles", "night_toggle", "inspect", "fly_camera", "map", "carjack"]
+			"clear_vehicles", "night_toggle", "inspect", "fly_camera", "map", "carjack", "items"]
 
 
 func _ready() -> void:

@@ -10,7 +10,10 @@ extends Node
 ##   (round_hit);
 ## - adds to the help lines (walk_help, extra_help) and to the in-game menu (pause_info, host_actions, player_actions);
 ## - may have panels of its own (ui_open, close_ui), places on the maps (map_places), and refuse a player the wheel of
-##   a vehicle (refuse_drive, host side).
+##   a vehicle (refuse_drive, host side);
+## - says what the players carry (scripts/items/items.gd, when it allows("items")): what they start with
+##   (starting_items), whether the inventory hands items out for nothing (free_items), and its safe places, where no
+##   weapon comes out and nobody is stunned (safe_place).
 ## The defaults keep everything as it was: scripts/modes/sandbox_mode.gd. A new mode is a script extending this one and
 ## a row in modes.gd.
 
@@ -23,7 +26,8 @@ var id := ""                                # its key in modes.gd
 ## salesman), "bot_traffic" (bot buses and cars, and the host's switch for them), "trains" (the RER B), "races",
 ## "vehicle_menu" (U), "park_car" (C), "clear_vehicles" (the host's button), "night_toggle" (N, the settings page's
 ## time of day), "inspect" (F), "fly_camera" (F1), "map" (M, K), "armed_vehicles" (the showroom's armed display car),
-## "carjack" (stealing a bot car standing still: scripts/carjack/carjack.gd).
+## "carjack" (stealing a bot car standing still: scripts/carjack/carjack.gd), "items" (the inventory, the hotbar and the
+## weapons: scripts/items/items.gd).
 func allows(_feature: String) -> bool:
 	return true
 
@@ -93,6 +97,22 @@ func map_places() -> Array:
 ## Host: whether player `peer` may not take the wheel of vehicle `net_id` (net.gd _ask_drive); the mode tells them why.
 func refuse_drive(_net_id: String, _peer: int) -> bool:
 	return false
+
+
+## What each player starts with (scripts/items/items.gd, host side): [[item kind, count], ...] (data/items.json).
+func starting_items() -> Array:
+	return []
+
+
+## Whether the inventory panel hands any item out for nothing (Sandbox).
+func free_items() -> bool:
+	return false
+
+
+## Host and players: the safe place `pos` (global) is in for player `peer` (0: a bot), where weapons stay away and
+## nobody is stunned: its name ("the garage"...), "" when none.
+func safe_place(_peer: int, _pos: Vector3) -> String:
+	return ""
 
 
 ## Our peer id (the modes say how they know it).

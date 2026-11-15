@@ -5,12 +5,15 @@ extends Node3D
 ## have gone by and no player or camera is within LEAVE_SEEN m (or after GONE s whatever), they leave the map.
 ## A walker for the bots (scripts/traffic/perception.gd): they stop for them, run them over if they run out too close.
 ## Nothing collides with them; they follow the ground (WorldQuery, the terrain and the buildings' roofs under them).
+## A person (scripts/people/person.gd) ("n:<seed>", the same on every peer): stunned, they lie on the ground, their
+## running and crying held until they are up again; carried, over the carrier's shoulders.
 
 const Car = preload("res://scripts/car.gd")
 const Kit = preload("res://scripts/build_kit.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
 const WorldQuery = preload("res://scripts/world_query.gd")
 const Perception = preload("res://scripts/traffic/perception.gd")
+const Person = preload("res://scripts/people/person.gd")
 
 const OUT := 0.8                            # s getting out (stepping 1.2 m out from the door)
 const RUN := 4.5                            # m/s
@@ -33,6 +36,9 @@ var _body: Node3D
 var _legs: Array[Node3D] = []
 var _arms: Array[Node3D] = []
 var _bubble: Label3D
+var person_id := ""                         # people.gd: "n:<seed>"
+var _down := false
+var _carry_body: Node3D
 
 
 ## Out of `car`'s driver's door (its left, +X); `seed` the same on every peer (where they run, what they cry).
@@ -52,6 +58,8 @@ func setup(game_node: Node3D, car: Node3D, seed: int) -> void:
 	_build_body()
 	_bubble.text = CRIES[rng.randi() % CRIES.size()]
 	add_to_group(Perception.GROUP)
+	add_to_group(Person.GROUP)
+	person_id = "n:%d" % seed
 	set_meta("plateau", {"type": "npc", "id": "driver of a stolen %s" % car.model_name})
 
 
@@ -66,6 +74,12 @@ func walking() -> bool:
 
 
 func _process(delta: float) -> void:
+	if _carry_body:
+		_follow_carry_body()
+		return
+	if _down:
+		_body.position.y = 0.16
+		return                              # (lying there: the time stands still for them)
 	_t += delta
 	var p := global_position
 	if _t < OUT:
@@ -84,6 +98,56 @@ func _process(delta: float) -> void:
 	_animate(delta)
 	if _t > GONE or (_t > STAY and not _seen()):
 		queue_free()
+
+
+# ---------------------------------------------------------------- a person (scripts/people/person.gd)
+
+## Out of the car, standing: a shot may stun them.
+func person_up() -> bool:
+	return _t > OUT and not _down and _carry_body == null and is_inside_tree()
+
+
+func person_body() -> Node3D:
+	return _body
+
+
+func person_name() -> String:
+	return "the driver"
+
+
+func person_carried() -> bool:
+	return _carry_body != null
+
+
+func set_down(on: bool) -> void:
+	_down = on
+	_bubble.visible = false
+	_lie(on)
+
+
+func carry_on(body: Node3D) -> void:
+	_carry_body = body
+	if body == null:
+		_lie(_down)
+	else:
+		_follow_carry_body()
+
+
+func put_at(pos: Vector3) -> void:
+	global_position = _ground(pos)
+
+
+func _lie(on: bool) -> void:
+	_body.transform = Transform3D(Basis(Vector3.RIGHT, -PI * 0.5) if on else Basis(Vector3.UP, _body.rotation.y),
+			Vector3(0.0, 0.16 if on else 0.0, 0.0))
+
+
+func _follow_carry_body() -> void:
+	if not is_instance_valid(_carry_body) or not _carry_body.is_inside_tree():
+		carry_on(null)
+		return
+	global_position = _carry_body.global_position
+	_body.global_transform = _carry_body.global_transform * Person.CARRY_POSE
 
 
 ## `p` put on the ground under it (as it is where there is none).

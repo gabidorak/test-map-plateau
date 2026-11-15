@@ -1,7 +1,8 @@
 extends "res://tools/test_base.gd"
 ## The PTA Online test (game.gd online_test, online_mode.gd testing): played solo with --online-test, the mode is PTA
 ## Online with its rules, plus TEST_MONEY € and a refill, every unarmed vehicle in the garage, the fly camera and the
-## in-game menu's trips to the bus depot, the fire station and Prestige Motors. ~1 min. Exit 1 on failure.
+## in-game menu's trips to the bus depot, the fire station and Prestige Motors; the items' kit (scripts/items/), no
+## weapon out at a garage's terminal (a safe place). ~1 min. Exit 1 on failure.
 ##   godot --headless --fixed-fps 60 --path . --script res://tools/test_online_test.gd -- --online-test
 
 var _main: Node
@@ -86,6 +87,31 @@ func _run() -> void:
 	if refill.is_valid():
 		refill.call()
 	_check(_main.economy.balance == m.TEST_MONEY and m.test_money == m.TEST_MONEY, "refilled: %d €" % _main.economy.balance)
+
+	# the items (scripts/items/): the test's kit; a garage's terminal is a safe place, no weapon there
+	var items: Node = _main.items
+	_check(items.enabled and items.inventory.count("taser") == 1 and items.inventory.count("net_gun") == 1
+			and items.inventory.count("taser_cartridge") == 10 and items.inventory.count("net_shell") == 6,
+			"the test starts with the items' kit")
+	_action(m, "Test: go to the bus depot").call()
+	for i in 5:
+		await physics_frame
+	_check(m.safe_place(m.me(), _main.player.global_position) != "", "a garage's terminal is a safe place")
+	items.select(0)
+	for i in 3:
+		await physics_frame
+	_check(items.held == -1, "no weapon comes out there")
+	_main.player.teleport(_main.player.global_position + Vector3(40.0, 1.0, 0.0))
+	for i in 3:
+		await physics_frame
+	items.select(0)
+	for i in 3:
+		await physics_frame
+	_check(items.held == 0 and items.hands.kind == "taser", "40 m away: the taser in hand")
+	_action(m, "Test: go to the bus depot").call()
+	for i in 30:
+		await physics_frame
+	_check(items.held == -1, "back at the terminal: put away")
 
 	print("%d failure(s)" % _failures.size())
 	quit(1 if _failures.size() > 0 else 0)

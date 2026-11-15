@@ -161,7 +161,7 @@ func _draw() -> void:
 		var pop := clampf((_t - i * REVEAL) / POP, 0.0, 1.0) if state == "reveal" else 1.0
 		if pop <= 0.0:
 			continue
-		var s := _back_out(pop)
+		var s := back_out(pop)
 		var bounce := 0.0
 		if _hit_t[i] >= 0.0 and _hit_t[i] < 0.25:
 			bounce = sin(_hit_t[i] / 0.25 * PI) * 0.15
@@ -179,7 +179,7 @@ func _draw() -> void:
 		var rect := Rect2(centre - Vector2(half, half), Vector2(half, half) * 2.0)
 		draw_rect(rect, Color(colour, fade))
 		draw_rect(rect, Color(edge, fade * edge.a), false, 3.0 * k)
-		_draw_arrow(centre, half * 0.62, int(sequence[i]), Color(arrow, fade))
+		draw_arrow(self, centre, half * 0.62, int(sequence[i]), Color(arrow, fade))
 	# the time left
 	var bar_y := y0 + box + 18.0 * k
 	var share := clampf(time_left() / time_limit, 0.0, 1.0) if state in ["reveal", "input"] else 0.0
@@ -194,17 +194,18 @@ func _draw() -> void:
 				int(18 * k), Color(1, 1, 1, 0.5))
 
 
-## An arrow `r` px from its middle to its tip, pointing like ARROWS[`k`] (0 up, then clockwise).
-func _draw_arrow(centre: Vector2, r: float, k: int, colour: Color) -> void:
+## An arrow `r` px from its middle to its tip, pointing like ARROWS[`k`] (0 up, then clockwise), drawn on `ci` (also
+## scripts/people/struggle_hud.gd's).
+static func draw_arrow(ci: CanvasItem, centre: Vector2, r: float, k: int, colour: Color) -> void:
 	var pts := PackedVector2Array([Vector2(0, -1), Vector2(0.75, -0.1), Vector2(0.28, -0.1), Vector2(0.28, 0.9),
 			Vector2(-0.28, 0.9), Vector2(-0.28, -0.1), Vector2(-0.75, -0.1)])
 	var turn := k * PI * 0.5
 	for i in pts.size():
 		pts[i] = centre + pts[i].rotated(turn) * r
-	draw_colored_polygon(pts, colour)
+	ci.draw_colored_polygon(pts, colour)
 
 
 ## 0..1 overshooting a little before it settles (a pop).
-static func _back_out(x: float) -> float:
+static func back_out(x: float) -> float:
 	var c := 1.70158
 	return 1.0 + (c + 1.0) * pow(x - 1.0, 3.0) + c * pow(x - 1.0, 2.0)

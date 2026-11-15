@@ -515,7 +515,7 @@ func _add_remote(id: int) -> void:
 	if _remotes.has(id):
 		return
 	var r := RemotePlayer.new()
-	r.setup(player_name(id), player_color(id))
+	r.setup(player_name(id), player_color(id), id)
 	r.visible = false                       # until its first state
 	game.add_child(r)
 	_remotes[id] = r

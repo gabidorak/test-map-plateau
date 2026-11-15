@@ -1,0 +1,71 @@
+{
+	"about": "Every item a player can carry (scripts/items/item_db.gd reads it on every peer: the inventories, the screens, the host's checks). `category`: weapon, ammo (later: food, medical, tool). `stack`: how many fit in one inventory slot. `hotbar`: put on the hotbar first when picked up (things used from the hand). `confiscable`: taken by the police on an arrest (to come). `icon`: the glyph the screens draw (scripts/items/item_icons.gd), in `color`. A weapon: `ammo` (the item it fires), `capacity` (rounds loaded at once), `reload` (s to load one), `cooldown` (s between two shots), `range` (m), `effect` (what a hit does: tased, netted; scripts/items/people.gd), `stun` (s), `shot` (hitscan: there at once; net: a projectile flying at `speed` m/s, falling at `gravity` m/s²), `spread` (rad), `behaviour` (its script in scripts/items/weapons/).",
+	"items": {
+		"taser": {
+			"name": "Taser",
+			"about": "Two darts on wires: whoever they hit drops, shaking, for a few seconds.",
+			"category": "weapon",
+			"stack": 1,
+			"hotbar": true,
+			"confiscable": true,
+			"icon": "taser",
+			"color": "#f2c230",
+			"behaviour": "taser",
+			"ammo": "taser_cartridge",
+			"capacity": 1,
+			"reload": 2.0,
+			"cooldown": 0.4,
+			"range": 12.0,
+			"effect": "tased",
+			"stun": 3.0,
+			"shot": "hitscan",
+			"spread": 0.006
+		},
+		"net_gun": {
+			"name": "Net gun",
+			"about": "A pump-action launcher firing a weighted net: whoever it catches is tangled up on the ground.",
+			"category": "weapon",
+			"stack": 1,
+			"hotbar": true,
+			"confiscable": true,
+			"icon": "net_gun",
+			"color": "#e07b2a",
+			"behaviour": "net_gun",
+			"ammo": "net_shell",
+			"capacity": 1,
+			"reload": 4.0,
+			"cooldown": 0.6,
+			"range": 9.0,
+			"effect": "netted",
+			"stun": 5.0,
+			"shot": "net",
+			"speed": 24.0,
+			"gravity": 4.0,
+			"spread": 0.0
+		},
+		"taser_cartridge": {
+			"name": "Taser cartridge",
+			"about": "One shot of the taser: its two darts and their wires.",
+			"category": "ammo",
+			"stack": 20,
+			"hotbar": false,
+			"confiscable": true,
+			"icon": "cartridge",
+			"color": "#f2c230"
+		},
+		"net_shell": {
+			"name": "Net shell",
+			"about": "One folded net for the net gun.",
+			"category": "ammo",
+			"stack": 10,
+			"hotbar": false,
+			"confiscable": true,
+			"icon": "net_shell",
+			"color": "#e07b2a"
+		}
+	},
+	"effects": {
+		"tased": {"name": "Tased", "fx": "arcs"},
+		"netted": {"name": "Caught in a net", "fx": "net"}
+	}
+}

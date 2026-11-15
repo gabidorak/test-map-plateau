@@ -14,11 +14,14 @@ extends CharacterBody3D
 ## A game mode can slow the player (speed_scale: carrying someone), stop running or jumping, turn the body with the
 ## view (face_aim: a gun in hand), lay it down crawling (set_crawling) and kick the view up (kick: recoil).
 ## The bot drivers look out for the player on foot (scripts/traffic/perception.gd: the walkers, walking()).
+## A person (scripts/people/person.gd): stunned, it lies on the ground unable to move (set_down: `held`),
+## the mouse still looking around; carried, it lies over the carrier's shoulders (carry_on) and goes where they go.
 
 const Layers = preload("res://scripts/physics_layers.gd")
 const Perception = preload("res://scripts/traffic/perception.gd")
 const Prefs = preload("res://scripts/settings.gd")
 const Water = preload("res://scripts/water.gd")
+const Person = preload("res://scripts/people/person.gd")
 
 @export var walk_speed := 4.5
 @export var run_speed := 9.0
@@ -58,6 +61,8 @@ var can_run := true
 var can_jump := true
 var face_aim := false                       # third person: the body faces where the camera looks, not where it walks
 var crawling := false                       # lying on the ground (set_crawling)
+var person_id := "p:1"                      # people.gd: "p:<our peer id>" (set when a game starts)
+var held := false                           # down (people.gd set_down): no walking, running nor jumping
 
 var _yaw := 0.0
 var _pitch := -0.12
@@ -69,6 +74,7 @@ var _step_offset := 0.0                     # camera/body lag after a step up, e
 var _zoom := 4.5                            # third-person camera distance the arm eases to
 var _kick_t := 0.0                          # s since the last swim kick
 var _swim_t := 0.0                          # bobbing clock
+var _carry_body: Node3D                     # the body whose shoulders we lie over (carry_on), or null
 
 @onready var _pivot: Node3D = $Pivot
 @onready var _arm: SpringArm3D = $Pivot/SpringArm3D
@@ -85,12 +91,53 @@ func _ready() -> void:
 	_world_mask = collision_mask
 	_apply_view()
 	add_to_group(Perception.GROUP)
+	add_to_group(Person.GROUP)
 
 
 ## For the bots (scripts/traffic/perception.gd): walking on the map, not in a vehicle's aisle nor left behind for
 ## the fly camera (hidden at the wheel or in a seat, they are not looked at either).
 func walking() -> bool:
 	return active and not is_instance_valid(carrier)
+
+
+## people.gd: on the map, shown, standing (not in a vehicle, nor lying, nor carried): a shot may stun us.
+func person_up() -> bool:
+	return visible and process_mode != Node.PROCESS_MODE_DISABLED and not is_instance_valid(carrier) and not held \
+			and _carry_body == null
+
+
+func person_body() -> Node3D:
+	return _body
+
+
+func person_name() -> String:
+	return "you"
+
+
+func person_carried() -> bool:
+	return _carry_body != null
+
+
+## people.gd: down on the ground, unable to move (`on`), or up again.
+func set_down(on: bool) -> void:
+	held = on
+	set_crawling(on)
+	if on:
+		velocity = Vector3(0.0, minf(velocity.y, 0.0), 0.0)
+
+
+## people.gd: carried over the shoulders of `body` (a person's body), or put down (null; put_at places us).
+func carry_on(body: Node3D) -> void:
+	_carry_body = body
+	get_node("CollisionShape3D").set_deferred("disabled", body != null)
+	if body == null:
+		_body.transform = Transform3D(Basis(Vector3.RIGHT, -PI * 0.5) if crawling else Basis(),
+				Vector3(0.0, 0.33 if crawling else 0.0, 0.0))
+
+
+## people.gd: standing (or lying) at `pos`, put down there.
+func put_at(pos: Vector3) -> void:
+	teleport(pos)
 
 
 ## Starts (vehicle) or stops (null) following a vehicle's motion.
@@ -258,13 +305,17 @@ func _move_input() -> Vector2:
 
 
 func _physics_process(delta: float) -> void:
+	if _carry_body != null:
+		_follow_carry_body()
+		return
 	_follow_carrier()
 	var scripted := scripted_input != null
-	var input := _move_input()
-	var running := (scripted_run if scripted else (active and Input.is_action_pressed("run"))) and can_run
+	var input := _move_input() if not held else Vector2.ZERO
+	var running := (scripted_run if scripted else (active and Input.is_action_pressed("run"))) and can_run and not held
 	var space_down := Input.is_action_pressed("jump")
 	wait_jump_release = wait_jump_release and space_down
-	var jumping := (scripted_jump if scripted else (active and space_down and not wait_jump_release)) and can_jump
+	var jumping := (scripted_jump if scripted else (active and space_down and not wait_jump_release)) and can_jump \
+			and not held
 
 	var water_y := NAN if is_instance_valid(carrier) else Water.surface_at(global_position)
 	var was_wet := water_depth > 0.0
@@ -315,6 +366,17 @@ func _physics_process(delta: float) -> void:
 		_body.rotation.y = _yaw
 	elif dir.length_squared() > 0.01:
 		_body.rotation.y = lerp_angle(_body.rotation.y, atan2(-dir.x, -dir.z), minf(12.0 * delta, 1.0))
+
+
+## Carried: our feet by the carrier's, our body across their shoulders (person.gd CARRY_POSE), the eye over it.
+func _follow_carry_body() -> void:
+	if not is_instance_valid(_carry_body) or not _carry_body.is_inside_tree():
+		carry_on(null)
+		return
+	global_position = _carry_body.global_position + Vector3.UP * 1.1
+	velocity = Vector3.ZERO
+	_body.global_transform = _carry_body.global_transform * Person.CARRY_POSE
+	_pivot.position.y = _eye()
 
 
 ## Height of the camera pivot: the eye in first person, a little lower in third, near the ground crawling.

@@ -23,6 +23,10 @@ extends Node3D
 ## player in whichever of its two sections they stand (Car.carrier_at).
 ## The horse (scripts/horse.gd, in the vehicle menu) is got on and off with E: Space jumps, over fences too.
 ## The lakes and ponds are water (scripts/water.gd): the player swims, vehicles float a moment then sink, the horse swims.
+## Items (scripts/items/items.gd, Main/Items; in the game modes that allow("items")): an inventory (I) and a hotbar (1 to
+## 5), the non-lethal weapons in hand (the taser, the net gun: left mouse fires, right aims, R reloads), checked by the
+## host. A person hit drops stunned (scripts/people/people.gd, Main/People): E picks them up over the shoulders, G puts
+## them down; carried, they struggle free with the arrow keys once they come to.
 ## The jet-ski (scripts/jet_ski.gd, in the vehicle menu) is parked on the nearest lake or pond (JET_SKI_REACH; on land
 ## beside the player when there is none), got on with E and off with Space, into the water.
 ## The biplane (scripts/plane.gd, in the vehicle menu) is got in and out of like a car, and flies. The armed one fires
@@ -114,6 +118,8 @@ const Chat = preload("res://scripts/chat.gd")
 const PlayerList = preload("res://scripts/player_list.gd")
 const Traffic = preload("res://scripts/traffic/traffic.gd")
 const Carjack = preload("res://scripts/carjack/carjack.gd")
+const Items = preload("res://scripts/items/items.gd")
+const People = preload("res://scripts/people/people.gd")
 const Night = preload("res://scripts/night.gd")
 const Losplatos = preload("res://lots/losplatos/losplatos.gd")
 const AllSuites = preload("res://lots/allSuites/allsuites.gd")
@@ -164,6 +170,8 @@ var picker: Picker
 var breakables: Breakables
 var traffic: Traffic
 var carjack: Carjack                        # stealing bot cars (Main/Carjack)
+var people: People                          # people stunned, carried (Main/People)
+var items: Items                            # the players' inventories and weapons (Main/Items)
 var night: Night
 var losplatos: Losplatos                    # Losplatos Custom, the repair and paint shop (lots/losplatos/)
 var allsuites: AllSuites                    # All Suites Study, the students' residence in place of #184 (lots/allSuites/)
@@ -261,6 +269,15 @@ func _ready() -> void:
 	carjack.name = "Carjack"
 	carjack.game = self
 	add_child(carjack)
+	people = People.new()
+	people.name = "People"
+	people.game = self
+	add_child(people)
+	items = Items.new()
+	items.name = "Items"
+	items.game = self
+	items.people = people
+	add_child(items)
 	Lots.spawn(self)                        # the lots' builds (builder/lots.gd: Losplatos, All Suites, the villa...)
 	if staged:
 		await get_tree().process_frame      # (the loader's screen moves on: the trains have read the whole line)
@@ -523,6 +540,7 @@ func start_solo() -> void:
 	_begin()
 	await _start_world(pacer)
 	game_mode.begin()
+	_begin_systems()
 	if pacer:
 		_update_loading("Ready", 1.0)
 		await _finish_loading()
@@ -567,6 +585,7 @@ func start_host() -> void:
 	_begin()
 	await _start_world(pacer)
 	game_mode.begin()
+	_begin_systems()
 	if pacer:
 		_update_loading("Ready", 1.0)
 		await _finish_loading()
@@ -599,6 +618,7 @@ func start_dedicated() -> void:
 	_update_poll_t = UPDATE_POLL
 	_start_world()
 	game_mode.begin()
+	_begin_systems()
 	if _args.has("stats"):
 		var stats: Node = preload("res://scripts/server_stats.gd").new()
 		stats.name = "Stats"
@@ -681,6 +701,7 @@ func _on_joined() -> void:
 	if game_mode == null:                   # (a host of an older build would have been refused)
 		set_game_mode(Modes.DEFAULT)
 	game_mode.begin()
+	_begin_systems()
 	if loading:
 		_update_loading("Ready", 1.0)
 		_finish_loading()
@@ -725,6 +746,12 @@ func back_to_menu(reason := "") -> void:
 
 
 ## From the welcome menu into the game.
+## After the game mode's begin: the systems every mode shares (people stunned and carried, the items).
+func _begin_systems() -> void:
+	people.begin()
+	items.begin()
+
+
 func _begin() -> void:
 	if menu:
 		menu.queue_free()
@@ -932,6 +959,8 @@ func set_quality(level: String) -> void:
 	env.glow_enabled = _high["glow"] and not low_quality
 	get_viewport().msaa_3d = _high["msaa"] if high else Viewport.MSAA_DISABLED
 	get_viewport().screen_space_aa = _high["aa"] if high else Viewport.SCREEN_SPACE_AA_FXAA
+	if people and people.fx:
+		people.fx.low_quality = low_quality
 	if _help:
 		_update_help()
 
@@ -1524,11 +1553,12 @@ func set_pause_open(on: bool) -> void:
 	_update_controls()
 
 
-## True while the vehicle menu, the in-game menu, the full-screen map, the chat line or a game mode's panel is open, or
-## while the player breaks into a car (scripts/carjack/carjack_hud.gd takes the keys).
+## True while the vehicle menu, the in-game menu, the full-screen map, the chat line, the inventory or a game mode's panel
+## is open, or while the player breaks into a car (scripts/carjack/carjack_hud.gd takes the keys).
 func ui_open() -> bool:
 	return _menu.visible or pause.visible or chat.is_open() or (world_map != null and world_map.visible) \
-			or (game_mode != null and game_mode.ui_open()) or (carjack != null and carjack.busy())
+			or (game_mode != null and game_mode.ui_open()) or (carjack != null and carjack.busy()) \
+			or (items != null and items.ui_open())
 
 
 ## Opens or closes the full-screen map (M); the player and the vehicle driven take no keys while it is open.
@@ -1664,7 +1694,7 @@ func _input(event: InputEvent) -> void:
 			and allows("vehicle_menu") or (key == KEY_ESCAPE and _menu.visible):
 		set_menu_open(not _menu.visible)
 		get_viewport().set_input_as_handled()
-	elif key == KEY_ESCAPE and not pause.visible and game_mode and game_mode.close_ui():
+	elif key == KEY_ESCAPE and not pause.visible and (items.close_ui() or game_mode and game_mode.close_ui()):
 		get_viewport().set_input_as_handled()
 	elif key == KEY_ESCAPE:
 		set_pause_open(not pause.visible)
@@ -1674,7 +1704,7 @@ func _input(event: InputEvent) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if loading or _menu.visible or pause.visible or chat.is_open() or world_map.visible or mode == "":
 		return
-	if game_mode and game_mode.handle_input(event):
+	if people.handle_input(event) or items.handle_input(event) or game_mode and game_mode.handle_input(event):
 		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not flying:
@@ -1963,6 +1993,10 @@ func _update_help() -> void:
 				"%s park a car here · %s vehicle menu · %s" % [k.call("park_car"), k.call("vehicle_menu"), common]
 	if allows("carjack") and not (flying or driving or riding):
 		_help.text += "\n%s at the driver's door of a bot car standing still: steal it" % k.call("interact")
+	if allows("items") and not (flying or driving or riding):
+		_help.text += ("\n%s inventory · %s-%s hotbar (again: put away) · %s fire · %s (held) aim · %s reload · " % [
+				k.call("inventory"), k.call("weapon_1"), k.call("weapon_5"), k.call("fire"), k.call("aim"),
+				k.call("reload")]) + "%s pick up someone stunned, %s put them down" % [k.call("interact"), k.call("drop")]
 	if driving is FireTruck:
 		_help.text += "\n%s (held) water cannon, aimed where you look (the view holds while it sprays) · %s siren and beacons" % [
 				k.call("fire"), k.call("bell")]
