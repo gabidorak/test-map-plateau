@@ -14,6 +14,9 @@ extends "res://scripts/car.gd"
 ## The rotors turn (a blurred disc over the blades at speed), red anti-collision beacons blink while it runs; a
 ## passenger rides in the left front seat (E from the right side). LAN games sync it like a car, with the rotor's speed
 ## (the others' copies spin and sound from it). Health, crash damage, water: car.gd's.
+## A bot may fly it (the police's, scripts/police/air/heli_pilot.gd): with a `pilot` and nobody at the controls, it takes
+## them from pilot.fly (the same keys, as -1..1 axes) and the rotor runs. Parked, its rotor still, it sleeps like a
+## parked car (car.gd _sleep_parked): nothing of its flight is worked out until someone, a pilot or a knock wakes it.
 ## Frame: like the cars, +Z forward, +X its left, origin on the ground under the middle of the skids' length... at the
 ## model's own origin (the rotor mast at z 0.27).
 
@@ -214,8 +217,17 @@ func _build_beacons() -> void:
 
 func set_driving(on: bool) -> void:
 	super(on)
-	can_sleep = not on                      # a resting body ignores forces: the rotor's would never lift it
+	can_sleep = not on and pilot == null    # a resting body ignores forces: the rotor's would never lift it
 	if not on:
+		collective = 0.0
+		cyclic = Vector2.ZERO
+
+
+## A bot takes the controls (scripts/police/air/heli_pilot.gd) or leaves them (null: the rotor winds down).
+func set_pilot(p: Object) -> void:
+	super(p)
+	can_sleep = p == null and not driving
+	if p == null and not driving:
 		collective = 0.0
 		cyclic = Vector2.ZERO
 
@@ -268,18 +280,25 @@ func _physics_process(delta: float) -> void:
 		for c: Array in _carried:
 			c[0].linear_velocity = c[1]
 			c[0].angular_velocity = c[2]
+	if _parked(delta):
+		return
 	var drowned := _water_physics(delta)
 	var keys := Vector3.ZERO                # nose up, bank left, turn left
 	var lift_in := 0.0
+	var piloted := pilot != null and not driving
 	if driving and controls and not hold:
 		keys = Vector3(Input.get_axis("plane_nose_down", "plane_nose_up"),
 				Input.get_axis("plane_roll_right", "plane_roll_left"),
 				Input.get_axis("plane_rudder_right", "plane_rudder_left"))
 		lift_in = Input.get_axis("plane_throttle_down", "plane_throttle_up")
+	elif piloted:
+		var c: Array = pilot.fly(delta)
+		keys = Vector3(c[0], c[1], c[2])
+		lift_in = c[3]
 	cyclic = cyclic.move_toward(Vector2(keys.x, keys.y), 4.0 * delta)
 	collective = move_toward(collective, lift_in, 3.0 * delta)
 	_throttle = collective
-	var engine := driving and not broken and not drowned
+	var engine := (driving or piloted) and not broken and not drowned
 	rotor = move_toward(rotor, 1.0 if engine else 0.0, delta / (SPOOL_UP if engine else SPOOL_DOWN))
 	_measure_height()
 
@@ -314,6 +333,15 @@ func _physics_process(delta: float) -> void:
 	_update_damage(delta)
 	_rotor_sound()
 	audio.update(rotor * TOP_SPEED, 0.4 + 0.6 * absf(collective), TOP_SPEED, delta)
+
+
+## Parked: nobody at the controls nor flying it, its rotor still, at rest: asleep (true) after car.gd's PARK_SLEEP s.
+func _parked(delta: float) -> bool:
+	if driving or pilot != null or rotor > 0.0 or broken:
+		_rest_t = 0.0
+		return false
+	_sleep_parked(linear_velocity.length(), delta)
+	return _asleep()
 
 
 ## The sound follows the rotor, not who is at the controls: it goes on while the blades wind down after the pilot got

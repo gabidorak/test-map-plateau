@@ -38,7 +38,8 @@ extends VehicleBody3D
 ## that peer's states (apply_net_state); the wheels still turn and steer, and lamps, doors, horn and sound follow the
 ## states.
 ## Bot drivers (scripts/traffic/bus_bot.gd, the bot buses of scripts/traffic/traffic.gd): a vehicle with a `pilot` takes
-## its pedals, steering, horn and indicators from it instead of the keys (pilot.drive), on the peer simulating it; its
+## its pedals, steering, horn and indicators from it instead of the keys (pilot.drive; a throttle below 0 reverses, which
+## only the police's pursuit driving asks for: scripts/police/driving/pursuit_pilot.gd), on the peer simulating it; its
 ## states tell the others (bot_driven: the driver look-alike shows, nobody can take the wheel). A bot bus waiting to
 ## come back in at the map edge is `stowed`: hidden, out of the physics, everywhere. A parked vehicle at rest sleeps
 ## (out of the solver, its script idle) until something touches or pushes it, or someone gets in (_sleep_parked).
@@ -110,7 +111,7 @@ const SPECS := {
 			"credit": "compact crossover with a black roof, built by blender/vehicles/build_car.py"},
 	"police-hatchback": {"label": "Police nationale car", "file": "police_hatchback.glb", "scale": 1.0,
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
-			"mass": 1180.0, "power": 0.95, "max_speed": 50.0, "cab": "police_hatchback.json", "police": true,
+			"mass": 1180.0, "power": 1.45, "max_speed": 58.0, "grip": 1.65, "cab": "police_hatchback.json", "police": true,
 			"credit": "the compact hatchback in the Police nationale livery, built by blender/vehicles/build_car.py"},
 	"renault-zoe": {"label": "Renault Zoe", "file": "renault_zoe.glb", "scale": 1.0,
 			"wheels": ["wheel_front_left", "wheel_front_right", "wheel_rear_left", "wheel_rear_right"],
@@ -221,7 +222,9 @@ const BEAM_ANGLE := 32.0                    # degrees from the axis to the edge 
 const BEAM_TILT := 0.04                     # rad down
 const BEAM_ENERGY := 14.0
 const BEAM_FADE := 140.0                    # m from the camera beyond which the beams fade out
-const FAR_DETAIL := 120.0                   # m from the camera beyond which a section is drawn as one mesh (_build_far)
+const FAR_DETAIL := 120.0                   # m from the camera beyond which a section is drawn as one mesh (_build_far)...
+const FAR_END := 800.0                      # ...and beyond which it is not drawn at all
+const FAR_LOD_ANGLES := Vector2(60.0, 25.0) # degrees: the normals merged, split when the far mesh's LODs are made
 const REMOTE_SLEEP := 180.0                 # m from the eye beyond which a remote copy is frozen STATIC, runs nothing
 const REMOTE_WAKE := 140.0                  # m it must come back within to wake (hysteresis: no toggling at the edge)
 const CABIN_LIGHT := Color(0.88, 0.93, 1.0)      # a bus's cabin lights, cool white
@@ -349,6 +352,7 @@ var _grip_radius := 0.2
 var _throttle := 0.0
 var _rear_wheels: Array[VehicleWheel3D] = []    # non-steering wheels, the rear section's included (drift)
 var _drift := 0.0                           # 0 full grip .. 1 drifting
+var _loose_t := 0.0                         # s its rear tyres stay loose after a knock (knock_loose)
 var _net_bell := -1                         # LAN, remote vehicle: bell parity last received (-1: none yet)
 var _total_mass := 1200.0                   # both sections
 var _wheel_count := 4
@@ -378,6 +382,12 @@ var _doused := 0.0                          # s of water on it since it broke
 var _net_seen := false                      # LAN, remote vehicle: a state came already (no boom for a wreck on joining)
 var pilot: Object                           # bot driver (scripts/traffic/bus_bot.gd) on the peer simulating it, or null
 var bot_driven := false                     # LAN, remote vehicle: a bot drives it (its states say so)
+## Its bot driver got out (a police officer, scripts/police/foot/officer.gd): the look-alike at the wheel hides. LAN games:
+## net_state flag FLAGS_DRIVER_AWAY.
+var driver_away := false:
+	set(on):
+		driver_away = on
+		show_driver(false)
 var stowed := false                         # hidden and out of the physics (a bot bus off the map, set_stowed)
 ## An emergency vehicle's siren and flashing lights (the fire truck's and the police car's, switched with B): the bots
 ## make way for it (scripts/traffic/perception.gd, bus_bot.gd). LAN games: net_state flag FLAGS_SIREN.
@@ -398,6 +408,7 @@ var _lit_surfaces: Array = []               # [MeshInstance3D, surface, material
 var _cabin_lights: Array[OmniLight3D] = []
 const BOT_COLOR := Color(0.16, 0.3, 0.55)   # the bot drivers' uniform
 const FLAGS_SIREN := 512                    # net_state flag: the siren on
+const FLAGS_DRIVER_AWAY := 1024             # net_state flag: its bot driver got out
 
 static var _soot: StandardMaterial3D        # drawn over a broken vehicle's meshes
 static var night := false                   # scripts/night.gd: bots drive with their headlights on
@@ -735,7 +746,8 @@ func _build_cab(m: Node3D, cab: Dictionary) -> void:
 		_passenger_eye = v.call(cab["passenger_eye"])
 	_cab_pitch = float(cab.get("eye_pitch", 0.0))
 	_figure = float(cab.get("figure", 1.0))
-	_steering_wheel = m.find_child(cab.get("steering_wheel", ""), true, false) as Node3D
+	var wheel_name := str(cab.get("steering_wheel", ""))
+	_steering_wheel = m.find_child(wheel_name, true, false) as Node3D if wheel_name != "" else null
 	if _steering_wheel:
 		_steering_rest = _steering_wheel.transform
 		var t := _in_car(_steering_wheel)
@@ -1379,6 +1391,7 @@ func _build_far() -> void:
 		far.material_override = _far_shader()
 		far.visibility_range_begin = FAR_DETAIL
 		far.visibility_range_begin_margin = 5.0
+		far.visibility_range_end = FAR_END
 		body.add_child(far)
 		_far.append(far)
 		for g in details:
@@ -1403,7 +1416,8 @@ func _far_details(body: VehicleBody3D) -> Array[GeometryInstance3D]:
 
 ## The far mesh of section `body` from its `details` (see _build_far): the visible ones but the driver and passenger
 ## look-alikes, the steering wheel and the indicators; null when no mesh could be read. The vertex colour's alpha tells
-## the surface: 1 paint, 0 a headlight, 0.5 a tail or brake lamp.
+## the surface: 1 paint, 0 a headlight, 0.5 a tail or brake lamp. With its levels of detail (the merged mesh has none
+## of the imported ones': a realistic car's 100k triangles would be drawn whole however far).
 func _merge_far(body: VehicleBody3D, details: Array[GeometryInstance3D]) -> ArrayMesh:
 	var skip := {}
 	for n in [_driver_dummy, _passenger, _steering_wheel]:
@@ -1460,9 +1474,10 @@ func _merge_far(body: VehicleBody3D, details: Array[GeometryInstance3D]) -> Arra
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_COLOR] = colours
 	arrays[Mesh.ARRAY_INDEX] = indices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
+	var im := ImporterMesh.new()
+	im.add_surface(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	im.generate_lods(FAR_LOD_ANGLES.x, FAR_LOD_ANGLES.y, [])
+	return im.get_mesh()
 
 
 ## True when `mi` shows in section `body` (it and its parents visible, none of them in `skip`).
@@ -1583,6 +1598,12 @@ func place(t: Transform3D) -> void:
 	_carry_ticks = 0                            # (put somewhere: not going on as it went when taken over)
 
 
+## A knock on its rear quarter (a police car's PIT: scripts/police/driving/police_driver.gd) breaks its rear tyres
+## loose for `seconds`, as the handbrake's drift does (without its drag), on the peer simulating it.
+func knock_loose(seconds: float) -> void:
+	_loose_t = maxf(_loose_t, seconds)
+
+
 ## The rigid bodies: this one and the rear section of an articulated vehicle.
 func bodies() -> Array[VehicleBody3D]:
 	var out: Array[VehicleBody3D] = [self]
@@ -1668,7 +1689,7 @@ func _reset_camera() -> void:
 func show_driver(on: bool, color := Color(1, 0.55, 0.2)) -> void:
 	set_driver_color(BOT_COLOR if is_bot() else color)
 	if _driver_dummy:
-		_driver_dummy.visible = on or driving or is_bot()
+		_driver_dummy.visible = (on or driving or is_bot()) and not driver_away
 
 
 ## True when a bot drives it (here or, for a remote vehicle, on the peer simulating it).
@@ -1783,12 +1804,12 @@ func _apply_remote_freeze() -> void:
 
 ## LAN games: this vehicle's state for the other peers: [pose, rear section pose, steering, pedal, flags (1 doors
 ## open, 2 someone drives, 4 braking, 8 horn, 16 bell strikes are odd, 32 a bot drives, 64 stowed, 128 headlights,
-## 512 siren; the fire truck adds its spray, 256), indicator, health]. A bot's headlights follow each peer's own night
+## 512 siren, 1024 its bot driver got out; the fire truck adds its spray, 256), indicator, health]. A bot's headlights follow each peer's own night
 ## instead.
 func net_state() -> Array:
 	var flags := (1 if doors_open else 0) | (2 if driving or pilot else 0) | (4 if _braking else 0) \
 			| (8 if audio.horn else 0) | (16 if bells & 1 else 0) | (32 if pilot else 0) | (64 if stowed else 0) \
-			| (128 if headlights else 0) | (FLAGS_SIREN if siren else 0)
+			| (128 if headlights else 0) | (FLAGS_SIREN if siren else 0) | (FLAGS_DRIVER_AWAY if driver_away else 0)
 	return [global_transform, trailer.global_transform if trailer else Transform3D(), steering, _throttle, flags, indicator,
 			health]
 
@@ -1817,6 +1838,8 @@ func apply_net_state(a: Array, b: Array, w: float) -> void:
 		show_driver(false)
 	set_stowed(flags & 64 != 0)
 	siren = flags & FLAGS_SIREN != 0
+	if driver_away != (flags & FLAGS_DRIVER_AWAY != 0):
+		driver_away = flags & FLAGS_DRIVER_AWAY != 0
 	set_headlights(night if bot_driven else flags & 128 != 0)
 	set_doors(flags & 1 != 0)
 	if b[5] != indicator:
@@ -2132,11 +2155,11 @@ func _physics_process(delta: float) -> void:
 		throttle = Input.get_axis("brake", "throttle")
 		steer_in = Input.get_axis("steer_right", "steer_left")
 	elif piloted:
-		# [throttle, brake, steering (-1..1, left positive)] and pilot.horn: a bot never reverses
+		# [throttle (-1..1, below 0 in reverse), brake (0..1), steering (-1..1, left positive)] and pilot.horn
 		var c: Array = pilot.drive(delta)
 		if pilot.gliding or stowed:
 			return                              # posed by the bot far from every player, or off the map: nothing to run
-		pedals = [clampf(c[0], 0.0, 1.0), clampf(c[1], 0.0, 1.0)]
+		pedals = [clampf(c[0], -1.0, 1.0), clampf(c[1], 0.0, 1.0)]
 		steer_in = clampf(c[2], -1.0, 1.0)
 		throttle = pedals[0] - pedals[1]
 	var drowned := _water_physics(delta)
@@ -2148,6 +2171,8 @@ func _physics_process(delta: float) -> void:
 	if piloted:
 		if pedals[0] > 0.0 and v < max_speed:
 			engine_force = engine_per_wheel * pedals[0]
+		elif pedals[0] < 0.0 and v > -max_reverse_speed:
+			engine_force = engine_per_wheel * 0.6 * pedals[0]
 		brake = maxf(max_brake * pedals[1], 1.5 if pedals[0] == 0.0 else 0.0)
 	elif not driving:
 		# nobody at the wheel: roll on (passengers may be walking inside), handbrake once slow (not on a tow truck's hook)
@@ -2191,12 +2216,13 @@ func _physics_process(delta: float) -> void:
 		trailer.brake = brake
 		_damp_joint()
 		_update_bellows()
-	_update_drift(drifting, v, delta)
+	_loose_t = maxf(_loose_t - delta, 0.0)
+	_update_drift(drifting, v, delta, _loose_t > 0.0)
 
 	_update_indicator(delta)
 	_braking = (driving and throttle < 0.0) or (piloted and pedals[1] > 0.05)
 	_set_brake_lamps(_braking)
-	_set_reverse_lamps(driving and throttle < 0.0 and v <= 0.5)
+	_set_reverse_lamps((driving and throttle < 0.0 or piloted and pedals[0] < 0.0) and v <= 0.5)
 	_update_steering()
 	_update_doors(delta)
 	_check_crash()
@@ -2267,9 +2293,10 @@ func steer_limit(v: float) -> float:
 
 
 ## Handbrake drift: eases the rear wheels' grip down while `drifting` (quickly) and back up after (DRIFT_RECOVER), and
-## drags them a little while moving so the tail breaks loose. Runs after the body brakes are set (they set every wheel's).
-func _update_drift(drifting: bool, v: float, delta: float) -> void:
-	_drift = move_toward(_drift, 1.0 if drifting else 0.0, (8.0 if drifting else DRIFT_RECOVER) * delta)
+## drags them a little while moving so the tail breaks loose. `loose` (a knock on its rear: knock_loose) eases the grip
+## down the same way, without the drag. Runs after the body brakes are set (they set every wheel's).
+func _update_drift(drifting: bool, v: float, delta: float, loose := false) -> void:
+	_drift = move_toward(_drift, 1.0 if drifting or loose else 0.0, (8.0 if drifting or loose else DRIFT_RECOVER) * delta)
 	if _rear_wheels.is_empty() or _drift == 0.0 and _rear_wheels[0].wheel_friction_slip == grip:
 		return
 	for w in _rear_wheels:

@@ -529,6 +529,48 @@ func _land(peer: int, no: int, target: String) -> void:
 	people.hit(target, str(b.stats.get("effect", "")), b.stat("stun", 3.0), peer)
 
 
+## Host: a bot (a police officer, scripts/police/foot/arrest.gd), person `shooter`, fires a `kind` weapon from `origin`
+## towards `end`; `target` the person it hits ("" a miss: it decided). Everyone sees the shot; the hit stuns them at
+## once (hitscan) or once the net gets there, if they can be stunned then.
+func bot_fire(shooter: String, kind: String, origin: Vector3, end: Vector3, target: String) -> void:
+	var b := behaviour(kind)
+	if not _hosting() or b == null:
+		return
+	if game.net.active:
+		rpc("_c_bot_shot", shooter, kind, origin, end, target)
+	else:
+		_c_bot_shot(shooter, kind, origin, end, target)
+	if target == "":
+		return
+	var effect := str(b.stats.get("effect", ""))
+	var stun := b.stat("stun", 3.0)
+	if str(b.stats.get("shot", "")) == "hitscan":
+		people.hit(target, effect, stun, 0)
+		return
+	var flight := origin.distance_to(end) / maxf(b.stat("speed", 20.0), 1.0)
+	get_tree().create_timer(flight, true, true).timeout.connect(func() -> void:
+		if is_instance_valid(people) and people.stunnable(target):
+			people.hit(target, effect, stun, 0))
+
+
+## Host: the weapons and their ammunition (`confiscable`, data/items.json) taken from player `peer` (an arrest): out of
+## their inventory, their hands empty: [[kind, n], ...].
+func confiscate(peer: int) -> Array:
+	var inv: Inventory = _inv.get(peer)
+	if not _hosting() or inv == null:
+		return []
+	var out := inv.remove_where(func(kind: String) -> bool: return bool(ItemDb.field(kind, "confiscable", false)))
+	if out.is_empty():
+		return out
+	_reload.erase(peer)
+	if int(_held.get(peer, -1)) >= 0:
+		_held[peer] = -1
+		_to_peer(peer, "_c_hold", [-1, ""])
+		_to_others(peer, "_c_held", [peer, ""])
+	_send_inventory(peer)
+	return out
+
+
 @rpc("any_peer", "call_remote", "reliable")
 func _h_reload(slot: int) -> void:
 	if _hosting() and int(_held.get(_sender(), -1)) == slot:
@@ -620,6 +662,15 @@ func _c_shot(peer: int, kind: String, origin: Vector3, end: Vector3, target: Str
 	var b := behaviour(kind)
 	if b:
 		b.show_shot(self, People.id_of_peer(peer), origin, end, target)
+
+
+@rpc("authority", "call_local", "reliable")
+func _c_bot_shot(shooter: String, kind: String, origin: Vector3, end: Vector3, target: String) -> void:
+	if game.mode == "server":
+		return
+	var b := behaviour(kind)
+	if b:
+		b.show_shot(self, shooter, origin, end, target)
 
 
 # ---------------------------------------------------------------- the way between the peers

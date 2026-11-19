@@ -1,7 +1,7 @@
 extends RefCounted
 ## PTA Online's prices (data/prices.json, ONLINE_MODE.md 4.1): what each vehicle costs and where it is sold, what is
 ## hired out where (rentals), what a
-## repair and a repaint cost. The official server charges them (scripts/online/shop.gd); the players' games show them
+## repair and a repaint cost, the fines of an arrest. The official server charges them (scripts/online/shop.gd); the players' games show them
 ## (the same file is in every build). A model not in the file is not sold.
 
 const DATA := "res://data/prices.json"
@@ -80,6 +80,13 @@ static func repaint(model: String) -> int:
 
 
 ## Euros a new account starts with (the accounts service gives them; shown in the docs and the catalogue's hint).
+## € an arrest at wanted level `level` costs (the highest listed beyond the list).
+static func fine(level: int) -> int:
+	_load()
+	var fines: Array = _data.get("fines", [0])
+	return int(fines[clampi(level, 0, fines.size() - 1)])
+
+
 static func start_money() -> int:
 	_load()
 	return int(_data.get("start", 5000))

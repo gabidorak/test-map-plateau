@@ -54,6 +54,8 @@ extends RefCounted
 ##   wheels let a VehicleBody3D creep sideways on the hillside's cross slopes.
 ## - Stalled (no progress for ASSIST_AFTER s with nothing in the way: a pit in the LiDAR ground, a kerb, a prop it
 ##   brushed) it glides over the next ASSIST m, then drives on with the physics.
+## A kind of driver may mind less (the hooks "what a kind of driver minds": the police on a call, scripts/police/
+## police_driver.gd, runs the red lights and the give-ways, does not pull over, drives faster and never vanishes).
 ## Positions on the path are pipeline x/y (x east, y north; Godot = (x, -z)); `s` is the distance along the path of
 ## the middle of the front section (the reference point), `s + nose` that of the front of the bus.
 
@@ -107,12 +109,12 @@ const JUNCTION_REACH := 120.0               # m from a junction traffic is watch
 const WALKER_SIDE := 0.5                    # m beyond half the vehicle's width a walker's middle counts as in the way
 const WALKER_AHEAD := 1.2                   # s: where a walker will be by then counts too (one stepping off the kerb)
 const WALKER_HEIGHT := 2.5                  # m above or below its road a walker is not on it (a bridge, an underpass)
-const SIREN_BEHIND := 70.0                  # m behind it an emergency vehicle coming up makes it pull over and stop
+const SIREN_BEHIND := 100.0                 # m behind it an emergency vehicle coming up makes it pull over and stop
 const SIREN_AHEAD := 90.0                   # m ahead one coming the other way, or across its way, is minded
 const SIREN_MOVING := 2.0                   # m/s: an emergency vehicle slower than this asks for nothing (at a fire)
 const SIREN_ACROSS := 4.0                   # s of an emergency vehicle's course looked at for where it crosses its path
 const ROAD_SIDE := 7.0                      # m from its path an emergency vehicle is on its road (either lane)
-const PULL_RIGHT := 0.8                     # m right of its path it pulls over at most (less where there is no room)
+const PULL_RIGHT := 1.5                     # m right of its path it pulls over at most (less where there is no room)
 const KERB_STEP := 0.06                     # m the ground rises (or drops, twice that) from one sample to the next on its
 											# right: a kerb (raised 0.12 m), not the road's camber...
 const KERB_SAMPLE := 0.15                   # ...sampled every this many m across
@@ -120,7 +122,7 @@ const BODY_PROBE := 0.6                     # m above the road it feels for post
 const SIDE_CLEAR := 0.15                    # m it keeps from them
 const ASIDE_RATE := 0.1                     # m it moves sideways per m it drives, pulling over or back
 const MAKE_WAY_BRAKE := 2.5                 # m/s², stopping for one coming up behind
-const MAKE_WAY_STOP := 15.0                 # m at least it rolls on, pulling over, before it stops
+const MAKE_WAY_STOP := 10.0                 # m at least it rolls on, pulling over, before it stops
 const ONCOMING_SLOW := 4.0                  # m/s, meeting one coming the other way
 const MAKE_WAY_HOLD := 2.0                  # s after it last saw one before it drives on
 # The French highway code counts 1 s of reaction in a stopping distance; studies find about 0.7 s for what a driver
@@ -253,10 +255,16 @@ func _set_route(index: int) -> void:
 	route = traffic.routes[line["routes"][index]]
 	_step = float(route["step"])
 	_length = float(route["length"])
+	_v = PackedFloat32Array(route["v"])
+	if route.has("xy"):                     # (a police way, made on a worker thread: ready as it is)
+		_pts = route["xy"]
+		_deck_z = route["deck_xy"]
+		_room = route["room_xy"]
+		_reset_route_state()
+		return
 	_pts = PackedVector2Array()
 	for p: Array in route["pts"]:
 		_pts.append(Vector2(p[0], p[1]))
-	_v = PackedFloat32Array(route["v"])
 	_deck_z = PackedFloat32Array()
 	if route.has("decks"):
 		_deck_z.resize(_pts.size())
@@ -270,6 +278,10 @@ func _set_route(index: int) -> void:
 	for run: Array in route.get("room", []):
 		for k in int(run[0]):
 			_room.append(float(run[1]))
+	_reset_route_state()
+
+
+func _reset_route_state() -> void:
 	_pass = {}
 	_next_stop = 0
 	_yield = -1
@@ -492,7 +504,7 @@ func _plan(v: float, delta: float) -> float:
 	if seized:
 		reason = "carjacked"
 		return 0.0
-	var target := minf(_planned(front + 1.0), _planned(s))
+	var target := minf(_planned(front + 1.0), _planned(s)) * _speed_scale()
 	reason = "route"
 	# the stop
 	if _next_stop < stops.size():
@@ -502,7 +514,7 @@ func _plan(v: float, delta: float) -> float:
 			_arrive()
 			return 0.0
 	# traffic lights
-	for l: Dictionary in route["lights"]:
+	for l: Dictionary in route["lights"] if _minds_lights() else []:
 		var d := float(l["s"]) - front
 		if d < -0.5:
 			continue
@@ -513,7 +525,7 @@ func _plan(v: float, delta: float) -> float:
 			target = _stop_within(target, d, "light")
 		break
 	# give way
-	if _yield >= 0:
+	if _yield >= 0 and _minds_yields():
 		var y: Dictionary = route["yields"][_yield]
 		var d := float(y["s"]) - front
 		if y["stop"] and _stopped_at != _yield:
@@ -536,7 +548,7 @@ func _plan(v: float, delta: float) -> float:
 			_ignore_for(obstacle_car, PASS_TIME)
 		if _blocked_t > PASS_AFTER and _pass.is_empty():
 			_overtake(front)
-		if _blocked_t > GIVE_UP and not _player_within(car.global_position, GIVE_UP_SEEN):
+		if _blocked_t > GIVE_UP and _may_vanish() and not _player_within(car.global_position, GIVE_UP_SEEN):
 			_stow()
 			return 0.0
 		if _blocked_t > HORN_AFTER:
@@ -793,7 +805,7 @@ func _look(v: float) -> void:
 	if not seen.walkers.is_empty():
 		_look_walkers(seen, front, reach, tip)
 	_siren_stop = INF
-	if not seen.sirens.is_empty():
+	if not seen.sirens.is_empty() and _makes_way():
 		_look_sirens(seen, front, v)
 	# the next give-way line ahead
 	var yields: Array = route["yields"]
@@ -1210,6 +1222,39 @@ func _player_within(p: Vector3, d: float) -> bool:
 	return traffic.player_within(p, d)
 
 
+# ---------------------------------------------------------------- what a kind of driver minds
+# (the bus and car bots mind it all; scripts/police/driving/police_driver.gd, on a call, does not)
+
+## Whether it stops at the red lights.
+func _minds_lights() -> bool:
+	return true
+
+
+## Whether it waits at the give-way lines for the traffic of the other arms.
+func _minds_yields() -> bool:
+	return true
+
+
+## Whether it pulls over for the emergency vehicles with their siren on.
+func _makes_way() -> bool:
+	return true
+
+
+## Times the route's planned speed it drives at.
+func _speed_scale() -> float:
+	return 1.0
+
+
+## m/s² it speeds up at gliding (a police car on a call: as it would with the physics).
+func _glide_accel() -> float:
+	return GLIDE_ACCEL
+
+
+## Whether it may vanish when kept waiting long behind a vehicle that does not move (GIVE_UP).
+func _may_vanish() -> bool:
+	return true
+
+
 # ---------------------------------------------------------------- gliding far from the players
 
 ## Glides when no player is within FAR m (NEAR m to stop gliding) and nobody rides it; `force` decides afresh.
@@ -1259,7 +1304,7 @@ func _hold(still: bool, target: float, delta: float) -> void:
 ## Moves the bus along its path at up to `target` m/s, never past where it has to stop (a step far from everyone is
 ## long); returns the steering angle that shows for it.
 func _glide(target: float, delta: float) -> float:
-	_speed = move_toward(_speed, target, (GLIDE_ACCEL if target > _speed else HARD_BRAKE) * delta)
+	_speed = move_toward(_speed, target, (_glide_accel() if target > _speed else HARD_BRAKE) * delta)
 	var ds := _speed * delta
 	if ds > _hold_at:
 		ds = maxf(_hold_at, 0.0)

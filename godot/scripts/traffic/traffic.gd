@@ -249,6 +249,18 @@ func player_within(p: Vector3, d: float) -> bool:
 	return false
 
 
+## Where the players are as of this physics tick (game.gd player_spots, global; shared: not to be changed).
+func player_spots() -> Array:
+	_players()
+	return _spots
+
+
+## Where the players and the camera are as of this physics tick (global; shared: not to be changed).
+func eye_spots() -> Array:
+	_players()
+	return _eyes
+
+
 ## Square of the distance on the map from `p` to the nearest player or the camera (INF with neither).
 func eye_distance_squared(p: Vector3) -> float:
 	_players()
