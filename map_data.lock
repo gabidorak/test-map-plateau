@@ -3,323 +3,245 @@
  "release": "map-data",
  "repo": "gabidorak/test-map-plateau",
  "shards": {
-  "base-ground.1.bin": {
-   "asset": "base-ground.1.bin.79a83a38f514a9a5e123.tar.xz",
-   "bytes": 47963865,
+  "ground.json": {
+   "asset": "ground.json.a784bb20662299128e8d.tar.xz",
+   "bytes": 2063429,
    "files": 1,
-   "hash": "79a83a38f514a9a5e123e25ce794825fb8937e065a2877f0edb3e18cf56817f9"
+   "hash": "a784bb20662299128e8d619e35f49a685bd96b38b99b863970a3f839a9545a7b"
   },
-  "base-ground.2.bin": {
-   "asset": "base-ground.2.bin.80159af3ef5cc3349dec.tar.xz",
-   "bytes": 47987379,
+  "ground_heights.bin": {
+   "asset": "ground_heights.bin.29c281beadbb5267f425.tar.xz",
+   "bytes": 13280023,
    "files": 1,
-   "hash": "80159af3ef5cc3349deca9cedb785066e997bddec62b6b14497f7b1e8ba8ad90"
+   "hash": "29c281beadbb5267f425e126093b053bcf37d40a7b409d8642e9725b4a1e54ca"
   },
-  "base-ground.3.bin": {
-   "asset": "base-ground.3.bin.759eef6cb9be12735c14.tar.xz",
-   "bytes": 47960586,
+  "ground_ids.bin": {
+   "asset": "ground_ids.bin.0cc13140ac1a1aba6f5c.tar.xz",
+   "bytes": 5993969,
    "files": 1,
-   "hash": "759eef6cb9be12735c143739fc830c4bb4a90c9b3a111b33879a661844e511be"
-  },
-  "base-ground.4.bin": {
-   "asset": "base-ground.4.bin.a2cd94cf60db9990e522.tar.xz",
-   "bytes": 8340939,
-   "files": 1,
-   "hash": "a2cd94cf60db9990e5229f9592bfbd7c4598716486396c14e5d893f4ed413899"
-  },
-  "base-ground.bin": {
-   "asset": "base-ground.bin.60d3f1bd21023920d37c.tar.xz",
-   "bytes": 47956539,
-   "files": 1,
-   "hash": "60d3f1bd21023920d37c298bf53bf9a59363cc9344da990325c2fbdac5b2c172"
-  },
-  "base-ground_ids.bin": {
-   "asset": "base-ground_ids.bin.c88b0dbe17d93ced6e05.tar.xz",
-   "bytes": 6004353,
-   "files": 1,
-   "hash": "c88b0dbe17d93ced6e058a5d43ad1aa02fa330e8e07a776dc906b261baafaafb"
-  },
-  "base-ground_index.json": {
-   "asset": "base-ground_index.json.a1469826004325f96535.tar.xz",
-   "bytes": 1710927,
-   "files": 1,
-   "hash": "a1469826004325f96535c049a94d981b735f8292c4a046b461228b9f87067fb0"
-  },
-  "base-heightmap.0.f32": {
-   "asset": "base-heightmap.0.f32.60e08b6dc734f8c4bde9.tar.xz",
-   "bytes": 47984064,
-   "files": 1,
-   "hash": "60e08b6dc734f8c4bde9c0fcfe0a65c0068e3e154f786e138cd4f81651cf98d4"
-  },
-  "base-heightmap.1.f32": {
-   "asset": "base-heightmap.1.f32.74345429b03b9537f8aa.tar.xz",
-   "bytes": 47984064,
-   "files": 1,
-   "hash": "74345429b03b9537f8aa7161ed9a966cf850aec89037c57acfa776cea39c5694"
-  },
-  "base-heightmap.2.f32": {
-   "asset": "base-heightmap.2.f32.ac47e261d1b9e15bc24e.tar.xz",
-   "bytes": 47984064,
-   "files": 1,
-   "hash": "ac47e261d1b9e15bc24e729b1b78851cf1ca8624a50478510c44659a6806a64b"
-  },
-  "base-heightmap.3.f32": {
-   "asset": "base-heightmap.3.f32.4abe5e17134504f7f952.tar.xz",
-   "bytes": 47984064,
-   "files": 1,
-   "hash": "4abe5e17134504f7f952697165a239fef3bb7a33f093242afbfab3c33cc1cbcc"
-  },
-  "base-heightmap.4.f32": {
-   "asset": "base-heightmap.4.f32.4ea448b74edb51210c7d.tar.xz",
-   "bytes": 47984064,
-   "files": 1,
-   "hash": "4ea448b74edb51210c7dfb38e808fa7502cf2cbe45cde0651cdb033760e27618"
-  },
-  "base-heightmap.5.f32": {
-   "asset": "base-heightmap.5.f32.d54cdf7d9b47d19c8360.tar.xz",
-   "bytes": 47984064,
-   "files": 1,
-   "hash": "d54cdf7d9b47d19c83607d12abd09eaf00fa393cd5c171eb48bd2be86c134a31"
-  },
-  "base-heightmap.6.f32": {
-   "asset": "base-heightmap.6.f32.c146101f0d817afcab50.tar.xz",
-   "bytes": 47984064,
-   "files": 1,
-   "hash": "c146101f0d817afcab50983fd6daa9861e96b90e259df7783c59542ae8037ba5"
-  },
-  "base-heightmap.7.f32": {
-   "asset": "base-heightmap.7.f32.8df9ccdf022243cec391.tar.xz",
-   "bytes": 47984064,
-   "files": 1,
-   "hash": "8df9ccdf022243cec3918afca98ef44f8d5619b1b3683a7ecad1ac10eec0bb7d"
-  },
-  "base-world.json": {
-   "asset": "base-world.json.18cf499451e8720dbda1.tar.xz",
-   "bytes": 92696831,
-   "files": 1,
-   "hash": "18cf499451e8720dbda15288fc32b0b47b86ce8cfa1e36053dd1f39ced9af4e7"
+   "hash": "0cc13140ac1a1aba6f5c805599d2010ad0379993ea673f7a716302584d29f5ac"
   },
   "meshes-00": {
-   "asset": "meshes-00.35efbde62944414c12eb.tar.xz",
-   "bytes": 12673484,
-   "files": 694,
-   "hash": "35efbde62944414c12ebaf4aac689f98640fe7a0a35355679c1b8dc0de286b5b"
+   "asset": "meshes-00.8d76a66c136f3159dc82.tar.xz",
+   "bytes": 11913341,
+   "files": 729,
+   "hash": "8d76a66c136f3159dc820a9ce859ff4f8403bcae46f07b5b23353912d2bee437"
   },
   "meshes-01": {
-   "asset": "meshes-01.86c5a6bc20b8118ed607.tar.xz",
-   "bytes": 13513919,
-   "files": 715,
-   "hash": "86c5a6bc20b8118ed6079c98e1b4195ef0d8f70f9179d6f3b6e1cd3aab88a14e"
+   "asset": "meshes-01.5ced5fb9597a97d18a44.tar.xz",
+   "bytes": 12745187,
+   "files": 748,
+   "hash": "5ced5fb9597a97d18a44e2238a1cf09179b434b26e4a069292546d38f5057c40"
   },
   "meshes-02": {
-   "asset": "meshes-02.4505d08b7dd24c6368d1.tar.xz",
-   "bytes": 12686855,
-   "files": 705,
-   "hash": "4505d08b7dd24c6368d1c3b458717e1918a5956f5ed5c4f33bd628842d992332"
+   "asset": "meshes-02.700c704ee960407462a3.tar.xz",
+   "bytes": 12053013,
+   "files": 753,
+   "hash": "700c704ee960407462a35f572464ff113a034076bbcd953d68d94d3b05c156bd"
   },
   "meshes-03": {
-   "asset": "meshes-03.e6241635bfc53a6a2bb7.tar.xz",
-   "bytes": 10201491,
-   "files": 668,
-   "hash": "e6241635bfc53a6a2bb7b875e334771c1129380f91d58abeab70a25aafbcf3e8"
+   "asset": "meshes-03.837bf520a5503f1ac983.tar.xz",
+   "bytes": 9967345,
+   "files": 695,
+   "hash": "837bf520a5503f1ac983dc4f9673774d7c396fde1e180ac14612a4a638a8091d"
   },
   "meshes-04": {
-   "asset": "meshes-04.230de9f8b2f33c0c5480.tar.xz",
-   "bytes": 15022701,
-   "files": 705,
-   "hash": "230de9f8b2f33c0c54808eeae43b9811974e83d70ee7ef8a6688bff063efd69d"
+   "asset": "meshes-04.8ea4e8e63578f118f45e.tar.xz",
+   "bytes": 13707433,
+   "files": 721,
+   "hash": "8ea4e8e63578f118f45e8c2ad2947e56326a25e634c14cd5680a7d2d2a4d2d58"
   },
   "meshes-05": {
-   "asset": "meshes-05.66a5aed7f5c5acac1dc8.tar.xz",
-   "bytes": 15473997,
-   "files": 704,
-   "hash": "66a5aed7f5c5acac1dc8498cf8d647f9179a0b85358cf9536b399d5ea9eb5709"
+   "asset": "meshes-05.55a603cf83ca77506bbb.tar.xz",
+   "bytes": 15420106,
+   "files": 744,
+   "hash": "55a603cf83ca77506bbb02ad404f10b4ca910dfdf8efc542b6391c5d7078b5ac"
   },
   "meshes-06": {
-   "asset": "meshes-06.a7c04109aa85fbc7c270.tar.xz",
-   "bytes": 12477983,
-   "files": 681,
-   "hash": "a7c04109aa85fbc7c270e2c8af65cac25e2b961df8a5eca7a484b4cee8f31a14"
+   "asset": "meshes-06.255fc39f122573b6add9.tar.xz",
+   "bytes": 11717948,
+   "files": 706,
+   "hash": "255fc39f122573b6add99c7ce6016bb8a0d2099c7928630261bb1e2243869b8b"
   },
   "meshes-07": {
-   "asset": "meshes-07.ba46910ee7af5438f54d.tar.xz",
-   "bytes": 12138880,
-   "files": 690,
-   "hash": "ba46910ee7af5438f54d6448c7d55f4f433fac8bf072f9c6b6ab8594645f8b73"
+   "asset": "meshes-07.90a6a3b793a44549f29d.tar.xz",
+   "bytes": 11481156,
+   "files": 708,
+   "hash": "90a6a3b793a44549f29d472028b0f03cac8efd8cc2b93aa35d6679253a959212"
   },
   "meshes-08": {
-   "asset": "meshes-08.f90058e3f0e36b9b42ee.tar.xz",
-   "bytes": 12953165,
-   "files": 699,
-   "hash": "f90058e3f0e36b9b42ee0111af5003e0bac29439eb482855a2abcdaed5032737"
+   "asset": "meshes-08.a0949453ecc619147bf3.tar.xz",
+   "bytes": 12125563,
+   "files": 727,
+   "hash": "a0949453ecc619147bf39f51b729f0a67852198e5e7e121a80f00815f804e3c1"
   },
   "meshes-09": {
-   "asset": "meshes-09.ea67948e542f019352fc.tar.xz",
-   "bytes": 13634816,
-   "files": 654,
-   "hash": "ea67948e542f019352fce5a4d46f42f2657405fdb23b34d266918c74049f7636"
+   "asset": "meshes-09.b2ba8e3084faee6764e3.tar.xz",
+   "bytes": 12435095,
+   "files": 683,
+   "hash": "b2ba8e3084faee6764e370ed1193c4751883c2acb63354668d46ce968e50074d"
   },
   "meshes-10": {
-   "asset": "meshes-10.3392a603f51ac6e4a8ab.tar.xz",
-   "bytes": 13138849,
-   "files": 672,
-   "hash": "3392a603f51ac6e4a8abff1a42ff22928901c1fe41967c51f8caae9b91bab0ee"
+   "asset": "meshes-10.7504d1542b1db736f68c.tar.xz",
+   "bytes": 12317513,
+   "files": 687,
+   "hash": "7504d1542b1db736f68cdedb9bd6b05f46ed6586ded6b71a404a3607217f7c85"
   },
   "meshes-11": {
-   "asset": "meshes-11.b296239e2899e513b2c9.tar.xz",
-   "bytes": 13150271,
-   "files": 674,
-   "hash": "b296239e2899e513b2c9539f769a8dd6151656e663dfbeb20540a47c5360b781"
+   "asset": "meshes-11.406d1ccac7793ed199a6.tar.xz",
+   "bytes": 12579154,
+   "files": 705,
+   "hash": "406d1ccac7793ed199a670691f09ff62c878dd28fa7c0b890e246171c54b7fd9"
   },
   "meshes-12": {
-   "asset": "meshes-12.18f11d8d026241b408cd.tar.xz",
-   "bytes": 12944644,
-   "files": 715,
-   "hash": "18f11d8d026241b408cd7004d8f3e37c738a17e99af9d58df3da2ac9e0a2681a"
+   "asset": "meshes-12.d07f145906b119eed2b6.tar.xz",
+   "bytes": 13004385,
+   "files": 755,
+   "hash": "d07f145906b119eed2b67fe79501dbd7884d778e18f4e636585a76308dc146a1"
   },
   "meshes-13": {
-   "asset": "meshes-13.cec1c6ec6edf232a1567.tar.xz",
-   "bytes": 11759832,
-   "files": 680,
-   "hash": "cec1c6ec6edf232a156767007b225f7b33a8bf58ef9249007e70b4e410d307ee"
+   "asset": "meshes-13.c02da0c2d7e3d8780bb1.tar.xz",
+   "bytes": 10717183,
+   "files": 710,
+   "hash": "c02da0c2d7e3d8780bb1bc8e5f4955bb9b81ecad057306861da759f9d12df6a6"
   },
   "meshes-14": {
-   "asset": "meshes-14.c58430a583b70ac32edc.tar.xz",
-   "bytes": 13287990,
-   "files": 658,
-   "hash": "c58430a583b70ac32edcb0bf887f97b8f44e8a070a58c86fdbbae0be918ac7f2"
+   "asset": "meshes-14.93940514e24891438510.tar.xz",
+   "bytes": 12122819,
+   "files": 688,
+   "hash": "93940514e2489143851000efe91211c20f99ff0ffb94bb365ac70737c0d9c9ef"
   },
   "meshes-15": {
-   "asset": "meshes-15.bfa56d238b65439643a0.tar.xz",
-   "bytes": 12057576,
-   "files": 694,
-   "hash": "bfa56d238b65439643a0615bc1706c5b8adea4d7256cc8c1c043afdaa8276e30"
+   "asset": "meshes-15.6effda78d7f2268dd4d0.tar.xz",
+   "bytes": 11970287,
+   "files": 732,
+   "hash": "6effda78d7f2268dd4d089910a33e95da6c94c41392fd4694308425632e02f52"
   },
   "meshes-16": {
-   "asset": "meshes-16.96da01198a975370075a.tar.xz",
-   "bytes": 12759665,
-   "files": 675,
-   "hash": "96da01198a975370075a840711a63273fb38001f98375e9d3be96d4731b8bcfb"
+   "asset": "meshes-16.76348442173c98ab34bc.tar.xz",
+   "bytes": 11117715,
+   "files": 709,
+   "hash": "76348442173c98ab34bc7d761cef287832366b8204c06fec6422eef7e5fbea84"
   },
   "meshes-17": {
-   "asset": "meshes-17.66e99bef0b68a151d4dd.tar.xz",
-   "bytes": 14025835,
-   "files": 700,
-   "hash": "66e99bef0b68a151d4ddeaea2fc3da037eace4b84a4d2b94512a01fe16d46154"
+   "asset": "meshes-17.421ee8d8bd3173463d8a.tar.xz",
+   "bytes": 12855240,
+   "files": 729,
+   "hash": "421ee8d8bd3173463d8aed620fe08be29c64a2a51d8bbc7b1a8ed5f132774cd9"
   },
   "meshes-18": {
-   "asset": "meshes-18.2ff335e50ae044575b85.tar.xz",
-   "bytes": 13072397,
-   "files": 708,
-   "hash": "2ff335e50ae044575b85992f0dc10eeee1944923bfc178eaedae77ed78401b2d"
+   "asset": "meshes-18.23108645ef1e4e0a03ef.tar.xz",
+   "bytes": 12089306,
+   "files": 758,
+   "hash": "23108645ef1e4e0a03ef980410bd2957be07a7e9734d9f19785cbe8cf1757bdb"
   },
   "meshes-19": {
-   "asset": "meshes-19.e431b73a8fb8254993de.tar.xz",
-   "bytes": 11870641,
-   "files": 692,
-   "hash": "e431b73a8fb8254993de27d1c2f571f8342ba16952626f36e96f9578a0612e1d"
+   "asset": "meshes-19.43cec0bf294ff892d278.tar.xz",
+   "bytes": 10775084,
+   "files": 717,
+   "hash": "43cec0bf294ff892d278ab1ffe580a6ef61607bfa3b174077748f8ed6872c508"
   },
   "meshes-20": {
-   "asset": "meshes-20.7dbc2bc55cb6fac8f5ba.tar.xz",
-   "bytes": 13613056,
-   "files": 662,
-   "hash": "7dbc2bc55cb6fac8f5ba93c89a247c4aa45257e050d71adb4ac6474242f120c4"
+   "asset": "meshes-20.41e507679251f60d26c1.tar.xz",
+   "bytes": 12082167,
+   "files": 680,
+   "hash": "41e507679251f60d26c1f0f5b01c64f9be0af96b699b42e7698a5475388c8259"
   },
   "meshes-21": {
-   "asset": "meshes-21.ae2fd8298fd4104330e0.tar.xz",
-   "bytes": 13693201,
-   "files": 675,
-   "hash": "ae2fd8298fd4104330e06b007b0a355123f9ce725d7b99bdeb16d5be4edc6e6a"
+   "asset": "meshes-21.e0442b61d923a8c9fd6e.tar.xz",
+   "bytes": 13220310,
+   "files": 704,
+   "hash": "e0442b61d923a8c9fd6e3f1b924fe2e1a5e84b89c421f86653e487d645e636ce"
   },
   "meshes-22": {
-   "asset": "meshes-22.8fe551ae5bf5105c0c22.tar.xz",
-   "bytes": 11484050,
-   "files": 665,
-   "hash": "8fe551ae5bf5105c0c22901ba20f2db09a19966b013c6acb85baa527c9c00662"
+   "asset": "meshes-22.e12df2ad5b114d60f4d6.tar.xz",
+   "bytes": 10801628,
+   "files": 689,
+   "hash": "e12df2ad5b114d60f4d6a936b436db3924e28a448b494b53d56118e06da464c1"
   },
   "meshes-23": {
-   "asset": "meshes-23.9165aa9cf9641a9ff9be.tar.xz",
-   "bytes": 12695068,
-   "files": 665,
-   "hash": "9165aa9cf9641a9ff9beb01604ea050546f65c561a4a015833fd17ebf98f0cb1"
+   "asset": "meshes-23.1d457a7bd10d667b83c0.tar.xz",
+   "bytes": 11945472,
+   "files": 691,
+   "hash": "1d457a7bd10d667b83c0220c47f425da08366807271f02301c60e16b23cab06c"
   },
   "meshes-24": {
-   "asset": "meshes-24.cc8cd03d5cf75d2b45fe.tar.xz",
-   "bytes": 12835277,
-   "files": 694,
-   "hash": "cc8cd03d5cf75d2b45feda4bde8e415206ca35ff5deb59fe41ce2859d7a99ff6"
+   "asset": "meshes-24.1badd907dc63694ff899.tar.xz",
+   "bytes": 11958182,
+   "files": 722,
+   "hash": "1badd907dc63694ff899d3311441614861f0e195f62268816d6da81f1f61279c"
   },
   "meshes-25": {
-   "asset": "meshes-25.aa70d42de1f4ac282269.tar.xz",
-   "bytes": 12562535,
-   "files": 671,
-   "hash": "aa70d42de1f4ac2822692a3aad25c984dc7435f9a2b2a34ea334fa6b503a481b"
+   "asset": "meshes-25.4646a32eab0dbc7cfbf4.tar.xz",
+   "bytes": 11725942,
+   "files": 700,
+   "hash": "4646a32eab0dbc7cfbf471bd96c9778f737c08935380a1f021a5e39a9b5dc457"
   },
   "meshes-26": {
-   "asset": "meshes-26.3c22abc5be21a056bc14.tar.xz",
-   "bytes": 13564055,
-   "files": 655,
-   "hash": "3c22abc5be21a056bc14e04950405164dfee6dbe16409600e39566abedee8c5b"
+   "asset": "meshes-26.19bf1f0005811d168780.tar.xz",
+   "bytes": 12400344,
+   "files": 671,
+   "hash": "19bf1f0005811d168780a964db5e767a2ee2f664e120b555033f90f800e0ad24"
   },
   "meshes-27": {
-   "asset": "meshes-27.90b8e2d55ab0340c65b9.tar.xz",
-   "bytes": 13179345,
-   "files": 681,
-   "hash": "90b8e2d55ab0340c65b982fa379e894db92841fbd0bf401fd576e6c2806e7cb1"
+   "asset": "meshes-27.6e877523e501abe2d023.tar.xz",
+   "bytes": 12426152,
+   "files": 710,
+   "hash": "6e877523e501abe2d02331295707e18d2e5bdaeb9db007233c09158f27acddf6"
   },
   "meshes-28": {
-   "asset": "meshes-28.104a10ed76b9813d5792.tar.xz",
-   "bytes": 13808984,
-   "files": 733,
-   "hash": "104a10ed76b9813d5792df7defed1f3dbf91a0477b450627af4f54797608c06e"
+   "asset": "meshes-28.cf080baa4ca796f388f5.tar.xz",
+   "bytes": 13511119,
+   "files": 773,
+   "hash": "cf080baa4ca796f388f5c977a5ec372ac0283eec7dd14a547af1b80586e0d93f"
   },
   "meshes-29": {
-   "asset": "meshes-29.40e3fbe3fe1d0f1968d4.tar.xz",
-   "bytes": 10915842,
-   "files": 677,
-   "hash": "40e3fbe3fe1d0f1968d4aa83eda2808af9fcbfbe3cd26ed3749a1f47a252c5b9"
+   "asset": "meshes-29.b8d7d7d1661890aab82a.tar.xz",
+   "bytes": 10343411,
+   "files": 710,
+   "hash": "b8d7d7d1661890aab82abeff50a7cb07624b0524f59f5448f84a25f2c912c2cc"
   },
   "meshes-30": {
-   "asset": "meshes-30.bcf2a274e0c2e9c52253.tar.xz",
-   "bytes": 10401895,
-   "files": 664,
-   "hash": "bcf2a274e0c2e9c52253b6e03edc5f1dab02ddf88103ca3c3b411eced082ce38"
+   "asset": "meshes-30.62eba19395d9789455a1.tar.xz",
+   "bytes": 9331280,
+   "files": 685,
+   "hash": "62eba19395d9789455a1ea4dd44afc77d835af82b0d6fe004918b6155ba50bb3"
   },
   "meshes-31": {
-   "asset": "meshes-31.cacffc85307b2907da3c.tar.xz",
-   "bytes": 12235120,
-   "files": 660,
-   "hash": "cacffc85307b2907da3c45bf936257374659c99bb3a15a23240e4a807ebc6df1"
+   "asset": "meshes-31.fd296cb64884ad71055b.tar.xz",
+   "bytes": 13458993,
+   "files": 691,
+   "hash": "fd296cb64884ad71055b4e4a7829c0e2421590c10dbc1150869599f46087f01b"
   },
   "neighborhood.tscn": {
-   "asset": "neighborhood.tscn.5e80f64a42a458ac5100.tar.xz",
-   "bytes": 83662404,
+   "asset": "neighborhood.tscn.fa05dc2c88227445b07a.tar.xz",
+   "bytes": 84238771,
    "files": 1,
-   "hash": "5e80f64a42a458ac5100bb6c009677c7b3b8f3faf6aa99007a1450c69cba5a20"
+   "hash": "fa05dc2c88227445b07ae5297565aa1102153071660f7b4f6796ebb9cfe84f3f"
   },
   "world-ground.1.bin": {
-   "asset": "world-ground.1.bin.fd3dd2eb0acb1fc00bd5.tar.xz",
-   "bytes": 47970641,
+   "asset": "world-ground.1.bin.5519d8c805547541e0b6.tar.xz",
+   "bytes": 47963865,
    "files": 1,
-   "hash": "fd3dd2eb0acb1fc00bd5516f8a58b1fbe06c37cfe03b54e1eacfa01e5f5ab877"
+   "hash": "5519d8c805547541e0b61d0cf02d10d9efbf57a22baa69e07d4c510736230b24"
   },
   "world-ground.2.bin": {
-   "asset": "world-ground.2.bin.437e2111322f90a51d84.tar.xz",
-   "bytes": 47977940,
+   "asset": "world-ground.2.bin.eb3adcf9b3a437a4ee7d.tar.xz",
+   "bytes": 47987379,
    "files": 1,
-   "hash": "437e2111322f90a51d84c4ddad8e7cf265a7f100d7325d40aa8f799c1b47ec8d"
+   "hash": "eb3adcf9b3a437a4ee7d14de87bb49811984383800a4b77f0d942e139a261eed"
   },
   "world-ground.3.bin": {
-   "asset": "world-ground.3.bin.840c7dc6dd0ddb1d0b2b.tar.xz",
-   "bytes": 47919385,
+   "asset": "world-ground.3.bin.a915ee3e86f5fb84938a.tar.xz",
+   "bytes": 47960586,
    "files": 1,
-   "hash": "840c7dc6dd0ddb1d0b2b98fcda5ce869e0f431bcc5b4e2a14cde5e9ab026448a"
+   "hash": "a915ee3e86f5fb84938a1d7b1297ee7b54bb9768f47dae4f26f9f57851d7d10e"
   },
   "world-ground.4.bin": {
-   "asset": "world-ground.4.bin.02ed5da0bac37b8d12f8.tar.xz",
-   "bytes": 21968614,
+   "asset": "world-ground.4.bin.9f4121966b5d30651610.tar.xz",
+   "bytes": 8340939,
    "files": 1,
-   "hash": "02ed5da0bac37b8d12f8113f0b6847c91b1b02043e6ceed4d1ca31b6ad3ea731"
+   "hash": "9f4121966b5d30651610b12784ce3a9842070bbed556bfa491d02b55930c89ec"
   },
   "world-ground.bin": {
    "asset": "world-ground.bin.d6fdc8b1ae6aeca761c9.tar.xz",
@@ -328,70 +250,70 @@
    "hash": "d6fdc8b1ae6aeca761c9609bfd68647502a58301010268ddb4cdc727b45cb994"
   },
   "world-ground_ids.bin": {
-   "asset": "world-ground_ids.bin.e0428cb163e756d8aa07.tar.xz",
-   "bytes": 5981404,
+   "asset": "world-ground_ids.bin.5e0d3288f392d015744d.tar.xz",
+   "bytes": 6004353,
    "files": 1,
-   "hash": "e0428cb163e756d8aa0788b0599b27149769516fbaa7616c38df388bc39c6747"
+   "hash": "5e0d3288f392d015744ded60978d86e0a00e353c1dcc8b99be89e11cf2ef883a"
   },
   "world-ground_index.json": {
-   "asset": "world-ground_index.json.eb11f875e45f658788b2.tar.xz",
-   "bytes": 1954716,
+   "asset": "world-ground_index.json.06736fac490047471d51.tar.xz",
+   "bytes": 1710927,
    "files": 1,
-   "hash": "eb11f875e45f658788b2db2734bf29bcc8d053b35538ad66ca1eb76b63308d15"
+   "hash": "06736fac490047471d51eb9c267b352dc44ea32ce3693bb84d07e7712acfdffd"
   },
   "world-heightmap.0.f32": {
-   "asset": "world-heightmap.0.f32.79c1cfcd6a7a1d5189f9.tar.xz",
+   "asset": "world-heightmap.0.f32.54eff2076a62785d1744.tar.xz",
    "bytes": 47984064,
    "files": 1,
-   "hash": "79c1cfcd6a7a1d5189f93ebea30d3fa84c62ada9136da3b2b98f172eeaee175e"
+   "hash": "54eff2076a62785d174441103c73fa0460dfd3cb9e32541a73a930f96a0fbef8"
   },
   "world-heightmap.1.f32": {
-   "asset": "world-heightmap.1.f32.276ef9346c2851a9b908.tar.xz",
+   "asset": "world-heightmap.1.f32.ba1d398ecc76d183ed00.tar.xz",
    "bytes": 47984064,
    "files": 1,
-   "hash": "276ef9346c2851a9b908883a84457d82e9a8c6de295294c12ff4c5a7f0ce6a69"
+   "hash": "ba1d398ecc76d183ed009927cba35989c83e1b1976e15d47fa775507bbe16a40"
   },
   "world-heightmap.2.f32": {
-   "asset": "world-heightmap.2.f32.f4244bceb03ff978ae48.tar.xz",
+   "asset": "world-heightmap.2.f32.08886bbb902cf5652209.tar.xz",
    "bytes": 47984064,
    "files": 1,
-   "hash": "f4244bceb03ff978ae486f7b4209ac1fca2676df78f52a79f86a849a376d1761"
+   "hash": "08886bbb902cf5652209c84d2fa65bd2dd3a242208c3d378a4a12b5efa7b1607"
   },
   "world-heightmap.3.f32": {
-   "asset": "world-heightmap.3.f32.f5df34493bd29f051f2d.tar.xz",
+   "asset": "world-heightmap.3.f32.05f7e83a77aff9df46af.tar.xz",
    "bytes": 47984064,
    "files": 1,
-   "hash": "f5df34493bd29f051f2dd71c86cdd41fa6e12d6254da048830790938c4b222a6"
+   "hash": "05f7e83a77aff9df46afcdd7a676a803738ceec87d9476286c89fac1e87936f9"
   },
   "world-heightmap.4.f32": {
-   "asset": "world-heightmap.4.f32.cb118dd49d2904a39946.tar.xz",
+   "asset": "world-heightmap.4.f32.9386e6f726330d5c0218.tar.xz",
    "bytes": 47984064,
    "files": 1,
-   "hash": "cb118dd49d2904a3994637a318afd67fa85171a7f72e1371c533e4cf2252462e"
+   "hash": "9386e6f726330d5c021826026489a86d69d975b9d2202293e209ea3f898af5da"
   },
   "world-heightmap.5.f32": {
-   "asset": "world-heightmap.5.f32.a3477b9745c9c0a46783.tar.xz",
+   "asset": "world-heightmap.5.f32.30bb65dd282c6e75584a.tar.xz",
    "bytes": 47984064,
    "files": 1,
-   "hash": "a3477b9745c9c0a467836a8b607fe4bc46306ebb5cc421f69dcc489152cfd57c"
+   "hash": "30bb65dd282c6e75584aa40d9eb929d92bf192f54bf4ac465150a3c87470c1fe"
   },
   "world-heightmap.6.f32": {
-   "asset": "world-heightmap.6.f32.80356634f8c135f8785d.tar.xz",
+   "asset": "world-heightmap.6.f32.9e0ff7a284133db7ca28.tar.xz",
    "bytes": 47984064,
    "files": 1,
-   "hash": "80356634f8c135f8785dcaa6edcf4d8efc1336dbd50f6405e34d7a02978939bc"
+   "hash": "9e0ff7a284133db7ca28cc95ba6f2b5bab4412f0ba2ecabdf5f5dc6fd2de268f"
   },
   "world-heightmap.7.f32": {
-   "asset": "world-heightmap.7.f32.bc293dc56c850642e484.tar.xz",
+   "asset": "world-heightmap.7.f32.d62e2128a9ea4d7274ec.tar.xz",
    "bytes": 47984064,
    "files": 1,
-   "hash": "bc293dc56c850642e484891d842dec7a158a4d665fa5795c2c6ec9ef0d6c5085"
+   "hash": "d62e2128a9ea4d7274ece2731c2f46f833a103936b5f58e70dcb696e98ede3d1"
   },
   "world-world.json": {
-   "asset": "world-world.json.5b44f46a9b2e531c83ac.tar.xz",
-   "bytes": 95009567,
+   "asset": "world-world.json.21dfa5b01d8eb161ddf4.tar.xz",
+   "bytes": 92696831,
    "files": 1,
-   "hash": "5b44f46a9b2e531c83ac390fcbabb46fe1038bd3c7866460051ca4acaccd653a"
+   "hash": "21dfa5b01d8eb161ddf40d74ad26f35fe56e3228153b8501646a19e54a14957c"
   }
  }
 }
