@@ -7,7 +7,8 @@ extends "res://tools/test_base.gd"
 ## - wanted: a car stolen, the calls (none from a driver tased first), one star, the cars on a call; seen fleeing, two
 ##   stars, a chase and a search; unseen long enough, lost;
 ## - the helicopter: parked, takes off for someone on the run, flies there high enough, keeps above them, follows them;
-##   lost, back to its base and down.
+##   under a tree's crown, it does not see them (in its range and line of sight); out in the open again, it does;
+##   out of fuel, it flies home and sees nobody; REFUEL s later, back after them; lost, back to its base and down.
 ##   godot --headless --fixed-fps 60 --path godot --script res://tools/test_police.gd -- --online-test
 
 var _main: Node
@@ -239,16 +240,22 @@ func _heli(police: Node) -> void:
 	var over := await _until(watch, 120.0)
 	_check(over, "it gets there and keeps above them: %d m away, %d m up (%.0f s, at most %d km/h)" % [
 			_xy(heli).distance_to(_xy(car)), heli.height, (Time.get_ticks_msec() - t0) / 1000.0, fast[0] * 3.6])
-	# they drive on 150 m: it follows
-	var on := _xy(car) + Vector2(150.0, 0.0).rotated(rng.randf() * TAU)
-	var at: Vector2i = police.graph.nearest(on, Vector2.ZERO, 80.0)
-	if at.x >= 0:
-		on = police.graph.point(at)
+	# they drive on 150 m, out in the open (no crown over them: under the trees it does not see them): it follows
+	var on := Vector2.ZERO
+	for k in 24:
+		on = _xy(car) + Vector2(150.0, 0.0).rotated(rng.randf() * TAU)
+		var at: Vector2i = police.graph.nearest(on, Vector2.ZERO, 80.0)
+		if at.x >= 0:
+			on = police.graph.point(at)
+		if police.canopy == null or not police.canopy.hides(_ground(on) + Vector3.UP * 60.0, _ground(on) + Vector3.UP):
+			break
 	car.place(Transform3D(Basis(), _ground(on) + Vector3.UP * 0.5))
 	var follows := await _until(func() -> bool:
 		watch.call()
 		return _xy(heli).distance_to(on) < 50.0, 60.0)
 	_check(follows, "it follows them (%d m from where they went)" % _xy(heli).distance_to(on))
+	await _canopy(police, car, on)
+	await _fuel(police, car)
 	# lost: back home and down
 	var far := Vector2.ZERO
 	for k in 400:
@@ -278,6 +285,81 @@ func _heli(police: Node) -> void:
 	await _frames(60 * 16)
 	_check(heli.rotor < 0.05, "the rotor winds down")
 	police.spawning = true
+
+
+## Under the trees (police.gd heli_sees, air/canopy.gd): the car under a big crown near the helicopter, it does not
+## see them though they are in its range and line of sight; back out in the open at `open`, it sees them again.
+func _canopy(police: Node, car: Node, open: Vector2) -> void:
+	var canopy: RefCounted = police.canopy
+	_check(canopy != null and canopy.trees > 0, "the crowns: %d trees (%d ms)" % [canopy.trees if canopy else 0,
+			canopy.build_ms if canopy else 0])
+	if canopy == null or not police.cases.has(1):
+		return
+	var data: Resource = _main.world_root.get_node("TreeCollision").data
+	var best := [-1, INF]                    # a big crown, high enough for the car, the nearest the helicopter
+	for k in data.size():
+		var r: Vector2 = data.crown_radii[k]
+		var c: Vector3 = data.crown_center[k]
+		var b: Vector3 = data.base[k]
+		var d := Vector2(c.x, -c.z).distance_to(open)
+		if r.x >= 4.5 and c.y - r.y > b.y + 2.5 and d < best[1] and d > 30.0:
+			best = [k, d]
+	_check(best[0] >= 0 and best[1] < 150.0, "a big tree %d m from them" % best[1])
+	if best[0] < 0 or best[1] >= 150.0:
+		return
+	var k: int = best[0]
+	var foot: Vector3 = data.base[k]
+	var under := Vector2(foot.x, -foot.z) + (open - Vector2(foot.x, -foot.z)).normalized() \
+			* (maxf(data.trunk[k].x, 0.3) + 2.2)
+	car.place(Transform3D(Basis(), _ground(under) + Vector3.UP * 0.5))
+	await _frames(60)
+	var target: Vector3 = car.global_position + Vector3.UP
+	var never := [true, false, 0]          # never seen; once in range and in its line of sight; hides() µs at most
+	for i in 60 * 15:                       # (15 s of game: _until counts real time, the headless game runs faster)
+		await physics_frame
+		if not police.cases.has(1):
+			never[0] = false
+			break
+		never[0] = never[0] and not police.cases[1].seen
+		var eye: Vector3 = police.heli.global_position + Vector3.UP * 0.2
+		if eye.distance_to(target) < police.HELI_SEE and police.in_sight(eye, target,
+				[car.get_rid(), police.heli.get_rid()]):
+			never[1] = true
+		var t0 := Time.get_ticks_usec()
+		canopy.hides(eye, target)
+		never[2] = maxi(never[2], Time.get_ticks_usec() - t0)
+	_check(never[0] and never[1], "under a tree: unseen by the helicopter for 15 s (in its range and line of sight: %s;"
+			% never[1] + " hides() %d µs at most)" % never[2])
+	car.place(Transform3D(Basis(), _ground(open) + Vector3.UP * 0.5))
+	var again := await _until(func() -> bool: return police.cases.has(1) and police.cases[1].seen, 30.0)
+	_check(again, "out in the open: seen again")
+
+
+## Out of fuel (police.gd FUEL, REFUEL): it gives up, flies home and sees nobody; REFUEL s after it left, back after
+## them. Its tank put near empty, then its time away cut short (not to wait minutes).
+func _fuel(police: Node, car: Node) -> void:
+	if not police.cases.has(1) or police.heli_case != 1:
+		_check(false, "fuel: the helicopter after them first (case %s, after %d)" % [police.cases.has(1),
+				police.heli_case])
+		return
+	var heli: Node = police.heli
+	var pilot: RefCounted = police.heli_pilot
+	police.heli_flown = police.FUEL - 1.0
+	var gone := await _until(func() -> bool: return police.heli_away > 0.0, 5.0)
+	_check(gone and police.heli_case == 0 and pilot.order == pilot.HOME,
+			"out of fuel: it gives up and flies home (back in %.0f s)" % (police.heli_away - police.time))
+	var seen := false
+	var d0: float = _xy(heli).distance_to(_xy(car))
+	for i in 60 * 10:                       # (10 s of game)
+		await physics_frame
+		seen = seen or police.heli_case != 0
+	_check(not seen and _xy(heli).distance_to(_xy(car)) > d0 + 50.0,
+			"...away for now: %d m -> %d m from them" % [d0, _xy(heli).distance_to(_xy(car))])
+	police.heli_away = police.time + 1.0
+	var back := await _until(func() -> bool: return police.heli_case == 1 and pilot.order != pilot.HOME, 5.0)
+	_check(back and police.heli_flown < 5.0, "refuelled, back after them (order %d)" % pilot.order)
+	var over := await _until(func() -> bool: return _xy(heli).distance_to(_xy(car)) < 60.0, 90.0)
+	_check(over, "...over them again (%d m)" % _xy(heli).distance_to(_xy(car)))
 
 
 ## The ground at map point `p` (Godot).

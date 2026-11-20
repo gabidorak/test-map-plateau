@@ -12,6 +12,7 @@ extends Node
 ##   tactics/roadblock.gd       the roadblocks
 ##   tactics/search.gd          the search, block by block, when they are not seen
 ##   air/heli_pilot.gd          the helicopter's pilot
+##   air/canopy.gd              the trees' crowns, which the helicopter cannot see through
 ##   foot/arrest.gd, officer.gd the officers out of their cars, the arrests
 ##   hud/police_hud.gd          the stars
 ## - The fleet, as in GTA: UNITS patrol cars made once when the game starts (FLEET_PER_TICK a tick, once the road
@@ -34,7 +35,8 @@ extends Node
 ##     police car that saw it acts at once. Reported: level 1, its cars there (CALL, siren on).
 ##   - Every LOOK_EVERY s, are they seen? By a car: its vision cone, as in GTA (SIGHT_FRONT m over the half in front of
 ##     it, SIGHT_BACK m behind; in sight: no wall, no hedge between), whatever they are in; that car chases them (PACK
-##     at most); by the helicopter (HELI_SEE m: it guides the cars on their case nearest them after them); by an officer
+##     at most); by the helicopter (HELI_SEE m, not under the trees: air/canopy.gd; it guides the cars on their case
+##     nearest them after them); by an officer
 ##     on foot. Seen fleeing (faster than FLEE_SPEED), or not there when the first car on the call gets there: level 2,
 ##     the helicopter.
 ##   - Seen: tactics/pursuit.gd closes in, tactics/roadblock.gd blocks the road ahead. Not seen: CHASE_GRACE s on, the
@@ -42,7 +44,9 @@ extends Node
 ##   - Not seen LOSE[level] s: lost; level 0, their cars back to their patrols (and to the pool, as they get far).
 ## - The helicopter (one, Car.SPECS HELI_MODEL, flown by heli_pilot.gd): parked on its base by the sous-préfecture de
 ##   Palaiseau (data/police.json) when the game starts; someone on the run, it takes off; it keeps above them while it
-##   sees them, else searches; nobody on the run any more, back to its base, the rotor winding down.
+##   sees them, else searches; nobody on the run any more, back to its base, the rotor winding down. Out of fuel
+##   after FUEL s after someone: it gives up and flies home (it sees nobody any more); REFUEL s after it left, it
+##   comes back (someone still on the run), its tank full.
 ## - The arrests (foot/arrest.gd, Police/Arrest): near someone wanted and slow, a car on their case stops and its
 ##   officer gets out after them (unit.gd OUT); back in, the car goes on (resume). Put in a car: arrested (no star).
 ## - Cheap: the looks 4 times a second; where a player is (suspect) worked out once a tick; one sight ray object for all.
@@ -56,6 +60,7 @@ const Pursuit = preload("res://scripts/police/tactics/pursuit.gd")
 const Roadblock = preload("res://scripts/police/tactics/roadblock.gd")
 const Search = preload("res://scripts/police/tactics/search.gd")
 const HeliPilot = preload("res://scripts/police/air/heli_pilot.gd")
+const Canopy = preload("res://scripts/police/air/canopy.gd")
 const Arrest = preload("res://scripts/police/foot/arrest.gd")
 const PoliceHud = preload("res://scripts/police/hud/police_hud.gd")
 const Garages = preload("res://scripts/online/garages.gd")
@@ -92,6 +97,8 @@ const PACK := 4                             # cars at most chasing one suspect
 const SIGHT_FRONT := 300.0                  # m a police car sees over the half in front of it...
 const SIGHT_BACK := 50.0                    # ...and behind it
 const HELI_SEE := 200.0                     # m the helicopter sees
+const FUEL := 120.0                         # s after someone before the helicopter is out of fuel, flies home...
+const REFUEL := 60.0                        # ...and comes back this many s after it left
 const FLEE_SPEED := 5.0                     # m/s: seen going faster than this, they are on the run
 const LOOK_EVERY := 0.25                    # s between the police's looks at the cases
 const CHASE_GRACE := 3.0                    # s unseen before the chasers search too
@@ -111,6 +118,9 @@ var search: Search
 var heli: Car                               # host: the helicopter (null: none)...
 var heli_pilot: HeliPilot                   # ...its pilot...
 var heli_case := 0                          # ...whom it hunts (peer, 0 nobody)
+var heli_flown := 0.0                       # ...s after someone since it took off or refuelled (FUEL)
+var heli_away := 0.0                        # ...out of fuel: the time it may come back (0: it is not)
+var canopy: Canopy                          # host: the trees' crowns it cannot see through (null: no trees)
 var arrest: Arrest                          # the officers on foot, the arrests (every peer)
 var release := Transform3D()                # host: where an arrested player is let go (data/police.json)
 var time := 0.0                             # host: s since the game started (the tactics' clock)
@@ -167,6 +177,9 @@ func begin(host: bool) -> void:
 	search = Search.new(self)
 	_task = WorkerThreadPool.add_task(graph.build, false, "police road network")
 	_load_places()
+	var trees: Node = game.world_root.get_node_or_null("TreeCollision")
+	if trees and trees.get("data"):
+		canopy = Canopy.new(trees.data)
 	game.carjack.car_stolen.connect(_on_car_stolen)
 	set_physics_process(true)
 
@@ -216,10 +229,12 @@ func _tick(delta: float) -> void:
 	for u: Unit in units:
 		if u.tick(delta):
 			_arrived(u)
+	_heli_fuel(delta)
 	if heli_flying() and (heli_pilot.done or heli.broken):
 		heli.set_pilot(null)                # (back on its base: the rotor winds down; broken: it falls where it is)
 		heli_pilot.order = HeliPilot.PARKED
 		heli_case = 0
+		heli_flown = 0.0                    # (filled up on its base)
 
 
 # ---------------------------------------------------------------- the fleet: the pool, putting out, taking back
@@ -599,12 +614,9 @@ func _look(c: Case) -> void:
 				chasing += 1
 		if arrest.sees(target, exclude):
 			c.seen = true
-		if heli_flying():
-			var h_eye := heli.global_position + Vector3.UP * 0.2
-			if h_eye.distance_squared_to(target) < HELI_SEE * HELI_SEE \
-					and in_sight(h_eye, target, exclude + [heli.get_rid()]):
-				c.seen = true
-				guided = true
+		if heli_flying() and heli_away == 0.0 and heli_sees(target, exclude):
+			c.seen = true
+			guided = true
 		if c.seen:
 			var now := Vector2(target.x, -target.z)
 			c.vel = (now - c.last) / LOOK_EVERY if was else Vector2.ZERO
@@ -650,6 +662,15 @@ func _sees(car: Node3D, target: Vector3, exclude: Array) -> bool:
 	var f: Vector3 = car.global_basis.z
 	var reach := SIGHT_FRONT if rel.dot(Vector2(f.x, f.z)) >= 0.0 else SIGHT_BACK
 	return rel.length_squared() < reach * reach and in_sight(eye, target, exclude + [car.get_rid()])
+
+
+## Whether the helicopter sees `target` (global): HELI_SEE m, nothing between (but `exclude` and itself), no tree's
+## crown over them or between (under the trees, it loses you: air/canopy.gd).
+func heli_sees(target: Vector3, exclude: Array) -> bool:
+	var eye := heli.global_position + Vector3.UP * 0.2
+	return eye.distance_squared_to(target) < HELI_SEE * HELI_SEE \
+			and in_sight(eye, target, exclude + [heli.get_rid()]) \
+			and not (canopy and canopy.hides(eye, target))
 
 
 ## The helicopter sees case `c`'s quarry: the cars on their case nearest them (on a call, searching) after them,
@@ -782,11 +803,33 @@ func heli_flying() -> bool:
 	return heli != null and heli.pilot != null
 
 
-## The helicopter after player `peer` (on the run), unless it hunts someone else already or is broken.
+## The helicopter after player `peer` (on the run), unless it hunts someone else already, is broken or away for fuel.
 func _send_heli(peer: int) -> void:
-	if heli == null or heli.broken or (heli_case != 0 and cases.has(heli_case)):
+	if heli == null or heli.broken or heli_away > 0.0 or (heli_case != 0 and cases.has(heli_case)):
 		return
 	heli_case = peer
 	if heli.pilot == null:
 		heli.set_pilot(heli_pilot)
 	heli_pilot.search((cases[peer] as Case).last)
+
+
+## Its fuel: FUEL s after someone, it gives up and flies home (heli_away); REFUEL s after it left, back after someone
+## still on the run, its tank full.
+func _heli_fuel(delta: float) -> void:
+	if heli_away > 0.0:
+		if time < heli_away:
+			return
+		heli_away = 0.0
+		heli_flown = 0.0
+		for peer: int in cases:
+			if (cases[peer] as Case).level >= 2:
+				_send_heli(peer)
+				break
+		return
+	if not heli_flying() or heli_case == 0:
+		return
+	heli_flown += delta
+	if heli_flown >= FUEL:
+		heli_case = 0
+		heli_away = time + REFUEL
+		heli_pilot.home()
