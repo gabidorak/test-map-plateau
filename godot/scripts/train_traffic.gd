@@ -642,7 +642,7 @@ func _update_signals() -> void:
 				aspect = "S" if aspect == "C" and lamps.has("S") else ("A" if lamps.has("A") and aspect != "VL" else "VL")
 			if node.get_meta("aspect", "") != aspect and lamps.has(aspect):
 				node.set_meta("aspect", aspect)
-				RailBuilder._set_aspect(lamps, node.get_meta("lit"), node.get_meta("off"), aspect)
+				RailBuilder._set_aspect(node, aspect)
 
 
 ## The departure screens: the next two trains of their platform's direction (minutes to Lozère, "à quai" while one

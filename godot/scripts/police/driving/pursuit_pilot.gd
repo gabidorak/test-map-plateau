@@ -76,7 +76,10 @@ const LIGHT_EVERY := 0.25                   # ...this many s apart
 const LOOKS_PER_TICK := 3                   # looks a physics tick, all the pilots together...
 const DEFER_MAX := 3                        # ...one put off this many ticks at most
 
-var driver: Object                          # police_driver.gd (its _pursue, its reference point)
+var driver: Object:                         # police_driver.gd (its _pursue, its reference point): held weakly, it
+	get:                                    # holds this pilot (a cycle of references is never freed)
+		return _driver.get_ref() if _driver else null
+var _driver: WeakRef
 var car: Node3D                             # car.gd
 ## what it is asked (police_driver.gd, each tick)
 var aim := Vector3.ZERO                     # global point it heads for
@@ -122,7 +125,7 @@ var _start_query := PhysicsShapeQueryParameters3D.new()
 
 
 func setup(d: Object, c: Node3D) -> void:
-	driver = d
+	_driver = weakref(d)
 	car = c
 	for b: Node in car.bodies():
 		_exclude.append((b as CollisionObject3D).get_rid())

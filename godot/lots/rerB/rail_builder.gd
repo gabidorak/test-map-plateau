@@ -1593,7 +1593,7 @@ func _label(parent: Node3D, text: String, pos: Vector3, size: int, color: Color,
 ## The lineside signals inside the map box (rerB's plan signals): a mast beside the track, the target facing the trains
 ## it protects with a lamp per aspect it can show (rerB's plan states: VL green, A yellow, S and C red, R/RR yellow
 ## pairs), the ref plate; the speed boards (TIV) with their number. Each signal is a node (meta type rail_signal) whose
-## lamps the trains switch (scripts/rail_signals.gd); they show green until then.
+## lamps the trains switch (scripts/train_traffic.gd); they show green until then.
 func _signals(node: Node3D) -> void:
 	var holder := Node3D.new()
 	holder.name = "Signals"
@@ -1679,10 +1679,13 @@ func _signals(node: Node3D) -> void:
 		if sg.get("plate", "") in ["FR:F", "FR:NF"]:
 			m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, mast - 0.5, 0.0)), Vector3(0.3, 0.26, 0.03), WHITE)
 			_label(node3, "Nf" if sg["plate"] == "FR:NF" else "F", Vector3(0.0, mast - 0.5, 0.017), 72, Color.BLACK, 0.3)
-		node3.set_meta("lamps", lamps)
+		var paths := {}                         # (the lamps by their path from the signal: nodes in a meta would be saved
+		for a: String in lamps:                 # in the map's scene as copies out of the tree)
+			paths[a] = NodePath((lamps[a] as Node).name)
+		node3.set_meta("lamps", paths)
 		node3.set_meta("lit", lit)
 		node3.set_meta("off", lens_off)
-		_set_aspect(lamps, lit, lens_off, "VL" if "VL" in lamps else rows[0])
+		_set_aspect(node3, "VL" if "VL" in lamps else rows[0])
 	_emit_cells(holder, "Masts", cells, _mat_toy, {"type": "rail_signal", "id": "rail:signals"}, SIGNAL_RANGE)
 
 
@@ -1699,11 +1702,15 @@ func _lens(parent: Node3D, mesh: Mesh, off: Material, aspect: String, pos: Vecto
 	return mi
 
 
-## Lights the lamps of `aspect` (the carré "C": both reds), the others off. Shared with scripts/rail_signals.gd.
-static func _set_aspect(lamps: Dictionary, lit: Dictionary, off: Material, aspect: String) -> void:
+## Lights the lamps of signal `sig` (its metas: "lamps", their paths from it; "lit", "off" their materials) showing
+## `aspect` (the carré "C": both reds), the others off. Shared with scripts/train_traffic.gd.
+static func _set_aspect(sig: Node, aspect: String) -> void:
+	var lamps: Dictionary = sig.get_meta("lamps")
+	var lit: Dictionary = sig.get_meta("lit")
+	var off: Material = sig.get_meta("off")
 	for a: String in lamps:
 		var on := a == aspect or (aspect == "C" and a == "S")
-		(lamps[a] as MeshInstance3D).material_override = lit[a] if on else off
+		(sig.get_node(lamps[a]) as MeshInstance3D).material_override = lit[a] if on else off
 
 
 ## Kilometre posts (rerB's plan pk: OSM, at their s, set beside their track outside the gauge) and the hectometre
