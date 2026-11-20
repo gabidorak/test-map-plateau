@@ -187,6 +187,7 @@ var residenceHaignere: Node3D               # the Haigneré residence's grounds 
 var ligne18_viaduc: Node3D                  # line 18: its viaduct, piers and tracks (lots/ligne18-viaduc/)
 var ligne18_polytechnique: Node3D           # line 18: Polytechnique's station and grounds (lots/ligne18-polytechnique/)
 var ligne18_universite: Node3D              # line 18: Université Paris-Saclay's station and grounds (lots/ligne18-universite/)
+var sousPrefecture: Node3D                  # the police's commissariat, its heliport and car park (lots/sousPrefecture/)
 var races: Races
 var economy: Economy                        # Main/Economy: PTA Online logins (and money, later)
 var online := false                         # client: playing PTA Online on the official server (start_online)

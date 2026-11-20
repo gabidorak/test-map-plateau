@@ -1,12 +1,14 @@
 extends Node
 ## PTA Online's public vehicles (data/public_vehicles.json; scripts/modes/online_mode.gd makes this node as
 ## Main/Mode/PublicVehicles): vehicles of nobody's garage that any player may take (online_mode.gd refuse_drive lets
-## them): for now the police helicopter (scripts/helicopter.gd) on Polytechnique's car park by the lake, to try it
-## online. The host (or solo player, or the official server) parks them when the game starts and tells the players
-## which they are (their net ids).
+## them): the police helicopter (scripts/helicopter.gd) on Polytechnique's car park by the lake, to try it online; the
+## lots' (builder/lots.gd public_vehicles(): the police cars on the commissariat's car park, lot sousPrefecture). The
+## host (or solo player, or the official server) parks them when the game starts and tells the players which they are
+## (their net ids).
 
 const Garages = preload("res://scripts/online/garages.gd")
 const Car = preload("res://scripts/car.gd")
+const Lots = preload("res://scripts/builder/lots.gd")
 const DATA := "res://data/public_vehicles.json"
 
 var mode: Node                              # online_mode.gd
@@ -21,7 +23,7 @@ func _ready() -> void:
 	if not parsed is Dictionary:
 		push_error("No public vehicles: %s missing" % DATA)
 		return
-	for v: Dictionary in parsed.get("vehicles", []):
+	for v: Dictionary in parsed.get("vehicles", []) + Lots.public_vehicles():
 		if not Car.SPECS.has(str(v["model"])):
 			continue
 		var a := deg_to_rad(float(v["yaw"]))

@@ -220,6 +220,26 @@ static func repaint(verts: PackedVector3Array, ids: PackedByteArray, colours: Pa
 	return rp
 
 
+## The police's places the lots give (their scripts' police_places(): {"heli_base", "release": {x, y, (z), yaw}};
+## scripts/police/police.gd), merged in the lots' order ({} if none).
+static func police_places() -> Dictionary:
+	var out := {}
+	for lot: Dictionary in all():
+		if lot.has("script") and load(str(lot["script"])).has_method("police_places"):
+			out.merge(load(str(lot["script"])).police_places(), true)
+	return out
+
+
+## PTA Online's public vehicles the lots park (their scripts' public_vehicles(): [{id, model, name, x, y, yaw}];
+## scripts/online/public_vehicles.gd).
+static func public_vehicles() -> Array:
+	var out := []
+	for lot: Dictionary in all():
+		if lot.has("script") and load(str(lot["script"])).has_method("public_vehicles"):
+			out.append_array(load(str(lot["script"])).public_vehicles())
+	return out
+
+
 ## In the game: each lot's node (game's member "node"), then the restyled buildings'; all streamed like the map's
 ## buildings (builder/lot_far.gd: their far versions).
 static func spawn(game: Node) -> void:

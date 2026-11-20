@@ -42,8 +42,8 @@ extends Node
 ##   - Seen: tactics/pursuit.gd closes in, tactics/roadblock.gd blocks the road ahead. Not seen: CHASE_GRACE s on, the
 ##     chasers search too; tactics/search.gd sends the searchers and the helicopter from block to block.
 ##   - Not seen LOSE[level] s: lost; level 0, their cars back to their patrols (and to the pool, as they get far).
-## - The helicopter (one, Car.SPECS HELI_MODEL, flown by heli_pilot.gd): parked on its base by the sous-préfecture de
-##   Palaiseau (data/police.json) when the game starts; someone on the run, it takes off; it keeps above them while it
+## - The helicopter (one, Car.SPECS HELI_MODEL, flown by heli_pilot.gd): parked on its base, the commissariat's
+##   heliport (lot sousPrefecture's places, through builder/lots.gd), when the game starts; someone on the run, it takes off; it keeps above them while it
 ##   sees them, else searches; nobody on the run any more, back to its base, the rotor winding down. Out of fuel
 ##   after FUEL s after someone: it gives up and flies home (it sees nobody any more); REFUEL s after it left, it
 ##   comes back (someone still on the run), its tank full.
@@ -66,12 +66,12 @@ const PoliceHud = preload("res://scripts/police/hud/police_hud.gd")
 const Garages = preload("res://scripts/online/garages.gd")
 const Car = preload("res://scripts/car.gd")
 const Layers = preload("res://scripts/physics_layers.gd")
+const Lots = preload("res://scripts/builder/lots.gd")
 
 const UNITS := 20                           # cars in the fleet (the pool and those out)
 const FLEET_PER_TICK := 1                   # cars made a tick when the game starts (a vehicle made: some 30 ms)
 const MODEL := "police-hatchback"
 const HELI_MODEL := "helicopter-police"
-const PLACES := "res://data/police.json"
 const HIDDEN := 220.0                       # m from every player and camera a car is put out or taken back
 const SPAWN := Vector2(250.0, 480.0)        # m from where it is wanted a car is put out, at least and at most
 const SPAWNS_PER_TICK := 1                  # cars put out a physics tick at most
@@ -122,7 +122,7 @@ var heli_flown := 0.0                       # ...s after someone since it took o
 var heli_away := 0.0                        # ...out of fuel: the time it may come back (0: it is not)
 var canopy: Canopy                          # host: the trees' crowns it cannot see through (null: no trees)
 var arrest: Arrest                          # the officers on foot, the arrests (every peer)
-var release := Transform3D()                # host: where an arrested player is let go (data/police.json)
+var release := Transform3D()                # host: where an arrested player is let go (the commissariat's entrance)
 var time := 0.0                             # host: s since the game started (the tactics' clock)
 var tick_us := 0                            # host: µs its last physics tick took (profiling, tests)
 var spawning := true                        # host: cars put out of the pool and taken back by themselves (tests: off)
@@ -775,13 +775,12 @@ func _c_wanted(n: int, seen_now: bool) -> void:
 
 # ---------------------------------------------------------------- the helicopter
 
-## Host, when the game starts: its places (data/police.json): the helicopter on its base, rotor still; where the
-## arrested are let go.
+## Host, when the game starts: its places (the lots': the commissariat's, lot sousPrefecture): the helicopter on its
+## base, rotor still; where the arrested are let go.
 func _load_places() -> void:
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(PLACES)) if FileAccess.file_exists(PLACES) \
-			else null
-	if not parsed is Dictionary or not (parsed as Dictionary).has("heli_base"):
-		push_warning("police: no places (%s)" % PLACES)
+	var parsed := Lots.police_places()
+	if not parsed.has("heli_base"):
+		push_warning("police: no places (no lot gives them)")
 		return
 	release = _place(parsed.get("release", parsed["heli_base"]))
 	if not Car.SPECS.has(HELI_MODEL):
@@ -793,9 +792,13 @@ func _load_places() -> void:
 	heli_pilot.setup(heli as HeliPilot.Heli, Vector2(float(b["x"]), float(b["y"])), at.basis.get_euler().y)
 
 
-## A place of data/police.json (map x, y, yaw degrees clockwise from north) on the ground, facing that way (+Z).
+## A police place (map x, y, yaw degrees clockwise from north) on the ground, or at its z (a roof), facing that way
+## (+Z).
 static func _place(d: Dictionary) -> Transform3D:
-	return Transform3D(Basis(Vector3.UP, PI - deg_to_rad(float(d["yaw"]))), Garages._at(float(d["x"]), float(d["y"])))
+	var at := Garages._at(float(d["x"]), float(d["y"]))
+	if d.has("z"):
+		at.y = float(d["z"])
+	return Transform3D(Basis(Vector3.UP, PI - deg_to_rad(float(d["yaw"]))), at)
 
 
 ## Whether the helicopter flies (its pilot at the controls).

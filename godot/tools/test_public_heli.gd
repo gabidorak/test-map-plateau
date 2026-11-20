@@ -36,8 +36,11 @@ func _run() -> void:
 	await _frames(120)
 	var m: Node = _main.game_mode
 	var pub: Node = m.public_vehicles
-	_check(pub.spots.size() == 1 and pub.spots[0]["model"] == "helicopter-police", "one public vehicle: the police helicopter")
-	var spot: Transform3D = pub.spots[0]["xf"]
+	var spots: Array = pub.spots.filter(func(s: Dictionary) -> bool: return s["id"] == "x-police-heli")
+	_check(spots.size() == 1 and spots[0]["model"] == "helicopter-police", "the police helicopter among the public vehicles")
+	if spots.is_empty():
+		return _finish()
+	var spot: Transform3D = spots[0]["xf"]
 	var heli: Node = pub._cars.get("x-police-heli")
 	_check(heli != null and heli.global_position.distance_to(spot.origin) < 1.0 and heli.on_ground,
 			"it stands at its place, on its skids")

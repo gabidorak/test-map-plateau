@@ -1,0 +1,12 @@
+{
+ "id": "sousPrefecture",
+ "order": 100,
+ "name": "Commissariat (sous-préfecture)",
+ "about": "The sous-préfecture de Palaiseau (#630, osm:r20158551) made the police's commissariat, after Thomas's references (ref/prefecture/: Vue1-3 the building, Plan2DObjectif the grounds; lots/sousPrefecture/commissariat_plan.gd): the wedge in ochre concrete, its long walls rising from the ground at the courtyard's tip to 13.5 m, the courtyard's garden between them (lawns, paths, trees, benches); north of it the building in three steps (one, two, three storeys), their roofs planted terraces, the highest the heliport (the police helicopter's base); punched windows, the north facade's wide glazing, the public entrance on the boulevard under its name, the French and European flags on the sidewalk. Its grounds: the police's car park north of it (ten bays, a police car in each: PTA Online's public vehicles; fenced, two lift gates across its way out to the boulevard; a turning circle), a hedge, lawns mown up to the road and the track along line 18's viaduct; along the boulevard, from its kerb to the facade, a sidewalk in place of the map's cycle track (granite kerb, concrete blocks, a bateau at the car park's way out, a row of trees on grates); the map's trees in the lot replaced. The ground one plane (terraformed). Out of the map: #630, the trees, props, hedges and fences in the lot. Arrested players are let go before the entrance.",
+ "terraform": [
+  "res://lots/sousPrefecture/commissariat_plan.gd"
+ ],
+ "script": "res://lots/sousPrefecture/sous_prefecture.gd",
+ "node": "sousPrefecture",
+ "paint": "res://lots/sousPrefecture/sous_prefecture.gd"
+}

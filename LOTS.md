@@ -35,7 +35,11 @@ below), `logementsX`, `losplatos`,
 on the Lac de l'X: its counter is PTA Online's terminal, `godot/scripts/online/boat_hire.gd`), `residenceHaignere`
 (the grounds round the Haigneré residence, #536 kept: `godot/lots/residenceHaignere/`, its plan made of a few
 lines with Godot's polygon tools: the bands along the roads offset from their kerb, the alley off the facade),
-`ligne18` and its children `ligne18-viaduc`, `ligne18-polytechnique`, `ligne18-universite` (line 18, below).
+`ligne18` and its children `ligne18-viaduc`, `ligne18-polytechnique`, `ligne18-universite` (line 18, below),
+`sousPrefecture` (the sous-préfecture #630 made the police's commissariat, ref/prefecture/: the building in its
+frame, `godot/lots/sousPrefecture/commissariat_plan.gd`; its heliport the police helicopter's base, its car park's
+police cars PTA Online's public vehicles: a lot's script may give the police's places, `police_places()`, and public
+vehicles, `public_vehicles()`, read through `scripts/builder/lots.gd`).
 
 The ground the game reads (`scripts/ground_map.gd`: the grass, the bots, the picker, every height in the game) is
 baked when the map is built (`scripts/builder/ground_bake.gd`, into `godot/scenes/generated/ground.json` and its two

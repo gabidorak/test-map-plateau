@@ -149,9 +149,9 @@ func _still_bot_car(tried: Dictionary) -> Car:
 	return best
 
 
-## Where the police let the arrested go (data/police.json release), on the ground.
+## Where the police let the arrested go (the commissariat's entrance: the lots' police places), on the ground.
 func _release_spot() -> Vector3:
-	var d: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/police.json"))["release"]
+	var d: Dictionary = load("res://scripts/builder/lots.gd").police_places()["release"]
 	return load("res://scripts/online/garages.gd")._at(float(d["x"]), float(d["y"]))
 
 

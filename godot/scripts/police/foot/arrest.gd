@@ -14,8 +14,8 @@ extends Node
 ##   (SHOVED s); wrong or late, they are dragged out and tased on the spot.
 ## - Down: picked up (people.gd npc_pick) and carried to the officer's car (they struggle as anyone carried: people.gd);
 ##   at its door: arrested (_arrest): the stars off, their weapons seized (items.gd confiscate), the fine of their level
-##   (data/prices.json fines; online_mode.gd fine, whatever the wallet holds), and let go by the sous-préfecture
-##   (data/police.json release).
+##   (data/prices.json fines; online_mode.gd fine, whatever the wallet holds), and let go before the commissariat
+##   (police.gd release: lot sousPrefecture's places).
 ## - What they cannot get to (no headway for UNREACHABLE s: a fence, a hedge between): a door within PULL_ANYWAY m,
 ##   they pull from there all the same (through the window); else they go back, and their car lets them out again only
 ##   REDEPLOY s later.
