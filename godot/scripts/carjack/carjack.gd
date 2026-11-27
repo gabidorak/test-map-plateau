@@ -14,6 +14,7 @@ extends Node
 ## - Stolen cars (`stolen`) are anyone's to drive (PTA Online too: online_mode.gd refuse_drive). One standing ABANDON s
 ##   with nobody at its wheel and no player within ABANDON_SEEN m leaves the map (host).
 ## Cars are named by their net id in LAN games, by their instance id solo (key_of, car_of).
+## The host tells who stole what (car_stolen: the police, scripts/police/police.gd, hears of it from the witnesses).
 
 const Car = preload("res://scripts/car.gd")
 const Hud = preload("res://scripts/carjack/carjack_hud.gd")
@@ -29,6 +30,9 @@ const COOLDOWN := 10.0                      # s after a failed try before the sa
 const ABANDON := 300.0                      # s a stolen car may stand with nobody at its wheel...
 const ABANDON_SEEN := 150.0                 # ...and no player this close, before it leaves the map
 const STUCK := 2.0                          # s more than its time a try may last before the host ends it (player gone)
+
+signal car_stolen(peer: int, key: String, driver: String)   # host: player `peer` stole the car of key `key`, its
+															# driver (a person: "n:<seed>") running off
 
 var game: Node3D                            # game.gd
 var stolen := {}                            # car key -> s it has stood with nobody at its wheel (counted by the host)
@@ -208,7 +212,9 @@ func _end(key: String, a: Dictionary, ok: bool, why: String) -> void:
 		return
 	game.traffic.release_car(bot)
 	stolen[key] = 0.0
-	_to_all("_c_stolen", [key, _rng.randi()])
+	var seed := _rng.randi()
+	_to_all("_c_stolen", [key, seed])
+	car_stolen.emit(peer, key, "n:%d" % seed)
 	_to_peer(peer, "_c_result", [key, true, "The car is yours: drive!"])
 	if game.net.active:
 		game.net.give_drive(key, peer)

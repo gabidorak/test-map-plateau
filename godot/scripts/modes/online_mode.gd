@@ -32,6 +32,8 @@ extends "res://scripts/modes/game_mode.gd"
 ##   (scripts/online/fires.gd) while anyone is on duty, and pays for those put out with the water cannon.
 ## - Public vehicles (scripts/online/public_vehicles.gd, data/public_vehicles.json): nobody's, anyone may take them (the
 ##   police helicopter on Polytechnique's car park by the lake, to try it online).
+## - The police (scripts/police/police.gd): its patrol cars on the roads and its helicopter, after those who steal cars;
+##   its officers arrest them (scripts/police/foot/arrest.gd), run by the host.
 ## The host (the official server) keeps who owns which vehicle; every peer gets it (`vehicles`) to show the prompts.
 ## Played solo (the tools: PLATEAU_MODE=online), the player's garage is PLATEAU_ONLINE_VEHICLES (models, comma-separated)
 ## and their money PLATEAU_ONLINE_MONEY (the starting money by default), kept here (test_garage, test_money).
@@ -61,6 +63,7 @@ const CustomShop = preload("res://scripts/online/custom_shop.gd")
 const BoatHire = preload("res://scripts/online/boat_hire.gd")
 const TowJob = preload("res://scripts/online/tow_job.gd")
 const PublicVehicles = preload("res://scripts/online/public_vehicles.gd")
+const Police = preload("res://scripts/police/police.gd")
 
 signal answered(ok: bool, text: String)     # the host's answer to our last request at a garage terminal
 
@@ -101,6 +104,7 @@ var custom: CustomShop                      # Losplatos Custom's repairs and pai
 var boat_hire: BoatHire                     # the boat hire on the Lac de l'X (its garage)
 var tow_job: TowJob                         # Losplatos Custom's tow trucks
 var public_vehicles: PublicVehicles         # anyone's to take (the police helicopter)
+var police: Police                          # the police, its fleet (scripts/police/police.gd)
 var _leaving := {}                         # host: account -> [net id, s left]
 var _panel: GaragePanel
 var _wallet: Label
@@ -179,6 +183,10 @@ func _ready() -> void:
 	public_vehicles.name = "PublicVehicles"
 	public_vehicles.mode = self
 	add_child(public_vehicles)
+	police = Police.new()
+	police.name = "Police"
+	police.mode = self
+	add_child(police)
 	multiplayer.peer_disconnected.connect(_on_left)
 	game.economy.logged_in.connect(_on_login)
 
@@ -196,6 +204,7 @@ func begin() -> void:
 	hosting = game.mode in ["solo", "host", "server"]
 	garages.build(game.mode != "server")
 	public_vehicles.begin(hosting)
+	police.begin(hosting)
 	if game.mode == "server":
 		return
 	_build_hud()
@@ -301,7 +310,7 @@ func map_places() -> Array:
 
 func ui_open() -> bool:
 	return (_panel != null and _panel.visible) or (properties != null and properties.ui_open()) \
-			or (custom != null and custom.ui_open())
+			or (custom != null and custom.ui_open()) or (police != null and police.arrest.struggling())
 
 
 func close_ui() -> bool:
@@ -608,6 +617,22 @@ func account(peer: int) -> Dictionary:
 	return {}
 
 
+## Host: player `peer` fined `amount` € for `reason` (an arrest: scripts/police/foot/arrest.gd), taken whatever their wallet
+## holds, down to nothing. The € taken.
+func fine(peer: int, amount: int, reason: String) -> int:
+	var acc := account(peer)
+	var take := mini(amount, int(acc.get("balance", 0)))
+	if acc.is_empty() or take <= 0:
+		return 0
+	if game.economy.official:
+		var r: Dictionary = await game.economy.charge(int(acc["account"]), take, reason, "fine")
+		return take if r["ok"] else 0
+	test_money -= take
+	game.economy.balance = test_money
+	game.economy.wallet_changed.emit()
+	return take
+
+
 ## What garage `g` offers player account `acc`: [{"vehicle" (garage id, 0 lent), "model", "label", "note"}]; a note
 ## says why it can't come out here. The player's own also have "colour" (paint id), "repair" (€ when wrecked, else 0)
 ## and "repaint" (€ a coat, 0 when it can't be painted); the work vehicles on sale at the depot and the fire station come
@@ -847,6 +872,7 @@ func player_registered(peer: int) -> void:
 	fires.player_registered(peer)
 	properties.player_registered(peer)
 	public_vehicles.player_registered(peer)
+	police.player_registered(peer)
 
 
 ## Host: a player's login was checked: their vehicle waiting for them is theirs again.

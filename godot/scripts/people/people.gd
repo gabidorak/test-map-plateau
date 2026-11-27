@@ -13,6 +13,9 @@ extends Node
 ##   (struggle_hud.gd), all within STRUGGLE_TIME s: right, they are free (up at once); wrong or late, another go
 ##   STRUGGLE_RETRY s later. A bot wriggles free NPC_STRUGGLE s after its stun. Nobody is carried more than CARRY_MAX s
 ##   (a player away from the keys). A carrier stunned, or leaving the game, drops them.
+## - Bots carry people too (the police's officers, scripts/police/foot/officer.gd): a carrier is a player's peer, or a bot's
+##   handle (< 0, register_carrier on every peer); the host has them pick someone up (npc_pick) and take them away for
+##   good (take_away: in a police car).
 ## - The host decides and tells everyone (_c_down, _c_carry, _c_release); every peer counts the stuns down itself, from
 ##   the time given. A newcomer gets everything as it is (player_registered).
 ## Ids: "p:<peer>" for the players, so that the host knows whose peer a person is (peer_of).
@@ -42,6 +45,7 @@ var game: Node3D                            # game.gd
 ## person id -> {"effect", "t" (s still down), "carrier" (peer, 0 none), "held" (s carried), "immune" (s left), "npc_t"}
 var states := {}
 var fx: Fx                                  # not on a dedicated server
+var npc_carriers := {}                      # a bot carrier's handle (< 0) -> its person node, on every peer
 
 var _hud: StruggleHud
 var _carrying_me := false                   # our player carries someone (the slower walk is on)
@@ -166,12 +170,51 @@ func feet(id: String) -> Variant:
 	return a.global_position
 
 
-## The body of player `peer` here (ours, or their avatar's), or null.
+## The body of player `peer` here (ours, or their avatar's), or of bot carrier `peer` (< 0), or null.
 func body_of_peer(peer: int) -> Node3D:
+	if peer < 0:
+		var n: Node3D = npc_carriers.get(peer)
+		return n.person_body() if is_instance_valid(n) else null
 	if peer == game.net.me():
 		return game.player.get_node("Body") if game.mode != "server" else null
 	var a: Node = game.net.avatar(peer)
 	return a.body() if a else null
+
+
+## Bot person `node` may carry people, as carrier `handle` (< 0; the same on every peer), or no longer (node null).
+func register_carrier(handle: int, node: Node3D) -> void:
+	if node:
+		npc_carriers[handle] = node
+	else:
+		npc_carriers.erase(handle)
+
+
+## The carrier person `id` would be: a player's peer, a bot carrier's handle, 0 none.
+func carrier_handle(id: String) -> int:
+	var peer := peer_of(id)
+	if peer != 0:
+		return peer
+	for h: int in npc_carriers:
+		var n: Node3D = npc_carriers[h]
+		if is_instance_valid(n) and n.person_id == id:
+			return h
+	return 0
+
+
+## What to call carrier `carrier` (a player's name, a bot's).
+func carrier_name(carrier: int) -> String:
+	if carrier < 0:
+		var n: Node3D = npc_carriers.get(carrier)
+		return n.person_name() if is_instance_valid(n) else "someone"
+	return game.net.player_name(carrier) if game.net.active else "someone"
+
+
+## Where carrier `carrier`'s feet are (global), or null.
+func _carrier_feet(carrier: int) -> Variant:
+	if carrier < 0:
+		var n: Node3D = npc_carriers.get(carrier)
+		return n.global_position if is_instance_valid(n) else null
+	return feet(id_of_peer(carrier))
 
 
 # ---------------------------------------------------------------- host
@@ -180,13 +223,30 @@ func body_of_peer(peer: int) -> Node3D:
 func hit(id: String, effect: String, seconds: float, by: int) -> bool:
 	if not _hosting() or not stunnable(id) or seconds <= 0.0:
 		return false
-	var peer := peer_of(id)
-	if peer != 0:
-		var dropped := carried_by(peer)
+	var handle := carrier_handle(id)
+	if handle != 0:
+		var dropped := carried_by(handle)
 		if dropped != "":
 			_release(dropped, 0.0, "")      # (a carrier stunned drops who they carry)
 	_to_all("_c_down", [id, effect, seconds, by])
 	return true
+
+
+## Host: bot carrier `handle` picks up `id` (down, not carried). False when it cannot.
+func npc_pick(id: String, handle: int) -> bool:
+	if not _hosting() or handle >= 0 or not is_down(id) or is_carried(id) or carried_by(handle) != "":
+		return false
+	_to_all("_c_carry", [id, handle])
+	return true
+
+
+## Host: `id` taken away for good (put in a police car): no longer down nor carried, on every peer; what comes next
+## (where they are let go) is the caller's.
+func take_away(id: String) -> void:
+	if _hosting() and states.has(id):
+		_attempts.erase(id)
+		_retry.erase(id)
+		_to_all("_c_taken", [id])
 
 
 func _physics_process(delta: float) -> void:
@@ -223,7 +283,10 @@ func _host_carried(id: String, s: Dictionary, delta: float) -> void:
 		_release(id, 0.0, "Too heavy to carry any longer: you put them down.")
 		return
 	var carrier := int(s["carrier"])
-	if carrier != game.net.me() and game.net.active and not game.net.players.has(carrier):
+	if carrier > 0 and carrier != game.net.me() and game.net.active and not game.net.players.has(carrier):
+		_release(id, float(s["t"]), "")
+		return
+	if carrier < 0 and not is_instance_valid(npc_carriers.get(carrier)):
 		_release(id, float(s["t"]), "")
 		return
 	if float(s["t"]) > 0.0:
@@ -247,7 +310,7 @@ func _release(id: String, t_left: float, text: String) -> void:
 	if s.is_empty() or int(s["carrier"]) == 0:
 		return
 	var carrier := int(s["carrier"])
-	var pos: Variant = feet(id_of_peer(carrier))
+	var pos: Variant = _carrier_feet(carrier)
 	var body := body_of_peer(carrier)
 	if pos == null:
 		var n := person(id)
@@ -257,7 +320,7 @@ func _release(id: String, t_left: float, text: String) -> void:
 	_attempts.erase(id)
 	_retry.erase(id)
 	_to_all("_c_release", [id, pos, maxf(t_left, 0.0)])
-	if text != "":
+	if text != "" and carrier > 0:
 		_to_peer(carrier, "_c_note", [text])
 
 
@@ -370,8 +433,8 @@ func _c_carry(id: String, carrier: int) -> void:
 		n.carry_on(body)
 	changed.emit(id)
 	if id == my_id() and game.mode != "server":
-		game.toast("%s picked you up: struggle free once you come to!" % game.net.player_name(carrier) \
-				if game.net.active else "Someone picked you up!")
+		var who := carrier_name(carrier) if game.net.active or carrier < 0 else "someone"
+		game.toast("%s picked you up: struggle free once you come to!" % (who.left(1).to_upper() + who.substr(1)))
 
 
 @rpc("authority", "call_local", "reliable")
@@ -400,6 +463,20 @@ func _c_gone(id: String) -> void:
 	if fx:
 		fx.stop(id)
 	changed.emit(id)
+
+
+@rpc("authority", "call_local", "reliable")
+func _c_taken(id: String) -> void:
+	states.erase(id)
+	if fx:
+		fx.stop(id)
+	var n := person(id)
+	if n:
+		n.carry_on(null)
+		n.set_down(false)
+	changed.emit(id)
+	if id == my_id() and _hud and _hud.state != "done":
+		_hud.hide_now()
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -506,7 +583,8 @@ func prompt() -> String:
 		return ""
 	var me := my_id()
 	if is_carried(me):
-		return "Carried by %s" % game.net.player_name(int(states[me]["carrier"])) if game.net.active else "Carried"
+		var carrier := int(states[me]["carrier"])
+		return "Carried by %s" % carrier_name(carrier) if game.net.active or carrier < 0 else "Carried"
 	var e: Array = effect_of(me)
 	if e[0] != "":
 		return "%s · %.1f s" % [ItemDb.effect(e[0]).get("name", "Stunned"), e[1]]
