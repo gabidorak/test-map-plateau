@@ -17,7 +17,9 @@ massyPalaiseau, Massy-Palaiseau's station, its bus station and bus depot (massy_
 - the fences between the bus station and the tracks in;
 - the halls, footbridge boxes and line 18 / TGV buildings massy_builder.gd draws instead out, the kit modules on them
   (but those of a building kept there), the map's footbridge decks there;
-- the bus depot's trees and hedge (bus_depot.py greenery) in.
+- the bus depot's trees and hedge (bus_depot.py greenery) in;
+- the bus station's and the depot car park's lamps (bus_station.py lamps) in, as the map's street lamps
+  (lamp_station_props(): breakable like them, lit by night.gd like them).
 
     rerB, massy = make(world, rail)      (world: the map's own world.json, as the pipeline wrote it; rail: the railway's design, lots.load())
 """
@@ -46,6 +48,7 @@ STATION_LOOK = {"wall": "#ece2c6", "accent": "#b4683f", "roof": "#5b616b",
 GAUGE_HALF = 1.75              # m from a track centre (godot/tools/check_world.gd)
 TRAIN_CLEARANCE = 6.2           # m above the rail where a building over the line may start (catenary, its supports)
 HUT_AREA = 60.0                 # m²: a smaller building on a yard track goes (a cabin on the ballast)
+LAMP_QUAY_T = -6.0              # m across the bus station: lamps beyond it stand on a quay (bus_station.py QUAY)
 OWN_KINDS = ("trackbed", "platform", "stairwell")   # the line's own ground: wall-less canopies on it go
 
 
@@ -126,6 +129,25 @@ def _zone_union(rail: dict, keep) -> shapely.Geometry:
     return g
 
 
+def lamp_station_props(bst: dict) -> list:
+    """The bus station's lamps ([x, y, z of the foot]) as street lamp props, their arm over the nearest lanes: the
+    quays' (on their Massy side kerb, t > LAMP_QUAY_T) towards the Massy lane, the others (sidewalk, car park) back
+    across towards the station. Each stands at its plan foot height ("z"): the heightmap rises towards the retaining
+    walls behind the sidewalk."""
+    o = np.array(bst["frame"]["o"], float)
+    d = np.array(bst["frame"]["d"], float)
+    d /= np.linalg.norm(d)
+    n = np.array([-d[1], d[0]])                   # across, towards the tracks
+    out = []
+    for k, (x, y, z) in enumerate(bst["lamps"]):
+        t = float((np.array([x, y]) - o) @ n)
+        arm = -n if t > LAMP_QUAY_T else n
+        out.append({"id": "prop:massy-lamp:%d" % (k + 1), "kind": "street_lamp", "model": "lamp_street",
+                    "x": x, "y": y, "yaw": round(float(np.degrees(np.arctan2(arm[1], arm[0]))), 1), "z": z,
+                    "src": "massy:bus-station", "info": {}})
+    return out
+
+
 def make(world: dict, rail: dict) -> tuple:
     """(rerB's edits, massyPalaiseau's edits), as world_edits.py keys. The decisions are taken in one pass over a copy
     of the world, in the order the game applies them, so that each sees what the others left."""
@@ -191,6 +213,7 @@ def make(world: dict, rail: dict) -> tuple:
         arch = world["tree_archetypes"]
         M["trees_add"] = [t for t in g.get("trees", []) if t["arch"] in arch]
         M["hedges_add"] = g.get("hedges", [])
+        M["props_add"] = lamp_station_props(bst) if bst else []
     # --- rerB: the buildings over the tracks
     lifted, dropped = over_tracks(w["buildings"], rail)
     for b in w["buildings"]:

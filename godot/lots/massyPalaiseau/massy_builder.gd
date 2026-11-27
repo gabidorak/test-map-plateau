@@ -75,7 +75,7 @@ var _level := 0.0
 var _depth := 0.9
 var _meshers := {}                          # name -> [Mesher, material, visibility range, casts shadows]
 var _box_faces := PackedVector3Array()      # the line 18 box's floors and walls (lambdas cannot append to a local)
-var _lamp_lights := PackedVector3Array()    # night.gd lights the bus station and the hangar from these (node meta)
+var _lamp_lights := PackedVector3Array()    # night.gd lights the bus hangar from these (node meta)
 
 
 func build(root: Node3D, world: Dictionary, heights: PackedFloat32Array, mesh_dir: String) -> void:

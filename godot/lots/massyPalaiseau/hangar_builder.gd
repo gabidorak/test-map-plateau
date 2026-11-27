@@ -7,12 +7,14 @@ extends RefCounted
 ##   zebras, the hatched nose; the depot's lanes, bays, walkway hatch and car park spaces), the BUS letters and the
 ##   bays' numbers (Label3D lying on the ground);
 ## - the kerb stones (the quays', the sidewalks', the depot's edges over its grass), the retaining walls (concrete, a
-##   coping or a parapet over the higher ground), the lamps along the quays, the sidewalk and in the depot's car park;
+##   coping or a parapet over the higher ground); the lamps along the quays, the sidewalk and in the depot's car park
+##   (the plan's "lamps") are the map's street lamps, breakable like them (lot massyPalaiseau's drop.json props_add,
+##   godot/lots/rerB/tool/drops.py lamp_station_props);
 ## - the depot (bus_depot.py, after Gent's bus station): one thin flat roof, light grey, its underside smooth, its edge
 ##   bevelled up to a slim fascia, on slender inclined columns in V pairs, no walls; round downlights under it,
 ##   "Hangar de la gare routière" on both long fascias, the stairs from the car park, the "Nous recrutons !" panel
 ##   facing the avenue, the green welded-mesh fence round it; collision for the roof, columns, stairs, fence.
-## The lamps' lights are night.gd's (the MassyPalaiseau node's "lamp_lights" meta).
+## The depot's downlights are night.gd's (the MassyPalaiseau node's "lamp_lights" meta).
 
 const MeshUtils = preload("res://scripts/builder/mesh_utils.gd")
 const RailBuilder = preload("res://lots/rerB/rail_builder.gd")
@@ -34,7 +36,6 @@ const SIGN_BLUE := Color("#20386f")
 const BANNER_RED := Color("#c8102e")
 const FENCE_GREEN := Color("#2e5a36")       # as the RATP's welded mesh along the tracks
 const FENCE_H := 2.0
-const LAMP_HEIGHT := 5.5                    # m, the bus station's lamps
 const KERB_W := 0.3                         # m, a kerb stone's top
 
 var host                                    # massy_builder.gd
@@ -56,7 +57,6 @@ func build(h, bus: Dictionary) -> void:
 	_labels()
 	_copings()
 	_walls()
-	_lamps()
 	if B.has("depot"):
 		_depot(B["depot"])
 		_fences(B.get("depot_fences", []))
@@ -210,21 +210,6 @@ func _walls() -> void:
 			var p2 := p + o * 0.28
 			m.quad(Vector3(p.x, float(foot[k]) - 0.05, -p.y), Vector3(p2.x, float(gr[k]) - 0.3, -p2.y),
 					Vector3(p2.x, float(top[k]), -p2.y), Vector3(p.x, float(top[k]), -p.y), e3, CONCRETE)
-
-
-func _lamps() -> void:
-	var m: RailBuilder.Mesher = host._mesher("BusStation_Furniture", 500.0)
-	var glow: RailBuilder.Mesher = host._mesher("BusStation_Lights", 700.0)
-	var info: Dictionary = host._info("lamp", "massy:bus-lamps", "", "Gare routière Atlantis")
-	for p: Array in B["lamps"]:
-		var base := Vector3(p[0], p[2], -float(p[1]))
-		var xf := Transform3D(Basis(_dir(1.0, 0.0), Vector3.UP, _dir(1.0, 0.0).cross(Vector3.UP)), base)
-		m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, LAMP_HEIGHT * 0.5, 0.0)), Vector3(0.14, LAMP_HEIGHT, 0.14), STEEL)
-		m.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, LAMP_HEIGHT + 0.05, 0.0)), Vector3(0.9, 0.14, 0.42), STEEL)
-		glow.box(xf * Transform3D(Basis.IDENTITY, Vector3(0.0, LAMP_HEIGHT - 0.03, 0.0)), Vector3(0.78, 0.02, 0.32), GLOW)
-		MeshUtils.shape_box(host._body, xf * Transform3D(Basis.IDENTITY, Vector3(0.0, LAMP_HEIGHT * 0.5, 0.0)), Vector3(0.16, LAMP_HEIGHT, 0.16),
-				info)
-		host._lamp_lights.append(base + Vector3(0.0, LAMP_HEIGHT - 0.25, 0.0))
 
 
 # ---------------------------------------------------------------- the bus depot (godot/lots/rerB/tool/bus_depot.py)

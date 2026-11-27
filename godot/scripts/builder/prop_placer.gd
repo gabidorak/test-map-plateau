@@ -2,7 +2,8 @@
 extends RefCounted
 ## Street furniture (milestone M6).
 ## Props: the soft-toy models of res://assets/props/ (blender/props/build_props.py) drawn with one MultiMesh
-## per model and 96 m chunk; each instance sits on the draped ground (+ its lift on raised sidewalks), turned
+## per model and 96 m chunk; each instance sits on the draped ground (+ its lift on raised sidewalks), or at its own
+## foot height `z` when it has one (a lot's prop on a ground the heightmap blurs: by a retaining wall), turned
 ## to its yaw and stretched by its scale, and carries its tint and a phase (INSTANCE_CUSTOM, signal cycle).
 ## Sign poles carry their faces stacked from the pole's `faces` anchor down. Fences and walls are panel
 ## models stretched to each segment, with posts between them. Bus stops get Label3D nodes: the stop name on
@@ -178,7 +179,7 @@ func _place_prop(p: Dictionary, stops: Node3D) -> void:
 	var model: String = p["model"]
 	var theta := deg_to_rad(float(p["yaw"])) + PI / 2.0          # model front (Godot +Z) towards the yaw
 	var sc: Array = p.get("scale", [1.0, 1.0])
-	var pos := MeshUtils.to_godot(x, y, _ground.at(x, y) + float(p.get("lift", 0.0)))
+	var pos := MeshUtils.to_godot(x, y, float(p["z"]) if p.has("z") else _ground.at(x, y) + float(p.get("lift", 0.0)))
 	var turn := Basis(Vector3.UP, theta)
 	var xf := Transform3D(turn * Basis.from_scale(Vector3(sc[0], 1.0, sc[1])), pos)
 	var info: Dictionary = p.get("info", {})

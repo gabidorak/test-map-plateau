@@ -221,8 +221,9 @@ func _build_rail_lamps() -> void:
 		_lamps.append([spot, null, 0])
 
 
-## Massy-Palaiseau's (massy_builder.gd, hangar_builder.gd: MassyPalaiseau, its "lamp_lights" meta): the Atlantis bus
-## station's lamps and the bus hangar's light the ground under them; their diffusers glow.
+## Massy-Palaiseau's (massy_builder.gd, hangar_builder.gd: MassyPalaiseau, its "lamp_lights" meta): the bus
+## hangar's downlights light the ground under them; their diffusers glow (the Atlantis bus station's lamps are street
+## lamp props, lit with the others).
 func _build_massy_lamps() -> void:
 	# (and the École polytechnique's new housing: logements_x_builder.gd, LogementsX: its bollards' heads glow)
 	var logx := world_root.get_node_or_null("LogementsX") if world_root else null
