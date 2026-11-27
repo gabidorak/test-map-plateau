@@ -368,7 +368,7 @@ func _listen() -> void:
 		if is_instance_valid(c) and c.has_method("sight_point") and not _trucks.has(c):
 			_trucks[c] = true
 			c.cannon.splashed.connect(_splashed.bind(c))
-	for c: Object in _trucks.keys():
+	for c in _trucks.keys():                # (untyped: a freed truck can't go in an Object variable)
 		if not is_instance_valid(c):
 			_trucks.erase(c)
 

@@ -23,7 +23,8 @@ extends "res://scripts/modes/game_mode.gd"
 ##   fire station, repairs and repaints at any garage terminal. A vehicle bought comes out on the shop's bays.
 ## - Wrecks: a player's vehicle out takes crash damage and doesn't repair itself (car.gd); once broken it is towed back
 ##   TOW s later (tow_time), and an owned one is wrecked in its owner's garage until they pay its repair (a lent one: nothing to
-##   pay, take another).
+##   pay, take another). A lent work vehicle (WORK: a bus, a fire truck, a tow truck) wrecked: its player sees a bar fill
+##   until it is towed back, then is offered a lift back to the garage it was lent from (scripts/online/wreck_hud.gd).
 ## - Paint: each vehicle out shows its owner's colour on every peer (`vehicles` "colour", _sync_looks).
 ## - The bus job (scripts/online/bus_job.gd, O5): duty on a real line from the bus depot's terminal, paid per stop.
 ## - Stunts (scripts/online/stunts.gd, O6): air time, flips, near misses, top speed and the named stunt spots (on the
@@ -64,6 +65,7 @@ const BoatHire = preload("res://scripts/online/boat_hire.gd")
 const TowJob = preload("res://scripts/online/tow_job.gd")
 const PublicVehicles = preload("res://scripts/online/public_vehicles.gd")
 const Police = preload("res://scripts/police/police.gd")
+const WreckHud = preload("res://scripts/online/wreck_hud.gd")
 
 signal answered(ok: bool, text: String)     # the host's answer to our last request at a garage terminal
 
@@ -83,12 +85,14 @@ const TEST_MONEY := 10_000_000              # € in the PTA Online test's walle
 const TEST_TRIPS := [["the bus depot", "depot"], ["the fire station", "fire"], ["Prestige Motors", "shop"]]
 const TEST_ITEMS := [["taser", 1], ["taser_cartridge", 10], ["net_gun", 1], ["net_shell", 6]]
 const SAFE_RADIUS := 14.0                   # m round a garage's terminal: a safe place
+const LIFT_TO := {"depot": "the bus depot", "fire": "the fire station", "tow": "Losplatos Custom's yard"}
 
 var hosting := false                        # this peer keeps the garages (solo, host, official server)
 var testing := false                        # the PTA Online test (game.gd online_test): solo, test wallet, fly camera
 var garages: Garages
 var vehicles := {}                          # net id -> {"owner": username, "model", "locked"}; the host's also have
-											# "account", "peer" (0: left) and "vehicle" (garage id, 0 lent)
+											# "account", "peer" (0: left), "vehicle" (garage id, 0 lent) and
+											# "garage" (the garage it came out at)
 var mine := ""                              # net id of our vehicle out, "" none
 var keep_time := KEEP
 var tow_time := TOW
@@ -109,6 +113,7 @@ var _leaving := {}                         # host: account -> [net id, s left]
 var _panel: GaragePanel
 var _wallet: Label
 var _prompt: Label
+var _wreck: WreckHud                        # our lent work vehicle wrecked: the tow bar, then the lift back
 var _mouse := Input.MOUSE_MODE_VISIBLE
 var _beside := ""                           # client: net id of our vehicle to put us beside once it's here
 var _beside_t := 0.0
@@ -198,6 +203,8 @@ func _exit_tree() -> void:
 		_wallet.queue_free()
 	if _prompt and is_instance_valid(_prompt):
 		_prompt.queue_free()
+	if _wreck and is_instance_valid(_wreck):
+		_wreck.queue_free()
 
 
 func begin() -> void:
@@ -321,6 +328,9 @@ func close_ui() -> bool:
 		custom.close()
 		return true
 	if not ui_open():
+		if _wreck and _wreck.offering():
+			_wreck.hide_now()               # Esc: no lift, thanks
+			return true
 		return false
 	_close_panel()
 	return true
@@ -360,6 +370,17 @@ func to_garage(xy: Vector2, kinds := Garages.PUBLIC) -> void:
 	game.player.teleport(spot[0], spot[1])
 
 
+## The lift offered once our lent work vehicle was towed away (wreck_hud.gd): on foot at the garage it was lent from.
+func take_lift() -> void:
+	var g := garages.get_garage(_wreck.garage_id)
+	_wreck.hide_now()
+	if g.is_empty():
+		return
+	to_garage(g["xy"], [g["kind"]])
+	game.toast("Back at %s: %s at the terminal for another one." % [LIFT_TO.get(g["kind"], g["name"]),
+			Settings.key_text("interact")])
+
+
 func handle_input(event: InputEvent) -> bool:
 	if game.mode == "server" or _panel == null:
 		return false
@@ -379,6 +400,9 @@ func handle_input(event: InputEvent) -> bool:
 		if keys:
 			_close_panel()
 		return keys
+	if event.is_action_pressed("interact") and _wreck and _wreck.offering():
+		take_lift()
+		return true
 	var on_foot: bool = game.driving == null and game.riding == null and not game.flying
 	if event.is_action_pressed("interact") and on_foot:
 		if properties.interact():
@@ -507,6 +531,9 @@ func _build_hud() -> void:
 	_prompt.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_MINSIZE, 150)
 	_prompt.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_prompt.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_wreck = WreckHud.new()
+	_wreck.name = "WreckHud"
+	game.hud.add_child(_wreck)
 
 
 func _show_wallet() -> void:
@@ -548,8 +575,8 @@ func _sync_looks() -> void:
 
 ## The line over the bottom of the screen: the terminal at hand, or whose the vehicle at hand is.
 func prompt_text() -> String:
-	if game.ui_open() or game.flying or game.riding:
-		return ""
+	if game.ui_open() or game.flying or game.riding or (_wreck and _wreck.offering()):
+		return ""                           # (the lift offered takes E: wreck_hud.gd says so)
 	if game.driving:
 		var towing := tow_job.hint_text()
 		if towing != "":
@@ -754,7 +781,7 @@ func spawn_for(peer: int, gid: String, vehicle: int, model: String, near := true
 		_next_solo += 1
 		car.net_id = "solo:%d" % _next_solo
 	vehicles[car.net_id] = {"owner": str(acc["username"]), "model": model, "locked": true, "colour": colour,
-			"account": int(acc["account"]), "peer": peer, "vehicle": vehicle}
+			"account": int(acc["account"]), "peer": peer, "vehicle": vehicle, "garage": gid}
 	if hire > 0.0:
 		vehicles[car.net_id]["hire"] = hire
 	_share(car.net_id)
@@ -921,7 +948,7 @@ func _host_tick(delta: float) -> void:
 				_send_back(id)
 		elif car and car.broken:
 			v["tow"] = tow_time
-			shop.wrecked(id)
+			shop.wrecked(id, _offer_lift(id))
 	for account_id: int in _leaving.keys():
 		_leaving[account_id][1] -= delta
 		if _leaving[account_id][1] <= 0.0:
@@ -939,6 +966,18 @@ func _host_tick(delta: float) -> void:
 			if not game.net.cars.has(id):
 				vehicles.erase(id)
 				_share(id)
+
+
+## Host: player vehicle `id` just broke: a lent work vehicle's player gets the tow bar and then the lift back to its
+## garage (_c_wreck). The peer told, else 0.
+func _offer_lift(id: String) -> int:
+	var v: Dictionary = vehicles[id]
+	var g := garages.get_garage(str(v.get("garage", "")))
+	var peer := int(v["peer"])
+	if peer == 0 or int(v["vehicle"]) != 0 or v.has("hire") or g.is_empty() or not WORK.has(g["kind"]):
+		return 0
+	send_to(peer, self, "_c_wreck", [str(g["id"]), str(v["model"]), tow_time])
+	return peer
 
 
 # ---------------------------------------------------------------- messages
@@ -1040,9 +1079,21 @@ func _c_vehicles(all: Dictionary) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _c_mine(id: String, kept: bool) -> void:
 	mine = id
+	if _wreck and id != "":
+		_wreck.hide_now()                   # another vehicle out: no lift needed
 	if kept:
 		_beside = id
 		_beside_t = 0.0
+
+
+## Our lent `model` from garage `gid` is wrecked: towed away in `wait` s, then the lift back there is offered.
+@rpc("authority", "call_remote", "reliable")
+func _c_wreck(gid: String, model: String, wait: float) -> void:
+	var g := garages.get_garage(gid)
+	if _wreck == null or g.is_empty():
+		return
+	_wreck.start(gid, "Your lent %s is wrecked" % Car.common_name(model), LIFT_TO.get(g["kind"], g["name"]), wait,
+			Settings.key_text("interact"))
 
 
 @rpc("authority", "call_remote", "reliable")

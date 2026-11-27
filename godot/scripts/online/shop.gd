@@ -239,8 +239,8 @@ func paint_for(peer: int, gid: String, vehicle: int, colour: String) -> Array:
 
 
 ## Host: player vehicle `id` (online_mode.gd vehicles) broke on the map: an owned one is wrecked in its garage; its
-## driver or owner hears about it.
-func wrecked(id: String) -> void:
+## driver or owner hears about it (but `shown`, the peer the mode shows the tow bar: online_mode.gd _offer_lift).
+func wrecked(id: String, shown := 0) -> void:
 	var v: Dictionary = mode.vehicles[id]
 	var name := Car.common_name(v["model"])
 	var text := "The lent %s is wrecked: it goes back in %d s, take another one at its garage." % [name, roundi(mode.tow_time)]
@@ -253,7 +253,7 @@ func wrecked(id: String) -> void:
 	_log("%s's %s is wrecked" % [v["owner"], v["model"]])
 	var told := {}
 	for peer: int in [int(v["peer"]), int(mode.game.net.driver_of.get(id, 0))]:
-		if peer != 0 and not told.has(peer):
+		if peer != 0 and peer != shown and not told.has(peer):
 			told[peer] = true
 			mode.send_to(peer, self, "_c_notice", [text])
 

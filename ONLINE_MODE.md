@@ -169,8 +169,10 @@ typing.
   cars and the 1928 Mercedes (collector's piece, painted textures). **Wrecks:** online, a player's vehicle takes crash
   damage (a speed change of 8 m/s in one tick starts to hurt, 22 m/s wrecks it from full health, ~80 km/h into a wall;
   plain driving and hard braking don't) and never repairs itself; once broken it is towed back 15 s later, and an owned
-  one is marked wrecked until its repair is paid (a lent one: take another). Crash damage only exists online (solo and
-  LAN unchanged).
+  one is marked wrecked until its repair is paid (a lent one: take another). A lent work vehicle (bus, fire truck, tow
+  truck) wrecked: its player sees a bar fill over those 15 s, then is offered a lift back to the garage it was lent from
+  for 30 s (E takes it, Esc turns it down; `scripts/online/wreck_hud.gd`, PROTOCOL 20). Crash damage only exists online
+  (solo and LAN unchanged).
 
 ### 4.1 Prices (decided)
 
