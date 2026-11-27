@@ -66,6 +66,7 @@ const TowJob = preload("res://scripts/online/tow_job.gd")
 const PublicVehicles = preload("res://scripts/online/public_vehicles.gd")
 const Police = preload("res://scripts/police/police.gd")
 const WreckHud = preload("res://scripts/online/wreck_hud.gd")
+const Phone = preload("res://scripts/online/phone.gd")
 
 signal answered(ok: bool, text: String)     # the host's answer to our last request at a garage terminal
 
@@ -114,6 +115,7 @@ var _panel: GaragePanel
 var _wallet: Label
 var _prompt: Label
 var _wreck: WreckHud                        # our lent work vehicle wrecked: the tow bar, then the lift back
+var phone: Phone                            # the smartphone (P): apps, the lift to a job (scripts/online/phone.gd)
 var _mouse := Input.MOUSE_MODE_VISIBLE
 var _beside := ""                           # client: net id of our vehicle to put us beside once it's here
 var _beside_t := 0.0
@@ -205,6 +207,8 @@ func _exit_tree() -> void:
 		_prompt.queue_free()
 	if _wreck and is_instance_valid(_wreck):
 		_wreck.queue_free()
+	if phone and is_instance_valid(phone):
+		phone.queue_free()
 
 
 func begin() -> void:
@@ -287,8 +291,8 @@ func walk_help(k: Callable) -> String:
 	return "WALK · click to capture the mouse · %s move · %s run · %s jump\n" % [
 			game._keys(["move_forward", "move_left", "move_back", "move_right"]), k.call("run"), k.call("jump")] + \
 			"wheel zoom (all the way in: first person) · %s first/third person · %s at a garage terminal: your " % [
-			k.call("toggle_view"), k.call("interact")] + "vehicles · %s get in your vehicle (or one unlocked; ride along in the others)" % \
-			k.call("interact")
+			k.call("toggle_view"), k.call("interact")] + "vehicles · %s get in your vehicle (or one unlocked; ride along in the others) · %s phone" % [
+			k.call("interact"), k.call("phone")]
 
 
 func extra_help(k: Callable) -> String:
@@ -317,10 +321,14 @@ func map_places() -> Array:
 
 func ui_open() -> bool:
 	return (_panel != null and _panel.visible) or (properties != null and properties.ui_open()) \
+			or (phone != null and phone.is_open()) \
 			or (custom != null and custom.ui_open()) or (police != null and police.arrest.struggling())
 
 
 func close_ui() -> bool:
+	if phone and phone.is_open():
+		phone.close_phone()
+		return true
 	if properties.ui_open():
 		properties.close_panel()
 		return true
@@ -385,6 +393,11 @@ func handle_input(event: InputEvent) -> bool:
 	if game.mode == "server" or _panel == null:
 		return false
 	var keys := event.is_action_pressed("interact") or event.is_action_pressed("vehicle_menu")
+	if event.is_action_pressed("phone") and phone and (phone.is_open() or not ui_open()):
+		phone.toggle()
+		return true
+	if phone and phone.is_open():
+		return false
 	if properties.ui_open():
 		if keys:
 			properties.close_panel()
@@ -534,6 +547,11 @@ func _build_hud() -> void:
 	_wreck = WreckHud.new()
 	_wreck.name = "WreckHud"
 	game.hud.add_child(_wreck)
+	phone = Phone.new()
+	phone.name = "Phone"
+	phone.mode = self
+	phone.game = game
+	game.hud.add_child(phone)
 
 
 func _show_wallet() -> void:

@@ -86,6 +86,7 @@ const ACTIONS := [
 	["toggle_stats", "Frame rate and network", "General", [KEY_F3]],
 	["world_map", "Map (click on it: waypoint)", "General", [KEY_M, KEY_SEMICOLON]],   # M on QWERTY and on AZERTY
 	["minimap", "Minimap on / off", "General", [KEY_K]],
+	["phone", "Phone (PTA Online: jobs, map, bank)", "General", [KEY_P]],
 ]
 ## Keys that cannot be changed, for the controls page.
 const FIXED := [["Esc", "Menu, close"], ["Enter", "Chat (LAN games)"], ["Tab (held)", "Players (LAN games)"],
